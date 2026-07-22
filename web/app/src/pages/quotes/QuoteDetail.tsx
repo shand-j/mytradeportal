@@ -447,7 +447,7 @@ export function QuoteDetail() {
                       ) : <>£{formatCurrency(item.unitPrice)}</>}
                     </td>
                     <td className="py-2.5 text-sm font-medium text-[#1C1917] text-right">
-                      £{formatCurrency(isEditing ? (item.quantity * item.unitPrice) : item.total)}
+                      £{formatCurrency(item.quantity * item.unitPrice)}
                     </td>
                     {isEditing ? (
                       <td className="py-2.5 pl-2 text-right">
@@ -672,7 +672,7 @@ export function QuoteDetail() {
                         ) : <>£{formatCurrency(item.plantTotal)}</>}
                       </td>
                       <td className="py-2.5 text-sm font-medium text-[#1C1917] text-right whitespace-nowrap">
-                        £{formatCurrency(isBoqEditing ? (item.labourTotal + item.materialTotal + item.plantTotal) : item.total)}
+                        £{formatCurrency(item.labourTotal + item.materialTotal + item.plantTotal)}
                       </td>
                     </tr>
                   ))}

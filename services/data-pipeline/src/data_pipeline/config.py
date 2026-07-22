@@ -2,6 +2,7 @@
 
 from typing import Literal
 
+from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -42,6 +43,22 @@ class Settings(BaseSettings):
     scrape_frequency: Literal["daily", "monthly"] = "monthly"
     monthly_run_day: int = 1
     daily_run_time: str = "02:00"
+
+    @field_validator("database_url")
+    @classmethod
+    def _ensure_asyncpg_scheme(cls, value: str) -> str:
+        """Rewrite plain ``postgresql://`` URLs to the async driver scheme.
+
+        Managed Postgres providers (e.g. Railway) inject ``DATABASE_URL`` as
+        ``postgresql://...``, but SQLAlchemy async sessions need
+        ``postgresql+asyncpg://``. URLs that already name a driver are left
+        untouched.
+        """
+        if value.startswith("postgresql://"):
+            return "postgresql+asyncpg://" + value[len("postgresql://") :]
+        if value.startswith("postgres://"):
+            return "postgresql+asyncpg://" + value[len("postgres://") :]
+        return value
 
 
 settings = Settings()

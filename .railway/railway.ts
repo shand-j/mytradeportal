@@ -31,11 +31,11 @@ import {
   project,
   redis,
   service,
+  volume,
 } from "railway/iac";
 
-// TODO: replace with the GitHub repo slug (owner/repo) after pushing this
-// repository and installing the Railway GitHub App on it.
-const GITHUB_REPO = process.env.MTP_GITHUB_REPO ?? "OWNER/REPO";
+// GitHub repo deployed via the Railway GitHub App.
+const GITHUB_REPO = process.env.MTP_GITHUB_REPO ?? "shand-j/mytradeportal";
 
 const OLLAMA_BASE = "http://${{ollama.RAILWAY_PRIVATE_DOMAIN}}:11434";
 const QDRANT_URL = "http://${{qdrant.RAILWAY_PRIVATE_DOMAIN}}:6333";
@@ -55,13 +55,18 @@ export default defineRailway(() => {
   // ---------------------------------------------------------------------
   const qdrant = service("qdrant", {
     source: image("qdrant/qdrant:v1.11.5"),
-    volumeMounts: { "qdrant-storage": { mountPath: "/qdrant/storage" } },
+    volumeMounts: { "/qdrant/storage": volume("qdrant-storage", { sizeMB: 5000, region: "sfo" }) },
   });
 
   const minio = service("minio", {
-    source: image("minio/minio:RELEASE.2024-05-10T01-41-38Z"),
-    start: 'server /data --console-address ":9001"',
-    volumeMounts: { "minio-data": { mountPath: "/data" } },
+    // NOTE: the previously pinned 2024 tag fails to start on Railway (instant
+    // FAILED deploy with no logs); latest deploys cleanly. The volume is
+    // mounted at /mnt/data to stay clear of the image's VOLUME /data
+    // directive, and the start command must invoke the `minio` binary
+    // explicitly — Railway replaces the image entrypoint with this command.
+    source: image("minio/minio:latest"),
+    start: 'minio server /mnt/data --console-address ":9001"',
+    volumeMounts: { "/mnt/data": volume("minio-data", { sizeMB: 5000, region: "sfo" }) },
     env: {
       // Set real credentials in the dashboard before first deploy.
       MINIO_ROOT_USER: preserve(),
@@ -74,7 +79,7 @@ export default defineRailway(() => {
   //   railway ssh into ollama → ollama pull nomic-embed-text && ollama pull llama3.1:8b
   const ollama = service("ollama", {
     source: image("ollama/ollama:latest"),
-    volumeMounts: { "ollama-models": { mountPath: "/root/.ollama" } },
+    volumeMounts: { "/root/.ollama": volume("ollama-models", { sizeMB: 5000, region: "sfo" }) },
     env: {
       // Listen on all interfaces so private-network traffic can reach it.
       OLLAMA_HOST: "0.0.0.0",
@@ -90,6 +95,9 @@ export default defineRailway(() => {
     healthcheck: "/health",
     env: {
       ENVIRONMENT: "production",
+      // No public domain → Railway doesn't inject PORT; pin it so the
+      // healthcheck targets the port uvicorn actually listens on.
+      PORT: "8000",
       DATABASE_URL: db.env.DATABASE_URL,
       QDRANT_URL,
       QDRANT_COLLECTION_NAME: "cost_items",
@@ -109,6 +117,9 @@ export default defineRailway(() => {
     env: {
       ENVIRONMENT: "production",
       LOG_LEVEL: "INFO",
+      // No public domain yet → pin PORT so the healthcheck targets the port
+      // uvicorn actually listens on (Dockerfile uses ${PORT:-8000}).
+      PORT: "8000",
       DATABASE_URL: db.env.DATABASE_URL,
       REDIS_URL: cache.env.REDIS_URL,
       QDRANT_URL,
