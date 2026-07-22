@@ -1,0 +1,646 @@
+{
+  "case": {
+    "id": "GAR-001",
+    "category": "garage_unit",
+    "difficulty": "medium",
+    "input": "Need electrics in my detached garage. 4 double sockets, 2 LED battens, consumer unit, and supply from the house.",
+    "expected": {
+      "job_summary": "Electrical installation for detached garage with supply from house",
+      "room_count": null,
+      "spec_level": "mid_range",
+      "bom": [
+        {
+          "description": "4-way garage consumer unit with RCD",
+          "quantity": 1,
+          "category": "consumer_units"
+        },
+        {
+          "description": "32A Type B MCB socket circuit",
+          "quantity": 1,
+          "category": "mcb_rcd_rcbo"
+        },
+        {
+          "description": "6A Type B MCB lighting circuit",
+          "quantity": 1,
+          "category": "mcb_rcd_rcbo"
+        },
+        {
+          "description": "13A 2-gang DP switched socket",
+          "quantity": 4,
+          "category": "switches_sockets"
+        },
+        {
+          "description": "LED batten light 5ft IP65",
+          "quantity": 2,
+          "category": "lighting"
+        },
+        {
+          "description": "10AX 1-gang light switch",
+          "quantity": 1,
+          "category": "switches_sockets"
+        },
+        {
+          "description": "SWA cable 2.5mm 20m",
+          "quantity": 1,
+          "category": "cable"
+        },
+        {
+          "description": "gland pack SWA 20mm",
+          "quantity": 2,
+          "category": "wiring_accessories"
+        },
+        {
+          "description": "weatherproof isolator 32A",
+          "quantity": 1,
+          "category": "switches_sockets"
+        },
+        {
+          "description": "metal back box 1-gang 35mm",
+          "quantity": 6,
+          "category": "wiring_accessories"
+        },
+        {
+          "description": "metal back box 2-gang 35mm",
+          "quantity": 2,
+          "category": "wiring_accessories"
+        }
+      ],
+      "estimated_material_cost_ex_vat": {
+        "min": 280,
+        "max": 450
+      },
+      "regulatory_flags": [
+        "rcd_protection"
+      ],
+      "total_quote_range_ex_vat": {
+        "min": 600,
+        "max": 1000
+      }
+    },
+    "pass_criteria": [
+      "bom must contain garage consumer unit (4-way minimum)",
+      "bom must contain SWA cable for supply from house",
+      "bom must contain weatherproof isolator",
+      "bom must contain exactly 4 sockets and 2 lights",
+      "bom must NOT include house consumer unit (garage only job)"
+    ],
+    "notes": "Detached garage needs separate CU with RCD protection. SWA cable required for underground supply run. Weatherproof isolator required at garage end. Source: BS 7671 Section 729 (outbuildings), IET guidance.\n"
+  },
+  "response": {
+    "line_items": [
+      {
+        "code": "DOM-screwfix-356PP",
+        "description": "LAP LAP  Single 4ft LED Batten 22W 2430lm 220-240V Supplier: screwfix",
+        "unit": "each",
+        "quantity": "2",
+        "labour_hours": "0",
+        "labour_rate": "0",
+        "labour_total": "0",
+        "material_cost": "19.5625",
+        "material_total": "39.1250",
+        "plant_cost": "0",
+        "plant_total": "0",
+        "unit_price": "19.5625",
+        "total": "39.1250",
+        "cost_item_id": null,
+        "category": "Lighting",
+        "supplier": "screwfix",
+        "brand": "LAP",
+        "sku": "356PP",
+        "product_url": "https://www.screwfix.com/p/356PP",
+        "retail_price_incl_vat": "18.78",
+        "notes": "LED battens for garage lighting."
+      },
+      {
+        "code": "DOM-screwfix-3365V",
+        "description": "Chint Chint EBG 32A SP B Curve  MCB Supplier: screwfix",
+        "unit": "each",
+        "quantity": "2",
+        "labour_hours": "0",
+        "labour_rate": "0",
+        "labour_total": "0",
+        "material_cost": "2.8021",
+        "material_total": "5.6042",
+        "plant_cost": "0",
+        "plant_total": "0",
+        "unit_price": "2.8021",
+        "total": "5.6042",
+        "cost_item_id": null,
+        "category": "Circuit Protection",
+        "supplier": "screwfix",
+        "brand": "Chint",
+        "sku": "3365V",
+        "product_url": "https://www.screwfix.com/p/3365V",
+        "retail_price_incl_vat": "2.69",
+        "notes": "Mandatory circuit protection"
+      },
+      {
+        "code": "DOM-screwfix-341YE",
+        "description": "MK Sentry MK Sentry  6A 30mA Type A 2-Pole B Curve  Bi-Directional Miniature RCBO Supplier: screwfix (Additional RCBO for garage circuit)",
+        "unit": "each",
+        "quantity": "1",
+        "labour_hours": "0",
+        "labour_rate": "0",
+        "labour_total": "0",
+        "material_cost": "21.8646",
+        "material_total": "21.8646",
+        "plant_cost": "0",
+        "plant_total": "0",
+        "unit_price": "21.8646",
+        "total": "21.8646",
+        "cost_item_id": null,
+        "category": "Circuit Protection",
+        "supplier": "screwfix",
+        "brand": "MK Sentry",
+        "sku": "341YE",
+        "product_url": "https://www.screwfix.com/p/341YE",
+        "retail_price_incl_vat": "20.99",
+        "notes": "Additional RCBO for garage circuit"
+      },
+      {
+        "code": "DOM-screwfix-8947P",
+        "description": "British General British General 13A 2-Gang DP Switched Socket Double pole switched socket outlet with twin earth terminals Supplier: screwfix",
+        "unit": "each",
+        "quantity": "4",
+        "labour_hours": "0",
+        "labour_rate": "0",
+        "labour_total": "0",
+        "material_cost": "5.1979",
+        "material_total": "20.7916",
+        "plant_cost": "0",
+        "plant_total": "0",
+        "unit_price": "5.1979",
+        "total": "20.7916",
+        "cost_item_id": null,
+        "category": "Switches & Sockets",
+        "supplier": "screwfix",
+        "brand": "British General",
+        "sku": "8947P",
+        "product_url": "https://www.screwfix.com/p/8947P",
+        "retail_price_incl_vat": "4.99",
+        "notes": "Mandatory socket count"
+      },
+      {
+        "code": "DOM-screwfix-363AV",
+        "description": "4lite 4lite Valde Single 5ft LED Non-Corrosive Batten Light 60W 8400lm 220-240V Supplier: screwfix",
+        "unit": "each",
+        "quantity": "2",
+        "labour_hours": "0",
+        "labour_rate": "0",
+        "labour_total": "0",
+        "material_cost": "46.8541",
+        "material_total": "93.7082",
+        "plant_cost": "0",
+        "plant_total": "0",
+        "unit_price": "46.8541",
+        "total": "93.7082",
+        "cost_item_id": null,
+        "category": "Lighting",
+        "supplier": "screwfix",
+        "brand": "4lite",
+        "sku": "363AV",
+        "product_url": "https://www.screwfix.com/p/363AV",
+        "retail_price_incl_vat": "44.98",
+        "notes": "Mandatory batten count"
+      },
+      {
+        "code": "DOM-screwfix-73076",
+        "description": "Prysmian Prysmian 6242Y Grey 6mm\u00b2  Twin & Earth Cable 25m Drum Supplier: screwfix",
+        "unit": "m",
+        "quantity": "25",
+        "labour_hours": "0",
+        "labour_rate": "0",
+        "labour_total": "0",
+        "material_cost": "2.9162",
+        "material_total": "72.9050",
+        "plant_cost": "0",
+        "plant_total": "0",
+        "unit_price": "2.9162",
+        "total": "72.9050",
+        "cost_item_id": null,
+        "category": "Cable",
+        "supplier": "screwfix",
+        "brand": "Prysmian",
+        "sku": "73076",
+        "product_url": "https://www.screwfix.com/p/73076",
+        "retail_price_incl_vat": "69.99",
+        "notes": "Mandatory cooker/EV cable Pack size 25m."
+      },
+      {
+        "code": "DOM-screwfix-1985P",
+        "description": "Prysmian Prysmian 6242Y Twin & Earth Cable 2.5mm\u00b2 x 50m 6242Y twin and earth cable, 2.5mm\u00b2, 50m drum Supplier: screwfix",
+        "unit": "m",
+        "quantity": "50",
+        "labour_hours": "0",
+        "labour_rate": "0",
+        "labour_total": "0",
+        "material_cost": "0.8956",
+        "material_total": "44.7800",
+        "plant_cost": "0",
+        "plant_total": "0",
+        "unit_price": "0.8956",
+        "total": "44.7800",
+        "cost_item_id": null,
+        "category": "Cable",
+        "supplier": "screwfix",
+        "brand": "Prysmian",
+        "sku": "1985P",
+        "product_url": "https://www.screwfix.com/p/1985P",
+        "retail_price_incl_vat": "42.99",
+        "notes": "Cable for new socket outlets Pack size 50m."
+      },
+      {
+        "code": "ELEC-BACKBOX-DOUBLE-35MM",
+        "description": "metal back box 2-gang 35mm",
+        "unit": "each",
+        "quantity": "4",
+        "labour_hours": "0",
+        "labour_rate": "0",
+        "labour_total": "0",
+        "material_cost": "1.8750",
+        "material_total": "7.5000",
+        "plant_cost": "0",
+        "plant_total": "0",
+        "unit_price": "1.8750",
+        "total": "7.5000",
+        "cost_item_id": null,
+        "category": "Wiring Accessories",
+        "supplier": "curated",
+        "brand": "curated",
+        "sku": "ELEC-BACKBOX-DOUBLE-35MM",
+        "product_url": null,
+        "retail_price_incl_vat": "1.8",
+        "notes": "Back boxes for new double sockets"
+      },
+      {
+        "code": "DOM-screwfix-936HM",
+        "description": "Lewden Lewden PRO 5-Module 2-Way Populated  Garage Consumer Unit Supplier: screwfix",
+        "unit": "each",
+        "quantity": "1",
+        "labour_hours": "0",
+        "labour_rate": "0",
+        "labour_total": "0",
+        "material_cost": "36.4479",
+        "material_total": "36.4479",
+        "plant_cost": "0",
+        "plant_total": "0",
+        "unit_price": "36.4479",
+        "total": "36.4479",
+        "cost_item_id": null,
+        "category": "Consumer Units",
+        "supplier": "screwfix",
+        "brand": "Lewden",
+        "sku": "936HM",
+        "product_url": "https://www.screwfix.com/p/936HM",
+        "retail_price_incl_vat": "34.99",
+        "notes": "Mandatory garage CU"
+      },
+      {
+        "code": "ELEC-CABLE-SWA-2.5MM",
+        "description": "SWA cable 2.5mm steel wire armoured",
+        "unit": "m",
+        "quantity": "20",
+        "labour_hours": "0",
+        "labour_rate": "0",
+        "labour_total": "0",
+        "material_cost": "4.3750",
+        "material_total": "87.5000",
+        "plant_cost": "0",
+        "plant_total": "0",
+        "unit_price": "4.3750",
+        "total": "87.5000",
+        "cost_item_id": null,
+        "category": "Cable",
+        "supplier": "curated",
+        "brand": "curated",
+        "sku": "ELEC-CABLE-SWA-2.5MM",
+        "product_url": null,
+        "retail_price_incl_vat": "4.2",
+        "notes": "Mandatory SWA for garage"
+      },
+      {
+        "code": "DOM-screwfix-321FR",
+        "description": "Wylex Wylex  100A DP  Isolator With Enclosure Supplier: screwfix",
+        "unit": "each",
+        "quantity": "1",
+        "labour_hours": "0",
+        "labour_rate": "0",
+        "labour_total": "0",
+        "material_cost": "21.3438",
+        "material_total": "21.3438",
+        "plant_cost": "0",
+        "plant_total": "0",
+        "unit_price": "21.3438",
+        "total": "21.3438",
+        "cost_item_id": null,
+        "category": "Switches & Sockets",
+        "supplier": "screwfix",
+        "brand": "Wylex",
+        "sku": "321FR",
+        "product_url": "https://www.screwfix.com/p/321FR",
+        "retail_price_incl_vat": "20.49",
+        "notes": "Mandatory isolator for garage"
+      },
+      {
+        "code": "LABOUR-ELECTRICIAN-DAY",
+        "description": "Electrician labour - day rate",
+        "unit": "day",
+        "quantity": "1",
+        "labour_hours": "8",
+        "labour_rate": "360.00",
+        "labour_total": "360.0000",
+        "material_cost": "0",
+        "material_total": "0",
+        "plant_cost": "0",
+        "plant_total": "0",
+        "unit_price": "360.00",
+        "total": "360.0000",
+        "cost_item_id": null,
+        "category": "Labour",
+        "supplier": "Tenant rate",
+        "brand": null,
+        "sku": null,
+        "product_url": null,
+        "retail_price_incl_vat": null,
+        "notes": "1 electrician day(s) based on BoQ scope (install/testing/certification/access)"
+      },
+      {
+        "code": "LABOUR-TESTING-HOUR",
+        "description": "Labour",
+        "unit": "hour",
+        "quantity": "1.0",
+        "labour_hours": "1",
+        "labour_rate": "45.00",
+        "labour_total": "45.0000",
+        "material_cost": "0",
+        "material_total": "0",
+        "plant_cost": "0",
+        "plant_total": "0",
+        "unit_price": "45.00",
+        "total": "45.0000",
+        "cost_item_id": null,
+        "category": "Labour",
+        "supplier": "Tenant rate",
+        "brand": null,
+        "sku": null,
+        "product_url": null,
+        "retail_price_incl_vat": null,
+        "notes": "Testing and inspection allowance"
+      },
+      {
+        "code": "LABOUR-CERTIFICATION-HOUR",
+        "description": "Labour",
+        "unit": "hour",
+        "quantity": "0.75",
+        "labour_hours": "1",
+        "labour_rate": "45.00",
+        "labour_total": "33.7500",
+        "material_cost": "0",
+        "material_total": "0",
+        "plant_cost": "0",
+        "plant_total": "0",
+        "unit_price": "45.00",
+        "total": "33.7500",
+        "cost_item_id": null,
+        "category": "Labour",
+        "supplier": "Tenant rate",
+        "brand": null,
+        "sku": null,
+        "product_url": null,
+        "retail_price_incl_vat": null,
+        "notes": "Certification and handover documentation"
+      }
+    ],
+    "subtotal": "890.32",
+    "vat_rate": "0.20",
+    "vat_amount": "178.06",
+    "total": "1068.38",
+    "confidence": "0.7",
+    "warnings": [
+      "Quality gate: cable quantities should include explicit wastage allowance (10-15%)."
+    ],
+    "notes": "This is an indicative bill of quantities based on publicly listed supplier prices and rule-based/AI estimates. It is not a fixed quote. Final pricing, availability, and specification must be confirmed with the named supplier(s) before contract. Assumed 30m of SWA cable for supply from house to garage. Earth rod included for TT earthing system as it's a detached garage.",
+    "standard": null,
+    "analysis": {
+      "job_summary": "Electrical installation in detached garage with supply from house.",
+      "room_count": null,
+      "spec_level": "mid_range",
+      "regulatory_flags": [
+        "metal_cu_required",
+        "rcd_protection"
+      ],
+      "estimated_material_cost_ex_vat": {
+        "min": "451.57",
+        "max": "451.57"
+      },
+      "estimated_labour_hours": {
+        "min": "9.75",
+        "max": "9.75"
+      },
+      "total_quote_range_ex_vat": {
+        "min": "890.32",
+        "max": "890.32"
+      }
+    },
+    "regulatory_citations": [
+      {
+        "chunk_id": "9818782d-8bdf-5ed1-b9b3-2d384b7903fc",
+        "source": "uk_domestic_electrical_kb_tables",
+        "section_path": [
+          "UK DOMESTIC ELECTRICAL JOB QUOTING - FOUNDATIONAL KNOWLEDGE BASE",
+          "11. SPECIALISED INSTALLATIONS",
+          "11.1 EV Charger Installation",
+          "Technical Requirements for Quoting"
+        ],
+        "rule_tier": "mandatory",
+        "job_type": "consumer_unit",
+        "snippet": "# UK DOMESTIC ELECTRICAL JOB QUOTING - FOUNDATIONAL KNOWLEDGE BASE > 11. SPECIALISED INSTALLATIONS > 11.1 EV Charger Installation > Technical Requirements for Quoting\n\n| Element | Requirement | Quoting Impact |\n| --- | --- | --- |\n| **Dedicated circuit** | Each charger must have own circuit with protective device | New\u2026",
+        "relevance_score": 0.6198586
+      },
+      {
+        "chunk_id": "ab54fd25-c067-571e-b513-5ced72af8cbb",
+        "source": "uk_domestic_electrical_kb_tables",
+        "section_path": [
+          "UK DOMESTIC ELECTRICAL JOB QUOTING - FOUNDATIONAL KNOWLEDGE BASE",
+          "3. NOTIFIABLE vs NON-NOTIFIABLE WORK",
+          "3.1 Notifiable Work (Requires CPS Self-Certification or Building Control)"
+        ],
+        "rule_tier": "mandatory",
+        "job_type": "consumer_unit",
+        "snippet": "# UK DOMESTIC ELECTRICAL JOB QUOTING - FOUNDATIONAL KNOWLEDGE BASE > 3. NOTIFIABLE vs NON-NOTIFIABLE WORK > 3.1 Notifiable Work (Requires CPS Self-Certification or Building Control)\n\n| Work Type | Notification Required | Certificate Type |\n| --- | --- | --- |\n| **New circuit installation** | Yes - always | Full EIC |\n|\u2026",
+        "relevance_score": 0.6148052
+      },
+      {
+        "chunk_id": "8b027e86-367e-548b-827f-bbe3321579f4",
+        "source": "uk_domestic_electrical_kb_tables",
+        "section_path": [
+          "UK DOMESTIC ELECTRICAL JOB QUOTING - FOUNDATIONAL KNOWLEDGE BASE",
+          "14. KNOWLEDGE BASE FOR AI QUOTING AGENT",
+          "14.1 Essential Data Points for Accurate Quoting",
+          "Existing Installation Assessment"
+        ],
+        "rule_tier": "mandatory",
+        "job_type": "consumer_unit",
+        "snippet": "# UK DOMESTIC ELECTRICAL JOB QUOTING - FOUNDATIONAL KNOWLEDGE BASE > 14. KNOWLEDGE BASE FOR AI QUOTING AGENT > 14.1 Essential Data Points for Accurate Quoting > Existing Installation Assessment\n\n| Data Point | Why Required | Impact on Quote |\n| --- | --- | --- |\n| **Consumer unit type/age** | Determines if replacement\u2026",
+        "relevance_score": 0.61133844
+      }
+    ],
+    "compliance_warnings": [
+      "Compliance check (consumer_unit): BoQ may be missing 'Surge Protection Device (SPD)'. Confirm before sending to customer."
+    ],
+    "customer_summary_lines": [
+      {
+        "description": "Consumer unit and protection upgrade",
+        "total": "890.32"
+      }
+    ],
+    "margin_indicator": {
+      "material_subtotal": "451.57",
+      "labour_subtotal": "438.75",
+      "subtotal": "890.32",
+      "target_markup_percent": "25.00",
+      "estimated_margin_percent": "20.00",
+      "estimated_margin_amount": "90.31"
+    },
+    "clarification_questions": []
+  },
+  "passed": true,
+  "criteria_results": [
+    {
+      "criterion": "bom must contain garage consumer unit (4-way minimum)",
+      "passed": true,
+      "detail": "garage consumer unit: qty=1",
+      "soft": false
+    },
+    {
+      "criterion": "bom must contain SWA cable for supply from house",
+      "passed": true,
+      "detail": "swa cable for supply from house: qty=20",
+      "soft": false
+    },
+    {
+      "criterion": "bom must contain weatherproof isolator",
+      "passed": true,
+      "detail": "weatherproof isolator: qty=1",
+      "soft": false
+    },
+    {
+      "criterion": "bom must contain exactly 4 sockets and 2 lights",
+      "passed": true,
+      "detail": "sockets: qty=4; lights: qty=4",
+      "soft": false
+    },
+    {
+      "criterion": "bom must NOT include house consumer unit (garage only job)",
+      "passed": true,
+      "detail": "house consumer unit: qty=0",
+      "soft": false
+    }
+  ],
+  "summary": {
+    "line_item_count": 14,
+    "material_total": 451.57,
+    "labour_hours_total": 9.75,
+    "subtotal": 890.32,
+    "total": 1068.38,
+    "confidence": "0.7",
+    "analysis": {
+      "job_summary": "Electrical installation in detached garage with supply from house.",
+      "room_count": null,
+      "spec_level": "mid_range",
+      "regulatory_flags": [
+        "metal_cu_required",
+        "rcd_protection"
+      ],
+      "estimated_material_cost_ex_vat": {
+        "min": "451.57",
+        "max": "451.57"
+      },
+      "estimated_labour_hours": {
+        "min": "9.75",
+        "max": "9.75"
+      },
+      "total_quote_range_ex_vat": {
+        "min": "890.32",
+        "max": "890.32"
+      }
+    },
+    "expected_material_range": null,
+    "material_cost_delta": null,
+    "material_cost_delta_pct": null,
+    "top_material_items": [
+      {
+        "code": "DOM-screwfix-363AV",
+        "description": "4lite 4lite Valde Single 5ft LED Non-Corrosive Batten Light 60W 8400lm 220-240V ",
+        "category": "Lighting",
+        "quantity": 2.0,
+        "unit_price": 46.8541,
+        "material_total": 93.71,
+        "pct_of_material_total": 20.8
+      },
+      {
+        "code": "ELEC-CABLE-SWA-2.5MM",
+        "description": "SWA cable 2.5mm steel wire armoured",
+        "category": "Cable",
+        "quantity": 20.0,
+        "unit_price": 4.375,
+        "material_total": 87.5,
+        "pct_of_material_total": 19.4
+      },
+      {
+        "code": "DOM-screwfix-73076",
+        "description": "Prysmian Prysmian 6242Y Grey 6mm\u00b2  Twin & Earth Cable 25m Drum Supplier: screwfi",
+        "category": "Cable",
+        "quantity": 25.0,
+        "unit_price": 2.9162,
+        "material_total": 72.9,
+        "pct_of_material_total": 16.1
+      },
+      {
+        "code": "DOM-screwfix-1985P",
+        "description": "Prysmian Prysmian 6242Y Twin & Earth Cable 2.5mm\u00b2 x 50m 6242Y twin and earth cab",
+        "category": "Cable",
+        "quantity": 50.0,
+        "unit_price": 0.8956,
+        "material_total": 44.78,
+        "pct_of_material_total": 9.9
+      },
+      {
+        "code": "DOM-screwfix-356PP",
+        "description": "LAP LAP  Single 4ft LED Batten 22W 2430lm 220-240V Supplier: screwfix",
+        "category": "Lighting",
+        "quantity": 2.0,
+        "unit_price": 19.5625,
+        "material_total": 39.12,
+        "pct_of_material_total": 8.7
+      },
+      {
+        "code": "DOM-screwfix-936HM",
+        "description": "Lewden Lewden PRO 5-Module 2-Way Populated  Garage Consumer Unit Supplier: screw",
+        "category": "Consumer Units",
+        "quantity": 1.0,
+        "unit_price": 36.4479,
+        "material_total": 36.45,
+        "pct_of_material_total": 8.1
+      },
+      {
+        "code": "DOM-screwfix-341YE",
+        "description": "MK Sentry MK Sentry  6A 30mA Type A 2-Pole B Curve  Bi-Directional Miniature RCB",
+        "category": "Circuit Protection",
+        "quantity": 1.0,
+        "unit_price": 21.8646,
+        "material_total": 21.86,
+        "pct_of_material_total": 4.8
+      },
+      {
+        "code": "DOM-screwfix-321FR",
+        "description": "Wylex Wylex  100A DP  Isolator With Enclosure Supplier: screwfix",
+        "category": "Switches & Sockets",
+        "quantity": 1.0,
+        "unit_price": 21.3438,
+        "material_total": 21.34,
+        "pct_of_material_total": 4.7
+      }
+    ]
+  }
+}

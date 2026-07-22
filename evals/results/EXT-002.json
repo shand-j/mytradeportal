@@ -1,0 +1,937 @@
+{
+  "case": {
+    "id": "EXT-002",
+    "category": "extension",
+    "difficulty": "hard",
+    "input": "Kitchen diner extension and we're rewiring the whole ground floor at the same time. 3 bed house. New consumer unit, brushed chrome sockets, dimmable spots in the kitchen diner, under cabinet lighting, USB sockets by the island, outside light by the patio doors.",
+    "expected": {
+      "job_summary": "Kitchen diner extension plus ground floor rewire with premium specification",
+      "room_count": 3,
+      "spec_level": "premium",
+      "bom": [
+        {
+          "description": "12-way dual RCD metal consumer unit with SPD",
+          "quantity": 1,
+          "category": "consumer_units"
+        },
+        {
+          "description": "32A Type B MCB",
+          "quantity": 2,
+          "category": "mcb_rcd_rcbo"
+        },
+        {
+          "description": "20A Type B MCB",
+          "quantity": 1,
+          "category": "mcb_rcd_rcbo"
+        },
+        {
+          "description": "6A Type B MCB",
+          "quantity": 2,
+          "category": "mcb_rcd_rcbo"
+        },
+        {
+          "description": "brushed chrome 2-gang switched socket",
+          "quantity": 12,
+          "category": "switches_sockets"
+        },
+        {
+          "description": "brushed chrome USB double socket",
+          "quantity": 4,
+          "category": "switches_sockets"
+        },
+        {
+          "description": "brushed chrome cooker switch",
+          "quantity": 1,
+          "category": "switches_sockets"
+        },
+        {
+          "description": "brushed chrome dimmer switch",
+          "quantity": 3,
+          "category": "switches_sockets"
+        },
+        {
+          "description": "fire-rated dimmable LED downlight",
+          "quantity": 10,
+          "category": "lighting"
+        },
+        {
+          "description": "LED GU10 dimmable warm white",
+          "quantity": 10,
+          "category": "lighting"
+        },
+        {
+          "description": "LED under cabinet strip light",
+          "quantity": 3,
+          "category": "lighting"
+        },
+        {
+          "description": "LED driver 24V 60W",
+          "quantity": 1,
+          "category": "lighting"
+        },
+        {
+          "description": "outdoor wall light IP44",
+          "quantity": 1,
+          "category": "lighting"
+        },
+        {
+          "description": "twin and earth cable 2.5mm 100m",
+          "quantity": 2,
+          "category": "cable"
+        },
+        {
+          "description": "twin and earth cable 1.5mm 50m",
+          "quantity": 1,
+          "category": "cable"
+        },
+        {
+          "description": "twin and earth cable 6mm 25m",
+          "quantity": 1,
+          "category": "cable"
+        },
+        {
+          "description": "heat detector mains powered",
+          "quantity": 1,
+          "category": "security_fire"
+        },
+        {
+          "description": "metal back box 1-gang 35mm",
+          "quantity": 25,
+          "category": "wiring_accessories"
+        },
+        {
+          "description": "metal back box 2-gang 35mm",
+          "quantity": 12,
+          "category": "wiring_accessories"
+        }
+      ],
+      "estimated_material_cost_ex_vat": {
+        "min": 900,
+        "max": 1400
+      },
+      "regulatory_flags": [
+        "spd_required",
+        "metal_cu_required",
+        "rcd_protection",
+        "smoke_alarms_required"
+      ],
+      "total_quote_range_ex_vat": {
+        "min": 2200,
+        "max": 3500
+      }
+    },
+    "pass_criteria": [
+      "bom must contain consumer unit (ground floor rewire + extension)",
+      "bom must contain brushed chrome (not white plastic) accessories",
+      "bom must contain USB sockets (4+ as specified)",
+      "bom must contain dimmable downlights with dimmer switches",
+      "bom must contain under cabinet LED lighting with driver",
+      "bom must contain outdoor wall light",
+      "bom must contain heat detector for kitchen",
+      "total material cost must be between GBP 800 and GBP 1500"
+    ],
+    "notes": "Complex partial rewire + extension with multiple special features. Under-cabinet lighting requires LED driver/transformer. Brushed chrome finish indicates premium spec. Tests ability to handle multiple concurrent requirements.\n"
+  },
+  "response": {
+    "line_items": [
+      {
+        "code": "DOM-screwfix-7323R",
+        "description": "LAP LAP Bronx Outdoor Wall Light Black Supplier: screwfix",
+        "unit": "each",
+        "quantity": "1",
+        "labour_hours": "0",
+        "labour_rate": "0",
+        "labour_total": "0",
+        "material_cost": "10.9271",
+        "material_total": "10.9271",
+        "plant_cost": "0",
+        "plant_total": "0",
+        "unit_price": "10.9271",
+        "total": "10.9271",
+        "cost_item_id": null,
+        "category": "Lighting",
+        "supplier": "screwfix",
+        "brand": "LAP",
+        "sku": "7323R",
+        "product_url": "https://www.screwfix.com/p/7323R",
+        "retail_price_incl_vat": "10.49",
+        "notes": "Outdoor light by the patio doors."
+      },
+      {
+        "code": "DOM-screwfix-504PF",
+        "description": "MK Sentry MK Sentry  21-Module 12-Way Populated  Dual RCD Consumer Unit with SPD Supplier: screwfix",
+        "unit": "each",
+        "quantity": "1",
+        "labour_hours": "0",
+        "labour_rate": "0",
+        "labour_total": "0",
+        "material_cost": "145.8229",
+        "material_total": "145.8229",
+        "plant_cost": "0",
+        "plant_total": "0",
+        "unit_price": "145.8229",
+        "total": "145.8229",
+        "cost_item_id": null,
+        "category": "Consumer Units",
+        "supplier": "screwfix",
+        "brand": "MK Sentry",
+        "sku": "504PF",
+        "product_url": "https://www.screwfix.com/p/504PF",
+        "retail_price_incl_vat": "139.99",
+        "notes": "Mandatory consumer unit for rewire"
+      },
+      {
+        "code": "DOM-screwfix-53010",
+        "description": "Wylex Wylex NH / NM 100A DP  Main Switch Disconnector Supplier: screwfix",
+        "unit": "each",
+        "quantity": "1",
+        "labour_hours": "0",
+        "labour_rate": "0",
+        "labour_total": "0",
+        "material_cost": "20.8229",
+        "material_total": "20.8229",
+        "plant_cost": "0",
+        "plant_total": "0",
+        "unit_price": "20.8229",
+        "total": "20.8229",
+        "cost_item_id": null,
+        "category": "Switches & Sockets",
+        "supplier": "screwfix",
+        "brand": "Wylex",
+        "sku": "53010",
+        "product_url": "https://www.screwfix.com/p/53010",
+        "retail_price_incl_vat": "19.99",
+        "notes": "Mandatory main switch"
+      },
+      {
+        "code": "DOM-screwfix-3365V",
+        "description": "Chint Chint EBG 32A SP B Curve  MCB Supplier: screwfix",
+        "unit": "each",
+        "quantity": "4",
+        "labour_hours": "0",
+        "labour_rate": "0",
+        "labour_total": "0",
+        "material_cost": "2.8021",
+        "material_total": "11.2084",
+        "plant_cost": "0",
+        "plant_total": "0",
+        "unit_price": "2.8021",
+        "total": "11.2084",
+        "cost_item_id": null,
+        "category": "Circuit Protection",
+        "supplier": "screwfix",
+        "brand": "Chint",
+        "sku": "3365V",
+        "product_url": "https://www.screwfix.com/p/3365V",
+        "retail_price_incl_vat": "2.69",
+        "notes": "Mandatory circuit protection"
+      },
+      {
+        "code": "DOM-screwfix-865VF",
+        "description": "Knightsbridge Knightsbridge  13A 2-Gang DP Switched Double Socket Polished Chrome  with Colour-Matched Inserts Supplier: screwfix",
+        "unit": "each",
+        "quantity": "12",
+        "labour_hours": "0",
+        "labour_rate": "0",
+        "labour_total": "0",
+        "material_cost": "10.4062",
+        "material_total": "124.8744",
+        "plant_cost": "0",
+        "plant_total": "0",
+        "unit_price": "10.4062",
+        "total": "124.8744",
+        "cost_item_id": null,
+        "category": "Switches & Sockets",
+        "supplier": "screwfix",
+        "brand": "Knightsbridge",
+        "sku": "865VF",
+        "product_url": "https://www.screwfix.com/p/865VF",
+        "retail_price_incl_vat": "9.99",
+        "notes": "Mandatory sockets for rewire"
+      },
+      {
+        "code": "DOM-screwfix-855KL",
+        "description": "Luceco Luceco FType Mk 2 Adjustable  Fire Rated LED Downlight Dim to Warm & CCT White 4-6W 675/690lm Supplier: screwfix",
+        "unit": "each",
+        "quantity": "12",
+        "labour_hours": "0",
+        "labour_rate": "0",
+        "labour_total": "0",
+        "material_cost": "15.2916",
+        "material_total": "183.4992",
+        "plant_cost": "0",
+        "plant_total": "0",
+        "unit_price": "15.2916",
+        "total": "183.4992",
+        "cost_item_id": null,
+        "category": "Lighting",
+        "supplier": "screwfix",
+        "brand": "Luceco",
+        "sku": "855KL",
+        "product_url": "https://www.screwfix.com/p/855KL",
+        "retail_price_incl_vat": "14.68",
+        "notes": "Mandatory light points"
+      },
+      {
+        "code": "DOM-screwfix-503PN",
+        "description": "LAP LAP  13A 2-Gang SP Switched Socket + 2.4A 12W 2-Outlet Type A USB Charger Black Nickel with Black Inserts Supplier: screwfix",
+        "unit": "each",
+        "quantity": "4",
+        "labour_hours": "0",
+        "labour_rate": "0",
+        "labour_total": "0",
+        "material_cost": "6.2500",
+        "material_total": "25.0000",
+        "plant_cost": "0",
+        "plant_total": "0",
+        "unit_price": "6.2500",
+        "total": "25.0000",
+        "cost_item_id": null,
+        "category": "Switches & Sockets",
+        "supplier": "screwfix",
+        "brand": "LAP",
+        "sku": "503PN",
+        "product_url": "https://www.screwfix.com/p/503PN",
+        "retail_price_incl_vat": "6.0",
+        "notes": "Mandatory USB sockets"
+      },
+      {
+        "code": "DOM-screwfix-273CC",
+        "description": "LAP LAP  1-Gang 2-Way LED Dimmer Switch  White Supplier: screwfix",
+        "unit": "each",
+        "quantity": "3",
+        "labour_hours": "0",
+        "labour_rate": "0",
+        "labour_total": "0",
+        "material_cost": "11.9688",
+        "material_total": "35.9064",
+        "plant_cost": "0",
+        "plant_total": "0",
+        "unit_price": "11.9688",
+        "total": "35.9064",
+        "cost_item_id": null,
+        "category": "Switches & Sockets",
+        "supplier": "screwfix",
+        "brand": "LAP",
+        "sku": "273CC",
+        "product_url": "https://www.screwfix.com/p/273CC",
+        "retail_price_incl_vat": "11.49",
+        "notes": "Mandatory dimmer switches"
+      },
+      {
+        "code": "DOM-screwfix-28186",
+        "description": "LAP LAP  45A 2-Gang DP Cooker Switch & 13A DP Switched Socket Polished Chrome with Neon with White Inserts Supplier: screwfix",
+        "unit": "each",
+        "quantity": "1",
+        "labour_hours": "0",
+        "labour_rate": "0",
+        "labour_total": "0",
+        "material_cost": "11.0312",
+        "material_total": "11.0312",
+        "plant_cost": "0",
+        "plant_total": "0",
+        "unit_price": "11.0312",
+        "total": "11.0312",
+        "cost_item_id": null,
+        "category": "Switches & Sockets",
+        "supplier": "screwfix",
+        "brand": "LAP",
+        "sku": "28186",
+        "product_url": "https://www.screwfix.com/p/28186",
+        "retail_price_incl_vat": "10.59",
+        "notes": "Mandatory cooker switch"
+      },
+      {
+        "code": "DOM-screwfix-51381",
+        "description": "Prysmian Prysmian 6242Y Grey 1.5mm\u00b2  Twin & Earth Cable 50m Drum Supplier: screwfix",
+        "unit": "m",
+        "quantity": "50",
+        "labour_hours": "0",
+        "labour_rate": "0",
+        "labour_total": "0",
+        "material_cost": "0.7498",
+        "material_total": "37.4900",
+        "plant_cost": "0",
+        "plant_total": "0",
+        "unit_price": "0.7498",
+        "total": "37.4900",
+        "cost_item_id": null,
+        "category": "Cable",
+        "supplier": "screwfix",
+        "brand": "Prysmian",
+        "sku": "51381",
+        "product_url": "https://www.screwfix.com/p/51381",
+        "retail_price_incl_vat": "35.99",
+        "notes": "Mandatory lighting cable for 3-bed property Pack size 50m."
+      },
+      {
+        "code": "DOM-screwfix-75935",
+        "description": "Time Time 6242Y Grey 2.5mm\u00b2  Twin & Earth Cable 100m Drum Supplier: screwfix",
+        "unit": "m",
+        "quantity": "100",
+        "labour_hours": "0",
+        "labour_rate": "0",
+        "labour_total": "0",
+        "material_cost": "0.8958",
+        "material_total": "89.5800",
+        "plant_cost": "0",
+        "plant_total": "0",
+        "unit_price": "0.8958",
+        "total": "89.5800",
+        "cost_item_id": null,
+        "category": "Cable",
+        "supplier": "screwfix",
+        "brand": "Time",
+        "sku": "75935",
+        "product_url": "https://www.screwfix.com/p/75935",
+        "retail_price_incl_vat": "85.99",
+        "notes": "Mandatory socket cable for 3-bed property Pack size 100m."
+      },
+      {
+        "code": "DOM-screwfix-73076",
+        "description": "Prysmian Prysmian 6242Y Grey 6mm\u00b2  Twin & Earth Cable 25m Drum Supplier: screwfix",
+        "unit": "m",
+        "quantity": "25",
+        "labour_hours": "0",
+        "labour_rate": "0",
+        "labour_total": "0",
+        "material_cost": "2.9162",
+        "material_total": "72.9050",
+        "plant_cost": "0",
+        "plant_total": "0",
+        "unit_price": "2.9162",
+        "total": "72.9050",
+        "cost_item_id": null,
+        "category": "Cable",
+        "supplier": "screwfix",
+        "brand": "Prysmian",
+        "sku": "73076",
+        "product_url": "https://www.screwfix.com/p/73076",
+        "retail_price_incl_vat": "69.99",
+        "notes": "Mandatory cooker/EV cable Pack size 25m."
+      },
+      {
+        "code": "ELEC-BACKBOX-SINGLE-35MM",
+        "description": "metal back box 1-gang 35mm",
+        "unit": "each",
+        "quantity": "15",
+        "labour_hours": "0",
+        "labour_rate": "0",
+        "labour_total": "0",
+        "material_cost": "1.5000",
+        "material_total": "22.5000",
+        "plant_cost": "0",
+        "plant_total": "0",
+        "unit_price": "1.5000",
+        "total": "22.5000",
+        "cost_item_id": null,
+        "category": "Wiring Accessories",
+        "supplier": "curated",
+        "brand": "curated",
+        "sku": "ELEC-BACKBOX-SINGLE-35MM",
+        "product_url": null,
+        "retail_price_incl_vat": "1.44",
+        "notes": "Metal back boxes for rewire"
+      },
+      {
+        "code": "ELEC-BACKBOX-DOUBLE-35MM",
+        "description": "metal back box 2-gang 35mm",
+        "unit": "each",
+        "quantity": "6",
+        "labour_hours": "0",
+        "labour_rate": "0",
+        "labour_total": "0",
+        "material_cost": "1.8750",
+        "material_total": "11.2500",
+        "plant_cost": "0",
+        "plant_total": "0",
+        "unit_price": "1.8750",
+        "total": "11.2500",
+        "cost_item_id": null,
+        "category": "Wiring Accessories",
+        "supplier": "curated",
+        "brand": "curated",
+        "sku": "ELEC-BACKBOX-DOUBLE-35MM",
+        "product_url": null,
+        "retail_price_incl_vat": "1.8",
+        "notes": "Metal back boxes for rewire"
+      },
+      {
+        "code": "ELEC-SMOKE-ALARM-AICO",
+        "description": "Aico smoke alarm mains powered interlinked",
+        "unit": "each",
+        "quantity": "1",
+        "labour_hours": "0",
+        "labour_rate": "0",
+        "labour_total": "0",
+        "material_cost": "43.7500",
+        "material_total": "43.7500",
+        "plant_cost": "0",
+        "plant_total": "0",
+        "unit_price": "43.7500",
+        "total": "43.7500",
+        "cost_item_id": null,
+        "category": "Security & Fire",
+        "supplier": "curated",
+        "brand": "Aico",
+        "sku": "ELEC-SMOKE-ALARM-AICO",
+        "product_url": null,
+        "retail_price_incl_vat": "42.0",
+        "notes": "Mandatory smoke alarm"
+      },
+      {
+        "code": "ELEC-HEAT-DETECTOR-AICO",
+        "description": "Aico heat detector mains powered",
+        "unit": "each",
+        "quantity": "2",
+        "labour_hours": "0",
+        "labour_rate": "0",
+        "labour_total": "0",
+        "material_cost": "43.7500",
+        "material_total": "87.5000",
+        "plant_cost": "0",
+        "plant_total": "0",
+        "unit_price": "43.7500",
+        "total": "87.5000",
+        "cost_item_id": null,
+        "category": "Security & Fire",
+        "supplier": "curated",
+        "brand": "Aico",
+        "sku": "ELEC-HEAT-DETECTOR-AICO",
+        "product_url": null,
+        "retail_price_incl_vat": "42.0",
+        "notes": "Mandatory heat detector"
+      },
+      {
+        "code": "ELEC-LED-STRIP-UNDER-CABINET",
+        "description": "LED under cabinet strip light",
+        "unit": "each",
+        "quantity": "3",
+        "labour_hours": "0",
+        "labour_rate": "0",
+        "labour_total": "0",
+        "material_cost": "18.7500",
+        "material_total": "56.2500",
+        "plant_cost": "0",
+        "plant_total": "0",
+        "unit_price": "18.7500",
+        "total": "56.2500",
+        "cost_item_id": null,
+        "category": "Lighting",
+        "supplier": "curated",
+        "brand": "curated",
+        "sku": "ELEC-LED-STRIP-UNDER-CABINET",
+        "product_url": null,
+        "retail_price_incl_vat": "18.0",
+        "notes": "Mandatory under-cabinet lighting"
+      },
+      {
+        "code": "DOM-screwfix-966CH",
+        "description": "Robus Robus Vegas 12V Constant Voltage LED Driver 15W Supplier: screwfix",
+        "unit": "each",
+        "quantity": "1",
+        "labour_hours": "0",
+        "labour_rate": "0",
+        "labour_total": "0",
+        "material_cost": "15.6041",
+        "material_total": "15.6041",
+        "plant_cost": "0",
+        "plant_total": "0",
+        "unit_price": "15.6041",
+        "total": "15.6041",
+        "cost_item_id": null,
+        "category": "Lighting",
+        "supplier": "screwfix",
+        "brand": "Robus",
+        "sku": "966CH",
+        "product_url": "https://www.screwfix.com/p/966CH",
+        "retail_price_incl_vat": "14.98",
+        "notes": "Mandatory LED driver"
+      },
+      {
+        "code": "LABOUR-ELECTRICIAN-DAY",
+        "description": "Electrician labour - day rate",
+        "unit": "day",
+        "quantity": "7",
+        "labour_hours": "8",
+        "labour_rate": "360.00",
+        "labour_total": "2520.0000",
+        "material_cost": "0",
+        "material_total": "0",
+        "plant_cost": "0",
+        "plant_total": "0",
+        "unit_price": "360.00",
+        "total": "2520.0000",
+        "cost_item_id": null,
+        "category": "Labour",
+        "supplier": "Tenant rate",
+        "brand": null,
+        "sku": null,
+        "product_url": null,
+        "retail_price_incl_vat": null,
+        "notes": "7 electrician day(s) based on BoQ scope (install/testing/certification/access)"
+      },
+      {
+        "code": "LABOUR-TESTING-HOUR",
+        "description": "Labour",
+        "unit": "hour",
+        "quantity": "1.5",
+        "labour_hours": "1",
+        "labour_rate": "45.00",
+        "labour_total": "67.5000",
+        "material_cost": "0",
+        "material_total": "0",
+        "plant_cost": "0",
+        "plant_total": "0",
+        "unit_price": "45.00",
+        "total": "67.5000",
+        "cost_item_id": null,
+        "category": "Labour",
+        "supplier": "Tenant rate",
+        "brand": null,
+        "sku": null,
+        "product_url": null,
+        "retail_price_incl_vat": null,
+        "notes": "Testing and inspection allowance"
+      },
+      {
+        "code": "LABOUR-CERTIFICATION-HOUR",
+        "description": "Labour",
+        "unit": "hour",
+        "quantity": "0.75",
+        "labour_hours": "1",
+        "labour_rate": "45.00",
+        "labour_total": "33.7500",
+        "material_cost": "0",
+        "material_total": "0",
+        "plant_cost": "0",
+        "plant_total": "0",
+        "unit_price": "45.00",
+        "total": "33.7500",
+        "cost_item_id": null,
+        "category": "Labour",
+        "supplier": "Tenant rate",
+        "brand": null,
+        "sku": null,
+        "product_url": null,
+        "retail_price_incl_vat": null,
+        "notes": "Certification and handover documentation"
+      },
+      {
+        "code": "LABOUR-MATE-DAY",
+        "description": "Electrician's mate - day rate",
+        "unit": "day",
+        "quantity": "3",
+        "labour_hours": "8",
+        "labour_rate": "198.00",
+        "labour_total": "594.0000",
+        "material_cost": "0",
+        "material_total": "0",
+        "plant_cost": "0",
+        "plant_total": "0",
+        "unit_price": "198.00",
+        "total": "594.0000",
+        "cost_item_id": null,
+        "category": "Labour",
+        "supplier": "Tenant rate",
+        "brand": null,
+        "sku": null,
+        "product_url": null,
+        "retail_price_incl_vat": null,
+        "notes": "3 mate day(s) estimated for scope"
+      }
+    ],
+    "subtotal": "4221.17",
+    "vat_rate": "0.20",
+    "vat_amount": "844.23",
+    "total": "5065.40",
+    "confidence": "0.7",
+    "warnings": [
+      "Quality gate: cable quantities should include explicit wastage allowance (10-15%)."
+    ],
+    "notes": "This is an indicative bill of quantities based on publicly listed supplier prices and rule-based/AI estimates. It is not a fixed quote. Final pricing, availability, and specification must be confirmed with the named supplier(s) before contract. Assumed standard quantities for a 3-bed house ground floor rewire. Included mandatory smoke alarms and heat detector for safety compliance.",
+    "standard": null,
+    "analysis": {
+      "job_summary": "Rewire of the ground floor and kitchen diner extension in a 3-bed house with a new consumer unit and various lighting and socket upgrades.",
+      "room_count": 3,
+      "spec_level": "premium",
+      "regulatory_flags": [
+        "spd_required",
+        "smoke_alarms_required",
+        "metal_cu_required",
+        "rcd_protection"
+      ],
+      "estimated_material_cost_ex_vat": {
+        "min": "1005.92",
+        "max": "1005.92"
+      },
+      "estimated_labour_hours": {
+        "min": "82.25",
+        "max": "82.25"
+      },
+      "total_quote_range_ex_vat": {
+        "min": "4221.17",
+        "max": "4221.17"
+      }
+    },
+    "regulatory_citations": [
+      {
+        "chunk_id": "33a661be-ab78-58db-8215-fab68384e1b0",
+        "source": "job_capture_data_model",
+        "section_path": [
+          "AI Electrician Quoting Platform \u2014 Conversational Job Capture Data Model",
+          "Decision Logic",
+          "notifiability_rules",
+          "NFR-01"
+        ],
+        "rule_tier": "mandatory",
+        "job_type": "consumer_unit",
+        "snippet": "id: NFR-01\ncondition: new circuit from consumer unit\nnotifiable: True\nlegal_basis: Part P Section 2.2\ncustomer_impact: Registered electrician required; EIC certificate issued.",
+        "relevance_score": 0.5911509
+      },
+      {
+        "chunk_id": "7fc374d8-8d07-5735-a75e-6b2abdfc828e",
+        "source": "uk_domestic_electrical_kb",
+        "section_path": [
+          "4. CERTIFICATION REQUIREMENTS",
+          "4.1 Electrical Installation Certificate (EIC)"
+        ],
+        "rule_tier": "mandatory",
+        "job_type": "consumer_unit",
+        "snippet": "# 4. CERTIFICATION REQUIREMENTS > 4.1 Electrical Installation Certificate (EIC)\n\nThe **Electrical Installation Certificate (EIC)** is the most comprehensive certification document and is required for all new installations, new circuits, consumer unit replacements, and rewires\u2026",
+        "relevance_score": 0.5870747
+      },
+      {
+        "chunk_id": "ab54fd25-c067-571e-b513-5ced72af8cbb",
+        "source": "uk_domestic_electrical_kb_tables",
+        "section_path": [
+          "UK DOMESTIC ELECTRICAL JOB QUOTING - FOUNDATIONAL KNOWLEDGE BASE",
+          "3. NOTIFIABLE vs NON-NOTIFIABLE WORK",
+          "3.1 Notifiable Work (Requires CPS Self-Certification or Building Control)"
+        ],
+        "rule_tier": "mandatory",
+        "job_type": "consumer_unit",
+        "snippet": "# UK DOMESTIC ELECTRICAL JOB QUOTING - FOUNDATIONAL KNOWLEDGE BASE > 3. NOTIFIABLE vs NON-NOTIFIABLE WORK > 3.1 Notifiable Work (Requires CPS Self-Certification or Building Control)\n\n| Work Type | Notification Required | Certificate Type |\n| --- | --- | --- |\n| **New circuit installation** | Yes - always | Full EIC |\n|\u2026",
+        "relevance_score": 0.58355224
+      },
+      {
+        "chunk_id": "6adeabe9-16a0-570e-b6d3-125d4f54f04d",
+        "source": "uk_domestic_electrical_kb_tables",
+        "section_path": [
+          "UK DOMESTIC ELECTRICAL JOB QUOTING - FOUNDATIONAL KNOWLEDGE BASE",
+          "3. NOTIFIABLE vs NON-NOTIFIABLE WORK",
+          "3.3 Special Locations Definition"
+        ],
+        "rule_tier": "mandatory",
+        "job_type": "outdoor",
+        "snippet": "# UK DOMESTIC ELECTRICAL JOB QUOTING - FOUNDATIONAL KNOWLEDGE BASE > 3. NOTIFIABLE vs NON-NOTIFIABLE WORK > 3.3 Special Locations Definition\n\n| Special Location | BS 7671 Section | Key Considerations |\n| --- | --- | --- |\n| **Bathrooms/Shower Rooms** | Section 701 | Zones 0, 1, 2, 3; IP ratings for equipment; supplemen\u2026",
+        "relevance_score": 0.58993423
+      },
+      {
+        "chunk_id": "99849cb4-d647-58d7-a9a8-a5ccb9838a20",
+        "source": "uk_domestic_electrical_kb",
+        "section_path": [
+          "3. NOTIFIABLE vs NON-NOTIFIABLE WORK",
+          "3.3 Special Locations Definition"
+        ],
+        "rule_tier": "mandatory",
+        "job_type": "outdoor",
+        "snippet": "# 3. NOTIFIABLE vs NON-NOTIFIABLE WORK > 3.3 Special Locations Definition\n\nSpecial locations under Part P and BS 7671 are areas where the risk of electric shock is elevated due to environmental conditions\u2026",
+        "relevance_score": 0.56683123
+      },
+      {
+        "chunk_id": "c27bc1fc-c8cd-58b2-97be-782619c09c2d",
+        "source": "uk_domestic_electrical_kb",
+        "section_path": [
+          "3. NOTIFIABLE vs NON-NOTIFIABLE WORK",
+          "3.1 Notifiable Work (Requires CPS Self-Certification or Building Control)"
+        ],
+        "rule_tier": "mandatory",
+        "job_type": "rewire",
+        "snippet": "# 3. NOTIFIABLE vs NON-NOTIFIABLE WORK > 3.1 Notifiable Work (Requires CPS Self-Certification or Building Control)\n\nUnderstanding which work is **notifiable** under Part P is fundamental to accurate quoting because notifiable work requires additional time for certification, notification to the scheme provider, and pote\u2026",
+        "relevance_score": 0.56100845
+      }
+    ],
+    "compliance_warnings": [
+      "Compliance check (outdoor): BoQ may be missing 'Weatherproof IP-rated accessory or enclosure'. Confirm before sending to customer.",
+      "Compliance check (rewire): BoQ may be missing 'Main earth bonding / equipotential bonding'. Confirm before sending to customer."
+    ],
+    "customer_summary_lines": [
+      {
+        "description": "Consumer unit and protection upgrade",
+        "total": "4221.17"
+      }
+    ],
+    "margin_indicator": {
+      "material_subtotal": "1005.92",
+      "labour_subtotal": "3215.25",
+      "subtotal": "4221.17",
+      "target_markup_percent": "25.00",
+      "estimated_margin_percent": "20.00",
+      "estimated_margin_amount": "201.18"
+    },
+    "clarification_questions": []
+  },
+  "passed": true,
+  "criteria_results": [
+    {
+      "criterion": "bom must contain consumer unit (ground floor rewire + extension)",
+      "passed": true,
+      "detail": "consumer unit: qty=1",
+      "soft": false
+    },
+    {
+      "criterion": "bom must contain brushed chrome (not white plastic) accessories",
+      "passed": true,
+      "detail": "brushed chrome: qty=13",
+      "soft": false
+    },
+    {
+      "criterion": "bom must contain USB sockets (4+ as specified)",
+      "passed": true,
+      "detail": "usb sockets: qty=4",
+      "soft": false
+    },
+    {
+      "criterion": "bom must contain dimmable downlights with dimmer switches",
+      "passed": true,
+      "detail": "dimmable downlights: qty=12; dimmer switches: qty=3",
+      "soft": false
+    },
+    {
+      "criterion": "bom must contain under cabinet LED lighting with driver",
+      "passed": true,
+      "detail": "under cabinet led lighting: qty=3; driver: qty=1",
+      "soft": false
+    },
+    {
+      "criterion": "bom must contain outdoor wall light",
+      "passed": true,
+      "detail": "outdoor wall light: qty=1",
+      "soft": false
+    },
+    {
+      "criterion": "bom must contain heat detector for kitchen",
+      "passed": true,
+      "detail": "heat detector for kitchen: qty=2",
+      "soft": false
+    },
+    {
+      "criterion": "total material cost must be between GBP 800 and GBP 1500",
+      "passed": true,
+      "detail": "material cost ex-VAT = \u00a31005.92, expected \u00a3800.00-\u00a31500.00",
+      "soft": false
+    }
+  ],
+  "summary": {
+    "line_item_count": 22,
+    "material_total": 1005.92,
+    "labour_hours_total": 82.25,
+    "subtotal": 4221.17,
+    "total": 5065.4,
+    "confidence": "0.7",
+    "analysis": {
+      "job_summary": "Rewire of the ground floor and kitchen diner extension in a 3-bed house with a new consumer unit and various lighting and socket upgrades.",
+      "room_count": 3,
+      "spec_level": "premium",
+      "regulatory_flags": [
+        "spd_required",
+        "smoke_alarms_required",
+        "metal_cu_required",
+        "rcd_protection"
+      ],
+      "estimated_material_cost_ex_vat": {
+        "min": "1005.92",
+        "max": "1005.92"
+      },
+      "estimated_labour_hours": {
+        "min": "82.25",
+        "max": "82.25"
+      },
+      "total_quote_range_ex_vat": {
+        "min": "4221.17",
+        "max": "4221.17"
+      }
+    },
+    "expected_material_range": {
+      "min": 800.0,
+      "max": 1500.0
+    },
+    "material_cost_delta": 0.0,
+    "material_cost_delta_pct": 0.0,
+    "top_material_items": [
+      {
+        "code": "DOM-screwfix-855KL",
+        "description": "Luceco Luceco FType Mk 2 Adjustable  Fire Rated LED Downlight Dim to Warm & CCT ",
+        "category": "Lighting",
+        "quantity": 12.0,
+        "unit_price": 15.2916,
+        "material_total": 183.5,
+        "pct_of_material_total": 18.2
+      },
+      {
+        "code": "DOM-screwfix-504PF",
+        "description": "MK Sentry MK Sentry  21-Module 12-Way Populated  Dual RCD Consumer Unit with SPD",
+        "category": "Consumer Units",
+        "quantity": 1.0,
+        "unit_price": 145.8229,
+        "material_total": 145.82,
+        "pct_of_material_total": 14.5
+      },
+      {
+        "code": "DOM-screwfix-865VF",
+        "description": "Knightsbridge Knightsbridge  13A 2-Gang DP Switched Double Socket Polished Chrom",
+        "category": "Switches & Sockets",
+        "quantity": 12.0,
+        "unit_price": 10.4062,
+        "material_total": 124.87,
+        "pct_of_material_total": 12.4
+      },
+      {
+        "code": "DOM-screwfix-75935",
+        "description": "Time Time 6242Y Grey 2.5mm\u00b2  Twin & Earth Cable 100m Drum Supplier: screwfix",
+        "category": "Cable",
+        "quantity": 100.0,
+        "unit_price": 0.8958,
+        "material_total": 89.58,
+        "pct_of_material_total": 8.9
+      },
+      {
+        "code": "ELEC-HEAT-DETECTOR-AICO",
+        "description": "Aico heat detector mains powered",
+        "category": "Security & Fire",
+        "quantity": 2.0,
+        "unit_price": 43.75,
+        "material_total": 87.5,
+        "pct_of_material_total": 8.7
+      },
+      {
+        "code": "DOM-screwfix-73076",
+        "description": "Prysmian Prysmian 6242Y Grey 6mm\u00b2  Twin & Earth Cable 25m Drum Supplier: screwfi",
+        "category": "Cable",
+        "quantity": 25.0,
+        "unit_price": 2.9162,
+        "material_total": 72.9,
+        "pct_of_material_total": 7.2
+      },
+      {
+        "code": "ELEC-LED-STRIP-UNDER-CABINET",
+        "description": "LED under cabinet strip light",
+        "category": "Lighting",
+        "quantity": 3.0,
+        "unit_price": 18.75,
+        "material_total": 56.25,
+        "pct_of_material_total": 5.6
+      },
+      {
+        "code": "ELEC-SMOKE-ALARM-AICO",
+        "description": "Aico smoke alarm mains powered interlinked",
+        "category": "Security & Fire",
+        "quantity": 1.0,
+        "unit_price": 43.75,
+        "material_total": 43.75,
+        "pct_of_material_total": 4.3
+      }
+    ]
+  }
+}

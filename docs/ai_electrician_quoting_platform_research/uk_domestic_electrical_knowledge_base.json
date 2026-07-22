@@ -1,0 +1,1565 @@
+{
+  "metadata": {
+    "source": "docs/UK_Domestic_Electrical_Quoting_Knowledge_Base.md",
+    "title": "UK Domestic Electrical Quoting Knowledge Base",
+    "extracted_at": "2026-06-22",
+    "table_count": 55,
+    "dropped_pricing_tables": 20
+  },
+  "tables": [
+    {
+      "section_path": [
+        "UK DOMESTIC ELECTRICAL JOB QUOTING - FOUNDATIONAL KNOWLEDGE BASE",
+        "2. COMPETENT PERSON SCHEMES (CPS)",
+        "2.1 Recognised Full-Scope Schemes for Domestic Electrical Work"
+      ],
+      "table": {
+        "headers": [
+          "Scheme",
+          "Annual Fee (ex VAT)",
+          "Key Features"
+        ],
+        "rows": [
+          {
+            "Scheme": "**NICEIC** (Certsure LLP)",
+            "Annual Fee (ex VAT)": "From \u00a3600 (\u00a3720 inc VAT)",
+            "Key Features": "Largest and most widely recognised scheme; operates both Domestic Installer and Approved Contractor schemes; extensive technical helpline; online certification system; inclusion in \"Find a Trusted Tradesperson\" database; access to NICEIC Pocket Guides app; accredited CPD resources; 10% training discount; material/tool discounts"
+          },
+          {
+            "Scheme": "**NAPIT**",
+            "Annual Fee (ex VAT)": "From \u00a3600",
+            "Key Features": "Second largest scheme; competitive fees; multi-discipline coverage (electrical, plumbing, heating, ventilation); strong technical support; online certification portal"
+          },
+          {
+            "Scheme": "**ELECSA**",
+            "Annual Fee (ex VAT)": "From \u00a3600",
+            "Key Features": "Operated by the Electrical Contractors Association (ECA); deemed-to-satisfy route into ECA membership; full technical support"
+          },
+          {
+            "Scheme": "**Stroma**",
+            "Annual Fee (ex VAT)": "From \u00a3600",
+            "Key Features": "Multi-discipline scheme covering electrical and other building trades; competitive pricing; growing market share"
+          },
+          {
+            "Scheme": "**BRE Certification**",
+            "Annual Fee (ex VAT)": "Varies",
+            "Key Features": "Full-scope scheme; backed by Building Research Establishment"
+          },
+          {
+            "Scheme": "**OFTEC**",
+            "Annual Fee (ex VAT)": "Varies",
+            "Key Features": "Primarily for heating/oil but covers defined-scope electrical work"
+          }
+        ]
+      }
+    },
+    {
+      "section_path": [
+        "UK DOMESTIC ELECTRICAL JOB QUOTING - FOUNDATIONAL KNOWLEDGE BASE",
+        "2. COMPETENT PERSON SCHEMES (CPS)",
+        "2.2 CPS Entry Requirements (Post-September 2021)"
+      ],
+      "table": {
+        "headers": [
+          "Requirement",
+          "Details"
+        ],
+        "rows": [
+          {
+            "Requirement": "**18th Edition Wiring Regulations** (City & Guilds 2382)",
+            "Details": "Demonstrates understanding of BS 7671; essential foundation qualification"
+          },
+          {
+            "Requirement": "**Inspection and Testing** (City & Guilds 2391-52)",
+            "Details": "Proves ability to test installations and issue correct electrical certificates"
+          },
+          {
+            "Requirement": "**Practical Competence**",
+            "Details": "Level 2 and Level 3 Diplomas (City & Guilds 2365) or equivalent documented experience"
+          },
+          {
+            "Requirement": "**Public Liability Insurance**",
+            "Details": "Minimum \u00a32 million cover; typically \u00a32M-\u00a35M for domestic work"
+          },
+          {
+            "Requirement": "**Initial Assessment**",
+            "Details": "Scheme assessor evaluates completed installation work for quality, cable sizing, test procedures"
+          },
+          {
+            "Requirement": "**CPD**",
+            "Details": "Ongoing continuous professional development requirements"
+          }
+        ]
+      }
+    },
+    {
+      "section_path": [
+        "UK DOMESTIC ELECTRICAL JOB QUOTING - FOUNDATIONAL KNOWLEDGE BASE",
+        "3. NOTIFIABLE vs NON-NOTIFIABLE WORK",
+        "3.1 Notifiable Work (Requires CPS Self-Certification or Building Control)"
+      ],
+      "table": {
+        "headers": [
+          "Work Type",
+          "Notification Required",
+          "Certificate Type"
+        ],
+        "rows": [
+          {
+            "Work Type": "**New circuit installation**",
+            "Notification Required": "Yes - always",
+            "Certificate Type": "Full EIC"
+          },
+          {
+            "Work Type": "**Consumer unit replacement**",
+            "Notification Required": "Yes - always",
+            "Certificate Type": "Full EIC (Reg 644.4.201 explicitly requires EIC, not Minor Works)"
+          },
+          {
+            "Work Type": "**Complete or partial rewire**",
+            "Notification Required": "Yes - always",
+            "Certificate Type": "Full EIC"
+          },
+          {
+            "Work Type": "**Work in special locations** - bathroom, shower room",
+            "Notification Required": "Yes - additions/alterations to existing circuits",
+            "Certificate Type": "EIC or MEIWC depending on scope"
+          },
+          {
+            "Work Type": "**Work in kitchen**",
+            "Notification Required": "Yes - additions/alterations to existing circuits",
+            "Certificate Type": "EIC or MEIWC depending on scope"
+          },
+          {
+            "Work Type": "**Outdoor circuits** - gardens, outbuildings",
+            "Notification Required": "Yes - new circuits or alterations",
+            "Certificate Type": "EIC or MEIWC depending on scope"
+          },
+          {
+            "Work Type": "**EV charger installation**",
+            "Notification Required": "Yes - new dedicated circuit",
+            "Certificate Type": "Full EIC"
+          },
+          {
+            "Work Type": "**Solar PV installation**",
+            "Notification Required": "Yes",
+            "Certificate Type": "Full EIC"
+          },
+          {
+            "Work Type": "**House rewire**",
+            "Notification Required": "Yes - always",
+            "Certificate Type": "Full EIC"
+          }
+        ]
+      }
+    },
+    {
+      "section_path": [
+        "UK DOMESTIC ELECTRICAL JOB QUOTING - FOUNDATIONAL KNOWLEDGE BASE",
+        "3. NOTIFIABLE vs NON-NOTIFIABLE WORK",
+        "3.2 Non-Notifiable Work (No Building Control Notification Required)"
+      ],
+      "table": {
+        "headers": [
+          "Work Type",
+          "Certificate Required",
+          "Part P Notification"
+        ],
+        "rows": [
+          {
+            "Work Type": "**Like-for-like accessory replacement** (same type, same position)",
+            "Certificate Required": "None required (but verify CPC continuity and polarity)",
+            "Part P Notification": "No"
+          },
+          {
+            "Work Type": "**Adding socket to existing ring final circuit** (outside special locations)",
+            "Certificate Required": "Minor Works Certificate",
+            "Part P Notification": "No"
+          },
+          {
+            "Work Type": "**Adding light point to existing lighting circuit** (outside special locations)",
+            "Certificate Required": "Minor Works Certificate",
+            "Part P Notification": "No"
+          },
+          {
+            "Work Type": "**Installing fused connection unit (FCU) from existing circuit**",
+            "Certificate Required": "Minor Works Certificate",
+            "Part P Notification": "No"
+          },
+          {
+            "Work Type": "**Moving accessory on same circuit** (outside special locations)",
+            "Certificate Required": "Minor Works Certificate",
+            "Part P Notification": "No"
+          },
+          {
+            "Work Type": "**Replacing MCB/RCBO on existing circuit**",
+            "Certificate Required": "Minor Works Certificate",
+            "Part P Notification": "No"
+          }
+        ]
+      }
+    },
+    {
+      "section_path": [
+        "UK DOMESTIC ELECTRICAL JOB QUOTING - FOUNDATIONAL KNOWLEDGE BASE",
+        "3. NOTIFIABLE vs NON-NOTIFIABLE WORK",
+        "3.3 Special Locations Definition"
+      ],
+      "table": {
+        "headers": [
+          "Special Location",
+          "BS 7671 Section",
+          "Key Considerations"
+        ],
+        "rows": [
+          {
+            "Special Location": "**Bathrooms/Shower Rooms**",
+            "BS 7671 Section": "Section 701",
+            "Key Considerations": "Zones 0, 1, 2, 3; IP ratings for equipment; supplementary bonding; RCD protection"
+          },
+          {
+            "Special Location": "**Kitchens**",
+            "BS 7671 Section": "Part P only (not BS 7671 special location)",
+            "Key Considerations": "All additions/alterations to existing circuits are notifiable"
+          },
+          {
+            "Special Location": "**Outdoors**",
+            "BS 7671 Section": "Section 714",
+            "Key Considerations": "IP ratings; RCD protection; cable types; PME earthing restrictions"
+          },
+          {
+            "Special Location": "**Swimming Pools**",
+            "BS 7671 Section": "Section 702",
+            "Key Considerations": "Zone system; equipotential bonding; specialist requirements"
+          },
+          {
+            "Special Location": "**Saunas**",
+            "BS 7671 Section": "Section 703",
+            "Key Considerations": "Temperature ratings; cable derating"
+          },
+          {
+            "Special Location": "**HRRBs**",
+            "BS 7671 Section": "Regulation 421.1.7",
+            "Key Considerations": "AFDD mandatory on socket circuits; enhanced fire safety"
+          }
+        ]
+      }
+    },
+    {
+      "section_path": [
+        "UK DOMESTIC ELECTRICAL JOB QUOTING - FOUNDATIONAL KNOWLEDGE BASE",
+        "4. CERTIFICATION REQUIREMENTS",
+        "4.3 Electrical Installation Condition Report (EICR)"
+      ],
+      "table": {
+        "headers": [
+          "Code",
+          "Meaning",
+          "Action Required",
+          "Report Status"
+        ],
+        "rows": [
+          {
+            "Code": "**C1**",
+            "Meaning": "Danger present. Risk of injury.",
+            "Action Required": "Immediate remedial action required. Electrician may make safe before leaving.",
+            "Report Status": "**UNSATISFACTORY**"
+          },
+          {
+            "Code": "**C2**",
+            "Meaning": "Potentially dangerous.",
+            "Action Required": "Urgent remedial action required within 28 days. Written confirmation to tenant and local authority.",
+            "Report Status": "**UNSATISFACTORY**"
+          },
+          {
+            "Code": "**C3**",
+            "Meaning": "Improvement recommended.",
+            "Action Required": "No immediate danger. Improvement enhances safety but not required for satisfactory status.",
+            "Report Status": "**SATISFACTORY**"
+          },
+          {
+            "Code": "**FI**",
+            "Meaning": "Further investigation required.",
+            "Action Required": "Additional testing needed without delay to determine safety.",
+            "Report Status": "**UNSATISFACTORY**"
+          }
+        ]
+      }
+    },
+    {
+      "section_path": [
+        "UK DOMESTIC ELECTRICAL JOB QUOTING - FOUNDATIONAL KNOWLEDGE BASE",
+        "5. TECHNICAL DESIGN KNOWLEDGE FOR QUOTING",
+        "5.1 Cable Sizing Fundamentals",
+        "Voltage Drop Calculation"
+      ],
+      "table": {
+        "headers": [
+          "Cable Size (mm\u00b2)",
+          "mV/A/m Value",
+          "Typical Use"
+        ],
+        "rows": [
+          {
+            "Cable Size (mm\u00b2)": "1.0",
+            "mV/A/m Value": "44",
+            "Typical Use": "Control circuits, alarm systems"
+          },
+          {
+            "Cable Size (mm\u00b2)": "1.5",
+            "mV/A/m Value": "29",
+            "Typical Use": "Standard lighting circuits"
+          },
+          {
+            "Cable Size (mm\u00b2)": "2.5",
+            "mV/A/m Value": "18",
+            "Typical Use": "Ring final circuits, power circuits"
+          },
+          {
+            "Cable Size (mm\u00b2)": "4.0",
+            "mV/A/m Value": "11",
+            "Typical Use": "High-power radials, cookers"
+          },
+          {
+            "Cable Size (mm\u00b2)": "6.0",
+            "mV/A/m Value": "7.3",
+            "Typical Use": "Showers, high-load circuits"
+          },
+          {
+            "Cable Size (mm\u00b2)": "10.0",
+            "mV/A/m Value": "4.4",
+            "Typical Use": "Sub-mains, high-demand supplies"
+          },
+          {
+            "Cable Size (mm\u00b2)": "16.0",
+            "mV/A/m Value": "2.9",
+            "Typical Use": "Distribution circuits"
+          }
+        ]
+      }
+    },
+    {
+      "section_path": [
+        "UK DOMESTIC ELECTRICAL JOB QUOTING - FOUNDATIONAL KNOWLEDGE BASE",
+        "5. TECHNICAL DESIGN KNOWLEDGE FOR QUOTING",
+        "5.1 Cable Sizing Fundamentals",
+        "BS 7671 Voltage Drop Limits"
+      ],
+      "table": {
+        "headers": [
+          "Circuit Type",
+          "Maximum Permitted Drop",
+          "At 230V Nominal"
+        ],
+        "rows": [
+          {
+            "Circuit Type": "**Lighting circuits**",
+            "Maximum Permitted Drop": "3% of supply voltage",
+            "At 230V Nominal": "**6.9V**"
+          },
+          {
+            "Circuit Type": "**Power and other circuits**",
+            "Maximum Permitted Drop": "5% of supply voltage",
+            "At 230V Nominal": "**11.5V**"
+          }
+        ]
+      }
+    },
+    {
+      "section_path": [
+        "UK DOMESTIC ELECTRICAL JOB QUOTING - FOUNDATIONAL KNOWLEDGE BASE",
+        "5. TECHNICAL DESIGN KNOWLEDGE FOR QUOTING",
+        "5.2 Diversity and Maximum Demand Calculations",
+        "Standard Domestic Circuit Diversity Factors"
+      ],
+      "table": {
+        "headers": [
+          "Circuit Type",
+          "Diversity Factor",
+          "Application"
+        ],
+        "rows": [
+          {
+            "Circuit Type": "**Lighting**",
+            "Diversity Factor": "66% of total connected load",
+            "Application": "Not all lights on simultaneously"
+          },
+          {
+            "Circuit Type": "**Ring final circuits**",
+            "Diversity Factor": "100% of largest + 40% of each remaining",
+            "Application": "Heavy loads distributed across rings"
+          },
+          {
+            "Circuit Type": "**Cooker**",
+            "Diversity Factor": "10A + 30% of remainder + 5A if socket in control unit",
+            "Application": "All elements rarely at maximum"
+          },
+          {
+            "Circuit Type": "**Immersion heater**",
+            "Diversity Factor": "100% (no diversity)",
+            "Application": "Full load when on; thermostat controlled"
+          },
+          {
+            "Circuit Type": "**Electric shower**",
+            "Diversity Factor": "100% (no diversity)",
+            "Application": "Full load when in use"
+          },
+          {
+            "Circuit Type": "**Socket outlet radials**",
+            "Diversity Factor": "100% of largest + 40% of remainder",
+            "Application": "Similar principle to ring finals"
+          },
+          {
+            "Circuit Type": "**Storage heating**",
+            "Diversity Factor": "100% (no diversity)",
+            "Application": "All heaters may switch on simultaneously"
+          },
+          {
+            "Circuit Type": "**Underfloor heating**",
+            "Diversity Factor": "100% (no diversity)",
+            "Application": "Continuous load when operating"
+          }
+        ]
+      }
+    },
+    {
+      "section_path": [
+        "UK DOMESTIC ELECTRICAL JOB QUOTING - FOUNDATIONAL KNOWLEDGE BASE",
+        "5. TECHNICAL DESIGN KNOWLEDGE FOR QUOTING",
+        "5.3 Disconnection Times and Earth Fault Loop Impedance"
+      ],
+      "table": {
+        "headers": [
+          "Circuit Type",
+          "Maximum Disconnection Time (TN systems)",
+          "Maximum Disconnection Time (TT systems)"
+        ],
+        "rows": [
+          {
+            "Circuit Type": "Final circuits \u226432A supplying socket outlets",
+            "Maximum Disconnection Time (TN systems)": "**0.4 seconds**",
+            "Maximum Disconnection Time (TT systems)": "0.2 seconds (with RCD)"
+          },
+          {
+            "Circuit Type": "Final circuits \u226432A supplying fixed equipment",
+            "Maximum Disconnection Time (TN systems)": "**0.4 seconds**",
+            "Maximum Disconnection Time (TT systems)": "0.2 seconds (with RCD)"
+          },
+          {
+            "Circuit Type": "Distribution circuits",
+            "Maximum Disconnection Time (TN systems)": "**5 seconds**",
+            "Maximum Disconnection Time (TT systems)": "1 second (with RCD)"
+          }
+        ]
+      }
+    },
+    {
+      "section_path": [
+        "UK DOMESTIC ELECTRICAL JOB QUOTING - FOUNDATIONAL KNOWLEDGE BASE",
+        "6. EARTHING, BONDING & SUPPLY SYSTEMS",
+        "6.1 Supply System Types"
+      ],
+      "table": {
+        "headers": [
+          "System",
+          "Characteristics",
+          "UK Prevalence",
+          "Key Quoting Implications"
+        ],
+        "rows": [
+          {
+            "System": "**TN-C-S (PME)**",
+            "Characteristics": "Combined neutral and earth (PEN conductor); earth bonded to neutral at cut-out; most common UK supply",
+            "UK Prevalence": "~90% of UK domestic",
+            "Key Quoting Implications": "Standard 10mm\u00b2 main bonding; Type 2 SPD recommended; cannot export PME earth to outbuildings with showers"
+          },
+          {
+            "System": "**TN-S**",
+            "Characteristics": "Separate earth conductor (typically lead cable sheath); no neutral-earth connection at cut-out",
+            "UK Prevalence": "~5-8%; older properties",
+            "Key Quoting Implications": "6mm\u00b2 minimum bonding; increasingly rare; may require supply upgrade if adding high-load circuits"
+          },
+          {
+            "System": "**TT**",
+            "Characteristics": "Local earth electrode (copper rod); no supply earth connection; earth resistance critical",
+            "UK Prevalence": "~2-5%; rural areas",
+            "Key Quoting Implications": "30mA RCD mandatory on all circuits; earth electrode required; Type 2 SPD typically mandatory; RCD may nuisance trip"
+          }
+        ]
+      }
+    },
+    {
+      "section_path": [
+        "UK DOMESTIC ELECTRICAL JOB QUOTING - FOUNDATIONAL KNOWLEDGE BASE",
+        "6. EARTHING, BONDING & SUPPLY SYSTEMS",
+        "6.2 Main Protective Bonding Requirements",
+        "Bonding Conductor Sizing"
+      ],
+      "table": {
+        "headers": [
+          "Supply Type",
+          "Sizing Rule",
+          "Typical Domestic Size"
+        ],
+        "rows": [
+          {
+            "Supply Type": "**PME (TN-C-S)**",
+            "Sizing Rule": "Per BS 7671 Table 54.8 against PEN conductor size",
+            "Typical Domestic Size": "**10mm\u00b2** (for PEN \u226435mm\u00b2)"
+          },
+          {
+            "Supply Type": "**PME - larger supplies**",
+            "Sizing Rule": "PEN >35mm\u00b2 up to 50mm\u00b2",
+            "Typical Domestic Size": "**16mm\u00b2**"
+          },
+          {
+            "Supply Type": "**Non-PME (TN-S, TT)**",
+            "Sizing Rule": "Minimum half CSA of earthing conductor, minimum 6mm\u00b2, maximum 25mm\u00b2",
+            "Typical Domestic Size": "**6-10mm\u00b2**"
+          }
+        ]
+      }
+    },
+    {
+      "section_path": [
+        "UK DOMESTIC ELECTRICAL JOB QUOTING - FOUNDATIONAL KNOWLEDGE BASE",
+        "6. EARTHING, BONDING & SUPPLY SYSTEMS",
+        "6.2 Main Protective Bonding Requirements",
+        "Services Requiring Main Bonding"
+      ],
+      "table": {
+        "headers": [
+          "Service",
+          "Connection Point",
+          "Special Requirements"
+        ],
+        "rows": [
+          {
+            "Service": "**Gas**",
+            "Connection Point": "Within 600mm of gas meter, on consumer's side, before first fitting",
+            "Special Requirements": "Clamp must not damage pipe; Gas Safe notification if modifying pipework"
+          },
+          {
+            "Service": "**Water**",
+            "Connection Point": "Within 600mm of entry point or water meter",
+            "Special Requirements": "If incoming pipe is plastic (MDPE) with no downstream metal, bonding may be omitted"
+          },
+          {
+            "Service": "**Oil**",
+            "Connection Point": "Close to entry point or tank supply connection",
+            "Special Requirements": "Required for any metallic incoming oil pipe"
+          },
+          {
+            "Service": "**Structural steel**",
+            "Connection Point": "Assess on case-by-case basis",
+            "Special Requirements": "Large exposed metallic structures may require bonding per Reg 411.3.1.2"
+          }
+        ]
+      }
+    },
+    {
+      "section_path": [
+        "UK DOMESTIC ELECTRICAL JOB QUOTING - FOUNDATIONAL KNOWLEDGE BASE",
+        "6. EARTHING, BONDING & SUPPLY SYSTEMS",
+        "6.4 Bonding Connection Requirements"
+      ],
+      "table": {
+        "headers": [
+          "Requirement",
+          "Specification"
+        ],
+        "rows": [
+          {
+            "Requirement": "**Clamp type**",
+            "Specification": "BS 951 pattern clamps"
+          },
+          {
+            "Requirement": "**Surface preparation**",
+            "Specification": "Paint, lacquer, corrosion must be removed for metal-to-metal contact"
+          },
+          {
+            "Requirement": "**Labelling**",
+            "Specification": "\"Safety Electrical Connection - Do Not Remove\" per Reg 514.13.1"
+          },
+          {
+            "Requirement": "**Gas safety**",
+            "Specification": "Work on gas pipe bonding should ideally involve Gas Safe registered engineer"
+          },
+          {
+            "Requirement": "**Common defect**",
+            "Specification": "Poor clamp contact is one of the most frequent causes of high-resistance bonding found during EICR testing"
+          }
+        ]
+      }
+    },
+    {
+      "section_path": [
+        "UK DOMESTIC ELECTRICAL JOB QUOTING - FOUNDATIONAL KNOWLEDGE BASE",
+        "7. PROTECTION DEVICES",
+        "7.1 Residual Current Devices (RCDs)",
+        "RCD Application Requirements by BS 7671"
+      ],
+      "table": {
+        "headers": [
+          "Application",
+          "RCD Type",
+          "Rated Residual Current",
+          "Regulation"
+        ],
+        "rows": [
+          {
+            "Application": "Socket outlet circuits \u226432A",
+            "RCD Type": "Type A minimum",
+            "Rated Residual Current": "30mA",
+            "Regulation": "411.3.3"
+          },
+          {
+            "Application": "Mobile equipment \u226432A for outdoor use",
+            "RCD Type": "Type A minimum",
+            "Rated Residual Current": "30mA",
+            "Regulation": "411.3.3"
+          },
+          {
+            "Application": "Circuits in bathrooms",
+            "RCD Type": "Type A minimum",
+            "Rated Residual Current": "30mA",
+            "Regulation": "701.411.3.3"
+          },
+          {
+            "Application": "EV charging circuits",
+            "RCD Type": "Type A (or Type B)",
+            "Rated Residual Current": "30mA",
+            "Regulation": "722.531"
+          },
+          {
+            "Application": "TT system - all circuits",
+            "RCD Type": "Type A minimum",
+            "Rated Residual Current": "30mA",
+            "Regulation": "411.5.2"
+          },
+          {
+            "Application": "Circuits supplying luminaires in domestic premises (A4:2026)",
+            "RCD Type": "Type A",
+            "Rated Residual Current": "\u226430mA",
+            "Regulation": "411.3.4"
+          },
+          {
+            "Application": "Socket circuits in HRRB/HMO (fire protection)",
+            "RCD Type": "Type A",
+            "Rated Residual Current": "\u2264300mA (time-delayed)",
+            "Regulation": "421.1.7"
+          },
+          {
+            "Application": "Additional protection against electric shock",
+            "RCD Type": "Type A",
+            "Rated Residual Current": "\u226430mA",
+            "Regulation": "415.1.1"
+          }
+        ]
+      }
+    },
+    {
+      "section_path": [
+        "UK DOMESTIC ELECTRICAL JOB QUOTING - FOUNDATIONAL KNOWLEDGE BASE",
+        "7. PROTECTION DEVICES",
+        "7.2 Surge Protection Devices (SPDs)",
+        "SPD Risk Assessment Factors"
+      ],
+      "table": {
+        "headers": [
+          "Factor Increasing Risk",
+          "Factor Decreasing Risk"
+        ],
+        "rows": [
+          {
+            "Factor Increasing Risk": "Building in exposed location (hill, open ground)",
+            "Factor Decreasing Risk": "Underground cable service entry"
+          },
+          {
+            "Factor Increasing Risk": "Overhead supply lines",
+            "Factor Decreasing Risk": "TNC-S (PME) earthing with low loop impedance"
+          },
+          {
+            "Factor Increasing Risk": "TT or IT earthing system",
+            "Factor Decreasing Risk": "Existing lightning protection system"
+          },
+          {
+            "Factor Increasing Risk": "Building contains sensitive electronics (EV charger, solar, smart home)",
+            "Factor Decreasing Risk": "Urban location (lower lightning density)"
+          },
+          {
+            "Factor Increasing Risk": "High consequence of failure (data loss, safety critical)",
+            "Factor Decreasing Risk": ""
+          }
+        ]
+      }
+    },
+    {
+      "section_path": [
+        "UK DOMESTIC ELECTRICAL JOB QUOTING - FOUNDATIONAL KNOWLEDGE BASE",
+        "7. PROTECTION DEVICES",
+        "7.3 Arc Fault Detection Devices (AFDDs)",
+        "AFDD Regulatory Requirements (Regulation 421.1.7)"
+      ],
+      "table": {
+        "headers": [
+          "Property Type",
+          "AFDD Requirement",
+          "Effective From"
+        ],
+        "rows": [
+          {
+            "Property Type": "**Higher Risk Residential Buildings (HRRB)** - 18m+ height or 6+ storeys",
+            "AFDD Requirement": "**MANDATORY**",
+            "Effective From": "A2:2022"
+          },
+          {
+            "Property Type": "**Houses in Multiple Occupation (HMO)**",
+            "AFDD Requirement": "**MANDATORY**",
+            "Effective From": "A2:2022"
+          },
+          {
+            "Property Type": "**Purpose-built student accommodation**",
+            "AFDD Requirement": "**MANDATORY**",
+            "Effective From": "A2:2022"
+          },
+          {
+            "Property Type": "**Care homes**",
+            "AFDD Requirement": "**MANDATORY**",
+            "Effective From": "A2:2022"
+          },
+          {
+            "Property Type": "**Single occupancy where occupant cannot maintain installation**",
+            "AFDD Requirement": "**MANDATORY**",
+            "Effective From": "A2:2022"
+          },
+          {
+            "Property Type": "**Owner-occupied single dwellings**",
+            "AFDD Requirement": "**RECOMMENDED** (not mandatory)",
+            "Effective From": "A2:2022"
+          },
+          {
+            "Property Type": "**All other premises**",
+            "AFDD Requirement": "**RECOMMENDED** (not mandatory)",
+            "Effective From": "A2:2022"
+          }
+        ]
+      }
+    },
+    {
+      "section_path": [
+        "UK DOMESTIC ELECTRICAL JOB QUOTING - FOUNDATIONAL KNOWLEDGE BASE",
+        "7. PROTECTION DEVICES",
+        "7.3 Arc Fault Detection Devices (AFDDs)",
+        "AFDD vs Other Protection Devices"
+      ],
+      "table": {
+        "headers": [
+          "Device",
+          "Overload",
+          "Short Circuit",
+          "Earth Leakage",
+          "Series Arc",
+          "Parallel Arc"
+        ],
+        "rows": [
+          {
+            "Device": "MCB",
+            "Overload": "Yes",
+            "Short Circuit": "Yes",
+            "Earth Leakage": "No",
+            "Series Arc": "No",
+            "Parallel Arc": "Partial"
+          },
+          {
+            "Device": "RCD/RCBO",
+            "Overload": "Partial",
+            "Short Circuit": "Partial",
+            "Earth Leakage": "Yes",
+            "Series Arc": "No",
+            "Parallel Arc": "No"
+          },
+          {
+            "Device": "AFDD + MCB",
+            "Overload": "Yes",
+            "Short Circuit": "Yes",
+            "Earth Leakage": "No",
+            "Series Arc": "Yes",
+            "Parallel Arc": "Yes"
+          },
+          {
+            "Device": "**AFDD + RCBO**",
+            "Overload": "**Yes**",
+            "Short Circuit": "**Yes**",
+            "Earth Leakage": "**Yes**",
+            "Series Arc": "**Yes**",
+            "Parallel Arc": "**Yes**"
+          }
+        ]
+      }
+    },
+    {
+      "section_path": [
+        "UK DOMESTIC ELECTRICAL JOB QUOTING - FOUNDATIONAL KNOWLEDGE BASE",
+        "8. COMMON DOMESTIC JOB TYPES & PRICING FRAMEWORK",
+        "8.2 Regional Labour Rate Variations"
+      ],
+      "table": {
+        "headers": [
+          "Region",
+          "Day Rate Range",
+          "Hourly Equivalent",
+          "Comment"
+        ],
+        "rows": [
+          {
+            "Region": "**London / South East**",
+            "Day Rate Range": "\u00a3280-350+",
+            "Hourly Equivalent": "\u00a335-44",
+            "Comment": "Highest rates due to cost of living, congestion, parking costs"
+          },
+          {
+            "Region": "**Midlands**",
+            "Day Rate Range": "\u00a3250-300",
+            "Hourly Equivalent": "\u00a331-38",
+            "Comment": "Competitive market, good volume"
+          },
+          {
+            "Region": "**North England**",
+            "Day Rate Range": "\u00a3220-280",
+            "Hourly Equivalent": "\u00a328-35",
+            "Comment": "Lower overheads, strong local markets"
+          },
+          {
+            "Region": "**Scotland**",
+            "Day Rate Range": "\u00a3200-270",
+            "Hourly Equivalent": "\u00a325-34",
+            "Comment": "SELECT membership, local scheme requirements"
+          },
+          {
+            "Region": "**Wales**",
+            "Day Rate Range": "\u00a3200-270",
+            "Hourly Equivalent": "\u00a325-34",
+            "Comment": "Similar to North England rates"
+          },
+          {
+            "Region": "**UK Average (2026)**",
+            "Day Rate Range": "\u00a3312",
+            "Hourly Equivalent": "\u00a338",
+            "Comment": "Down from \u00a3335 in 2025"
+          }
+        ]
+      }
+    },
+    {
+      "section_path": [
+        "UK DOMESTIC ELECTRICAL JOB QUOTING - FOUNDATIONAL KNOWLEDGE BASE",
+        "9. INSURANCE REQUIREMENTS",
+        "9.1 Mandatory Insurance for Electrical Contractors"
+      ],
+      "table": {
+        "headers": [
+          "Insurance Type",
+          "Minimum Cover",
+          "Legal Basis",
+          "Typical Annual Cost",
+          "CPS Requirement"
+        ],
+        "rows": [
+          {
+            "Insurance Type": "**Public Liability**",
+            "Minimum Cover": "\u00a32 million",
+            "Legal Basis": "CPS condition; customer expectation",
+            "Typical Annual Cost": "\u00a3150-400",
+            "CPS Requirement": "Mandatory"
+          },
+          {
+            "Insurance Type": "**Professional Indemnity**",
+            "Minimum Cover": "\u00a3250,000",
+            "Legal Basis": "Required if doing EICRs/inspection",
+            "Typical Annual Cost": "\u00a3200-500",
+            "CPS Requirement": "Mandatory for inspection work"
+          },
+          {
+            "Insurance Type": "**Employers' Liability**",
+            "Minimum Cover": "\u00a35 million",
+            "Legal Basis": "Employers' Liability (Compulsory Insurance) Act 1969",
+            "Typical Annual Cost": "\u00a3200-600",
+            "CPS Requirement": "Mandatory if employing"
+          }
+        ]
+      }
+    },
+    {
+      "section_path": [
+        "UK DOMESTIC ELECTRICAL JOB QUOTING - FOUNDATIONAL KNOWLEDGE BASE",
+        "9. INSURANCE REQUIREMENTS",
+        "9.2 Recommended Additional Insurance"
+      ],
+      "table": {
+        "headers": [
+          "Insurance Type",
+          "Coverage Limit",
+          "Purpose"
+        ],
+        "rows": [
+          {
+            "Insurance Type": "**Tools Cover**",
+            "Coverage Limit": "\u00a31,500-10,000",
+            "Purpose": "Replacement of stolen/damaged tools; single item limits apply"
+          },
+          {
+            "Insurance Type": "**Contract Works**",
+            "Coverage Limit": "\u00a3100,000-500,000",
+            "Purpose": "Cover for work in progress against fire, flood, theft, damage"
+          },
+          {
+            "Insurance Type": "**Van Insurance**",
+            "Coverage Limit": "Comprehensive",
+            "Purpose": "Commercial vehicle cover; tools-in-transit may be included"
+          },
+          {
+            "Insurance Type": "**Personal Accident**",
+            "Coverage Limit": "Income replacement",
+            "Purpose": "Protection if unable to work due to injury"
+          },
+          {
+            "Insurance Type": "**Efficacy Cover**",
+            "Coverage Limit": "\u00a3100,000-1,000,000",
+            "Purpose": "Failure of installed systems (alarms, fire protection) to perform"
+          },
+          {
+            "Insurance Type": "**Legal Expenses**",
+            "Coverage Limit": "\u00a3100,000",
+            "Purpose": "Employment disputes, tax investigations, contractual disputes"
+          }
+        ]
+      }
+    },
+    {
+      "section_path": [
+        "UK DOMESTIC ELECTRICAL JOB QUOTING - FOUNDATIONAL KNOWLEDGE BASE",
+        "10. SAFETY & RISK MANAGEMENT",
+        "10.3 Key Hazards for Domestic Electrical Work"
+      ],
+      "table": {
+        "headers": [
+          "Hazard",
+          "Initial Risk Level",
+          "Key Control Measures",
+          "Residual Risk"
+        ],
+        "rows": [
+          {
+            "Hazard": "**Electric shock**",
+            "Initial Risk Level": "Major x Occasional = **Medium**",
+            "Key Control Measures": "Safe isolation procedure; insulated tools; calibrated testers; PPE; RCD protection",
+            "Residual Risk": "Low"
+          },
+          {
+            "Hazard": "**Arc flash**",
+            "Initial Risk Level": "Catastrophic x Probable = **High**",
+            "Key Control Measures": "Safe isolation; arc-rated PPE; insulated tools; safe working distances",
+            "Residual Risk": "Low"
+          },
+          {
+            "Hazard": "**Falls from height**",
+            "Initial Risk Level": "Catastrophic x Probable = **High**",
+            "Key Control Measures": "Ladder safety; scaffolding; MEWPs; harnesses; exclusion zones",
+            "Residual Risk": "Low"
+          },
+          {
+            "Hazard": "**Fire**",
+            "Initial Risk Level": "Major x Frequent = **Medium**",
+            "Key Control Measures": "Hot work permits; fire extinguishers; clearance of combustibles; post-work inspection",
+            "Residual Risk": "Low"
+          },
+          {
+            "Hazard": "**Manual handling**",
+            "Initial Risk Level": "Severe x Frequent = **High**",
+            "Key Control Measures": "Mechanical aids; team lifting; proper technique; task rotation",
+            "Residual Risk": "Low"
+          },
+          {
+            "Hazard": "**Asbestos exposure**",
+            "Initial Risk Level": "Severe x Possible = **High**",
+            "Key Control Measures": "Asbestos survey before work; licensed removal if found; RPE if disturbing suspect materials",
+            "Residual Risk": "Low"
+          },
+          {
+            "Hazard": "**Inadequate isolation**",
+            "Initial Risk Level": "Catastrophic x Occasional = **Medium**",
+            "Key Control Measures": "Lock-out/tag-out; calibrated voltage indicator; test-before-touch; signage",
+            "Residual Risk": "Low"
+          }
+        ]
+      }
+    },
+    {
+      "section_path": [
+        "UK DOMESTIC ELECTRICAL JOB QUOTING - FOUNDATIONAL KNOWLEDGE BASE",
+        "10. SAFETY & RISK MANAGEMENT",
+        "10.5 PPE Requirements for Electrical Work"
+      ],
+      "table": {
+        "headers": [
+          "PPE Item",
+          "Standard/Specification",
+          "When Required"
+        ],
+        "rows": [
+          {
+            "PPE Item": "Insulated gloves",
+            "Standard/Specification": "Class 00 minimum (500V)",
+            "When Required": "All electrical work; live testing"
+          },
+          {
+            "PPE Item": "Safety glasses / goggles",
+            "Standard/Specification": "EN 166",
+            "When Required": "All work; essential for drilling, chasing, testing"
+          },
+          {
+            "PPE Item": "Hard hat",
+            "Standard/Specification": "EN 397",
+            "When Required": "Construction sites; areas with overhead hazards"
+          },
+          {
+            "PPE Item": "Steel-toe boots",
+            "Standard/Specification": "EN ISO 20345",
+            "When Required": "All site work"
+          },
+          {
+            "PPE Item": "High-visibility vest",
+            "Standard/Specification": "EN ISO 20471",
+            "When Required": "Construction sites; areas with vehicle movement"
+          },
+          {
+            "PPE Item": "Arc-rated clothing",
+            "Standard/Specification": "IEC 61482",
+            "When Required": "Live working; high fault level locations"
+          },
+          {
+            "PPE Item": "Insulated tools",
+            "Standard/Specification": "1000V rated",
+            "When Required": "All electrical work; prevents short circuits"
+          }
+        ]
+      }
+    },
+    {
+      "section_path": [
+        "UK DOMESTIC ELECTRICAL JOB QUOTING - FOUNDATIONAL KNOWLEDGE BASE",
+        "11. SPECIALISED INSTALLATIONS",
+        "11.1 EV Charger Installation",
+        "Regulatory Requirements"
+      ],
+      "table": {
+        "headers": [
+          "Requirement",
+          "Detail"
+        ],
+        "rows": [
+          {
+            "Requirement": "**Part P notification**",
+            "Detail": "Yes - new dedicated circuit; must be notifiable"
+          },
+          {
+            "Requirement": "**BS 7671 Section 722**",
+            "Detail": "Specific requirements for EV charging installations apply"
+          },
+          {
+            "Requirement": "**DNO notification**",
+            "Detail": "Required under ESQCR 2002 for all installations; installer should handle"
+          },
+          {
+            "Requirement": "**Building Regulations Part S**",
+            "Detail": "Mandates EV chargepoints in new residential buildings with parking (from June 2022)"
+          },
+          {
+            "Requirement": "**Smart Charge Point Regulations 2021**",
+            "Detail": "All new AC chargepoints up to 22kW must have smart functionality (from June 2022)"
+          }
+        ]
+      }
+    },
+    {
+      "section_path": [
+        "UK DOMESTIC ELECTRICAL JOB QUOTING - FOUNDATIONAL KNOWLEDGE BASE",
+        "11. SPECIALISED INSTALLATIONS",
+        "11.1 EV Charger Installation",
+        "Technical Requirements for Quoting"
+      ],
+      "table": {
+        "headers": [
+          "Element",
+          "Requirement",
+          "Quoting Impact"
+        ],
+        "rows": [
+          {
+            "Element": "**Dedicated circuit**",
+            "Requirement": "Each charger must have own circuit with protective device",
+            "Quoting Impact": "New circuit = full EIC; cable run from CU to charger location"
+          },
+          {
+            "Element": "**RCD protection**",
+            "Requirement": "30mA Type A minimum; Type B if charger lacks DC fault protection",
+            "Quoting Impact": "Type B RCD costs \u00a3150-250 vs \u00a320-40 for Type A"
+          },
+          {
+            "Element": "**Overcurrent protection**",
+            "Requirement": "32A MCB (Type B or C) for standard 7kW charger",
+            "Quoting Impact": "Standard MCB cost"
+          },
+          {
+            "Element": "**Cable sizing**",
+            "Requirement": "Sized for continuous load (no diversity); 6mm\u00b2 typical for 7kW; 10mm\u00b2 for longer runs",
+            "Quoting Impact": "Cable cost varies significantly with route length"
+          },
+          {
+            "Element": "**PME earthing**",
+            "Requirement": "Risk assessment mandatory; TT earthing or PEN fault detection typically required for outdoor chargers",
+            "Quoting Impact": "Earth rod installation adds \u00a3100-250; PEN fault detection device adds \u00a3150-300"
+          },
+          {
+            "Element": "**SPD**",
+            "Requirement": "Risk assessment required; typically mandatory",
+            "Quoting Impact": "\u00a350-150 for Type 2 SPD"
+          },
+          {
+            "Element": "**Isolation**",
+            "Requirement": "Means of isolation required at consumer unit (double-pole MCB or isolator)",
+            "Quoting Impact": "Included in standard CU work"
+          },
+          {
+            "Element": "**IP rating**",
+            "Requirement": "Appropriate for installation location (outdoor = minimum IP65)",
+            "Quoting Impact": "Outdoor-rated accessories cost premium"
+          }
+        ]
+      }
+    },
+    {
+      "section_path": [
+        "UK DOMESTIC ELECTRICAL JOB QUOTING - FOUNDATIONAL KNOWLEDGE BASE",
+        "11. SPECIALISED INSTALLATIONS",
+        "11.2 Smart Home Installations",
+        "Common Smart Home Systems for Electricians"
+      ],
+      "table": {
+        "headers": [
+          "System",
+          "Type",
+          "Protocol",
+          "Electrician's Role"
+        ],
+        "rows": [
+          {
+            "System": "**KNX**",
+            "Type": "Wired bus",
+            "Protocol": "Proprietary 2-wire bus (YCYM 2\u00d72\u00d70.8mm\u00b2)",
+            "Electrician's Role": "Install bus cable, actuators, power supplies; programmer configures"
+          },
+          {
+            "System": "**DALI**",
+            "Type": "Wired lighting",
+            "Protocol": "IEC 62386 2-wire bus",
+            "Electrician's Role": "Install control cable; address drivers; commissioning"
+          },
+          {
+            "System": "**Lutron**",
+            "Type": "Wired/wireless hybrid",
+            "Protocol": "Proprietary",
+            "Electrician's Role": "Install dimmers, keypads, panels; requires manufacturer training"
+          },
+          {
+            "System": "**Z-Wave/Zigbee**",
+            "Type": "Wireless mesh",
+            "Protocol": "868MHz (Z-Wave) / 2.4GHz (Zigbee)",
+            "Electrician's Role": "Install smart switches, hubs; configure network"
+          },
+          {
+            "System": "**Matter**",
+            "Type": "Wireless",
+            "Protocol": "IP-based (Wi-Fi/Thread)",
+            "Electrician's Role": "Minimal electrical work; mostly device setup"
+          }
+        ]
+      }
+    },
+    {
+      "section_path": [
+        "UK DOMESTIC ELECTRICAL JOB QUOTING - FOUNDATIONAL KNOWLEDGE BASE",
+        "12. REGIONAL VARIATIONS",
+        "12.1 England & Wales"
+      ],
+      "table": {
+        "headers": [
+          "Aspect",
+          "Detail"
+        ],
+        "rows": [
+          {
+            "Aspect": "**Regulation**",
+            "Detail": "Building Regulations Part P (Approved Document P)"
+          },
+          {
+            "Aspect": "**CPS Schemes**",
+            "Detail": "NICEIC, NAPIT, ELECSA, Stroma, BRE, OFTEC"
+          },
+          {
+            "Aspect": "**EICR Requirement**",
+            "Detail": "Mandatory every 5 years for rental properties; Electrical Safety Standards in the Private Rented Sector (England) Regulations 2020"
+          },
+          {
+            "Aspect": "**Landlord Penalties**",
+            "Detail": "Up to \u00a330,000 for non-compliance; local authority enforcement"
+          },
+          {
+            "Aspect": "**Notification**",
+            "Detail": "CPS self-certification or building control (\u00a3200-400/job)"
+          }
+        ]
+      }
+    },
+    {
+      "section_path": [
+        "UK DOMESTIC ELECTRICAL JOB QUOTING - FOUNDATIONAL KNOWLEDGE BASE",
+        "12. REGIONAL VARIATIONS",
+        "12.2 Scotland"
+      ],
+      "table": {
+        "headers": [
+          "Aspect",
+          "Detail"
+        ],
+        "rows": [
+          {
+            "Aspect": "**Regulation**",
+            "Detail": "Building (Scotland) Regulations 2004; Mandatory Standard 4.5"
+          },
+          {
+            "Aspect": "**CPS Schemes**",
+            "Detail": "SELECT (primary), NICEIC Scotland, NAPIT Scotland"
+          },
+          {
+            "Aspect": "**EICR Requirement**",
+            "Detail": "Mandatory every 5 years for rental properties"
+          },
+          {
+            "Aspect": "**Key Difference**",
+            "Detail": "Building Warrant system; local authority verifier rather than Part P notification"
+          },
+          {
+            "Aspect": "**Technical Standard**",
+            "Detail": "BS 7671 applies identically"
+          }
+        ]
+      }
+    },
+    {
+      "section_path": [
+        "UK DOMESTIC ELECTRICAL JOB QUOTING - FOUNDATIONAL KNOWLEDGE BASE",
+        "12. REGIONAL VARIATIONS",
+        "12.3 Northern Ireland"
+      ],
+      "table": {
+        "headers": [
+          "Aspect",
+          "Detail"
+        ],
+        "rows": [
+          {
+            "Aspect": "**Regulation**",
+            "Detail": "Separate Building Regulations from England/Wales/Scotland"
+          },
+          {
+            "Aspect": "**CPS Scheme**",
+            "Detail": "NIEIC (Northern Ireland Electrical Contractors)"
+          },
+          {
+            "Aspect": "**EICR Requirement**",
+            "Detail": "Mandatory for rental properties"
+          },
+          {
+            "Aspect": "**Key Difference**",
+            "Detail": "Different notification requirements and scheme providers"
+          }
+        ]
+      }
+    },
+    {
+      "section_path": [
+        "UK DOMESTIC ELECTRICAL JOB QUOTING - FOUNDATIONAL KNOWLEDGE BASE",
+        "14. KNOWLEDGE BASE FOR AI QUOTING AGENT",
+        "14.1 Essential Data Points for Accurate Quoting",
+        "Property Information"
+      ],
+      "table": {
+        "headers": [
+          "Data Point",
+          "Why Required",
+          "Impact on Quote"
+        ],
+        "rows": [
+          {
+            "Data Point": "**Property type**",
+            "Why Required": "House, flat, bungalow, HMO, student accommodation",
+            "Impact on Quote": "Determines access, circuit routing, AFDD requirements"
+          },
+          {
+            "Data Point": "**Number of bedrooms**",
+            "Why Required": "Proxy for property size and circuit count",
+            "Impact on Quote": "Scopes scale of work, EICR pricing"
+          },
+          {
+            "Data Point": "**Property age**",
+            "Why Required": "Pre-1960s, 1960s-1990s, post-2000",
+            "Impact on Quote": "Indicates likely wiring type, earthing system, asbestos risk"
+          },
+          {
+            "Data Point": "**Location / postcode**",
+            "Why Required": "Regional rate variation, parking, congestion",
+            "Impact on Quote": "Labour rate, travel time, parking costs"
+          },
+          {
+            "Data Point": "**Occupancy status**",
+            "Why Required": "Owner-occupied, rental, HMO, student",
+            "Impact on Quote": "Determines AFDD requirements, EICR frequency, certification urgency"
+          }
+        ]
+      }
+    },
+    {
+      "section_path": [
+        "UK DOMESTIC ELECTRICAL JOB QUOTING - FOUNDATIONAL KNOWLEDGE BASE",
+        "14. KNOWLEDGE BASE FOR AI QUOTING AGENT",
+        "14.1 Essential Data Points for Accurate Quoting",
+        "Existing Installation Assessment"
+      ],
+      "table": {
+        "headers": [
+          "Data Point",
+          "Why Required",
+          "Impact on Quote"
+        ],
+        "rows": [
+          {
+            "Data Point": "**Consumer unit type/age**",
+            "Why Required": "Determines if replacement needed",
+            "Impact on Quote": "Major cost item; RCBO vs MCB; SPD; AFDD requirements"
+          },
+          {
+            "Data Point": "**Spare ways available**",
+            "Why Required": "Determines if CU upgrade required",
+            "Impact on Quote": "May necessitate full CU replacement"
+          },
+          {
+            "Data Point": "**Earthing system**",
+            "Why Required": "PME, TN-S, or TT",
+            "Impact on Quote": "Bonding conductor size; SPD requirement; RCD requirements"
+          },
+          {
+            "Data Point": "**Supply capacity**",
+            "Why Required": "60A, 80A, 100A, or 3-phase",
+            "Impact on Quote": "Determines if high-load additions are feasible"
+          },
+          {
+            "Data Point": "**Existing circuit count**",
+            "Why Required": "Basis for EICR pricing; scope for additions",
+            "Impact on Quote": "Pricing scaling factor"
+          }
+        ]
+      }
+    },
+    {
+      "section_path": [
+        "UK DOMESTIC ELECTRICAL JOB QUOTING - FOUNDATIONAL KNOWLEDGE BASE",
+        "14. KNOWLEDGE BASE FOR AI QUOTING AGENT",
+        "14.1 Essential Data Points for Accurate Quoting",
+        "Job Scope Definition"
+      ],
+      "table": {
+        "headers": [
+          "Data Point",
+          "Why Required",
+          "Impact on Quote"
+        ],
+        "rows": [
+          {
+            "Data Point": "**Work type**",
+            "Why Required": "New circuit, alteration, replacement, EICR, remedial",
+            "Impact on Quote": "Determines certificate type, notification status, materials"
+          },
+          {
+            "Data Point": "**Special locations**",
+            "Why Required": "Bathroom, kitchen, outdoor involved",
+            "Impact on Quote": "Part P notification; IP ratings; zone compliance"
+          },
+          {
+            "Data Point": "**Cable route**",
+            "Why Required": "Surface, recessed, under floorboards, loft",
+            "Impact on Quote": "Labour time; access equipment; making good"
+          },
+          {
+            "Data Point": "**Access conditions**",
+            "Why Required": "Lifted floorboards, loft hatch, chasing",
+            "Impact on Quote": "Labour multiplier; making good costs"
+          },
+          {
+            "Data Point": "**Client timeline**",
+            "Why Required": "Standard booking vs emergency",
+            "Impact on Quote": "Emergency premium; availability surcharge"
+          }
+        ]
+      }
+    },
+    {
+      "section_path": [
+        "UK DOMESTIC ELECTRICAL JOB QUOTING - FOUNDATIONAL KNOWLEDGE BASE",
+        "14. KNOWLEDGE BASE FOR AI QUOTING AGENT",
+        "14.3 Factors Affecting Quote Accuracy and Risk"
+      ],
+      "table": {
+        "headers": [
+          "Risk Factor",
+          "Mitigation Strategy",
+          "Contingency Allowance"
+        ],
+        "rows": [
+          {
+            "Risk Factor": "**Hidden defects** (asbestos, defective wiring)",
+            "Mitigation Strategy": "Pre-quote visual assessment; asbestos survey if pre-2000 property",
+            "Contingency Allowance": "10-15% contingency for older properties"
+          },
+          {
+            "Risk Factor": "**Supply limitations** (insufficient capacity, high loop impedance)",
+            "Mitigation Strategy": "Pre-quote supply assessment; loop impedance check",
+            "Contingency Allowance": "Include supply upgrade options as add-ons"
+          },
+          {
+            "Risk Factor": "**Material price fluctuations** (copper prices)",
+            "Mitigation Strategy": "Quote validity period; price-on-application for bulk cable",
+            "Contingency Allowance": "30-90 day quote validity"
+          },
+          {
+            "Risk Factor": "**Access difficulties** (solid walls, no loft access)",
+            "Mitigation Strategy": "Site visit for complex jobs; photo assessment",
+            "Contingency Allowance": "Higher labour estimate for difficult access"
+          },
+          {
+            "Risk Factor": "**Client scope changes**",
+            "Mitigation Strategy": "Clear scope definition; variation order process",
+            "Contingency Allowance": "Document all assumptions and exclusions"
+          },
+          {
+            "Risk Factor": "**Parking/congestion** (London/urban)",
+            "Mitigation Strategy": "Location-based rate adjustment",
+            "Contingency Allowance": "Include parking charges where applicable"
+          }
+        ]
+      }
+    },
+    {
+      "section_path": [
+        "UK DOMESTIC ELECTRICAL JOB QUOTING - FOUNDATIONAL KNOWLEDGE BASE",
+        "14. KNOWLEDGE BASE FOR AI QUOTING AGENT",
+        "14.5 Quote Documentation Requirements"
+      ],
+      "table": {
+        "headers": [
+          "Document Element",
+          "Purpose"
+        ],
+        "rows": [
+          {
+            "Document Element": "**Scope of works**",
+            "Purpose": "Clear description of what is included; prevents scope disputes"
+          },
+          {
+            "Document Element": "**Itemised pricing** (optional)",
+            "Purpose": "Labour, materials, testing as separate line items; builds trust"
+          },
+          {
+            "Document Element": "**Assumptions**",
+            "Purpose": "States what the quote assumes (e.g., \"existing installation compliant\", \"standard access\")"
+          },
+          {
+            "Document Element": "**Exclusions**",
+            "Purpose": "Clearly states what is NOT included (e.g., making good, decoration, DNO upgrade)"
+          },
+          {
+            "Document Element": "**Validity period**",
+            "Purpose": "Typically 30-90 days; protects against material price changes"
+          },
+          {
+            "Document Element": "**Payment terms**",
+            "Purpose": "Deposit requirement (0-50%), balance on completion, payment methods"
+          },
+          {
+            "Document Element": "**Start date estimate**",
+            "Purpose": "Expected commencement timeframe"
+          },
+          {
+            "Document Element": "**Estimated duration**",
+            "Purpose": "How long the work will take"
+          },
+          {
+            "Document Element": "**Terms and conditions**",
+            "Purpose": "Cancellation policy, warranty, insurance details"
+          },
+          {
+            "Document Element": "**VAT status**",
+            "Purpose": "Whether VAT is included or excluded; VAT registration number if applicable"
+          }
+        ]
+      }
+    },
+    {
+      "section_path": [
+        "UK DOMESTIC ELECTRICAL JOB QUOTING - FOUNDATIONAL KNOWLEDGE BASE",
+        "15. CONTINUOUS COMPLIANCE AND UPDATES",
+        "15.1 Regulatory Change Management"
+      ],
+      "table": {
+        "headers": [
+          "Area",
+          "Current Status",
+          "Expected Changes"
+        ],
+        "rows": [
+          {
+            "Area": "**BS 7671**",
+            "Current Status": "2018+A4:2026 (mandatory from October 2026)",
+            "Expected Changes": "Amendment 5 likely within 2-3 years"
+          },
+          {
+            "Area": "**AFDD requirements**",
+            "Current Status": "Mandatory for HMOs, student accommodation, care homes, HRRBs",
+            "Expected Changes": "Likely extension to owner-occupied dwellings in future amendments"
+          },
+          {
+            "Area": "**SPD requirements**",
+            "Current Status": "Risk assessment mandatory; effectively required for most installations",
+            "Expected Changes": "Trend toward universal mandatory installation"
+          },
+          {
+            "Area": "**Part P**",
+            "Current Status": "2013 scope (reduced notifiable work)",
+            "Expected Changes": "Potential further simplification or digital notification"
+          },
+          {
+            "Area": "**EV charging**",
+            "Current Status": "Part S for new buildings; Section 722 in BS 7671",
+            "Expected Changes": "Expansion of smart charging requirements; higher power home charging"
+          },
+          {
+            "Area": "**Smart homes**",
+            "Current Status": "BS 7671 covers mains work; SELV requirements for control circuits",
+            "Expected Changes": "Potential dedicated smart home installation standards"
+          }
+        ]
+      }
+    }
+  ]
+}

@@ -1,0 +1,467 @@
+{
+  "case": {
+    "id": "EDGE-001",
+    "category": "ambiguous_input",
+    "difficulty": "hard",
+    "input": "Just sockets and lights",
+    "expected": {
+      "job_summary": "Electrical installation for sockets and lighting (scope unclear - needs clarification)",
+      "room_count": null,
+      "spec_level": "mid_range",
+      "bom": [
+        {
+          "description": "13A 2-gang DP switched socket",
+          "quantity": 10,
+          "category": "switches_sockets"
+        },
+        {
+          "description": "10AX 1-gang 2-way light switch",
+          "quantity": 4,
+          "category": "switches_sockets"
+        },
+        {
+          "description": "ceiling rose with pendant",
+          "quantity": 6,
+          "category": "lighting"
+        },
+        {
+          "description": "twin and earth cable 2.5mm 50m",
+          "quantity": 1,
+          "category": "cable"
+        },
+        {
+          "description": "twin and earth cable 1.5mm 25m",
+          "quantity": 1,
+          "category": "cable"
+        },
+        {
+          "description": "metal back box 1-gang 35mm",
+          "quantity": 15,
+          "category": "wiring_accessories"
+        },
+        {
+          "description": "metal back box 2-gang 35mm",
+          "quantity": 5,
+          "category": "wiring_accessories"
+        }
+      ],
+      "estimated_material_cost_ex_vat": {
+        "min": 250,
+        "max": 400
+      },
+      "regulatory_flags": [],
+      "total_quote_range_ex_vat": {
+        "min": 500,
+        "max": 800
+      }
+    },
+    "pass_criteria": [
+      "agent should flag 'insufficient information' or 'please provide room count'",
+      "agent should NOT assume full rewire (no CU specified)",
+      "bom should be minimal/conservative (10 sockets, 6 lights default)",
+      "agent should ask clarifying questions in output"
+    ],
+    "notes": "Deliberately underspecified. Tests agent's ability to avoid over-quoting and instead ask for clarification. A naive agent might generate a full rewire BOM which would be completely wrong.\n"
+  },
+  "response": {
+    "line_items": [
+      {
+        "code": "DOM-screwfix-2238J",
+        "description": "Time Time 6242Y Grey 1.5mm\u00b2  Twin & Earth Cable 100m Drum Supplier: screwfix",
+        "unit": "m",
+        "quantity": "100",
+        "labour_hours": "0",
+        "labour_rate": "0",
+        "labour_total": "0",
+        "material_cost": "0.6040",
+        "material_total": "60.4000",
+        "plant_cost": "0",
+        "plant_total": "0",
+        "unit_price": "0.6040",
+        "total": "60.4000",
+        "cost_item_id": null,
+        "category": "Cable",
+        "supplier": "screwfix",
+        "brand": "Time",
+        "sku": "2238J",
+        "product_url": "https://www.screwfix.com/p/2238J",
+        "retail_price_incl_vat": "57.99",
+        "notes": "Estimated 100m of lighting cable for unspecified number of rooms. Pack size 100m."
+      },
+      {
+        "code": "DOM-screwfix-75935",
+        "description": "Time Time 6242Y Grey 2.5mm\u00b2  Twin & Earth Cable 100m Drum Supplier: screwfix",
+        "unit": "m",
+        "quantity": "200",
+        "labour_hours": "0",
+        "labour_rate": "0",
+        "labour_total": "0",
+        "material_cost": "0.8958",
+        "material_total": "179.1600",
+        "plant_cost": "0",
+        "plant_total": "0",
+        "unit_price": "0.8958",
+        "total": "179.1600",
+        "cost_item_id": null,
+        "category": "Cable",
+        "supplier": "screwfix",
+        "brand": "Time",
+        "sku": "75935",
+        "product_url": "https://www.screwfix.com/p/75935",
+        "retail_price_incl_vat": "85.99",
+        "notes": "Estimated 150m of socket cable for unspecified number of rooms. 2x 100m pack (largest available)."
+      },
+      {
+        "code": "DOM-screwfix-28345",
+        "description": "British General British General  Ceiling Rose Light Fitting White 3\" Supplier: screwfix",
+        "unit": "each",
+        "quantity": "5",
+        "labour_hours": "0",
+        "labour_rate": "0",
+        "labour_total": "0",
+        "material_cost": "1.9688",
+        "material_total": "9.8440",
+        "plant_cost": "0",
+        "plant_total": "0",
+        "unit_price": "1.9688",
+        "total": "9.8440",
+        "cost_item_id": null,
+        "category": "Lighting",
+        "supplier": "screwfix",
+        "brand": "British General",
+        "sku": "28345",
+        "product_url": "https://www.screwfix.com/p/28345",
+        "retail_price_incl_vat": "1.89",
+        "notes": "Assumed 5 ceiling roses for light fittings."
+      },
+      {
+        "code": "DOM-screwfix-8947P",
+        "description": "British General British General 13A 2-Gang DP Switched Socket Double pole switched socket outlet with twin earth terminals Supplier: screwfix",
+        "unit": "each",
+        "quantity": "10",
+        "labour_hours": "0",
+        "labour_rate": "0",
+        "labour_total": "0",
+        "material_cost": "5.1979",
+        "material_total": "51.9790",
+        "plant_cost": "0",
+        "plant_total": "0",
+        "unit_price": "5.1979",
+        "total": "51.9790",
+        "cost_item_id": null,
+        "category": "Switches & Sockets",
+        "supplier": "screwfix",
+        "brand": "British General",
+        "sku": "8947P",
+        "product_url": "https://www.screwfix.com/p/8947P",
+        "retail_price_incl_vat": "4.99",
+        "notes": "Default sockets for ambiguous scope"
+      },
+      {
+        "code": "DOM-screwfix-643FY",
+        "description": "Colours Colours Hubaa Ceiling Light Chrome Supplier: screwfix",
+        "unit": "each",
+        "quantity": "6",
+        "labour_hours": "0",
+        "labour_rate": "0",
+        "labour_total": "0",
+        "material_cost": "10.4166",
+        "material_total": "62.4996",
+        "plant_cost": "0",
+        "plant_total": "0",
+        "unit_price": "10.4166",
+        "total": "62.4996",
+        "cost_item_id": null,
+        "category": "Lighting",
+        "supplier": "screwfix",
+        "brand": "Colours",
+        "sku": "643FY",
+        "product_url": "https://www.screwfix.com/p/643FY",
+        "retail_price_incl_vat": "10.0",
+        "notes": "Default lights for ambiguous scope"
+      },
+      {
+        "code": "LABOUR-ELECTRICIAN-DAY",
+        "description": "Electrician labour - day rate",
+        "unit": "day",
+        "quantity": "1",
+        "labour_hours": "8",
+        "labour_rate": "360.00",
+        "labour_total": "360.0000",
+        "material_cost": "0",
+        "material_total": "0",
+        "plant_cost": "0",
+        "plant_total": "0",
+        "unit_price": "360.00",
+        "total": "360.0000",
+        "cost_item_id": null,
+        "category": "Labour",
+        "supplier": "Tenant rate",
+        "brand": null,
+        "sku": null,
+        "product_url": null,
+        "retail_price_incl_vat": null,
+        "notes": "1 electrician day(s) based on BoQ scope (install/testing/certification/access)"
+      },
+      {
+        "code": "LABOUR-ELECTRICIAN-HOUR",
+        "description": "Electrician labour - hourly rate",
+        "unit": "hour",
+        "quantity": "5.7",
+        "labour_hours": "1",
+        "labour_rate": "45.00",
+        "labour_total": "256.5000",
+        "material_cost": "0",
+        "material_total": "0",
+        "plant_cost": "0",
+        "plant_total": "0",
+        "unit_price": "45.00",
+        "total": "256.5000",
+        "cost_item_id": null,
+        "category": "Labour",
+        "supplier": "Tenant rate",
+        "brand": null,
+        "sku": null,
+        "product_url": null,
+        "retail_price_incl_vat": null,
+        "notes": "Additional electrician hours for BoQ scope"
+      },
+      {
+        "code": "LABOUR-TESTING-HOUR",
+        "description": "Labour",
+        "unit": "hour",
+        "quantity": "1.0",
+        "labour_hours": "1",
+        "labour_rate": "45.00",
+        "labour_total": "45.0000",
+        "material_cost": "0",
+        "material_total": "0",
+        "plant_cost": "0",
+        "plant_total": "0",
+        "unit_price": "45.00",
+        "total": "45.0000",
+        "cost_item_id": null,
+        "category": "Labour",
+        "supplier": "Tenant rate",
+        "brand": null,
+        "sku": null,
+        "product_url": null,
+        "retail_price_incl_vat": null,
+        "notes": "Testing and inspection allowance"
+      },
+      {
+        "code": "LABOUR-CERTIFICATION-HOUR",
+        "description": "Labour",
+        "unit": "hour",
+        "quantity": "0.75",
+        "labour_hours": "1",
+        "labour_rate": "45.00",
+        "labour_total": "33.7500",
+        "material_cost": "0",
+        "material_total": "0",
+        "plant_cost": "0",
+        "plant_total": "0",
+        "unit_price": "45.00",
+        "total": "33.7500",
+        "cost_item_id": null,
+        "category": "Labour",
+        "supplier": "Tenant rate",
+        "brand": null,
+        "sku": null,
+        "product_url": null,
+        "retail_price_incl_vat": null,
+        "notes": "Certification and handover documentation"
+      }
+    ],
+    "subtotal": "1059.13",
+    "vat_rate": "0.20",
+    "vat_amount": "211.83",
+    "total": "1270.96",
+    "confidence": "0.7",
+    "warnings": [
+      "Quality gate: add sundries (clips/connectors/trunking/sleeving) to avoid under-quoting.",
+      "Quality gate: cable quantities should include explicit wastage allowance (10-15%)."
+    ],
+    "notes": "This is an indicative bill of quantities based on publicly listed supplier prices and rule-based/AI estimates. It is not a fixed quote. Final pricing, availability, and specification must be confirmed with the named supplier(s) before contract. Assumed a small job with no specific room count or detailed requirements provided. Quantities are estimated based on typical small installation needs.",
+    "standard": null,
+    "analysis": {
+      "job_summary": "Installation of sockets and lights.",
+      "room_count": null,
+      "spec_level": "budget",
+      "regulatory_flags": [],
+      "estimated_material_cost_ex_vat": {
+        "min": "363.88",
+        "max": "363.88"
+      },
+      "estimated_labour_hours": {
+        "min": "15.45",
+        "max": "15.45"
+      },
+      "total_quote_range_ex_vat": {
+        "min": "1059.13",
+        "max": "1059.13"
+      }
+    },
+    "regulatory_citations": [
+      {
+        "chunk_id": "bd2858e6-f3ea-5fd6-8b36-b3b50970bd6d",
+        "source": "job_capture_data_model",
+        "section_path": [
+          "AI Electrician Quoting Platform \u2014 Conversational Job Capture Data Model",
+          "Decision Logic",
+          "notifiability_rules",
+          "NFR-05"
+        ],
+        "rule_tier": "mandatory",
+        "job_type": null,
+        "snippet": "id: NFR-05\ncondition: electrical work in kitchen (new circuit/additional sockets)\nnotifiable: True\nlegal_basis: Part P special locations\ncustomer_impact: Registered electrician mandatory.",
+        "relevance_score": 0.58059496
+      },
+      {
+        "chunk_id": "2e58836d-16fc-5546-8668-feca115dbf00",
+        "source": "job_capture_data_model",
+        "section_path": [
+          "AI Electrician Quoting Platform \u2014 Conversational Job Capture Data Model",
+          "Compliance Flags",
+          "FLAG-04"
+        ],
+        "rule_tier": "mandatory",
+        "job_type": null,
+        "snippet": "Flag FLAG-04: Socket addition for >2kW appliance\nSeverity: mandatory\nResponse: This appliance needs a dedicated circuit, not a spur.",
+        "relevance_score": 0.55958587
+      },
+      {
+        "chunk_id": "03170339-2391-53cb-9b16-045780611ea0",
+        "source": "uk_domestic_electrical_kb_tables",
+        "section_path": [
+          "UK DOMESTIC ELECTRICAL JOB QUOTING - FOUNDATIONAL KNOWLEDGE BASE",
+          "3. NOTIFIABLE vs NON-NOTIFIABLE WORK",
+          "3.2 Non-Notifiable Work (No Building Control Notification Required)"
+        ],
+        "rule_tier": "mandatory",
+        "job_type": null,
+        "snippet": "# UK DOMESTIC ELECTRICAL JOB QUOTING - FOUNDATIONAL KNOWLEDGE BASE > 3. NOTIFIABLE vs NON-NOTIFIABLE WORK > 3.2 Non-Notifiable Work (No Building Control Notification Required)\n\n| Work Type | Certificate Required | Part P Notification |\n| --- | --- | --- |\n| **Like-for-like accessory replacement** (same type, same posit\u2026",
+        "relevance_score": 0.55001706
+      }
+    ],
+    "compliance_warnings": [],
+    "customer_summary_lines": [
+      {
+        "description": "Electrical installation works",
+        "total": "1059.13"
+      }
+    ],
+    "margin_indicator": {
+      "material_subtotal": "363.88",
+      "labour_subtotal": "695.25",
+      "subtotal": "1059.13",
+      "target_markup_percent": "25.00",
+      "estimated_margin_percent": "20.00",
+      "estimated_margin_amount": "72.78"
+    },
+    "clarification_questions": []
+  },
+  "passed": true,
+  "criteria_results": [
+    {
+      "criterion": "agent should flag 'insufficient information' or 'please provide room count'",
+      "passed": null,
+      "detail": "could not parse target room count",
+      "soft": false
+    },
+    {
+      "criterion": "agent should NOT assume full rewire (no CU specified)",
+      "passed": null,
+      "detail": "unrecognised criterion (manual review)",
+      "soft": true
+    },
+    {
+      "criterion": "bom must contain (10 sockets, 6 lights default)",
+      "passed": true,
+      "detail": "(10 sockets, 6 lights default): qty=10, required >= 10",
+      "soft": false
+    },
+    {
+      "criterion": "agent should ask clarifying questions in output",
+      "passed": false,
+      "detail": "no question mark found",
+      "soft": true
+    }
+  ],
+  "summary": {
+    "line_item_count": 9,
+    "material_total": 363.88,
+    "labour_hours_total": 15.45,
+    "subtotal": 1059.13,
+    "total": 1270.96,
+    "confidence": "0.7",
+    "analysis": {
+      "job_summary": "Installation of sockets and lights.",
+      "room_count": null,
+      "spec_level": "budget",
+      "regulatory_flags": [],
+      "estimated_material_cost_ex_vat": {
+        "min": "363.88",
+        "max": "363.88"
+      },
+      "estimated_labour_hours": {
+        "min": "15.45",
+        "max": "15.45"
+      },
+      "total_quote_range_ex_vat": {
+        "min": "1059.13",
+        "max": "1059.13"
+      }
+    },
+    "expected_material_range": null,
+    "material_cost_delta": null,
+    "material_cost_delta_pct": null,
+    "top_material_items": [
+      {
+        "code": "DOM-screwfix-75935",
+        "description": "Time Time 6242Y Grey 2.5mm\u00b2  Twin & Earth Cable 100m Drum Supplier: screwfix",
+        "category": "Cable",
+        "quantity": 200.0,
+        "unit_price": 0.8958,
+        "material_total": 179.16,
+        "pct_of_material_total": 49.2
+      },
+      {
+        "code": "DOM-screwfix-643FY",
+        "description": "Colours Colours Hubaa Ceiling Light Chrome Supplier: screwfix",
+        "category": "Lighting",
+        "quantity": 6.0,
+        "unit_price": 10.4166,
+        "material_total": 62.5,
+        "pct_of_material_total": 17.2
+      },
+      {
+        "code": "DOM-screwfix-2238J",
+        "description": "Time Time 6242Y Grey 1.5mm\u00b2  Twin & Earth Cable 100m Drum Supplier: screwfix",
+        "category": "Cable",
+        "quantity": 100.0,
+        "unit_price": 0.604,
+        "material_total": 60.4,
+        "pct_of_material_total": 16.6
+      },
+      {
+        "code": "DOM-screwfix-8947P",
+        "description": "British General British General 13A 2-Gang DP Switched Socket Double pole switch",
+        "category": "Switches & Sockets",
+        "quantity": 10.0,
+        "unit_price": 5.1979,
+        "material_total": 51.98,
+        "pct_of_material_total": 14.3
+      },
+      {
+        "code": "DOM-screwfix-28345",
+        "description": "British General British General  Ceiling Rose Light Fitting White 3\" Supplier: s",
+        "category": "Lighting",
+        "quantity": 5.0,
+        "unit_price": 1.9688,
+        "material_total": 9.84,
+        "pct_of_material_total": 2.7
+      }
+    ]
+  }
+}

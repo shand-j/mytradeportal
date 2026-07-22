@@ -1,0 +1,9 @@
+{
+  "name": "mytradeportal-railway-iac",
+  "private": true,
+  "type": "module",
+  "description": "Railway Infrastructure as Code for My Trade Portal (evaluated by the Railway CLI)",
+  "dependencies": {
+    "railway": "^3.0.0"
+  }
+}

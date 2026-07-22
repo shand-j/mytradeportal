@@ -1,0 +1,17 @@
+{
+  "name": "mytradeportal-root",
+  "version": "1.0.0",
+  "private": true,
+  "pnpm": {
+    "onlyBuiltDependencies": ["supabase"]
+  },
+  "devDependencies": {
+    "supabase": "^1.226.4"
+  },
+  "scripts": {
+    "supabase:init": "supabase init",
+    "supabase:start": "supabase start",
+    "supabase:stop": "supabase stop",
+    "supabase:status": "supabase status"
+  }
+}

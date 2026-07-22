@@ -1,0 +1,871 @@
+{
+  "case": {
+    "id": "REG-002",
+    "category": "regulatory_edge_case",
+    "difficulty": "medium",
+    "input": "Rewiring a Victorian terrace. TT earthing system. Need new consumer unit and full rewire. 2 bedrooms.",
+    "expected": {
+      "job_summary": "Full rewire of 2-bed Victorian terrace with TT earthing system",
+      "room_count": 2,
+      "spec_level": "mid_range",
+      "bom": [
+        {
+          "description": "10-way dual RCD metal consumer unit with SPD",
+          "quantity": 1,
+          "category": "consumer_units"
+        },
+        {
+          "description": "32A Type B MCB",
+          "quantity": 2,
+          "category": "mcb_rcd_rcbo"
+        },
+        {
+          "description": "20A Type B MCB",
+          "quantity": 1,
+          "category": "mcb_rcd_rcbo"
+        },
+        {
+          "description": "6A Type B MCB",
+          "quantity": 1,
+          "category": "mcb_rcd_rcbo"
+        },
+        {
+          "description": "13A 2-gang DP switched socket",
+          "quantity": 18,
+          "category": "switches_sockets"
+        },
+        {
+          "description": "45A DP cooker switch",
+          "quantity": 1,
+          "category": "switches_sockets"
+        },
+        {
+          "description": "10AX 2-gang 2-way light switch",
+          "quantity": 5,
+          "category": "switches_sockets"
+        },
+        {
+          "description": "ceiling rose with pendant",
+          "quantity": 8,
+          "category": "lighting"
+        },
+        {
+          "description": "twin and earth cable 2.5mm 100m",
+          "quantity": 2,
+          "category": "cable"
+        },
+        {
+          "description": "twin and earth cable 1.5mm 100m",
+          "quantity": 1,
+          "category": "cable"
+        },
+        {
+          "description": "smoke alarm mains powered interlinked",
+          "quantity": 3,
+          "category": "security_fire"
+        },
+        {
+          "description": "heat detector mains powered",
+          "quantity": 1,
+          "category": "security_fire"
+        },
+        {
+          "description": "earth rod 1.2m with clamp",
+          "quantity": 1,
+          "category": "wiring_accessories"
+        },
+        {
+          "description": "green/yellow earth cable 10mm 10m",
+          "quantity": 1,
+          "category": "cable"
+        },
+        {
+          "description": "main equipotential bonding clamp 10mm",
+          "quantity": 2,
+          "category": "wiring_accessories"
+        },
+        {
+          "description": "supplementary bonding cable 4mm 10m",
+          "quantity": 1,
+          "category": "cable"
+        },
+        {
+          "description": "metal back box 1-gang 35mm",
+          "quantity": 30,
+          "category": "wiring_accessories"
+        },
+        {
+          "description": "metal back box 2-gang 35mm",
+          "quantity": 10,
+          "category": "wiring_accessories"
+        }
+      ],
+      "estimated_material_cost_ex_vat": {
+        "min": 1000,
+        "max": 1500
+      },
+      "regulatory_flags": [
+        "spd_required",
+        "smoke_alarms_required",
+        "metal_cu_required",
+        "rcd_protection"
+      ],
+      "total_quote_range_ex_vat": {
+        "min": 3000,
+        "max": 4500
+      }
+    },
+    "pass_criteria": [
+      "bom must contain earth rod (TT system requirement)",
+      "bom must contain main equipotential bonding clamps",
+      "bom must contain supplementary bonding cable",
+      "bom must flag TT earthing system considerations",
+      "total material cost must be between GBP 900 and GBP 1600"
+    ],
+    "notes": "TT earthing system (no PME) requires earth electrode (rod) and enhanced bonding. Victorian terraces often have TT systems. Main equipotential bonding required to gas/water services. Supplementary bonding required in bathrooms. Source: BS 7671 Chapter 54, IET On-Site Guide.\n"
+  },
+  "response": {
+    "line_items": [
+      {
+        "code": "DOM-screwfix-698XG",
+        "description": "British General British General  13A 3 Terminal In-Line Connector 30 x 70 x 17mm White Supplier: screwfix",
+        "unit": "each",
+        "quantity": "2",
+        "labour_hours": "0",
+        "labour_rate": "0",
+        "labour_total": "0",
+        "material_cost": "4.0521",
+        "material_total": "8.1042",
+        "plant_cost": "0",
+        "plant_total": "0",
+        "unit_price": "4.0521",
+        "total": "8.1042",
+        "cost_item_id": null,
+        "category": "Wiring Accessories",
+        "supplier": "screwfix",
+        "brand": "British General",
+        "sku": "698XG",
+        "product_url": "https://www.screwfix.com/p/698XG",
+        "retail_price_incl_vat": "3.89",
+        "notes": "Main equipotential bonding clamps for TT system."
+      },
+      {
+        "code": "DOM-screwfix-504PF",
+        "description": "MK Sentry MK Sentry  21-Module 12-Way Populated  Dual RCD Consumer Unit with SPD Supplier: screwfix",
+        "unit": "each",
+        "quantity": "1",
+        "labour_hours": "0",
+        "labour_rate": "0",
+        "labour_total": "0",
+        "material_cost": "145.8229",
+        "material_total": "145.8229",
+        "plant_cost": "0",
+        "plant_total": "0",
+        "unit_price": "145.8229",
+        "total": "145.8229",
+        "cost_item_id": null,
+        "category": "Consumer Units",
+        "supplier": "screwfix",
+        "brand": "MK Sentry",
+        "sku": "504PF",
+        "product_url": "https://www.screwfix.com/p/504PF",
+        "retail_price_incl_vat": "139.99",
+        "notes": "Mandatory consumer unit for rewire"
+      },
+      {
+        "code": "DOM-screwfix-53010",
+        "description": "Wylex Wylex NH / NM 100A DP  Main Switch Disconnector Supplier: screwfix",
+        "unit": "each",
+        "quantity": "1",
+        "labour_hours": "0",
+        "labour_rate": "0",
+        "labour_total": "0",
+        "material_cost": "20.8229",
+        "material_total": "20.8229",
+        "plant_cost": "0",
+        "plant_total": "0",
+        "unit_price": "20.8229",
+        "total": "20.8229",
+        "cost_item_id": null,
+        "category": "Switches & Sockets",
+        "supplier": "screwfix",
+        "brand": "Wylex",
+        "sku": "53010",
+        "product_url": "https://www.screwfix.com/p/53010",
+        "retail_price_incl_vat": "19.99",
+        "notes": "Mandatory main switch"
+      },
+      {
+        "code": "DOM-screwfix-3365V",
+        "description": "Chint Chint EBG 32A SP B Curve  MCB Supplier: screwfix",
+        "unit": "each",
+        "quantity": "4",
+        "labour_hours": "0",
+        "labour_rate": "0",
+        "labour_total": "0",
+        "material_cost": "2.8021",
+        "material_total": "11.2084",
+        "plant_cost": "0",
+        "plant_total": "0",
+        "unit_price": "2.8021",
+        "total": "11.2084",
+        "cost_item_id": null,
+        "category": "Circuit Protection",
+        "supplier": "screwfix",
+        "brand": "Chint",
+        "sku": "3365V",
+        "product_url": "https://www.screwfix.com/p/3365V",
+        "retail_price_incl_vat": "2.69",
+        "notes": "Mandatory circuit protection"
+      },
+      {
+        "code": "DOM-screwfix-8947P",
+        "description": "British General British General 13A 2-Gang DP Switched Socket Double pole switched socket outlet with twin earth terminals Supplier: screwfix",
+        "unit": "each",
+        "quantity": "16",
+        "labour_hours": "0",
+        "labour_rate": "0",
+        "labour_total": "0",
+        "material_cost": "5.1979",
+        "material_total": "83.1664",
+        "plant_cost": "0",
+        "plant_total": "0",
+        "unit_price": "5.1979",
+        "total": "83.1664",
+        "cost_item_id": null,
+        "category": "Switches & Sockets",
+        "supplier": "screwfix",
+        "brand": "British General",
+        "sku": "8947P",
+        "product_url": "https://www.screwfix.com/p/8947P",
+        "retail_price_incl_vat": "4.99",
+        "notes": "Mandatory sockets for rewire"
+      },
+      {
+        "code": "DOM-screwfix-643FY",
+        "description": "Colours Colours Hubaa Ceiling Light Chrome Supplier: screwfix",
+        "unit": "each",
+        "quantity": "14",
+        "labour_hours": "0",
+        "labour_rate": "0",
+        "labour_total": "0",
+        "material_cost": "10.4166",
+        "material_total": "145.8324",
+        "plant_cost": "0",
+        "plant_total": "0",
+        "unit_price": "10.4166",
+        "total": "145.8324",
+        "cost_item_id": null,
+        "category": "Lighting",
+        "supplier": "screwfix",
+        "brand": "Colours",
+        "sku": "643FY",
+        "product_url": "https://www.screwfix.com/p/643FY",
+        "retail_price_incl_vat": "10.0",
+        "notes": "Mandatory light points"
+      },
+      {
+        "code": "DOM-screwfix-79041",
+        "description": "LAP LAP  45A 2-Gang DP Cooker Switch White with Neon Supplier: screwfix",
+        "unit": "each",
+        "quantity": "1",
+        "labour_hours": "0",
+        "labour_rate": "0",
+        "labour_total": "0",
+        "material_cost": "10.4062",
+        "material_total": "10.4062",
+        "plant_cost": "0",
+        "plant_total": "0",
+        "unit_price": "10.4062",
+        "total": "10.4062",
+        "cost_item_id": null,
+        "category": "Switches & Sockets",
+        "supplier": "screwfix",
+        "brand": "LAP",
+        "sku": "79041",
+        "product_url": "https://www.screwfix.com/p/79041",
+        "retail_price_incl_vat": "9.99",
+        "notes": "Mandatory cooker switch"
+      },
+      {
+        "code": "DOM-screwfix-2238J",
+        "description": "Time Time 6242Y Grey 1.5mm\u00b2  Twin & Earth Cable 100m Drum Supplier: screwfix",
+        "unit": "m",
+        "quantity": "100",
+        "labour_hours": "0",
+        "labour_rate": "0",
+        "labour_total": "0",
+        "material_cost": "0.6040",
+        "material_total": "60.4000",
+        "plant_cost": "0",
+        "plant_total": "0",
+        "unit_price": "0.6040",
+        "total": "60.4000",
+        "cost_item_id": null,
+        "category": "Cable",
+        "supplier": "screwfix",
+        "brand": "Time",
+        "sku": "2238J",
+        "product_url": "https://www.screwfix.com/p/2238J",
+        "retail_price_incl_vat": "57.99",
+        "notes": "Mandatory lighting cable for 2-bed property Pack size 100m."
+      },
+      {
+        "code": "DOM-screwfix-75935",
+        "description": "Time Time 6242Y Grey 2.5mm\u00b2  Twin & Earth Cable 100m Drum Supplier: screwfix",
+        "unit": "m",
+        "quantity": "200",
+        "labour_hours": "0",
+        "labour_rate": "0",
+        "labour_total": "0",
+        "material_cost": "0.8958",
+        "material_total": "179.1600",
+        "plant_cost": "0",
+        "plant_total": "0",
+        "unit_price": "0.8958",
+        "total": "179.1600",
+        "cost_item_id": null,
+        "category": "Cable",
+        "supplier": "screwfix",
+        "brand": "Time",
+        "sku": "75935",
+        "product_url": "https://www.screwfix.com/p/75935",
+        "retail_price_incl_vat": "85.99",
+        "notes": "Mandatory socket cable for 2-bed property 2x 100m pack (largest available)."
+      },
+      {
+        "code": "DOM-screwfix-73076",
+        "description": "Prysmian Prysmian 6242Y Grey 6mm\u00b2  Twin & Earth Cable 25m Drum Supplier: screwfix",
+        "unit": "m",
+        "quantity": "25",
+        "labour_hours": "0",
+        "labour_rate": "0",
+        "labour_total": "0",
+        "material_cost": "2.9162",
+        "material_total": "72.9050",
+        "plant_cost": "0",
+        "plant_total": "0",
+        "unit_price": "2.9162",
+        "total": "72.9050",
+        "cost_item_id": null,
+        "category": "Cable",
+        "supplier": "screwfix",
+        "brand": "Prysmian",
+        "sku": "73076",
+        "product_url": "https://www.screwfix.com/p/73076",
+        "retail_price_incl_vat": "69.99",
+        "notes": "Mandatory cooker/EV cable Pack size 25m."
+      },
+      {
+        "code": "ELEC-BACKBOX-SINGLE-35MM",
+        "description": "metal back box 1-gang 35mm",
+        "unit": "each",
+        "quantity": "17",
+        "labour_hours": "0",
+        "labour_rate": "0",
+        "labour_total": "0",
+        "material_cost": "1.5000",
+        "material_total": "25.5000",
+        "plant_cost": "0",
+        "plant_total": "0",
+        "unit_price": "1.5000",
+        "total": "25.5000",
+        "cost_item_id": null,
+        "category": "Wiring Accessories",
+        "supplier": "curated",
+        "brand": "curated",
+        "sku": "ELEC-BACKBOX-SINGLE-35MM",
+        "product_url": null,
+        "retail_price_incl_vat": "1.44",
+        "notes": "Metal back boxes for rewire"
+      },
+      {
+        "code": "ELEC-BACKBOX-DOUBLE-35MM",
+        "description": "metal back box 2-gang 35mm",
+        "unit": "each",
+        "quantity": "8",
+        "labour_hours": "0",
+        "labour_rate": "0",
+        "labour_total": "0",
+        "material_cost": "1.8750",
+        "material_total": "15.0000",
+        "plant_cost": "0",
+        "plant_total": "0",
+        "unit_price": "1.8750",
+        "total": "15.0000",
+        "cost_item_id": null,
+        "category": "Wiring Accessories",
+        "supplier": "curated",
+        "brand": "curated",
+        "sku": "ELEC-BACKBOX-DOUBLE-35MM",
+        "product_url": null,
+        "retail_price_incl_vat": "1.8",
+        "notes": "Metal back boxes for rewire"
+      },
+      {
+        "code": "ELEC-SMOKE-ALARM-AICO",
+        "description": "Aico smoke alarm mains powered interlinked",
+        "unit": "each",
+        "quantity": "3",
+        "labour_hours": "0",
+        "labour_rate": "0",
+        "labour_total": "0",
+        "material_cost": "43.7500",
+        "material_total": "131.2500",
+        "plant_cost": "0",
+        "plant_total": "0",
+        "unit_price": "43.7500",
+        "total": "131.2500",
+        "cost_item_id": null,
+        "category": "Security & Fire",
+        "supplier": "curated",
+        "brand": "Aico",
+        "sku": "ELEC-SMOKE-ALARM-AICO",
+        "product_url": null,
+        "retail_price_incl_vat": "42.0",
+        "notes": "Mandatory smoke alarm"
+      },
+      {
+        "code": "ELEC-HEAT-DETECTOR-AICO",
+        "description": "Aico heat detector mains powered",
+        "unit": "each",
+        "quantity": "1",
+        "labour_hours": "0",
+        "labour_rate": "0",
+        "labour_total": "0",
+        "material_cost": "43.7500",
+        "material_total": "43.7500",
+        "plant_cost": "0",
+        "plant_total": "0",
+        "unit_price": "43.7500",
+        "total": "43.7500",
+        "cost_item_id": null,
+        "category": "Security & Fire",
+        "supplier": "curated",
+        "brand": "Aico",
+        "sku": "ELEC-HEAT-DETECTOR-AICO",
+        "product_url": null,
+        "retail_price_incl_vat": "42.0",
+        "notes": "Mandatory heat detector"
+      },
+      {
+        "code": "ELEC-EARTH-ROD-CLAMP",
+        "description": "earth rod clamp",
+        "unit": "each",
+        "quantity": "1",
+        "labour_hours": "0",
+        "labour_rate": "0",
+        "labour_total": "0",
+        "material_cost": "3.7500",
+        "material_total": "3.7500",
+        "plant_cost": "0",
+        "plant_total": "0",
+        "unit_price": "3.7500",
+        "total": "3.7500",
+        "cost_item_id": null,
+        "category": "Wiring Accessories",
+        "supplier": "curated",
+        "brand": "curated",
+        "sku": "ELEC-EARTH-ROD-CLAMP",
+        "product_url": null,
+        "retail_price_incl_vat": "3.6",
+        "notes": "Mandatory earth rod for TT"
+      },
+      {
+        "code": "ELEC-BONDING-CLAMP-10MM",
+        "description": "main equipotential bonding clamp 10mm",
+        "unit": "each",
+        "quantity": "2",
+        "labour_hours": "0",
+        "labour_rate": "0",
+        "labour_total": "0",
+        "material_cost": "5.0000",
+        "material_total": "10.0000",
+        "plant_cost": "0",
+        "plant_total": "0",
+        "unit_price": "5.0000",
+        "total": "10.0000",
+        "cost_item_id": null,
+        "category": "Wiring Accessories",
+        "supplier": "curated",
+        "brand": "curated",
+        "sku": "ELEC-BONDING-CLAMP-10MM",
+        "product_url": null,
+        "retail_price_incl_vat": "4.8",
+        "notes": "Mandatory bonding clamps"
+      },
+      {
+        "code": "ELEC-CABLE-BONDING-4MM",
+        "description": "supplementary bonding cable 4mm",
+        "unit": "m",
+        "quantity": "10",
+        "labour_hours": "0",
+        "labour_rate": "0",
+        "labour_total": "0",
+        "material_cost": "1.2500",
+        "material_total": "12.5000",
+        "plant_cost": "0",
+        "plant_total": "0",
+        "unit_price": "1.2500",
+        "total": "12.5000",
+        "cost_item_id": null,
+        "category": "Cable",
+        "supplier": "curated",
+        "brand": "curated",
+        "sku": "ELEC-CABLE-BONDING-4MM",
+        "product_url": null,
+        "retail_price_incl_vat": "1.2",
+        "notes": "Mandatory supplementary bonding"
+      },
+      {
+        "code": "LABOUR-ELECTRICIAN-DAY",
+        "description": "Electrician labour - day rate",
+        "unit": "day",
+        "quantity": "5",
+        "labour_hours": "8",
+        "labour_rate": "360.00",
+        "labour_total": "1800.0000",
+        "material_cost": "0",
+        "material_total": "0",
+        "plant_cost": "0",
+        "plant_total": "0",
+        "unit_price": "360.00",
+        "total": "1800.0000",
+        "cost_item_id": null,
+        "category": "Labour",
+        "supplier": "Tenant rate",
+        "brand": null,
+        "sku": null,
+        "product_url": null,
+        "retail_price_incl_vat": null,
+        "notes": "5 electrician day(s) based on BoQ scope (install/testing/certification/access)"
+      },
+      {
+        "code": "LABOUR-TESTING-HOUR",
+        "description": "Labour",
+        "unit": "hour",
+        "quantity": "1.5",
+        "labour_hours": "1",
+        "labour_rate": "45.00",
+        "labour_total": "67.5000",
+        "material_cost": "0",
+        "material_total": "0",
+        "plant_cost": "0",
+        "plant_total": "0",
+        "unit_price": "45.00",
+        "total": "67.5000",
+        "cost_item_id": null,
+        "category": "Labour",
+        "supplier": "Tenant rate",
+        "brand": null,
+        "sku": null,
+        "product_url": null,
+        "retail_price_incl_vat": null,
+        "notes": "Testing and inspection allowance"
+      },
+      {
+        "code": "LABOUR-CERTIFICATION-HOUR",
+        "description": "Labour",
+        "unit": "hour",
+        "quantity": "0.75",
+        "labour_hours": "1",
+        "labour_rate": "45.00",
+        "labour_total": "33.7500",
+        "material_cost": "0",
+        "material_total": "0",
+        "plant_cost": "0",
+        "plant_total": "0",
+        "unit_price": "45.00",
+        "total": "33.7500",
+        "cost_item_id": null,
+        "category": "Labour",
+        "supplier": "Tenant rate",
+        "brand": null,
+        "sku": null,
+        "product_url": null,
+        "retail_price_incl_vat": null,
+        "notes": "Certification and handover documentation"
+      },
+      {
+        "code": "LABOUR-MATE-DAY",
+        "description": "Electrician's mate - day rate",
+        "unit": "day",
+        "quantity": "2",
+        "labour_hours": "8",
+        "labour_rate": "198.00",
+        "labour_total": "396.0000",
+        "material_cost": "0",
+        "material_total": "0",
+        "plant_cost": "0",
+        "plant_total": "0",
+        "unit_price": "198.00",
+        "total": "396.0000",
+        "cost_item_id": null,
+        "category": "Labour",
+        "supplier": "Tenant rate",
+        "brand": null,
+        "sku": null,
+        "product_url": null,
+        "retail_price_incl_vat": null,
+        "notes": "2 mate day(s) estimated for scope"
+      }
+    ],
+    "subtotal": "3276.83",
+    "vat_rate": "0.20",
+    "vat_amount": "655.37",
+    "total": "3932.20",
+    "confidence": "0.7",
+    "warnings": [
+      "Quality gate: cable quantities should include explicit wastage allowance (10-15%)."
+    ],
+    "notes": "This is an indicative bill of quantities based on publicly listed supplier prices and rule-based/AI estimates. It is not a fixed quote. Final pricing, availability, and specification must be confirmed with the named supplier(s) before contract. Assumed standard white fittings and typical circuit layout for a 2-bedroom house. TT earthing system requires additional bonding and SPD.",
+    "standard": null,
+    "analysis": {
+      "job_summary": "Full rewire of a 2-bedroom Victorian terrace with TT earthing system and new consumer unit.",
+      "room_count": 2,
+      "spec_level": "mid_range",
+      "regulatory_flags": [
+        "spd_required",
+        "smoke_alarms_required",
+        "metal_cu_required",
+        "rcd_protection"
+      ],
+      "estimated_material_cost_ex_vat": {
+        "min": "979.58",
+        "max": "979.58"
+      },
+      "estimated_labour_hours": {
+        "min": "58.25",
+        "max": "58.25"
+      },
+      "total_quote_range_ex_vat": {
+        "min": "3276.83",
+        "max": "3276.83"
+      }
+    },
+    "regulatory_citations": [
+      {
+        "chunk_id": "0589d53e-7e53-5ba1-9673-b933bdf8da9b",
+        "source": "uk_domestic_electrical_kb",
+        "section_path": [
+          "7. PROTECTION DEVICES",
+          "7.2 Surge Protection Devices (SPDs) [^37^] [^38^] [^39^]",
+          "Practical SPD Requirements for Quoting [^38^] [^39^]"
+        ],
+        "rule_tier": "mandatory",
+        "job_type": "consumer_unit",
+        "snippet": "# 7. PROTECTION DEVICES > 7.2 Surge Protection Devices (SPDs) [^37^] [^38^] [^39^] > Practical SPD Requirements for Quoting [^38^] [^39^]\n\n- **TT earthing with overhead supply**: SPD is effectively mandatory - risk assessment will always mandate it\n- **PME with underground supply**: Risk assessment may indicate recomme\u2026",
+        "relevance_score": 0.6292391
+      },
+      {
+        "chunk_id": "98eaa992-cc94-5356-9d24-c5fbaa32ebdd",
+        "source": "uk_domestic_electrical_kb",
+        "section_path": [
+          "4. CERTIFICATION REQUIREMENTS",
+          "4.3 Electrical Installation Condition Report (EICR)"
+        ],
+        "rule_tier": "mandatory",
+        "job_type": "consumer_unit",
+        "snippet": "# 4. CERTIFICATION REQUIREMENTS > 4.3 Electrical Installation Condition Report (EICR)\n\nThe **Electrical Installation Condition Report (EICR)** is used for **periodic inspection and testing** of existing installations, not for certifying new work\u2026",
+        "relevance_score": 0.6242002
+      },
+      {
+        "chunk_id": "7fc374d8-8d07-5735-a75e-6b2abdfc828e",
+        "source": "uk_domestic_electrical_kb",
+        "section_path": [
+          "4. CERTIFICATION REQUIREMENTS",
+          "4.1 Electrical Installation Certificate (EIC)"
+        ],
+        "rule_tier": "mandatory",
+        "job_type": "consumer_unit",
+        "snippet": "# 4. CERTIFICATION REQUIREMENTS > 4.1 Electrical Installation Certificate (EIC)\n\nThe **Electrical Installation Certificate (EIC)** is the most comprehensive certification document and is required for all new installations, new circuits, consumer unit replacements, and rewires\u2026",
+        "relevance_score": 0.61656046
+      },
+      {
+        "chunk_id": "ab54fd25-c067-571e-b513-5ced72af8cbb",
+        "source": "uk_domestic_electrical_kb_tables",
+        "section_path": [
+          "UK DOMESTIC ELECTRICAL JOB QUOTING - FOUNDATIONAL KNOWLEDGE BASE",
+          "3. NOTIFIABLE vs NON-NOTIFIABLE WORK",
+          "3.1 Notifiable Work (Requires CPS Self-Certification or Building Control)"
+        ],
+        "rule_tier": "mandatory",
+        "job_type": "rewire",
+        "snippet": "# UK DOMESTIC ELECTRICAL JOB QUOTING - FOUNDATIONAL KNOWLEDGE BASE > 3. NOTIFIABLE vs NON-NOTIFIABLE WORK > 3.1 Notifiable Work (Requires CPS Self-Certification or Building Control)\n\n| Work Type | Notification Required | Certificate Type |\n| --- | --- | --- |\n| **New circuit installation** | Yes - always | Full EIC |\n|\u2026",
+        "relevance_score": 0.5904685
+      },
+      {
+        "chunk_id": "c27bc1fc-c8cd-58b2-97be-782619c09c2d",
+        "source": "uk_domestic_electrical_kb",
+        "section_path": [
+          "3. NOTIFIABLE vs NON-NOTIFIABLE WORK",
+          "3.1 Notifiable Work (Requires CPS Self-Certification or Building Control)"
+        ],
+        "rule_tier": "mandatory",
+        "job_type": "rewire",
+        "snippet": "# 3. NOTIFIABLE vs NON-NOTIFIABLE WORK > 3.1 Notifiable Work (Requires CPS Self-Certification or Building Control)\n\nUnderstanding which work is **notifiable** under Part P is fundamental to accurate quoting because notifiable work requires additional time for certification, notification to the scheme provider, and pote\u2026",
+        "relevance_score": 0.51631546
+      }
+    ],
+    "compliance_warnings": [],
+    "customer_summary_lines": [
+      {
+        "description": "Consumer unit and protection upgrade",
+        "total": "3276.83"
+      }
+    ],
+    "margin_indicator": {
+      "material_subtotal": "979.58",
+      "labour_subtotal": "2297.25",
+      "subtotal": "3276.83",
+      "target_markup_percent": "25.00",
+      "estimated_margin_percent": "20.00",
+      "estimated_margin_amount": "195.92"
+    },
+    "clarification_questions": []
+  },
+  "passed": true,
+  "criteria_results": [
+    {
+      "criterion": "bom must contain earth rod (TT system requirement)",
+      "passed": true,
+      "detail": "earth rod: qty=1",
+      "soft": false
+    },
+    {
+      "criterion": "bom must contain main equipotential bonding clamps",
+      "passed": true,
+      "detail": "main equipotential bonding clamps: qty=2",
+      "soft": false
+    },
+    {
+      "criterion": "bom must contain supplementary bonding cable",
+      "passed": true,
+      "detail": "supplementary bonding cable: qty=10",
+      "soft": false
+    },
+    {
+      "criterion": "bom must flag TT earthing system considerations",
+      "passed": null,
+      "detail": "unrecognised criterion (manual review)",
+      "soft": true
+    },
+    {
+      "criterion": "total material cost must be between GBP 900 and GBP 1600",
+      "passed": true,
+      "detail": "material cost ex-VAT = \u00a3979.58, expected \u00a3900.00-\u00a31600.00",
+      "soft": false
+    }
+  ],
+  "summary": {
+    "line_item_count": 21,
+    "material_total": 979.58,
+    "labour_hours_total": 58.25,
+    "subtotal": 3276.83,
+    "total": 3932.2,
+    "confidence": "0.7",
+    "analysis": {
+      "job_summary": "Full rewire of a 2-bedroom Victorian terrace with TT earthing system and new consumer unit.",
+      "room_count": 2,
+      "spec_level": "mid_range",
+      "regulatory_flags": [
+        "spd_required",
+        "smoke_alarms_required",
+        "metal_cu_required",
+        "rcd_protection"
+      ],
+      "estimated_material_cost_ex_vat": {
+        "min": "979.58",
+        "max": "979.58"
+      },
+      "estimated_labour_hours": {
+        "min": "58.25",
+        "max": "58.25"
+      },
+      "total_quote_range_ex_vat": {
+        "min": "3276.83",
+        "max": "3276.83"
+      }
+    },
+    "expected_material_range": {
+      "min": 900.0,
+      "max": 1600.0
+    },
+    "material_cost_delta": 0.0,
+    "material_cost_delta_pct": 0.0,
+    "top_material_items": [
+      {
+        "code": "DOM-screwfix-75935",
+        "description": "Time Time 6242Y Grey 2.5mm\u00b2  Twin & Earth Cable 100m Drum Supplier: screwfix",
+        "category": "Cable",
+        "quantity": 200.0,
+        "unit_price": 0.8958,
+        "material_total": 179.16,
+        "pct_of_material_total": 18.3
+      },
+      {
+        "code": "DOM-screwfix-643FY",
+        "description": "Colours Colours Hubaa Ceiling Light Chrome Supplier: screwfix",
+        "category": "Lighting",
+        "quantity": 14.0,
+        "unit_price": 10.4166,
+        "material_total": 145.83,
+        "pct_of_material_total": 14.9
+      },
+      {
+        "code": "DOM-screwfix-504PF",
+        "description": "MK Sentry MK Sentry  21-Module 12-Way Populated  Dual RCD Consumer Unit with SPD",
+        "category": "Consumer Units",
+        "quantity": 1.0,
+        "unit_price": 145.8229,
+        "material_total": 145.82,
+        "pct_of_material_total": 14.9
+      },
+      {
+        "code": "ELEC-SMOKE-ALARM-AICO",
+        "description": "Aico smoke alarm mains powered interlinked",
+        "category": "Security & Fire",
+        "quantity": 3.0,
+        "unit_price": 43.75,
+        "material_total": 131.25,
+        "pct_of_material_total": 13.4
+      },
+      {
+        "code": "DOM-screwfix-8947P",
+        "description": "British General British General 13A 2-Gang DP Switched Socket Double pole switch",
+        "category": "Switches & Sockets",
+        "quantity": 16.0,
+        "unit_price": 5.1979,
+        "material_total": 83.17,
+        "pct_of_material_total": 8.5
+      },
+      {
+        "code": "DOM-screwfix-73076",
+        "description": "Prysmian Prysmian 6242Y Grey 6mm\u00b2  Twin & Earth Cable 25m Drum Supplier: screwfi",
+        "category": "Cable",
+        "quantity": 25.0,
+        "unit_price": 2.9162,
+        "material_total": 72.9,
+        "pct_of_material_total": 7.4
+      },
+      {
+        "code": "DOM-screwfix-2238J",
+        "description": "Time Time 6242Y Grey 1.5mm\u00b2  Twin & Earth Cable 100m Drum Supplier: screwfix",
+        "category": "Cable",
+        "quantity": 100.0,
+        "unit_price": 0.604,
+        "material_total": 60.4,
+        "pct_of_material_total": 6.2
+      },
+      {
+        "code": "ELEC-HEAT-DETECTOR-AICO",
+        "description": "Aico heat detector mains powered",
+        "category": "Security & Fire",
+        "quantity": 1.0,
+        "unit_price": 43.75,
+        "material_total": 43.75,
+        "pct_of_material_total": 4.5
+      }
+    ]
+  }
+}

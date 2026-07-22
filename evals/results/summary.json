@@ -1,0 +1,1447 @@
+{
+  "total": 17,
+  "passed": 16,
+  "failed": 1,
+  "pass_rate": 0.9412,
+  "by_difficulty": {
+    "easy": {
+      "passed": 4,
+      "total": 4
+    },
+    "medium": {
+      "passed": 6,
+      "total": 7
+    },
+    "hard": {
+      "passed": 6,
+      "total": 6
+    }
+  },
+  "cases": [
+    {
+      "id": "STD-001",
+      "category": "standard_rewire",
+      "difficulty": "easy",
+      "passed": true,
+      "failed_criteria": [],
+      "material_total": 725.34,
+      "expected_material_range": {
+        "min": 500.0,
+        "max": 800.0
+      },
+      "material_cost_delta": 0.0,
+      "material_cost_delta_pct": 0.0,
+      "top_material_items": [
+        {
+          "code": "DOM-screwfix-504PF",
+          "description": "MK Sentry MK Sentry  21-Module 12-Way Populated  Dual RCD Consumer Unit with SPD",
+          "category": "Consumer Units",
+          "quantity": 1.0,
+          "unit_price": 145.8229,
+          "material_total": 145.82,
+          "pct_of_material_total": 20.1
+        },
+        {
+          "code": "DOM-screwfix-643FY",
+          "description": "Colours Colours Hubaa Ceiling Light Chrome Supplier: screwfix",
+          "category": "Lighting",
+          "quantity": 12.0,
+          "unit_price": 10.4166,
+          "material_total": 125.0,
+          "pct_of_material_total": 17.2
+        },
+        {
+          "code": "DOM-screwfix-75935",
+          "description": "Time Time 6242Y Grey 2.5mm\u00b2  Twin & Earth Cable 100m Drum Supplier: screwfix",
+          "category": "Cable",
+          "quantity": 100.0,
+          "unit_price": 0.8958,
+          "material_total": 89.58,
+          "pct_of_material_total": 12.4
+        },
+        {
+          "code": "ELEC-SMOKE-ALARM-AICO",
+          "description": "Aico smoke alarm mains powered interlinked",
+          "category": "Security & Fire",
+          "quantity": 2.0,
+          "unit_price": 43.75,
+          "material_total": 87.5,
+          "pct_of_material_total": 12.1
+        },
+        {
+          "code": "DOM-screwfix-73076",
+          "description": "Prysmian Prysmian 6242Y Grey 6mm\u00b2  Twin & Earth Cable 25m Drum Supplier: screwfi",
+          "category": "Cable",
+          "quantity": 25.0,
+          "unit_price": 2.9162,
+          "material_total": 72.9,
+          "pct_of_material_total": 10.1
+        },
+        {
+          "code": "DOM-screwfix-8947P",
+          "description": "British General British General 13A 2-Gang DP Switched Socket Double pole switch",
+          "category": "Switches & Sockets",
+          "quantity": 10.0,
+          "unit_price": 5.1979,
+          "material_total": 51.98,
+          "pct_of_material_total": 7.2
+        },
+        {
+          "code": "ELEC-HEAT-DETECTOR-AICO",
+          "description": "Aico heat detector mains powered",
+          "category": "Security & Fire",
+          "quantity": 1.0,
+          "unit_price": 43.75,
+          "material_total": 43.75,
+          "pct_of_material_total": 6.0
+        },
+        {
+          "code": "DOM-screwfix-51381",
+          "description": "Prysmian Prysmian 6242Y Grey 1.5mm\u00b2  Twin & Earth Cable 50m Drum Supplier: screw",
+          "category": "Cable",
+          "quantity": 50.0,
+          "unit_price": 0.7498,
+          "material_total": 37.49,
+          "pct_of_material_total": 5.2
+        }
+      ]
+    },
+    {
+      "id": "STD-002",
+      "category": "standard_rewire",
+      "difficulty": "easy",
+      "passed": true,
+      "failed_criteria": [],
+      "material_total": 945.22,
+      "expected_material_range": {
+        "min": 800.0,
+        "max": 1400.0
+      },
+      "material_cost_delta": 0.0,
+      "material_cost_delta_pct": 0.0,
+      "top_material_items": [
+        {
+          "code": "DOM-screwfix-75935",
+          "description": "Time Time 6242Y Grey 2.5mm\u00b2  Twin & Earth Cable 100m Drum Supplier: screwfix",
+          "category": "Cable",
+          "quantity": 200.0,
+          "unit_price": 0.8958,
+          "material_total": 179.16,
+          "pct_of_material_total": 19.0
+        },
+        {
+          "code": "DOM-screwfix-643FY",
+          "description": "Colours Colours Hubaa Ceiling Light Chrome Supplier: screwfix",
+          "category": "Lighting",
+          "quantity": 14.0,
+          "unit_price": 10.4166,
+          "material_total": 145.83,
+          "pct_of_material_total": 15.4
+        },
+        {
+          "code": "DOM-screwfix-504PF",
+          "description": "MK Sentry MK Sentry  21-Module 12-Way Populated  Dual RCD Consumer Unit with SPD",
+          "category": "Consumer Units",
+          "quantity": 1.0,
+          "unit_price": 145.8229,
+          "material_total": 145.82,
+          "pct_of_material_total": 15.4
+        },
+        {
+          "code": "ELEC-SMOKE-ALARM-AICO",
+          "description": "Aico smoke alarm mains powered interlinked",
+          "category": "Security & Fire",
+          "quantity": 3.0,
+          "unit_price": 43.75,
+          "material_total": 131.25,
+          "pct_of_material_total": 13.9
+        },
+        {
+          "code": "DOM-screwfix-8947P",
+          "description": "British General British General 13A 2-Gang DP Switched Socket Double pole switch",
+          "category": "Switches & Sockets",
+          "quantity": 16.0,
+          "unit_price": 5.1979,
+          "material_total": 83.17,
+          "pct_of_material_total": 8.8
+        },
+        {
+          "code": "DOM-screwfix-73076",
+          "description": "Prysmian Prysmian 6242Y Grey 6mm\u00b2  Twin & Earth Cable 25m Drum Supplier: screwfi",
+          "category": "Cable",
+          "quantity": 25.0,
+          "unit_price": 2.9162,
+          "material_total": 72.9,
+          "pct_of_material_total": 7.7
+        },
+        {
+          "code": "DOM-screwfix-2238J",
+          "description": "Time Time 6242Y Grey 1.5mm\u00b2  Twin & Earth Cable 100m Drum Supplier: screwfix",
+          "category": "Cable",
+          "quantity": 100.0,
+          "unit_price": 0.604,
+          "material_total": 60.4,
+          "pct_of_material_total": 6.4
+        },
+        {
+          "code": "ELEC-HEAT-DETECTOR-AICO",
+          "description": "Aico heat detector mains powered",
+          "category": "Security & Fire",
+          "quantity": 1.0,
+          "unit_price": 43.75,
+          "material_total": 43.75,
+          "pct_of_material_total": 4.6
+        }
+      ]
+    },
+    {
+      "id": "STD-003",
+      "category": "standard_rewire",
+      "difficulty": "medium",
+      "passed": false,
+      "failed_criteria": [
+        "total material cost must be between GBP 1300 and GBP 2200"
+      ],
+      "material_total": 1279.11,
+      "expected_material_range": {
+        "min": 1300.0,
+        "max": 2200.0
+      },
+      "material_cost_delta": -20.89,
+      "material_cost_delta_pct": -1.6,
+      "top_material_items": [
+        {
+          "code": "DOM-screwfix-75935",
+          "description": "Time Time 6242Y Grey 2.5mm\u00b2  Twin & Earth Cable 100m Drum Supplier: screwfix",
+          "category": "Cable",
+          "quantity": 200.0,
+          "unit_price": 0.8958,
+          "material_total": 179.16,
+          "pct_of_material_total": 14.0
+        },
+        {
+          "code": "ELEC-SMOKE-ALARM-AICO",
+          "description": "Aico smoke alarm mains powered interlinked",
+          "category": "Security & Fire",
+          "quantity": 4.0,
+          "unit_price": 43.75,
+          "material_total": 175.0,
+          "pct_of_material_total": 13.7
+        },
+        {
+          "code": "DOM-screwfix-504PF",
+          "description": "MK Sentry MK Sentry  21-Module 12-Way Populated  Dual RCD Consumer Unit with SPD",
+          "category": "Consumer Units",
+          "quantity": 1.0,
+          "unit_price": 145.8229,
+          "material_total": 145.82,
+          "pct_of_material_total": 11.4
+        },
+        {
+          "code": "DOM-screwfix-341YE",
+          "description": "MK Sentry MK Sentry  6A 30mA Type A 2-Pole B Curve  Bi-Directional Miniature RCB",
+          "category": "Circuit Protection",
+          "quantity": 6.0,
+          "unit_price": 21.8646,
+          "material_total": 131.19,
+          "pct_of_material_total": 10.3
+        },
+        {
+          "code": "DOM-screwfix-8947P",
+          "description": "British General British General 13A 2-Gang DP Switched Socket Double pole switch",
+          "category": "Switches & Sockets",
+          "quantity": 24.0,
+          "unit_price": 5.1979,
+          "material_total": 124.75,
+          "pct_of_material_total": 9.8
+        },
+        {
+          "code": "DOM-screwfix-461RE",
+          "description": "Lexco Lexco Tania Tilt  Fire Rated LED Downlight White 6W 600lm Supplier: screwf",
+          "category": "Lighting",
+          "quantity": 16.0,
+          "unit_price": 6.25,
+          "material_total": 100.0,
+          "pct_of_material_total": 7.8
+        },
+        {
+          "code": "ELEC-HEAT-DETECTOR-AICO",
+          "description": "Aico heat detector mains powered",
+          "category": "Security & Fire",
+          "quantity": 2.0,
+          "unit_price": 43.75,
+          "material_total": 87.5,
+          "pct_of_material_total": 6.8
+        },
+        {
+          "code": "DOM-screwfix-73076",
+          "description": "Prysmian Prysmian 6242Y Grey 6mm\u00b2  Twin & Earth Cable 25m Drum Supplier: screwfi",
+          "category": "Cable",
+          "quantity": 25.0,
+          "unit_price": 2.9162,
+          "material_total": 72.9,
+          "pct_of_material_total": 5.7
+        }
+      ]
+    },
+    {
+      "id": "STD-004",
+      "category": "standard_rewire",
+      "difficulty": "hard",
+      "passed": true,
+      "failed_criteria": [],
+      "material_total": 2135.3,
+      "expected_material_range": {
+        "min": 2000.0,
+        "max": 3500.0
+      },
+      "material_cost_delta": 0.0,
+      "material_cost_delta_pct": 0.0,
+      "top_material_items": [
+        {
+          "code": "DOM-screwfix-865VF",
+          "description": "Knightsbridge Knightsbridge  13A 2-Gang DP Switched Double Socket Polished Chrom",
+          "category": "Switches & Sockets",
+          "quantity": 32.0,
+          "unit_price": 10.4062,
+          "material_total": 333.0,
+          "pct_of_material_total": 15.6
+        },
+        {
+          "code": "DOM-screwfix-75935",
+          "description": "Time Time 6242Y Grey 2.5mm\u00b2  Twin & Earth Cable 100m Drum Supplier: screwfix",
+          "category": "Cable",
+          "quantity": 300.0,
+          "unit_price": 0.8958,
+          "material_total": 268.74,
+          "pct_of_material_total": 12.6
+        },
+        {
+          "code": "ELEC-CU-HAGER-DESIGN50-16WAY",
+          "description": "Hager Design 50 16-way metal consumer unit with main switch and SPD",
+          "category": "Consumer Units",
+          "quantity": 1.0,
+          "unit_price": 225.0,
+          "material_total": 225.0,
+          "pct_of_material_total": 10.5
+        },
+        {
+          "code": "ELEC-SMOKE-ALARM-AICO",
+          "description": "Aico smoke alarm mains powered interlinked",
+          "category": "Security & Fire",
+          "quantity": 5.0,
+          "unit_price": 43.75,
+          "material_total": 218.75,
+          "pct_of_material_total": 10.2
+        },
+        {
+          "code": "DOM-screwfix-63302",
+          "description": "MK MK Grid Plus 2-Way  Grid Dimmer Switch White with Colour-Matched Inserts Supp",
+          "category": "Switches & Sockets",
+          "quantity": 3.0,
+          "unit_price": 54.6771,
+          "material_total": 164.03,
+          "pct_of_material_total": 7.7
+        },
+        {
+          "code": "DOM-screwfix-54052",
+          "description": "Prysmian Prysmian 6242Y Grey 6mm\u00b2  Twin & Earth Cable 50m Drum Supplier: screwfi",
+          "category": "Cable",
+          "quantity": 50.0,
+          "unit_price": 2.604,
+          "material_total": 130.2,
+          "pct_of_material_total": 6.1
+        },
+        {
+          "code": "DOM-screwfix-2238J",
+          "description": "Time Time 6242Y Grey 1.5mm\u00b2  Twin & Earth Cable 100m Drum Supplier: screwfix",
+          "category": "Cable",
+          "quantity": 200.0,
+          "unit_price": 0.604,
+          "material_total": 120.8,
+          "pct_of_material_total": 5.7
+        },
+        {
+          "code": "DOM-screwfix-461RE",
+          "description": "Lexco Lexco Tania Tilt  Fire Rated LED Downlight White 6W 600lm Supplier: screwf",
+          "category": "Lighting",
+          "quantity": 18.0,
+          "unit_price": 6.25,
+          "material_total": 112.5,
+          "pct_of_material_total": 5.3
+        }
+      ]
+    },
+    {
+      "id": "STD-005",
+      "category": "standard_rewire",
+      "difficulty": "medium",
+      "passed": true,
+      "failed_criteria": [],
+      "material_total": 1108.64,
+      "expected_material_range": {
+        "min": 1000.0,
+        "max": 1800.0
+      },
+      "material_cost_delta": 0.0,
+      "material_cost_delta_pct": 0.0,
+      "top_material_items": [
+        {
+          "code": "DOM-screwfix-75935",
+          "description": "Time Time 6242Y Grey 2.5mm\u00b2  Twin & Earth Cable 100m Drum Supplier: screwfix",
+          "category": "Cable",
+          "quantity": 200.0,
+          "unit_price": 0.8958,
+          "material_total": 179.16,
+          "pct_of_material_total": 16.2
+        },
+        {
+          "code": "ELEC-SMOKE-ALARM-AICO",
+          "description": "Aico smoke alarm mains powered interlinked",
+          "category": "Security & Fire",
+          "quantity": 4.0,
+          "unit_price": 43.75,
+          "material_total": 175.0,
+          "pct_of_material_total": 15.8
+        },
+        {
+          "code": "DOM-screwfix-643FY",
+          "description": "Colours Colours Hubaa Ceiling Light Chrome Supplier: screwfix",
+          "category": "Lighting",
+          "quantity": 16.0,
+          "unit_price": 10.4166,
+          "material_total": 166.67,
+          "pct_of_material_total": 15.0
+        },
+        {
+          "code": "DOM-screwfix-504PF",
+          "description": "MK Sentry MK Sentry  21-Module 12-Way Populated  Dual RCD Consumer Unit with SPD",
+          "category": "Consumer Units",
+          "quantity": 1.0,
+          "unit_price": 145.8229,
+          "material_total": 145.82,
+          "pct_of_material_total": 13.2
+        },
+        {
+          "code": "DOM-screwfix-8947P",
+          "description": "British General British General 13A 2-Gang DP Switched Socket Double pole switch",
+          "category": "Switches & Sockets",
+          "quantity": 24.0,
+          "unit_price": 5.1979,
+          "material_total": 124.75,
+          "pct_of_material_total": 11.3
+        },
+        {
+          "code": "ELEC-HEAT-DETECTOR-AICO",
+          "description": "Aico heat detector mains powered",
+          "category": "Security & Fire",
+          "quantity": 2.0,
+          "unit_price": 43.75,
+          "material_total": 87.5,
+          "pct_of_material_total": 7.9
+        },
+        {
+          "code": "DOM-screwfix-73076",
+          "description": "Prysmian Prysmian 6242Y Grey 6mm\u00b2  Twin & Earth Cable 25m Drum Supplier: screwfi",
+          "category": "Cable",
+          "quantity": 25.0,
+          "unit_price": 2.9162,
+          "material_total": 72.9,
+          "pct_of_material_total": 6.6
+        },
+        {
+          "code": "DOM-screwfix-2238J",
+          "description": "Time Time 6242Y Grey 1.5mm\u00b2  Twin & Earth Cable 100m Drum Supplier: screwfix",
+          "category": "Cable",
+          "quantity": 100.0,
+          "unit_price": 0.604,
+          "material_total": 60.4,
+          "pct_of_material_total": 5.4
+        }
+      ]
+    },
+    {
+      "id": "CU-001",
+      "category": "consumer_unit_upgrade",
+      "difficulty": "easy",
+      "passed": true,
+      "failed_criteria": [],
+      "material_total": 271.71,
+      "expected_material_range": {
+        "min": 200.0,
+        "max": 500.0
+      },
+      "material_cost_delta": 0.0,
+      "material_cost_delta_pct": 0.0,
+      "top_material_items": [
+        {
+          "code": "DOM-screwfix-504PF",
+          "description": "MK Sentry MK Sentry  21-Module 12-Way Populated  Dual RCD Consumer Unit with SPD",
+          "category": "Consumer Units",
+          "quantity": 1.0,
+          "unit_price": 145.8229,
+          "material_total": 145.82,
+          "pct_of_material_total": 53.7
+        },
+        {
+          "code": "ELEC-SMOKE-ALARM-AICO",
+          "description": "Aico smoke alarm mains powered interlinked",
+          "category": "Security & Fire",
+          "quantity": 1.0,
+          "unit_price": 43.75,
+          "material_total": 43.75,
+          "pct_of_material_total": 16.1
+        },
+        {
+          "code": "ELEC-HEAT-DETECTOR-AICO",
+          "description": "Aico heat detector mains powered",
+          "category": "Security & Fire",
+          "quantity": 1.0,
+          "unit_price": 43.75,
+          "material_total": 43.75,
+          "pct_of_material_total": 16.1
+        },
+        {
+          "code": "ELEC-BACKBOX-SINGLE-35MM",
+          "description": "metal back box 1-gang 35mm",
+          "category": "Wiring Accessories",
+          "quantity": 10.0,
+          "unit_price": 1.5,
+          "material_total": 15.0,
+          "pct_of_material_total": 5.5
+        },
+        {
+          "code": "DOM-screwfix-3365V",
+          "description": "Chint Chint EBG 32A SP B Curve  MCB Supplier: screwfix",
+          "category": "Circuit Protection",
+          "quantity": 5.0,
+          "unit_price": 2.8021,
+          "material_total": 14.01,
+          "pct_of_material_total": 5.2
+        },
+        {
+          "code": "ELEC-BACKBOX-DOUBLE-35MM",
+          "description": "metal back box 2-gang 35mm",
+          "category": "Wiring Accessories",
+          "quantity": 5.0,
+          "unit_price": 1.875,
+          "material_total": 9.38,
+          "pct_of_material_total": 3.5
+        }
+      ]
+    },
+    {
+      "id": "CU-002",
+      "category": "consumer_unit_upgrade",
+      "difficulty": "medium",
+      "passed": true,
+      "failed_criteria": [],
+      "material_total": 708.12,
+      "expected_material_range": null,
+      "material_cost_delta": null,
+      "material_cost_delta_pct": null,
+      "top_material_items": [
+        {
+          "code": "ELEC-CU-HAGER-DESIGN50-16WAY",
+          "description": "Hager Design 50 16-way metal consumer unit with main switch and SPD",
+          "category": "Consumer Units",
+          "quantity": 1.0,
+          "unit_price": 225.0,
+          "material_total": 225.0,
+          "pct_of_material_total": 31.8
+        },
+        {
+          "code": "DOM-screwfix-341YE",
+          "description": "MK Sentry MK Sentry  6A 30mA Type A 2-Pole B Curve  Bi-Directional Miniature RCB",
+          "category": "Circuit Protection",
+          "quantity": 5.0,
+          "unit_price": 21.8646,
+          "material_total": 109.32,
+          "pct_of_material_total": 15.4
+        },
+        {
+          "code": "ELEC-CABLE-SWA-2.5MM",
+          "description": "SWA cable 2.5mm steel wire armoured",
+          "category": "Cable",
+          "quantity": 20.0,
+          "unit_price": 4.375,
+          "material_total": 87.5,
+          "pct_of_material_total": 12.4
+        },
+        {
+          "code": "DOM-screwfix-73076",
+          "description": "Prysmian Prysmian 6242Y Grey 6mm\u00b2  Twin & Earth Cable 25m Drum Supplier: screwfi",
+          "category": "Cable",
+          "quantity": 25.0,
+          "unit_price": 2.9162,
+          "material_total": 72.9,
+          "pct_of_material_total": 10.3
+        },
+        {
+          "code": "ELEC-SMOKE-ALARM-AICO",
+          "description": "Aico smoke alarm mains powered interlinked",
+          "category": "Security & Fire",
+          "quantity": 1.0,
+          "unit_price": 43.75,
+          "material_total": 43.75,
+          "pct_of_material_total": 6.2
+        },
+        {
+          "code": "ELEC-HEAT-DETECTOR-AICO",
+          "description": "Aico heat detector mains powered",
+          "category": "Security & Fire",
+          "quantity": 1.0,
+          "unit_price": 43.75,
+          "material_total": 43.75,
+          "pct_of_material_total": 6.2
+        },
+        {
+          "code": "DOM-screwfix-936HM",
+          "description": "Lewden Lewden PRO 5-Module 2-Way Populated  Garage Consumer Unit Supplier: screw",
+          "category": "Consumer Units",
+          "quantity": 1.0,
+          "unit_price": 36.4479,
+          "material_total": 36.45,
+          "pct_of_material_total": 5.1
+        },
+        {
+          "code": "DOM-screwfix-341YE",
+          "description": "MK Sentry MK Sentry  6A 30mA Type A 2-Pole B Curve  Bi-Directional Miniature RCB",
+          "category": "Circuit Protection",
+          "quantity": 1.0,
+          "unit_price": 21.8646,
+          "material_total": 21.86,
+          "pct_of_material_total": 3.1
+        }
+      ]
+    },
+    {
+      "id": "EXT-001",
+      "category": "extension",
+      "difficulty": "medium",
+      "passed": true,
+      "failed_criteria": [],
+      "material_total": 456.61,
+      "expected_material_range": {
+        "min": 300.0,
+        "max": 600.0
+      },
+      "material_cost_delta": 0.0,
+      "material_cost_delta_pct": 0.0,
+      "top_material_items": [
+        {
+          "code": "DOM-screwfix-75935",
+          "description": "Time Time 6242Y Grey 2.5mm\u00b2  Twin & Earth Cable 100m Drum Supplier: screwfix",
+          "category": "Cable",
+          "quantity": 200.0,
+          "unit_price": 0.8958,
+          "material_total": 179.16,
+          "pct_of_material_total": 39.2
+        },
+        {
+          "code": "DOM-screwfix-73076",
+          "description": "Prysmian Prysmian 6242Y Grey 6mm\u00b2  Twin & Earth Cable 25m Drum Supplier: screwfi",
+          "category": "Cable",
+          "quantity": 25.0,
+          "unit_price": 2.9162,
+          "material_total": 72.9,
+          "pct_of_material_total": 16.0
+        },
+        {
+          "code": "DOM-screwfix-2238J",
+          "description": "Time Time 6242Y Grey 1.5mm\u00b2  Twin & Earth Cable 100m Drum Supplier: screwfix",
+          "category": "Cable",
+          "quantity": 100.0,
+          "unit_price": 0.604,
+          "material_total": 60.4,
+          "pct_of_material_total": 13.2
+        },
+        {
+          "code": "ELEC-HEAT-DETECTOR-AICO",
+          "description": "Aico heat detector mains powered",
+          "category": "Security & Fire",
+          "quantity": 1.0,
+          "unit_price": 43.75,
+          "material_total": 43.75,
+          "pct_of_material_total": 9.6
+        },
+        {
+          "code": "DOM-screwfix-8947P",
+          "description": "British General British General 13A 2-Gang DP Switched Socket Double pole switch",
+          "category": "Switches & Sockets",
+          "quantity": 8.0,
+          "unit_price": 5.1979,
+          "material_total": 41.58,
+          "pct_of_material_total": 9.1
+        },
+        {
+          "code": "DOM-screwfix-461RE",
+          "description": "Lexco Lexco Tania Tilt  Fire Rated LED Downlight White 6W 600lm Supplier: screwf",
+          "category": "Lighting",
+          "quantity": 4.0,
+          "unit_price": 6.25,
+          "material_total": 25.0,
+          "pct_of_material_total": 5.5
+        },
+        {
+          "code": "ELEC-BACKBOX-DOUBLE-35MM",
+          "description": "metal back box 2-gang 35mm",
+          "category": "Wiring Accessories",
+          "quantity": 8.0,
+          "unit_price": 1.875,
+          "material_total": 15.0,
+          "pct_of_material_total": 3.3
+        },
+        {
+          "code": "DOM-screwfix-79041",
+          "description": "LAP LAP  45A 2-Gang DP Cooker Switch White with Neon Supplier: screwfix",
+          "category": "Switches & Sockets",
+          "quantity": 1.0,
+          "unit_price": 10.4062,
+          "material_total": 10.41,
+          "pct_of_material_total": 2.3
+        }
+      ]
+    },
+    {
+      "id": "EXT-002",
+      "category": "extension",
+      "difficulty": "hard",
+      "passed": true,
+      "failed_criteria": [],
+      "material_total": 1005.92,
+      "expected_material_range": {
+        "min": 800.0,
+        "max": 1500.0
+      },
+      "material_cost_delta": 0.0,
+      "material_cost_delta_pct": 0.0,
+      "top_material_items": [
+        {
+          "code": "DOM-screwfix-855KL",
+          "description": "Luceco Luceco FType Mk 2 Adjustable  Fire Rated LED Downlight Dim to Warm & CCT ",
+          "category": "Lighting",
+          "quantity": 12.0,
+          "unit_price": 15.2916,
+          "material_total": 183.5,
+          "pct_of_material_total": 18.2
+        },
+        {
+          "code": "DOM-screwfix-504PF",
+          "description": "MK Sentry MK Sentry  21-Module 12-Way Populated  Dual RCD Consumer Unit with SPD",
+          "category": "Consumer Units",
+          "quantity": 1.0,
+          "unit_price": 145.8229,
+          "material_total": 145.82,
+          "pct_of_material_total": 14.5
+        },
+        {
+          "code": "DOM-screwfix-865VF",
+          "description": "Knightsbridge Knightsbridge  13A 2-Gang DP Switched Double Socket Polished Chrom",
+          "category": "Switches & Sockets",
+          "quantity": 12.0,
+          "unit_price": 10.4062,
+          "material_total": 124.87,
+          "pct_of_material_total": 12.4
+        },
+        {
+          "code": "DOM-screwfix-75935",
+          "description": "Time Time 6242Y Grey 2.5mm\u00b2  Twin & Earth Cable 100m Drum Supplier: screwfix",
+          "category": "Cable",
+          "quantity": 100.0,
+          "unit_price": 0.8958,
+          "material_total": 89.58,
+          "pct_of_material_total": 8.9
+        },
+        {
+          "code": "ELEC-HEAT-DETECTOR-AICO",
+          "description": "Aico heat detector mains powered",
+          "category": "Security & Fire",
+          "quantity": 2.0,
+          "unit_price": 43.75,
+          "material_total": 87.5,
+          "pct_of_material_total": 8.7
+        },
+        {
+          "code": "DOM-screwfix-73076",
+          "description": "Prysmian Prysmian 6242Y Grey 6mm\u00b2  Twin & Earth Cable 25m Drum Supplier: screwfi",
+          "category": "Cable",
+          "quantity": 25.0,
+          "unit_price": 2.9162,
+          "material_total": 72.9,
+          "pct_of_material_total": 7.2
+        },
+        {
+          "code": "ELEC-LED-STRIP-UNDER-CABINET",
+          "description": "LED under cabinet strip light",
+          "category": "Lighting",
+          "quantity": 3.0,
+          "unit_price": 18.75,
+          "material_total": 56.25,
+          "pct_of_material_total": 5.6
+        },
+        {
+          "code": "ELEC-SMOKE-ALARM-AICO",
+          "description": "Aico smoke alarm mains powered interlinked",
+          "category": "Security & Fire",
+          "quantity": 1.0,
+          "unit_price": 43.75,
+          "material_total": 43.75,
+          "pct_of_material_total": 4.3
+        }
+      ]
+    },
+    {
+      "id": "KIT-001",
+      "category": "kitchen_only",
+      "difficulty": "easy",
+      "passed": true,
+      "failed_criteria": [],
+      "material_total": 399.68,
+      "expected_material_range": {
+        "min": 250.0,
+        "max": 500.0
+      },
+      "material_cost_delta": 0.0,
+      "material_cost_delta_pct": 0.0,
+      "top_material_items": [
+        {
+          "code": "DOM-screwfix-75935",
+          "description": "Time Time 6242Y Grey 2.5mm\u00b2  Twin & Earth Cable 100m Drum Supplier: screwfix",
+          "category": "Cable",
+          "quantity": 100.0,
+          "unit_price": 0.8958,
+          "material_total": 89.58,
+          "pct_of_material_total": 22.4
+        },
+        {
+          "code": "ELEC-LED-STRIP-UNDER-CABINET",
+          "description": "LED under cabinet strip light",
+          "category": "Lighting",
+          "quantity": 4.0,
+          "unit_price": 18.75,
+          "material_total": 75.0,
+          "pct_of_material_total": 18.8
+        },
+        {
+          "code": "DOM-screwfix-73076",
+          "description": "Prysmian Prysmian 6242Y Grey 6mm\u00b2  Twin & Earth Cable 25m Drum Supplier: screwfi",
+          "category": "Cable",
+          "quantity": 25.0,
+          "unit_price": 2.9162,
+          "material_total": 72.9,
+          "pct_of_material_total": 18.2
+        },
+        {
+          "code": "DOM-screwfix-461RE",
+          "description": "Lexco Lexco Tania Tilt  Fire Rated LED Downlight White 6W 600lm Supplier: screwf",
+          "category": "Lighting",
+          "quantity": 8.0,
+          "unit_price": 6.25,
+          "material_total": 50.0,
+          "pct_of_material_total": 12.5
+        },
+        {
+          "code": "ELEC-HEAT-DETECTOR-AICO",
+          "description": "Aico heat detector mains powered",
+          "category": "Security & Fire",
+          "quantity": 1.0,
+          "unit_price": 43.75,
+          "material_total": 43.75,
+          "pct_of_material_total": 10.9
+        },
+        {
+          "code": "DOM-screwfix-8947P",
+          "description": "British General British General 13A 2-Gang DP Switched Socket Double pole switch",
+          "category": "Switches & Sockets",
+          "quantity": 6.0,
+          "unit_price": 5.1979,
+          "material_total": 31.19,
+          "pct_of_material_total": 7.8
+        },
+        {
+          "code": "DOM-screwfix-966CH",
+          "description": "Robus Robus Vegas 12V Constant Voltage LED Driver 15W Supplier: screwfix",
+          "category": "Lighting",
+          "quantity": 1.0,
+          "unit_price": 15.6041,
+          "material_total": 15.6,
+          "pct_of_material_total": 3.9
+        },
+        {
+          "code": "ELEC-BACKBOX-DOUBLE-35MM",
+          "description": "metal back box 2-gang 35mm",
+          "category": "Wiring Accessories",
+          "quantity": 6.0,
+          "unit_price": 1.875,
+          "material_total": 11.25,
+          "pct_of_material_total": 2.8
+        }
+      ]
+    },
+    {
+      "id": "EV-001",
+      "category": "ev_charger",
+      "difficulty": "medium",
+      "passed": true,
+      "failed_criteria": [],
+      "material_total": 227.9,
+      "expected_material_range": {
+        "min": 150.0,
+        "max": 350.0
+      },
+      "material_cost_delta": 0.0,
+      "material_cost_delta_pct": 0.0,
+      "top_material_items": [
+        {
+          "code": "ELEC-CABLE-SWA-6.0MM",
+          "description": "SWA cable 6mm steel wire armoured",
+          "category": "Cable",
+          "quantity": 20.0,
+          "unit_price": 7.5,
+          "material_total": 150.0,
+          "pct_of_material_total": 65.8
+        },
+        {
+          "code": "ELEC-RCD-TYPE-A-40A",
+          "description": "Type A RCD 40A 30mA for EV charging circuit",
+          "category": "Circuit Protection",
+          "quantity": 1.0,
+          "unit_price": 35.0,
+          "material_total": 35.0,
+          "pct_of_material_total": 15.4
+        },
+        {
+          "code": "DOM-screwfix-321FR",
+          "description": "Wylex Wylex  100A DP  Isolator With Enclosure Supplier: screwfix",
+          "category": "Switches & Sockets",
+          "quantity": 1.0,
+          "unit_price": 21.3438,
+          "material_total": 21.34,
+          "pct_of_material_total": 9.4
+        },
+        {
+          "code": "ELEC-SWA-GLAND-20MM",
+          "description": "gland pack SWA 20mm",
+          "category": "Wiring Accessories",
+          "quantity": 2.0,
+          "unit_price": 7.5,
+          "material_total": 15.0,
+          "pct_of_material_total": 6.6
+        },
+        {
+          "code": "ELEC-EARTH-ROD-CLAMP",
+          "description": "earth rod clamp",
+          "category": "Wiring Accessories",
+          "quantity": 1.0,
+          "unit_price": 3.75,
+          "material_total": 3.75,
+          "pct_of_material_total": 1.6
+        },
+        {
+          "code": "DOM-screwfix-3365V",
+          "description": "Chint Chint EBG 32A SP B Curve  MCB Supplier: screwfix",
+          "category": "Circuit Protection",
+          "quantity": 1.0,
+          "unit_price": 2.8021,
+          "material_total": 2.8,
+          "pct_of_material_total": 1.2
+        }
+      ]
+    },
+    {
+      "id": "REG-001",
+      "category": "regulatory_edge_case",
+      "difficulty": "hard",
+      "passed": true,
+      "failed_criteria": [],
+      "material_total": 2291.77,
+      "expected_material_range": {
+        "min": 1600.0,
+        "max": 2800.0
+      },
+      "material_cost_delta": 0.0,
+      "material_cost_delta_pct": 0.0,
+      "top_material_items": [
+        {
+          "code": "DOM-screwfix-412JK",
+          "description": "Wylex Wylex NXS 32A 30mA Type A SP & N B Curve  AFDD & RCBO Supplier: screwfix",
+          "category": "Circuit Protection",
+          "quantity": 6.0,
+          "unit_price": 104.1562,
+          "material_total": 624.94,
+          "pct_of_material_total": 27.3
+        },
+        {
+          "code": "DOM-screwfix-75935",
+          "description": "Time Time 6242Y Grey 2.5mm\u00b2  Twin & Earth Cable 100m Drum Supplier: screwfix",
+          "category": "Cable",
+          "quantity": 300.0,
+          "unit_price": 0.8958,
+          "material_total": 268.74,
+          "pct_of_material_total": 11.7
+        },
+        {
+          "code": "ELEC-SMOKE-ALARM-AICO",
+          "description": "Aico smoke alarm mains powered interlinked",
+          "category": "Security & Fire",
+          "quantity": 6.0,
+          "unit_price": 43.75,
+          "material_total": 262.5,
+          "pct_of_material_total": 11.5
+        },
+        {
+          "code": "DOM-screwfix-643FY",
+          "description": "Colours Colours Hubaa Ceiling Light Chrome Supplier: screwfix",
+          "category": "Lighting",
+          "quantity": 20.0,
+          "unit_price": 10.4166,
+          "material_total": 208.33,
+          "pct_of_material_total": 9.1
+        },
+        {
+          "code": "DOM-screwfix-8947P",
+          "description": "British General British General 13A 2-Gang DP Switched Socket Double pole switch",
+          "category": "Switches & Sockets",
+          "quantity": 32.0,
+          "unit_price": 5.1979,
+          "material_total": 166.33,
+          "pct_of_material_total": 7.3
+        },
+        {
+          "code": "DOM-screwfix-504PF",
+          "description": "MK Sentry MK Sentry  21-Module 12-Way Populated  Dual RCD Consumer Unit with SPD",
+          "category": "Consumer Units",
+          "quantity": 1.0,
+          "unit_price": 145.8229,
+          "material_total": 145.82,
+          "pct_of_material_total": 6.4
+        },
+        {
+          "code": "DOM-screwfix-54052",
+          "description": "Prysmian Prysmian 6242Y Grey 6mm\u00b2  Twin & Earth Cable 50m Drum Supplier: screwfi",
+          "category": "Cable",
+          "quantity": 50.0,
+          "unit_price": 2.604,
+          "material_total": 130.2,
+          "pct_of_material_total": 5.7
+        },
+        {
+          "code": "DOM-screwfix-2238J",
+          "description": "Time Time 6242Y Grey 1.5mm\u00b2  Twin & Earth Cable 100m Drum Supplier: screwfix",
+          "category": "Cable",
+          "quantity": 200.0,
+          "unit_price": 0.604,
+          "material_total": 120.8,
+          "pct_of_material_total": 5.3
+        }
+      ]
+    },
+    {
+      "id": "REG-002",
+      "category": "regulatory_edge_case",
+      "difficulty": "medium",
+      "passed": true,
+      "failed_criteria": [],
+      "material_total": 979.58,
+      "expected_material_range": {
+        "min": 900.0,
+        "max": 1600.0
+      },
+      "material_cost_delta": 0.0,
+      "material_cost_delta_pct": 0.0,
+      "top_material_items": [
+        {
+          "code": "DOM-screwfix-75935",
+          "description": "Time Time 6242Y Grey 2.5mm\u00b2  Twin & Earth Cable 100m Drum Supplier: screwfix",
+          "category": "Cable",
+          "quantity": 200.0,
+          "unit_price": 0.8958,
+          "material_total": 179.16,
+          "pct_of_material_total": 18.3
+        },
+        {
+          "code": "DOM-screwfix-643FY",
+          "description": "Colours Colours Hubaa Ceiling Light Chrome Supplier: screwfix",
+          "category": "Lighting",
+          "quantity": 14.0,
+          "unit_price": 10.4166,
+          "material_total": 145.83,
+          "pct_of_material_total": 14.9
+        },
+        {
+          "code": "DOM-screwfix-504PF",
+          "description": "MK Sentry MK Sentry  21-Module 12-Way Populated  Dual RCD Consumer Unit with SPD",
+          "category": "Consumer Units",
+          "quantity": 1.0,
+          "unit_price": 145.8229,
+          "material_total": 145.82,
+          "pct_of_material_total": 14.9
+        },
+        {
+          "code": "ELEC-SMOKE-ALARM-AICO",
+          "description": "Aico smoke alarm mains powered interlinked",
+          "category": "Security & Fire",
+          "quantity": 3.0,
+          "unit_price": 43.75,
+          "material_total": 131.25,
+          "pct_of_material_total": 13.4
+        },
+        {
+          "code": "DOM-screwfix-8947P",
+          "description": "British General British General 13A 2-Gang DP Switched Socket Double pole switch",
+          "category": "Switches & Sockets",
+          "quantity": 16.0,
+          "unit_price": 5.1979,
+          "material_total": 83.17,
+          "pct_of_material_total": 8.5
+        },
+        {
+          "code": "DOM-screwfix-73076",
+          "description": "Prysmian Prysmian 6242Y Grey 6mm\u00b2  Twin & Earth Cable 25m Drum Supplier: screwfi",
+          "category": "Cable",
+          "quantity": 25.0,
+          "unit_price": 2.9162,
+          "material_total": 72.9,
+          "pct_of_material_total": 7.4
+        },
+        {
+          "code": "DOM-screwfix-2238J",
+          "description": "Time Time 6242Y Grey 1.5mm\u00b2  Twin & Earth Cable 100m Drum Supplier: screwfix",
+          "category": "Cable",
+          "quantity": 100.0,
+          "unit_price": 0.604,
+          "material_total": 60.4,
+          "pct_of_material_total": 6.2
+        },
+        {
+          "code": "ELEC-HEAT-DETECTOR-AICO",
+          "description": "Aico heat detector mains powered",
+          "category": "Security & Fire",
+          "quantity": 1.0,
+          "unit_price": 43.75,
+          "material_total": 43.75,
+          "pct_of_material_total": 4.5
+        }
+      ]
+    },
+    {
+      "id": "GAR-001",
+      "category": "garage_unit",
+      "difficulty": "medium",
+      "passed": true,
+      "failed_criteria": [],
+      "material_total": 451.57,
+      "expected_material_range": null,
+      "material_cost_delta": null,
+      "material_cost_delta_pct": null,
+      "top_material_items": [
+        {
+          "code": "DOM-screwfix-363AV",
+          "description": "4lite 4lite Valde Single 5ft LED Non-Corrosive Batten Light 60W 8400lm 220-240V ",
+          "category": "Lighting",
+          "quantity": 2.0,
+          "unit_price": 46.8541,
+          "material_total": 93.71,
+          "pct_of_material_total": 20.8
+        },
+        {
+          "code": "ELEC-CABLE-SWA-2.5MM",
+          "description": "SWA cable 2.5mm steel wire armoured",
+          "category": "Cable",
+          "quantity": 20.0,
+          "unit_price": 4.375,
+          "material_total": 87.5,
+          "pct_of_material_total": 19.4
+        },
+        {
+          "code": "DOM-screwfix-73076",
+          "description": "Prysmian Prysmian 6242Y Grey 6mm\u00b2  Twin & Earth Cable 25m Drum Supplier: screwfi",
+          "category": "Cable",
+          "quantity": 25.0,
+          "unit_price": 2.9162,
+          "material_total": 72.9,
+          "pct_of_material_total": 16.1
+        },
+        {
+          "code": "DOM-screwfix-1985P",
+          "description": "Prysmian Prysmian 6242Y Twin & Earth Cable 2.5mm\u00b2 x 50m 6242Y twin and earth cab",
+          "category": "Cable",
+          "quantity": 50.0,
+          "unit_price": 0.8956,
+          "material_total": 44.78,
+          "pct_of_material_total": 9.9
+        },
+        {
+          "code": "DOM-screwfix-356PP",
+          "description": "LAP LAP  Single 4ft LED Batten 22W 2430lm 220-240V Supplier: screwfix",
+          "category": "Lighting",
+          "quantity": 2.0,
+          "unit_price": 19.5625,
+          "material_total": 39.12,
+          "pct_of_material_total": 8.7
+        },
+        {
+          "code": "DOM-screwfix-936HM",
+          "description": "Lewden Lewden PRO 5-Module 2-Way Populated  Garage Consumer Unit Supplier: screw",
+          "category": "Consumer Units",
+          "quantity": 1.0,
+          "unit_price": 36.4479,
+          "material_total": 36.45,
+          "pct_of_material_total": 8.1
+        },
+        {
+          "code": "DOM-screwfix-341YE",
+          "description": "MK Sentry MK Sentry  6A 30mA Type A 2-Pole B Curve  Bi-Directional Miniature RCB",
+          "category": "Circuit Protection",
+          "quantity": 1.0,
+          "unit_price": 21.8646,
+          "material_total": 21.86,
+          "pct_of_material_total": 4.8
+        },
+        {
+          "code": "DOM-screwfix-321FR",
+          "description": "Wylex Wylex  100A DP  Isolator With Enclosure Supplier: screwfix",
+          "category": "Switches & Sockets",
+          "quantity": 1.0,
+          "unit_price": 21.3438,
+          "material_total": 21.34,
+          "pct_of_material_total": 4.7
+        }
+      ]
+    },
+    {
+      "id": "EDGE-001",
+      "category": "ambiguous_input",
+      "difficulty": "hard",
+      "passed": true,
+      "failed_criteria": [
+        "agent should ask clarifying questions in output"
+      ],
+      "material_total": 373.73,
+      "expected_material_range": null,
+      "material_cost_delta": null,
+      "material_cost_delta_pct": null,
+      "top_material_items": [
+        {
+          "code": "DOM-screwfix-75935",
+          "description": "Time Time 6242Y Grey 2.5mm\u00b2  Twin & Earth Cable 100m Drum Supplier: screwfix",
+          "category": "Cable",
+          "quantity": 200.0,
+          "unit_price": 0.8958,
+          "material_total": 179.16,
+          "pct_of_material_total": 47.9
+        },
+        {
+          "code": "DOM-screwfix-643FY",
+          "description": "Colours Colours Hubaa Ceiling Light Chrome Supplier: screwfix",
+          "category": "Lighting",
+          "quantity": 6.0,
+          "unit_price": 10.4166,
+          "material_total": 62.5,
+          "pct_of_material_total": 16.7
+        },
+        {
+          "code": "DOM-screwfix-2238J",
+          "description": "Time Time 6242Y Grey 1.5mm\u00b2  Twin & Earth Cable 100m Drum Supplier: screwfix",
+          "category": "Cable",
+          "quantity": 100.0,
+          "unit_price": 0.604,
+          "material_total": 60.4,
+          "pct_of_material_total": 16.2
+        },
+        {
+          "code": "DOM-screwfix-8947P",
+          "description": "British General British General 13A 2-Gang DP Switched Socket Double pole switch",
+          "category": "Switches & Sockets",
+          "quantity": 10.0,
+          "unit_price": 5.1979,
+          "material_total": 51.98,
+          "pct_of_material_total": 13.9
+        },
+        {
+          "code": "DOM-screwfix-28345",
+          "description": "British General British General  Ceiling Rose Light Fitting White 3\" Supplier: s",
+          "category": "Lighting",
+          "quantity": 10.0,
+          "unit_price": 1.9688,
+          "material_total": 19.69,
+          "pct_of_material_total": 5.3
+        }
+      ]
+    },
+    {
+      "id": "EDGE-002",
+      "category": "edge_case",
+      "difficulty": "hard",
+      "passed": true,
+      "failed_criteria": [],
+      "material_total": 1108.64,
+      "expected_material_range": null,
+      "material_cost_delta": null,
+      "material_cost_delta_pct": null,
+      "top_material_items": [
+        {
+          "code": "DOM-screwfix-75935",
+          "description": "Time Time 6242Y Grey 2.5mm\u00b2  Twin & Earth Cable 100m Drum Supplier: screwfix",
+          "category": "Cable",
+          "quantity": 200.0,
+          "unit_price": 0.8958,
+          "material_total": 179.16,
+          "pct_of_material_total": 16.2
+        },
+        {
+          "code": "ELEC-SMOKE-ALARM-AICO",
+          "description": "Aico smoke alarm mains powered interlinked",
+          "category": "Security & Fire",
+          "quantity": 4.0,
+          "unit_price": 43.75,
+          "material_total": 175.0,
+          "pct_of_material_total": 15.8
+        },
+        {
+          "code": "DOM-screwfix-643FY",
+          "description": "Colours Colours Hubaa Ceiling Light Chrome Supplier: screwfix",
+          "category": "Lighting",
+          "quantity": 16.0,
+          "unit_price": 10.4166,
+          "material_total": 166.67,
+          "pct_of_material_total": 15.0
+        },
+        {
+          "code": "DOM-screwfix-504PF",
+          "description": "MK Sentry MK Sentry  21-Module 12-Way Populated  Dual RCD Consumer Unit with SPD",
+          "category": "Consumer Units",
+          "quantity": 1.0,
+          "unit_price": 145.8229,
+          "material_total": 145.82,
+          "pct_of_material_total": 13.2
+        },
+        {
+          "code": "DOM-screwfix-8947P",
+          "description": "British General British General 13A 2-Gang DP Switched Socket Double pole switch",
+          "category": "Switches & Sockets",
+          "quantity": 24.0,
+          "unit_price": 5.1979,
+          "material_total": 124.75,
+          "pct_of_material_total": 11.3
+        },
+        {
+          "code": "ELEC-HEAT-DETECTOR-AICO",
+          "description": "Aico heat detector mains powered",
+          "category": "Security & Fire",
+          "quantity": 2.0,
+          "unit_price": 43.75,
+          "material_total": 87.5,
+          "pct_of_material_total": 7.9
+        },
+        {
+          "code": "DOM-screwfix-73076",
+          "description": "Prysmian Prysmian 6242Y Grey 6mm\u00b2  Twin & Earth Cable 25m Drum Supplier: screwfi",
+          "category": "Cable",
+          "quantity": 25.0,
+          "unit_price": 2.9162,
+          "material_total": 72.9,
+          "pct_of_material_total": 6.6
+        },
+        {
+          "code": "DOM-screwfix-2238J",
+          "description": "Time Time 6242Y Grey 1.5mm\u00b2  Twin & Earth Cable 100m Drum Supplier: screwfix",
+          "category": "Cable",
+          "quantity": 100.0,
+          "unit_price": 0.604,
+          "material_total": 60.4,
+          "pct_of_material_total": 5.4
+        }
+      ]
+    },
+    {
+      "id": "EDGE-003",
+      "category": "edge_case",
+      "difficulty": "hard",
+      "passed": true,
+      "failed_criteria": [],
+      "material_total": 1452.5,
+      "expected_material_range": {
+        "min": 1200.0,
+        "max": 2200.0
+      },
+      "material_cost_delta": 0.0,
+      "material_cost_delta_pct": 0.0,
+      "top_material_items": [
+        {
+          "code": "ELEC-UFH-MAT-4M2",
+          "description": "electric underfloor heating mat 4m2 160W",
+          "category": "Heating & Cooling",
+          "quantity": 2.0,
+          "unit_price": 150.0,
+          "material_total": 300.0,
+          "pct_of_material_total": 20.7
+        },
+        {
+          "code": "DOM-screwfix-75935",
+          "description": "Time Time 6242Y Grey 2.5mm\u00b2  Twin & Earth Cable 100m Drum Supplier: screwfix",
+          "category": "Cable",
+          "quantity": 200.0,
+          "unit_price": 0.8958,
+          "material_total": 179.16,
+          "pct_of_material_total": 12.3
+        },
+        {
+          "code": "ELEC-UFH-THERMOSTAT",
+          "description": "underfloor heating thermostat programmable",
+          "category": "Heating & Cooling",
+          "quantity": 2.0,
+          "unit_price": 75.0,
+          "material_total": 150.0,
+          "pct_of_material_total": 10.3
+        },
+        {
+          "code": "DOM-screwfix-643FY",
+          "description": "Colours Colours Hubaa Ceiling Light Chrome Supplier: screwfix",
+          "category": "Lighting",
+          "quantity": 14.0,
+          "unit_price": 10.4166,
+          "material_total": 145.83,
+          "pct_of_material_total": 10.0
+        },
+        {
+          "code": "DOM-screwfix-504PF",
+          "description": "MK Sentry MK Sentry  21-Module 12-Way Populated  Dual RCD Consumer Unit with SPD",
+          "category": "Consumer Units",
+          "quantity": 1.0,
+          "unit_price": 145.8229,
+          "material_total": 145.82,
+          "pct_of_material_total": 10.0
+        },
+        {
+          "code": "ELEC-SMOKE-ALARM-AICO",
+          "description": "Aico smoke alarm mains powered interlinked",
+          "category": "Security & Fire",
+          "quantity": 3.0,
+          "unit_price": 43.75,
+          "material_total": 131.25,
+          "pct_of_material_total": 9.0
+        },
+        {
+          "code": "DOM-screwfix-8947P",
+          "description": "British General British General 13A 2-Gang DP Switched Socket Double pole switch",
+          "category": "Switches & Sockets",
+          "quantity": 16.0,
+          "unit_price": 5.1979,
+          "material_total": 83.17,
+          "pct_of_material_total": 5.7
+        },
+        {
+          "code": "DOM-screwfix-73076",
+          "description": "Prysmian Prysmian 6242Y Grey 6mm\u00b2  Twin & Earth Cable 25m Drum Supplier: screwfi",
+          "category": "Cable",
+          "quantity": 25.0,
+          "unit_price": 2.9162,
+          "material_total": 72.9,
+          "pct_of_material_total": 5.0
+        }
+      ]
+    }
+  ]
+}

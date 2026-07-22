@@ -1,0 +1,1594 @@
+{
+  "metadata": {
+    "title": "AI Electrician Quoting Platform \u2014 Conversational Job Capture Data Model",
+    "jurisdiction": "UK",
+    "regulatory_framework": "BS 7671:2018+A2:2022 and BS 7671:2018+A4:2026 (mandatory from 15 Oct 2026), Part P Building Regulations, Approved Document S (EV chargers)",
+    "pricing_date": "2025-2026",
+    "version": "1.1.0",
+    "knowledge_sources": [
+      "docs/UK_Domestic_Electrical_Quoting_Knowledge_Base.md",
+      "docs/ai_electrician_quoting_platform_research/uk_domestic_electrical_knowledge_base.json"
+    ]
+  },
+  "universal_questions": [
+    {
+      "id": "UQ-01",
+      "question": "What type of property is this?",
+      "type": "single_choice",
+      "options": [
+        "Detached house",
+        "Semi-detached house",
+        "Terraced house",
+        "Flat / apartment",
+        "Bungalow",
+        "Maisonette"
+      ],
+      "required": true,
+      "rationale": "Determines access difficulty, cable routing and DNO supply constraints."
+    },
+    {
+      "id": "UQ-02",
+      "question": "What age bracket is the property?",
+      "type": "single_choice",
+      "options": [
+        "Pre-1919",
+        "1919-1945",
+        "1946-1970",
+        "1971-1990",
+        "1991-2005",
+        "2006-2015",
+        "2016 or newer",
+        "I'm not sure"
+      ],
+      "required": true,
+      "rationale": "Pre-1970s properties may have legacy wiring, no RCD and no earth."
+    },
+    {
+      "id": "UQ-03",
+      "question": "Which floor is the work on?",
+      "type": "single_choice",
+      "options": [
+        "Ground floor",
+        "First floor",
+        "Second floor or higher",
+        "Basement",
+        "Multiple floors"
+      ],
+      "required": true,
+      "rationale": "Upper floors mean longer cable runs and loft access considerations."
+    },
+    {
+      "id": "UQ-04",
+      "question": "Where is the consumer unit (fuse board) located?",
+      "type": "single_choice",
+      "options": [
+        "Under stairs",
+        "Kitchen",
+        "Hallway",
+        "Cupboard / utility",
+        "Garage",
+        "Communal area",
+        "I don't know"
+      ],
+      "required": true,
+      "rationale": "Distance from the consumer unit affects cable run length and labour time."
+    },
+    {
+      "id": "UQ-05",
+      "question": "How old is the consumer unit?",
+      "type": "single_choice",
+      "options": [
+        "Less than 5 years",
+        "5-15 years",
+        "15-25 years",
+        "More than 25 years",
+        "I don't know"
+      ],
+      "required": true,
+      "rationale": "Pre-2000 boards often lack modern protection and may need upgrading."
+    },
+    {
+      "id": "UQ-06",
+      "question": "Are you the owner, tenant or landlord?",
+      "type": "single_choice",
+      "options": [
+        "Owner-occupier",
+        "Tenant",
+        "Landlord",
+        "Property manager"
+      ],
+      "required": true,
+      "rationale": "Landlords have 5-year EICR obligations; tenants need landlord permission."
+    },
+    {
+      "id": "UQ-07",
+      "question": "Is there parking available near the property?",
+      "type": "single_choice",
+      "options": [
+        "Driveway",
+        "On-street parking",
+        "Resident permit zone",
+        "No parking nearby",
+        "Congestion / ULEZ zone"
+      ],
+      "required": true,
+      "rationale": "Parking constraints affect travel time and cost, especially in London."
+    },
+    {
+      "id": "UQ-08",
+      "question": "When would you like the work done?",
+      "type": "single_choice",
+      "options": [
+        "Emergency \u2014 as soon as possible",
+        "Within 48 hours",
+        "Within 1-2 weeks",
+        "Within 1 month",
+        "Flexible"
+      ],
+      "required": true,
+      "rationale": "Urgency and weekend work carry premium pricing."
+    },
+    {
+      "id": "UQ-09",
+      "question": "Can you upload a photo of the area or existing fitting?",
+      "type": "image_upload",
+      "options": [],
+      "required": false,
+      "rationale": "Photos help assess access, wall type and existing wiring condition."
+    },
+    {
+      "id": "UQ-10",
+      "question": "Do you know what type of earthing system the property has?",
+      "type": "single_choice",
+      "options": [
+        "PME / TN-C-S (most common)",
+        "TN-S (separate earth)",
+        "TT (earth rod)",
+        "I don't know"
+      ],
+      "required": false,
+      "rationale": "Determines bonding conductor size, RCD requirements and whether PME earth can be exported to outbuildings."
+    },
+    {
+      "id": "UQ-11",
+      "question": "Is your electrician registered with a Competent Person Scheme?",
+      "type": "single_choice",
+      "options": [
+        "NICEIC",
+        "NAPIT",
+        "ELECSA",
+        "Stroma",
+        "Not registered",
+        "Not sure"
+      ],
+      "required": false,
+      "rationale": "CPS registration determines whether notifiable work can be self-certified or must go through building control."
+    }
+  ],
+  "job_categories": [
+    {
+      "id": "CAT-01",
+      "name": "Power Distribution",
+      "description": "Consumer units, rewires and distribution to outbuildings.",
+      "job_types": [
+        {
+          "id": "JOB-0101",
+          "name": "Consumer Unit Upgrade",
+          "part_p_notifiable": "Yes",
+          "typical_duration": "0.5-1 day",
+          "triggers": [
+            "Old fuse board",
+            "No RCD protection",
+            "Frequent tripping",
+            "Adding new circuits"
+          ],
+          "specific_questions": [
+            {
+              "id": "CU-01",
+              "question": "What type of board do you currently have?",
+              "type": "single_choice",
+              "options": [
+                "Rewirable fuses (pre-1990)",
+                "Cartridge fuses (1990-2005)",
+                "Split-load RCD (2005-2015)",
+                "RCBO board (2015+)",
+                "I don't know"
+              ],
+              "required": true,
+              "rationale": "Older boards usually need full replacement."
+            },
+            {
+              "id": "CU-02",
+              "question": "How many circuits does the property have (or bedrooms if unsure)?",
+              "type": "single_choice",
+              "options": [
+                "Studio / 1 bed",
+                "2 bed",
+                "3 bed",
+                "4 bed",
+                "5+ bed",
+                "I don't know"
+              ],
+              "required": true,
+              "rationale": "Determines the size of board required."
+            },
+            {
+              "id": "CU-03",
+              "question": "Would you like surge protection (SPD) included?",
+              "type": "single_choice",
+              "options": [
+                "Yes",
+                "No",
+                "Recommend the best option"
+              ],
+              "required": true,
+              "rationale": "SPDs protect against transient overvoltage and are recommended since Amendment 3."
+            },
+            {
+              "id": "CU-04",
+              "question": "Would you like arc-fault detection (AFDD) included?",
+              "type": "single_choice",
+              "options": [
+                "Yes \u2014 full protection",
+                "Yes \u2014 on bedrooms only",
+                "No",
+                "Recommend the best option"
+              ],
+              "required": false,
+              "rationale": "AFDDs detect dangerous arc faults and are increasingly recommended."
+            },
+            {
+              "id": "CU-05",
+              "question": "Are you planning any future additions (EV charger, extension, solar, hot tub)?",
+              "type": "multi_choice",
+              "options": [
+                "EV charger",
+                "Extension",
+                "Solar panels",
+                "Hot tub",
+                "None"
+              ],
+              "required": false,
+              "rationale": "Future-proofing affects spare-way requirements."
+            }
+          ]
+        },
+        {
+          "id": "JOB-0102",
+          "name": "Full House Rewire",
+          "part_p_notifiable": "Yes",
+          "typical_duration": "3-10 days",
+          "triggers": [
+            "Old wiring",
+            "Buying old property",
+            "Renovation",
+            "Safety concerns"
+          ],
+          "specific_questions": [
+            {
+              "id": "RW-01",
+              "question": "How many bedrooms does the property have?",
+              "type": "single_choice",
+              "options": [
+                "1",
+                "2",
+                "3",
+                "4",
+                "5",
+                "6+"
+              ],
+              "required": true,
+              "rationale": "Drives circuit count and material quantities."
+            },
+            {
+              "id": "RW-02",
+              "question": "Is the property occupied during the rewire?",
+              "type": "single_choice",
+              "options": [
+                "Yes",
+                "No \u2014 vacant",
+                "Partially"
+              ],
+              "required": true,
+              "rationale": "Occupied properties take longer due to access constraints."
+            },
+            {
+              "id": "RW-03",
+              "question": "What floor and wall construction is typical?",
+              "type": "multi_choice",
+              "options": [
+                "Suspended timber floors",
+                "Solid concrete floors",
+                "Dot-and-dab plasterboard",
+                "Lath and plaster",
+                "I don't know"
+              ],
+              "required": false,
+              "rationale": "Solid construction increases chasing and making-good costs."
+            },
+            {
+              "id": "RW-04",
+              "question": "Do you want the rewire to include networking / data cabling?",
+              "type": "single_choice",
+              "options": [
+                "Yes",
+                "No"
+              ],
+              "required": false,
+              "rationale": "Adds low-voltage cabling and outlets."
+            }
+          ]
+        },
+        {
+          "id": "JOB-0103",
+          "name": "Partial Rewire",
+          "part_p_notifiable": "Yes",
+          "typical_duration": "1-3 days",
+          "triggers": [
+            "Kitchen rewire",
+            "Extension",
+            "Upstairs only",
+            "Faulty circuit"
+          ],
+          "specific_questions": [
+            {
+              "id": "PR-01",
+              "question": "Which parts of the property need rewiring?",
+              "type": "multi_choice",
+              "options": [
+                "Kitchen",
+                "Downstairs",
+                "Upstairs",
+                "Extension",
+                "Garage",
+                "Single room"
+              ],
+              "required": true,
+              "rationale": "Defines scope and circuit count."
+            },
+            {
+              "id": "PR-02",
+              "question": "Is the existing consumer unit modern with spare ways?",
+              "type": "single_choice",
+              "options": [
+                "Yes",
+                "No",
+                "I don't know"
+              ],
+              "required": true,
+              "rationale": "May require a CU upgrade as part of the work."
+            }
+          ]
+        },
+        {
+          "id": "JOB-0104",
+          "name": "Outbuilding Supply",
+          "part_p_notifiable": "Yes",
+          "typical_duration": "0.5-1.5 days",
+          "triggers": [
+            "Garage power",
+            "Shed office",
+            "Garden room",
+            "Workshop"
+          ],
+          "specific_questions": [
+            {
+              "id": "OB-01",
+              "question": "What will the outbuilding be used for?",
+              "type": "single_choice",
+              "options": [
+                "Lighting only",
+                "Sockets and lights",
+                "Workshop with heavy tools",
+                "Home office",
+                "Annex / sleeping accommodation"
+              ],
+              "required": true,
+              "rationale": "Determines load and whether a sub-CU is needed."
+            },
+            {
+              "id": "OB-02",
+              "question": "How far is the outbuilding from the house?",
+              "type": "single_choice",
+              "options": [
+                "Under 10m",
+                "10-25m",
+                "25-40m",
+                "Over 40m"
+              ],
+              "required": true,
+              "rationale": "Distance drives cable size and voltage drop."
+            },
+            {
+              "id": "OB-03",
+              "question": "Will the cable run underground?",
+              "type": "single_choice",
+              "options": [
+                "Yes \u2014 direct burial",
+                "Yes \u2014 in ducting",
+                "No \u2014 along fence/wall",
+                "Not sure"
+              ],
+              "required": true,
+              "rationale": "Underground runs need SWA cable and often deeper burial."
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "CAT-02",
+      "name": "Lighting",
+      "description": "Indoor and outdoor lighting installations and upgrades.",
+      "job_types": [
+        {
+          "id": "JOB-0201",
+          "name": "Light Fitting Replacement",
+          "part_p_notifiable": "No \u2014 if like-for-like",
+          "typical_duration": "0.5-1 hour",
+          "triggers": [
+            "Old fitting",
+            "New chandelier",
+            "Broken light",
+            "Style update"
+          ],
+          "specific_questions": [
+            {
+              "id": "LF-01",
+              "question": "Is this a like-for-like replacement or a new location?",
+              "type": "single_choice",
+              "options": [
+                "Like-for-like replacement",
+                "New location",
+                "Not sure"
+              ],
+              "required": true,
+              "rationale": "New locations may require new cable runs."
+            },
+            {
+              "id": "LF-02",
+              "question": "What type of fitting is being installed?",
+              "type": "single_choice",
+              "options": [
+                "Pendant / ceiling rose",
+                "Chandelier",
+                "Flush ceiling light",
+                "Wall light",
+                "Spotlight / downlight"
+              ],
+              "required": true,
+              "rationale": "Weight and mounting method affect labour."
+            },
+            {
+              "id": "LF-03",
+              "question": "What room is the fitting in?",
+              "type": "single_choice",
+              "options": [
+                "Living room / bedroom",
+                "Kitchen",
+                "Bathroom",
+                "Hallway / landing",
+                "Outdoor"
+              ],
+              "required": true,
+              "rationale": "Bathroom and outdoor fittings have IP rating requirements."
+            }
+          ]
+        },
+        {
+          "id": "JOB-0202",
+          "name": "Additional Downlights",
+          "part_p_notifiable": "Conditional \u2014 yes if new circuits / special locations",
+          "typical_duration": "0.5-2 days",
+          "triggers": [
+            "Replace ceiling lights",
+            "Modern look",
+            "Dimming",
+            "Fire-rated ceilings"
+          ],
+          "specific_questions": [
+            {
+              "id": "DL-01",
+              "question": "How many downlights do you want?",
+              "type": "text_input",
+              "options": [],
+              "required": true,
+              "rationale": "Drives material and labour quantities."
+            },
+            {
+              "id": "DL-02",
+              "question": "Are the ceilings fire-rated (e.g. separating floors)?",
+              "type": "single_choice",
+              "options": [
+                "Yes",
+                "No",
+                "I don't know"
+              ],
+              "required": true,
+              "rationale": "Fire-rated downlights are required for fire-rated ceilings."
+            },
+            {
+              "id": "DL-03",
+              "question": "Do you want them dimmable?",
+              "type": "single_choice",
+              "options": [
+                "Yes",
+                "No"
+              ],
+              "required": true,
+              "rationale": "Requires dimmable lamps and compatible dimmer switches."
+            },
+            {
+              "id": "DL-04",
+              "question": "What type of ceiling do you have?",
+              "type": "single_choice",
+              "options": [
+                "Plasterboard",
+                "Lath and plaster",
+                "Concrete",
+                "Suspended",
+                "I don't know"
+              ],
+              "required": false,
+              "rationale": "Affects cutting and fixing difficulty."
+            }
+          ]
+        },
+        {
+          "id": "JOB-0203",
+          "name": "Outdoor / Garden Lighting",
+          "part_p_notifiable": "Yes \u2014 new outdoor circuit",
+          "typical_duration": "0.5-1.5 days",
+          "triggers": [
+            "Garden lights",
+            "Security lights",
+            "Patio lighting",
+            "Driveway lights"
+          ],
+          "specific_questions": [
+            {
+              "id": "OL-01",
+              "question": "How many outdoor lights are required?",
+              "type": "text_input",
+              "options": [],
+              "required": true,
+              "rationale": "Drives cable and labour estimates."
+            },
+            {
+              "id": "OL-02",
+              "question": "Will they be switched from inside?",
+              "type": "single_choice",
+              "options": [
+                "Yes",
+                "No",
+                "Some of them"
+              ],
+              "required": true,
+              "rationale": "Affects switching cable runs."
+            },
+            {
+              "id": "OL-03",
+              "question": "Do you want PIR / motion sensors?",
+              "type": "single_choice",
+              "options": [
+                "Yes",
+                "No",
+                "On some lights"
+              ],
+              "required": false,
+              "rationale": "Adds sensor cost and commissioning time."
+            }
+          ]
+        },
+        {
+          "id": "JOB-0204",
+          "name": "Bathroom Lighting",
+          "part_p_notifiable": "Yes",
+          "typical_duration": "1-3 hours",
+          "triggers": [
+            "Bathroom downlights",
+            "Shaver socket",
+            "Mirror light",
+            "Towel rail"
+          ],
+          "specific_questions": [
+            {
+              "id": "BL-01",
+              "question": "Which bathroom zone will the fitting go in?",
+              "type": "single_choice",
+              "options": [
+                "Zone 0 (inside bath/shower)",
+                "Zone 1 (above bath/shower)",
+                "Zone 2 (0.6m beyond zone 1)",
+                "Outside zones",
+                "I don't know"
+              ],
+              "required": true,
+              "rationale": "Determines permitted equipment and IP rating."
+            },
+            {
+              "id": "BL-02",
+              "question": "What type of fitting?",
+              "type": "single_choice",
+              "options": [
+                "IP65 downlight",
+                "Mirror light",
+                "Shaver socket",
+                "Towel rail",
+                "Extractor fan with light"
+              ],
+              "required": true,
+              "rationale": "Different fittings have different zone and RCD requirements."
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "CAT-03",
+      "name": "Power Points",
+      "description": "Sockets, USB outlets, outdoor sockets and fused connection units.",
+      "job_types": [
+        {
+          "id": "JOB-0301",
+          "name": "Additional Socket Outlet",
+          "part_p_notifiable": "Conditional \u2014 kitchen/bathroom/new circuit = Yes; elsewhere spur = No",
+          "typical_duration": "0.5-2 hours",
+          "triggers": [
+            "Insufficient sockets",
+            "New appliance",
+            "Convenience",
+            "TV / phone charger"
+          ],
+          "specific_questions": [
+            {
+              "id": "SK-01",
+              "question": "What type of socket do you want?",
+              "type": "single_choice",
+              "options": [
+                "Single",
+                "Double",
+                "Double with USB-A",
+                "Double with USB-C",
+                "Smart socket",
+                "Floor socket"
+              ],
+              "required": true,
+              "rationale": "USB/smart sockets cost more but add functionality."
+            },
+            {
+              "id": "SK-02",
+              "question": "Which room will the socket be in?",
+              "type": "single_choice",
+              "options": [
+                "Bedroom",
+                "Living room",
+                "Hallway / landing",
+                "Kitchen",
+                "Bathroom",
+                "Dining room",
+                "Study",
+                "Garage",
+                "Outdoor"
+              ],
+              "required": true,
+              "rationale": "Kitchen and bathroom sockets are notifiable and often need dedicated circuits."
+            },
+            {
+              "id": "SK-03",
+              "question": "What will you be plugging into this socket?",
+              "type": "multi_choice",
+              "options": [
+                "Phone charger / lamp",
+                "TV / games console",
+                "Washing machine",
+                "Tumble dryer",
+                "Dishwasher",
+                "Fridge / freezer",
+                "Electric heater",
+                "Computer / office equipment",
+                "Other high-power appliance"
+              ],
+              "required": true,
+              "rationale": "High-power appliances need dedicated circuits."
+            },
+            {
+              "id": "SK-04",
+              "question": "Is there an existing socket nearby on the same wall?",
+              "type": "single_choice",
+              "options": [
+                "Yes \u2014 on the same ring",
+                "Yes \u2014 different wall",
+                "No nearby socket",
+                "I don't know"
+              ],
+              "required": true,
+              "rationale": "Determines whether a spur or new circuit is needed."
+            },
+            {
+              "id": "SK-05",
+              "question": "How far is the nearest socket from the consumer unit?",
+              "type": "single_choice",
+              "options": [
+                "Under 10m",
+                "10-20m",
+                "20-30m",
+                "Over 30m",
+                "I don't know"
+              ],
+              "required": false,
+              "rationale": "Longer runs increase cable size and labour."
+            }
+          ]
+        },
+        {
+          "id": "JOB-0302",
+          "name": "USB / Smart Socket Installation",
+          "part_p_notifiable": "Conditional \u2014 same as standard socket",
+          "typical_duration": "0.5-2 hours",
+          "triggers": [
+            "Phone charging",
+            "Smart home",
+            "USB convenience",
+            "App control"
+          ],
+          "specific_questions": [
+            {
+              "id": "US-01",
+              "question": "Do you need USB-A, USB-C or both?",
+              "type": "single_choice",
+              "options": [
+                "USB-A only",
+                "USB-C only",
+                "Both",
+                "Not sure"
+              ],
+              "required": true,
+              "rationale": "Affects accessory cost and future-proofing."
+            },
+            {
+              "id": "US-02",
+              "question": "Do you want smart-home integration?",
+              "type": "multi_choice",
+              "options": [
+                "Amazon Alexa",
+                "Google Home",
+                "Apple HomeKit",
+                "None"
+              ],
+              "required": false,
+              "rationale": "Determines compatibility requirements."
+            }
+          ]
+        },
+        {
+          "id": "JOB-0303",
+          "name": "Outdoor Socket Installation",
+          "part_p_notifiable": "Yes \u2014 new outdoor circuit",
+          "typical_duration": "1-3 hours",
+          "triggers": [
+            "Garden power",
+            "Pressure washer",
+            "Outdoor entertaining",
+            "Shed power"
+          ],
+          "specific_questions": [
+            {
+              "id": "OS-01",
+              "question": "How many outdoor sockets do you want?",
+              "type": "text_input",
+              "options": [],
+              "required": true,
+              "rationale": "Drives cable and accessory count."
+            },
+            {
+              "id": "OS-02",
+              "question": "What will they be used for?",
+              "type": "multi_choice",
+              "options": [
+                "Phone charger / light",
+                "Lawn mower",
+                "Pressure washer",
+                "Hot tub",
+                "EV trickle charger",
+                "Power tools"
+              ],
+              "required": true,
+              "rationale": "High-power uses may need dedicated circuits."
+            },
+            {
+              "id": "OS-03",
+              "question": "Is the cable run likely to be over 20m?",
+              "type": "single_choice",
+              "options": [
+                "Yes",
+                "No",
+                "I don't know"
+              ],
+              "required": false,
+              "rationale": "Longer runs may need thicker SWA cable."
+            }
+          ]
+        },
+        {
+          "id": "JOB-0304",
+          "name": "Fused Connection Unit (FCU)",
+          "part_p_notifiable": "Conditional \u2014 new circuit = Yes",
+          "typical_duration": "1-3 hours",
+          "triggers": [
+            "Fixed appliance",
+            "Cooker hood",
+            "Boiler",
+            "Heated towel rail"
+          ],
+          "specific_questions": [
+            {
+              "id": "FC-01",
+              "question": "What appliance will the FCU supply?",
+              "type": "single_choice",
+              "options": [
+                "Cooker hood",
+                "Boiler",
+                "Heated towel rail",
+                "Dishwasher",
+                "Washing machine",
+                "Other"
+              ],
+              "required": true,
+              "rationale": "Determines load and cable size."
+            },
+            {
+              "id": "FC-02",
+              "question": "Will the appliance be on a new circuit or spur from an existing?",
+              "type": "single_choice",
+              "options": [
+                "New circuit",
+                "Spur from existing",
+                "Not sure"
+              ],
+              "required": true,
+              "rationale": "New circuits are notifiable."
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "CAT-04",
+      "name": "Heating & Cooking",
+      "description": "High-demand fixed appliances requiring dedicated circuits.",
+      "job_types": [
+        {
+          "id": "JOB-0401",
+          "name": "Electric Shower Installation",
+          "part_p_notifiable": "Yes",
+          "typical_duration": "2-5 hours",
+          "triggers": [
+            "New shower",
+            "Shower upgrade",
+            "Low pressure",
+            "Power shower"
+          ],
+          "specific_questions": [
+            {
+              "id": "SH-01",
+              "question": "What kW rating is the shower?",
+              "type": "single_choice",
+              "options": [
+                "7.5kW",
+                "8.5kW",
+                "9.5kW",
+                "10.5kW",
+                "10.8kW or higher",
+                "Not sure"
+              ],
+              "required": true,
+              "rationale": "kW rating determines cable size, breaker and supply requirements."
+            },
+            {
+              "id": "SH-02",
+              "question": "How far is the shower from the consumer unit?",
+              "type": "single_choice",
+              "options": [
+                "Under 10m",
+                "10-18m",
+                "18-25m",
+                "Over 25m"
+              ],
+              "required": true,
+              "rationale": "Distance affects cable sizing and voltage drop."
+            },
+            {
+              "id": "SH-03",
+              "question": "Is your water system gravity-fed or mains-pressure?",
+              "type": "single_choice",
+              "options": [
+                "Gravity-fed (tank in loft)",
+                "Mains-pressure (combi boiler)",
+                "Not sure"
+              ],
+              "required": true,
+              "rationale": "Low pressure may need a pumped shower or lower kW rating."
+            },
+            {
+              "id": "SH-04",
+              "question": "Is this a like-for-like replacement or a new install/upgrade?",
+              "type": "single_choice",
+              "options": [
+                "Like-for-like",
+                "Upgrade to higher kW",
+                "New install"
+              ],
+              "required": true,
+              "rationale": "Upgrades may need larger cable and breaker."
+            }
+          ]
+        },
+        {
+          "id": "JOB-0402",
+          "name": "Oven / Hob Circuit",
+          "part_p_notifiable": "Yes \u2014 new circuit",
+          "typical_duration": "2-5 hours",
+          "triggers": [
+            "New oven",
+            "New hob",
+            "Induction hob",
+            "Electric cooker"
+          ],
+          "specific_questions": [
+            {
+              "id": "OH-01",
+              "question": "What type of cooking appliance?",
+              "type": "single_choice",
+              "options": [
+                "Single built-in oven",
+                "Double oven",
+                "Electric hob",
+                "Induction hob",
+                "Range cooker"
+              ],
+              "required": true,
+              "rationale": "Load varies from 13A to 45A+."
+            },
+            {
+              "id": "OH-02",
+              "question": "What is the rated power (kW) if known?",
+              "type": "text_input",
+              "options": [],
+              "required": false,
+              "rationale": "Used to size cable and breaker."
+            },
+            {
+              "id": "OH-03",
+              "question": "Is there an existing cooker circuit?",
+              "type": "single_choice",
+              "options": [
+                "Yes",
+                "No",
+                "I don't know"
+              ],
+              "required": true,
+              "rationale": "Existing circuit may be reusable if sized correctly."
+            }
+          ]
+        },
+        {
+          "id": "JOB-0403",
+          "name": "Storage Heater Circuit",
+          "part_p_notifiable": "Yes \u2014 new circuit",
+          "typical_duration": "2-4 hours",
+          "triggers": [
+            "New storage heater",
+            "Replace storage heater",
+            "Off-peak heating"
+          ],
+          "specific_questions": [
+            {
+              "id": "ST-01",
+              "question": "How many storage heaters need connecting?",
+              "type": "text_input",
+              "options": [],
+              "required": true,
+              "rationale": "Drives circuit and control wiring requirements."
+            },
+            {
+              "id": "ST-02",
+              "question": "Are the heaters over 30 years old?",
+              "type": "single_choice",
+              "options": [
+                "Yes",
+                "No",
+                "Not sure"
+              ],
+              "required": false,
+              "rationale": "Old heaters may contain asbestos \u2014 specialist removal needed."
+            },
+            {
+              "id": "ST-03",
+              "question": "Do you have an off-peak / Economy 7 supply?",
+              "type": "single_choice",
+              "options": [
+                "Yes",
+                "No",
+                "Not sure"
+              ],
+              "required": true,
+              "rationale": "Controls and wiring differ for off-peak tariffs."
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "CAT-05",
+      "name": "Specialist",
+      "description": "EV chargers, alarms, inspections and security.",
+      "job_types": [
+        {
+          "id": "JOB-0501",
+          "name": "EV Charger Installation",
+          "part_p_notifiable": "Yes",
+          "typical_duration": "0.5-1.5 days",
+          "triggers": [
+            "New EV",
+            "Home charger",
+            "Tethered / untethered",
+            "7kW charger"
+          ],
+          "specific_questions": [
+            {
+              "id": "EV-01",
+              "question": "Do you have off-street parking?",
+              "type": "single_choice",
+              "options": [
+                "Yes \u2014 driveway",
+                "Yes \u2014 garage",
+                "No \u2014 on-street parking",
+                "Not sure"
+              ],
+              "required": true,
+              "rationale": "On-street parking often makes installation impractical."
+            },
+            {
+              "id": "EV-02",
+              "question": "What kW charger do you want?",
+              "type": "single_choice",
+              "options": [
+                "3.6kW",
+                "7kW",
+                "11kW",
+                "22kW",
+                "Not sure"
+              ],
+              "required": true,
+              "rationale": "7kW is standard for single-phase UK homes; 22kW needs three-phase."
+            },
+            {
+              "id": "EV-03",
+              "question": "How far will the charger be from the consumer unit?",
+              "type": "single_choice",
+              "options": [
+                "Under 10m",
+                "10-20m",
+                "20-30m",
+                "Over 30m"
+              ],
+              "required": true,
+              "rationale": "Distance drives cable size and labour."
+            },
+            {
+              "id": "EV-04",
+              "question": "Do you have an electric shower, heat pump, or other large loads?",
+              "type": "multi_choice",
+              "options": [
+                "Electric shower",
+                "Heat pump",
+                "Solar panels",
+                "Hot tub",
+                "Storage heaters",
+                "None"
+              ],
+              "required": true,
+              "rationale": "May trigger supply capacity check with DNO."
+            },
+            {
+              "id": "EV-05",
+              "question": "Is there Wi-Fi coverage at the charger location?",
+              "type": "single_choice",
+              "options": [
+                "Yes",
+                "No",
+                "Not sure"
+              ],
+              "required": true,
+              "rationale": "Smart chargers require an internet connection."
+            },
+            {
+              "id": "EV-06",
+              "question": "Do you want tethered or untethered?",
+              "type": "single_choice",
+              "options": [
+                "Tethered (cable attached)",
+                "Untethered (use own cable)",
+                "Not sure"
+              ],
+              "required": false,
+              "rationale": "Affects unit cost and convenience."
+            }
+          ]
+        },
+        {
+          "id": "JOB-0502",
+          "name": "Fire / Smoke Alarm System",
+          "part_p_notifiable": "Yes \u2014 new circuit",
+          "typical_duration": "1-3 hours",
+          "triggers": [
+            "Mains alarms",
+            "Interlinked alarms",
+            "Landlord compliance",
+            "Scotland regulations"
+          ],
+          "specific_questions": [
+            {
+              "id": "FA-01",
+              "question": "How many alarms are needed?",
+              "type": "text_input",
+              "options": [],
+              "required": true,
+              "rationale": "Drives material and labour count."
+            },
+            {
+              "id": "FA-02",
+              "question": "Do they need to be interlinked?",
+              "type": "single_choice",
+              "options": [
+                "Yes \u2014 wired interlink",
+                "Yes \u2014 wireless interlink",
+                "No",
+                "Not sure"
+              ],
+              "required": true,
+              "rationale": "Scottish law and new builds require interlinking."
+            },
+            {
+              "id": "FA-03",
+              "question": "What rooms need coverage?",
+              "type": "multi_choice",
+              "options": [
+                "Hallway",
+                "Landing",
+                "Living room",
+                "Kitchen (heat)",
+                "Bedrooms",
+                "All of the above"
+              ],
+              "required": true,
+              "rationale": "Determines smoke vs heat detector mix."
+            }
+          ]
+        },
+        {
+          "id": "JOB-0503",
+          "name": "EICR Inspection",
+          "part_p_notifiable": "No \u2014 inspection only",
+          "typical_duration": "1-4 hours",
+          "triggers": [
+            "Buying house",
+            "Landlord",
+            "Insurance",
+            "Safety check",
+            "10-year check"
+          ],
+          "specific_questions": [
+            {
+              "id": "EI-01",
+              "question": "Why do you need the EICR?",
+              "type": "single_choice",
+              "options": [
+                "Buying / selling property",
+                "Landlord 5-year check",
+                "Insurance requirement",
+                "Safety concern",
+                "General peace of mind"
+              ],
+              "required": true,
+              "rationale": "Affects urgency and reporting detail."
+            },
+            {
+              "id": "EI-02",
+              "question": "How many circuits does the property have?",
+              "type": "single_choice",
+              "options": [
+                "1-5",
+                "6-10",
+                "11-15",
+                "16+",
+                "I don't know"
+              ],
+              "required": false,
+              "rationale": "Drives inspection time and cost."
+            },
+            {
+              "id": "EI-03",
+              "question": "Is the property occupied?",
+              "type": "single_choice",
+              "options": [
+                "Yes",
+                "No \u2014 vacant",
+                "Tenant-occupied"
+              ],
+              "required": false,
+              "rationale": "Access arrangements differ."
+            }
+          ]
+        },
+        {
+          "id": "JOB-0504",
+          "name": "Security System Wiring",
+          "part_p_notifiable": "Conditional \u2014 new circuit = Yes",
+          "typical_duration": "0.5-1.5 days",
+          "triggers": [
+            "CCTV",
+            "Intruder alarm",
+            "Video doorbell",
+            "Smart security"
+          ],
+          "specific_questions": [
+            {
+              "id": "SE-01",
+              "question": "What type of security system?",
+              "type": "multi_choice",
+              "options": [
+                "Intruder alarm",
+                "CCTV cameras",
+                "Video doorbell",
+                "Smart sensors",
+                "External lighting"
+              ],
+              "required": true,
+              "rationale": "Determines power and data requirements."
+            },
+            {
+              "id": "SE-02",
+              "question": "How many devices need wiring?",
+              "type": "text_input",
+              "options": [],
+              "required": true,
+              "rationale": "Drives cable and labour estimates."
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "decision_logic": {
+    "notifiability_rules": [
+      {
+        "id": "NFR-01",
+        "condition": "new circuit from consumer unit",
+        "notifiable": true,
+        "legal_basis": "Part P Section 2.2",
+        "customer_impact": "Registered electrician required; EIC certificate issued."
+      },
+      {
+        "id": "NFR-02",
+        "condition": "consumer unit replacement",
+        "notifiable": true,
+        "legal_basis": "Part P Section 2.2",
+        "customer_impact": "Registered electrician required; Building Control notified."
+      },
+      {
+        "id": "NFR-03",
+        "condition": "additional socket via ring spur in non-kitchen/bathroom",
+        "notifiable": false,
+        "legal_basis": "BS 7671 433.1.204",
+        "customer_impact": "Any competent person; no certificate required."
+      },
+      {
+        "id": "NFR-04",
+        "condition": "electrical work in bathroom/shower room",
+        "notifiable": true,
+        "legal_basis": "Part P special locations",
+        "customer_impact": "Registered electrician mandatory; BS 7671 Section 701 applies."
+      },
+      {
+        "id": "NFR-05",
+        "condition": "electrical work in kitchen (new circuit/additional sockets)",
+        "notifiable": true,
+        "legal_basis": "Part P special locations",
+        "customer_impact": "Registered electrician mandatory."
+      },
+      {
+        "id": "NFR-06",
+        "condition": "outdoor electrical work (new circuit)",
+        "notifiable": true,
+        "legal_basis": "Part P Section 2.2",
+        "customer_impact": "Registered electrician; IP and RCD requirements apply."
+      },
+      {
+        "id": "NFR-07",
+        "condition": "EV charger installation",
+        "notifiable": true,
+        "legal_basis": "Part P + Approved Document S",
+        "customer_impact": "OZEV-approved installer; DNO notification may be required."
+      },
+      {
+        "id": "NFR-08",
+        "condition": "like-for-like accessory replacement",
+        "notifiable": false,
+        "legal_basis": "Part P exemptions",
+        "customer_impact": "Any competent person."
+      },
+      {
+        "id": "NFR-09",
+        "condition": "EICR inspection/testing",
+        "notifiable": false,
+        "legal_basis": "No installation work",
+        "customer_impact": "Qualified electrician; report issued."
+      },
+      {
+        "id": "NFR-10",
+        "condition": "mains-powered fire/smoke alarm",
+        "notifiable": true,
+        "legal_basis": "Part P new circuit",
+        "customer_impact": "Registered electrician; interlinking required in Scotland."
+      }
+    ],
+    "pricing_adjustment_factors": [
+      {
+        "id": "PAF-01",
+        "factor": "Property age pre-1970",
+        "adjustment_percent": 20,
+        "applies_to": "all"
+      },
+      {
+        "id": "PAF-02",
+        "factor": "Solid concrete floors or dot-and-dab walls",
+        "adjustment_percent": 20,
+        "applies_to": "all"
+      },
+      {
+        "id": "PAF-03",
+        "factor": "Difficult access / no parking",
+        "adjustment_percent": 20,
+        "applies_to": "all"
+      },
+      {
+        "id": "PAF-04",
+        "factor": "Emergency / out-of-hours",
+        "adjustment_percent": 100,
+        "applies_to": "labour"
+      },
+      {
+        "id": "PAF-05",
+        "factor": "Weekend work",
+        "adjustment_percent": 50,
+        "applies_to": "labour"
+      },
+      {
+        "id": "PAF-06",
+        "factor": "Combining multiple jobs",
+        "adjustment_percent": -15,
+        "applies_to": "labour"
+      },
+      {
+        "id": "PAF-07",
+        "factor": "Regional London Central",
+        "adjustment_percent": 50,
+        "applies_to": "labour"
+      },
+      {
+        "id": "PAF-08",
+        "factor": "Regional Scotland Highlands",
+        "adjustment_percent": -20,
+        "applies_to": "labour"
+      }
+    ],
+    "cable_sizing_rules": [
+      {
+        "id": "CSR-01",
+        "circuit_type": "Lighting",
+        "typical_cable": "1.5mm\u00b2 T&E",
+        "breaker": "6A MCB",
+        "max_length_m": 50,
+        "application": "Ceiling roses, wall lights"
+      },
+      {
+        "id": "CSR-02",
+        "circuit_type": "Ring final (sockets)",
+        "typical_cable": "2.5mm\u00b2 T&E",
+        "breaker": "32A MCB",
+        "max_length_m": 100,
+        "application": "Standard socket outlets"
+      },
+      {
+        "id": "CSR-03",
+        "circuit_type": "Socket spur",
+        "typical_cable": "2.5mm\u00b2 T&E",
+        "breaker": "13A FCU",
+        "max_length_m": 20,
+        "application": "Single additional socket"
+      },
+      {
+        "id": "CSR-04",
+        "circuit_type": "Cooker/oven",
+        "typical_cable": "6mm\u00b2 or 10mm\u00b2 T&E",
+        "breaker": "32A or 45A MCB",
+        "max_length_m": 25,
+        "application": "Built-in ovens, hobs"
+      },
+      {
+        "id": "CSR-05",
+        "circuit_type": "Electric shower 8.5kW",
+        "typical_cable": "10mm\u00b2 T&E",
+        "breaker": "40A MCB",
+        "max_length_m": 20,
+        "application": "Mid-range shower"
+      },
+      {
+        "id": "CSR-06",
+        "circuit_type": "Electric shower 9.5kW",
+        "typical_cable": "10mm\u00b2 T&E",
+        "breaker": "45A MCB",
+        "max_length_m": 18,
+        "application": "High-performance shower"
+      },
+      {
+        "id": "CSR-07",
+        "circuit_type": "Electric shower 10.5kW",
+        "typical_cable": "10mm\u00b2 or 16mm\u00b2 T&E",
+        "breaker": "45A or 50A MCB",
+        "max_length_m": 15,
+        "application": "Premium shower"
+      },
+      {
+        "id": "CSR-08",
+        "circuit_type": "EV charger 7kW",
+        "typical_cable": "6mm\u00b2 SWA",
+        "breaker": "32A RCBO",
+        "max_length_m": 25,
+        "application": "Standard home charger"
+      },
+      {
+        "id": "CSR-09",
+        "circuit_type": "Outdoor socket",
+        "typical_cable": "2.5mm\u00b2 SWA",
+        "breaker": "20A RCBO",
+        "max_length_m": 20,
+        "application": "Garden power"
+      },
+      {
+        "id": "CSR-10",
+        "circuit_type": "Outbuilding supply",
+        "typical_cable": "4-6mm\u00b2 SWA",
+        "breaker": "Variable",
+        "max_length_m": 40,
+        "application": "Garage/shed feed"
+      }
+    ]
+  },
+  "compliance_flags": [
+    {
+      "id": "FLAG-01",
+      "trigger": "Consumer unit > 20 years old",
+      "severity": "recommendation",
+      "response": "Suggest a consumer unit upgrade for RCD protection."
+    },
+    {
+      "id": "FLAG-02",
+      "trigger": "Property > 50 years with no recent EICR",
+      "severity": "recommendation",
+      "response": "Suggest a safety inspection."
+    },
+    {
+      "id": "FLAG-03",
+      "trigger": "Bathroom work with no RCD confirmed",
+      "severity": "mandatory",
+      "response": "All bathroom circuits MUST have 30mA RCD protection."
+    },
+    {
+      "id": "FLAG-04",
+      "trigger": "Socket addition for >2kW appliance",
+      "severity": "mandatory",
+      "response": "This appliance needs a dedicated circuit, not a spur."
+    },
+    {
+      "id": "FLAG-05",
+      "trigger": "Outdoor work with no RCD confirmed",
+      "severity": "mandatory",
+      "response": "Outdoor circuits MUST have RCD protection."
+    },
+    {
+      "id": "FLAG-06",
+      "trigger": "EV charger with supply <100A or other large loads",
+      "severity": "warning",
+      "response": "A supply capacity check may be needed; the DNO may need notification."
+    },
+    {
+      "id": "FLAG-07",
+      "trigger": "Storage heater > 30 years old",
+      "severity": "warning",
+      "response": "May contain asbestos \u2014 specialist removal may be required."
+    },
+    {
+      "id": "FLAG-08",
+      "trigger": "Scotland property with alarms not interlinked",
+      "severity": "mandatory",
+      "response": "Scottish law requires interlinked alarms."
+    },
+    {
+      "id": "FLAG-09",
+      "trigger": "Socket circuit \u226432A, bathroom circuit, outdoor circuit or EV circuit",
+      "severity": "mandatory",
+      "response": "Minimum Type A 30mA RCD protection is required. Type AC is no longer adequate for most modern loads."
+    },
+    {
+      "id": "FLAG-10",
+      "trigger": "HRRB, HMO, care home, student accommodation or occupant unable to maintain installation",
+      "severity": "mandatory",
+      "response": "AFDDs are mandatory on socket circuits \u226432A. Owner-occupied dwellings should be offered AFDDs as a recommendation."
+    },
+    {
+      "id": "FLAG-11",
+      "trigger": "EV charger installed outdoors or in an accessible location on a PME supply",
+      "severity": "warning",
+      "response": "A PME earthing risk assessment is required. A TT earth rod or PEN fault detection device may be needed."
+    },
+    {
+      "id": "FLAG-12",
+      "trigger": "TT earthing system identified",
+      "severity": "warning",
+      "response": "All circuits require 30mA RCD protection; an earth electrode must be verified; a Type 2 SPD is typically required."
+    },
+    {
+      "id": "FLAG-13",
+      "trigger": "Notifiable work and electrician is not CPS registered",
+      "severity": "warning",
+      "response": "The homeowner must notify building control and pay a fee (typically \u00a3200-\u00a3400). Itemise this or state it is the customer's responsibility."
+    },
+    {
+      "id": "FLAG-14",
+      "trigger": "EICR records C1, C2 or FI observations",
+      "severity": "mandatory",
+      "response": "Remedial work is required. C1 danger present must be made safe; C2 urgent remedial within 28 days. Quote remedial work separately."
+    }
+  ],
+  "conversational_guidelines": {
+    "persona": "Friendly, patient, non-technical electrical expert. Never uses jargon without explanation. Always offers 'I don't know' as a valid answer. Uses progressive disclosure. Validates intent before technical detail.",
+    "phases": [
+      {
+        "name": "Intent & Essentials",
+        "question_count": "2-4",
+        "goal": "Confirm what the customer wants, where, and flag immediate red flags."
+      },
+      {
+        "name": "Site Assessment",
+        "question_count": "3-5",
+        "goal": "Gather information an electrician would assess on survey; note unknowns for on-site verification."
+      },
+      {
+        "name": "Detail & Confirmation",
+        "question_count": "2-3",
+        "goal": "Final technical details, photo upload request, and summary preview."
+      }
+    ],
+    "handling_idk": {
+      "default_and_note": "No problem \u2014 most people don't know. I'll note it as 'to be confirmed on site'.",
+      "infer_from_context": "Use property age / type to make an educated guess, presented for electrician confirmation.",
+      "use_photos": "Request a photo after 3-5 questions when the customer is engaged."
+    },
+    "photo_guidance": "Request photos only after engagement. Explain why the photo helps (e.g. fuse board type, wall construction, access). Never request a photo as the first question.",
+    "design_principles": [
+      "Customers don't know what electricians need to know.",
+      "Notifiability is the most important compliance flag.",
+      "Property age is the strongest price predictor.",
+      "Distance from the consumer unit determines cable cost.",
+      "Load assessment prevents dangerous installations.",
+      "Regional pricing varies by up to 2x across the UK.",
+      "Photos are requested after engagement, not at the start.",
+      "Bundle recommendations increase average order value.",
+      "Set expectations about exclusions (making good, decorating, flooring).",
+      "The conversation should feel like advice, not a form."
+    ]
+  }
+}

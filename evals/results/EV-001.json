@@ -1,0 +1,574 @@
+{
+  "case": {
+    "id": "EV-001",
+    "category": "ev_charger",
+    "difficulty": "medium",
+    "input": "Need a 7kW EV charger installed on the drive. 3 bed semi. Will need new circuit from consumer unit.",
+    "expected": {
+      "job_summary": "7kW EV charger installation with new dedicated circuit",
+      "room_count": 3,
+      "spec_level": "mid_range",
+      "bom": [
+        {
+          "description": "32A Type B MCB dedicated EV circuit",
+          "quantity": 1,
+          "category": "mcb_rcd_rcbo"
+        },
+        {
+          "description": "Type A RCD 40A 30mA",
+          "quantity": 1,
+          "category": "mcb_rcd_rcbo"
+        },
+        {
+          "description": "SWA cable 6mm 20m",
+          "quantity": 1,
+          "category": "cable"
+        },
+        {
+          "description": "gland pack SWA 20mm",
+          "quantity": 2,
+          "category": "wiring_accessories"
+        },
+        {
+          "description": "weatherproof isolator switch 32A",
+          "quantity": 1,
+          "category": "switches_sockets"
+        },
+        {
+          "description": "earth rod and clamp",
+          "quantity": 1,
+          "category": "wiring_accessories"
+        },
+        {
+          "description": "green/yellow earth cable 10mm 10m",
+          "quantity": 1,
+          "category": "cable"
+        },
+        {
+          "description": "twin and earth cable 2.5mm 10m",
+          "quantity": 1,
+          "category": "cable"
+        }
+      ],
+      "estimated_material_cost_ex_vat": {
+        "min": 180,
+        "max": 320
+      },
+      "estimated_labour_hours": {
+        "min": 6,
+        "max": 10
+      },
+      "regulatory_flags": [
+        "rcd_protection"
+      ],
+      "total_quote_range_ex_vat": {
+        "min": 450,
+        "max": 800
+      }
+    },
+    "pass_criteria": [
+      "bom must contain dedicated 32A MCB for EV circuit",
+      "bom must contain Type A RCD (EV charging requirement BS 7671 722)",
+      "bom must contain SWA cable (outdoor burial requirement)",
+      "bom must contain weatherproof isolator",
+      "bom must contain earth rod (TT system or supplementary)",
+      "bom must NOT contain EV charger unit (user supplies or separate quote)",
+      "total material cost must be between GBP 150 and GBP 350"
+    ],
+    "notes": "EV charger circuit only - not the charger unit itself. BS 7671 Section 722 requires Type A RCD for EV charging. SWA cable required for underground/external runs. Earth rod may be needed for TT systems or supplementary bonding. Source: BS 7671:2018+A2:2022 Section 722, IET EV charging guidance.\n"
+  },
+  "response": {
+    "line_items": [
+      {
+        "code": "ELEC-RCD-TYPE-A-40A",
+        "description": "Type A RCD 40A 30mA for EV charging circuit",
+        "unit": "each",
+        "quantity": "1",
+        "labour_hours": "0",
+        "labour_rate": "0",
+        "labour_total": "0",
+        "material_cost": "35.0000",
+        "material_total": "35.0000",
+        "plant_cost": "0",
+        "plant_total": "0",
+        "unit_price": "35.0000",
+        "total": "35.0000",
+        "cost_item_id": null,
+        "category": "Circuit Protection",
+        "supplier": "curated",
+        "brand": "curated",
+        "sku": "ELEC-RCD-TYPE-A-40A",
+        "product_url": null,
+        "retail_price_incl_vat": "33.6",
+        "notes": "Mandatory Type A RCD for EV"
+      },
+      {
+        "code": "DOM-screwfix-3365V",
+        "description": "Chint Chint EBG 32A SP B Curve  MCB Supplier: screwfix",
+        "unit": "each",
+        "quantity": "1",
+        "labour_hours": "0",
+        "labour_rate": "0",
+        "labour_total": "0",
+        "material_cost": "2.8021",
+        "material_total": "2.8021",
+        "plant_cost": "0",
+        "plant_total": "0",
+        "unit_price": "2.8021",
+        "total": "2.8021",
+        "cost_item_id": null,
+        "category": "Circuit Protection",
+        "supplier": "screwfix",
+        "brand": "Chint",
+        "sku": "3365V",
+        "product_url": "https://www.screwfix.com/p/3365V",
+        "retail_price_incl_vat": "2.69",
+        "notes": "Dedicated 32A MCB for EV circuit"
+      },
+      {
+        "code": "ELEC-CABLE-SWA-6.0MM",
+        "description": "SWA cable 6mm steel wire armoured",
+        "unit": "m",
+        "quantity": "20",
+        "labour_hours": "0",
+        "labour_rate": "0",
+        "labour_total": "0",
+        "material_cost": "7.5000",
+        "material_total": "150.0000",
+        "plant_cost": "0",
+        "plant_total": "0",
+        "unit_price": "7.5000",
+        "total": "150.0000",
+        "cost_item_id": null,
+        "category": "Cable",
+        "supplier": "curated",
+        "brand": "curated",
+        "sku": "ELEC-CABLE-SWA-6.0MM",
+        "product_url": null,
+        "retail_price_incl_vat": "7.2",
+        "notes": "Mandatory SWA for EV"
+      },
+      {
+        "code": "DOM-screwfix-321FR",
+        "description": "Wylex Wylex  100A DP  Isolator With Enclosure Supplier: screwfix",
+        "unit": "each",
+        "quantity": "1",
+        "labour_hours": "0",
+        "labour_rate": "0",
+        "labour_total": "0",
+        "material_cost": "21.3438",
+        "material_total": "21.3438",
+        "plant_cost": "0",
+        "plant_total": "0",
+        "unit_price": "21.3438",
+        "total": "21.3438",
+        "cost_item_id": null,
+        "category": "Switches & Sockets",
+        "supplier": "screwfix",
+        "brand": "Wylex",
+        "sku": "321FR",
+        "product_url": "https://www.screwfix.com/p/321FR",
+        "retail_price_incl_vat": "20.49",
+        "notes": "Mandatory isolator for EV"
+      },
+      {
+        "code": "ELEC-EARTH-ROD-CLAMP",
+        "description": "earth rod clamp",
+        "unit": "each",
+        "quantity": "1",
+        "labour_hours": "0",
+        "labour_rate": "0",
+        "labour_total": "0",
+        "material_cost": "3.7500",
+        "material_total": "3.7500",
+        "plant_cost": "0",
+        "plant_total": "0",
+        "unit_price": "3.7500",
+        "total": "3.7500",
+        "cost_item_id": null,
+        "category": "Wiring Accessories",
+        "supplier": "curated",
+        "brand": "curated",
+        "sku": "ELEC-EARTH-ROD-CLAMP",
+        "product_url": null,
+        "retail_price_incl_vat": "3.6",
+        "notes": "Mandatory earth rod for EV"
+      },
+      {
+        "code": "ELEC-SWA-GLAND-20MM",
+        "description": "gland pack SWA 20mm",
+        "unit": "each",
+        "quantity": "2",
+        "labour_hours": "0",
+        "labour_rate": "0",
+        "labour_total": "0",
+        "material_cost": "7.5000",
+        "material_total": "15.0000",
+        "plant_cost": "0",
+        "plant_total": "0",
+        "unit_price": "7.5000",
+        "total": "15.0000",
+        "cost_item_id": null,
+        "category": "Wiring Accessories",
+        "supplier": "curated",
+        "brand": "curated",
+        "sku": "ELEC-SWA-GLAND-20MM",
+        "product_url": null,
+        "retail_price_incl_vat": "7.2",
+        "notes": "Mandatory SWA gland pack for EV"
+      },
+      {
+        "code": "LABOUR-ELECTRICIAN-DAY",
+        "description": "Electrician labour - day rate",
+        "unit": "day",
+        "quantity": "1",
+        "labour_hours": "8",
+        "labour_rate": "360.00",
+        "labour_total": "360.0000",
+        "material_cost": "0",
+        "material_total": "0",
+        "plant_cost": "0",
+        "plant_total": "0",
+        "unit_price": "360.00",
+        "total": "360.0000",
+        "cost_item_id": null,
+        "category": "Labour",
+        "supplier": "Tenant rate",
+        "brand": null,
+        "sku": null,
+        "product_url": null,
+        "retail_price_incl_vat": null,
+        "notes": "1 electrician day(s) based on BoQ scope (install/testing/certification/access)"
+      },
+      {
+        "code": "LABOUR-TESTING-HOUR",
+        "description": "Labour",
+        "unit": "hour",
+        "quantity": "1.0",
+        "labour_hours": "1",
+        "labour_rate": "45.00",
+        "labour_total": "45.0000",
+        "material_cost": "0",
+        "material_total": "0",
+        "plant_cost": "0",
+        "plant_total": "0",
+        "unit_price": "45.00",
+        "total": "45.0000",
+        "cost_item_id": null,
+        "category": "Labour",
+        "supplier": "Tenant rate",
+        "brand": null,
+        "sku": null,
+        "product_url": null,
+        "retail_price_incl_vat": null,
+        "notes": "Testing and inspection allowance"
+      },
+      {
+        "code": "LABOUR-CERTIFICATION-HOUR",
+        "description": "Labour",
+        "unit": "hour",
+        "quantity": "0.75",
+        "labour_hours": "1",
+        "labour_rate": "45.00",
+        "labour_total": "33.7500",
+        "material_cost": "0",
+        "material_total": "0",
+        "plant_cost": "0",
+        "plant_total": "0",
+        "unit_price": "45.00",
+        "total": "33.7500",
+        "cost_item_id": null,
+        "category": "Labour",
+        "supplier": "Tenant rate",
+        "brand": null,
+        "sku": null,
+        "product_url": null,
+        "retail_price_incl_vat": null,
+        "notes": "Certification and handover documentation"
+      }
+    ],
+    "subtotal": "666.65",
+    "vat_rate": "0.20",
+    "vat_amount": "133.33",
+    "total": "799.98",
+    "confidence": "0.7",
+    "warnings": [
+      "Quality gate: cable quantities should include explicit wastage allowance (10-15%)."
+    ],
+    "notes": "This is an indicative bill of quantities based on publicly listed supplier prices and rule-based/AI estimates. It is not a fixed quote. Final pricing, availability, and specification must be confirmed with the named supplier(s) before contract. Assumed standard installation conditions for a 3-bed semi-detached house. Part P notification required for the new circuit.",
+    "standard": null,
+    "analysis": {
+      "job_summary": "Install a 7kW EV charger with a new dedicated circuit in a 3-bed semi-detached house.",
+      "room_count": 3,
+      "spec_level": "mid_range",
+      "regulatory_flags": [
+        "rcd_protection",
+        "metal_cu_required"
+      ],
+      "estimated_material_cost_ex_vat": {
+        "min": "227.90",
+        "max": "227.90"
+      },
+      "estimated_labour_hours": {
+        "min": "9.75",
+        "max": "9.75"
+      },
+      "total_quote_range_ex_vat": {
+        "min": "666.65",
+        "max": "666.65"
+      }
+    },
+    "regulatory_citations": [
+      {
+        "chunk_id": "1df195f1-602f-5ccf-9710-576dbcc1a290",
+        "source": "uk_domestic_electrical_kb",
+        "section_path": [
+          "11. SPECIALISED INSTALLATIONS",
+          "11.1 EV Charger Installation [^19^] [^20^] [^21^]",
+          "Technical Requirements for Quoting"
+        ],
+        "rule_tier": "mandatory",
+        "job_type": "consumer_unit",
+        "snippet": "# 11. SPECIALISED INSTALLATIONS > 11.1 EV Charger Installation [^19^] [^20^] [^21^] > Technical Requirements for Quoting\n\n| Element | Requirement | Quoting Impact |\n| --- | --- | --- |\n| **Dedicated circuit** | Each charger must have own circuit with protective device [^21^] | New circuit = full EIC; cable run from CU\u2026",
+        "relevance_score": 0.7082125
+      },
+      {
+        "chunk_id": "9818782d-8bdf-5ed1-b9b3-2d384b7903fc",
+        "source": "uk_domestic_electrical_kb_tables",
+        "section_path": [
+          "UK DOMESTIC ELECTRICAL JOB QUOTING - FOUNDATIONAL KNOWLEDGE BASE",
+          "11. SPECIALISED INSTALLATIONS",
+          "11.1 EV Charger Installation",
+          "Technical Requirements for Quoting"
+        ],
+        "rule_tier": "mandatory",
+        "job_type": "consumer_unit",
+        "snippet": "# UK DOMESTIC ELECTRICAL JOB QUOTING - FOUNDATIONAL KNOWLEDGE BASE > 11. SPECIALISED INSTALLATIONS > 11.1 EV Charger Installation > Technical Requirements for Quoting\n\n| Element | Requirement | Quoting Impact |\n| --- | --- | --- |\n| **Dedicated circuit** | Each charger must have own circuit with protective device | New\u2026",
+        "relevance_score": 0.6932918
+      },
+      {
+        "chunk_id": "33a661be-ab78-58db-8215-fab68384e1b0",
+        "source": "job_capture_data_model",
+        "section_path": [
+          "AI Electrician Quoting Platform \u2014 Conversational Job Capture Data Model",
+          "Decision Logic",
+          "notifiability_rules",
+          "NFR-01"
+        ],
+        "rule_tier": "mandatory",
+        "job_type": "consumer_unit",
+        "snippet": "id: NFR-01\ncondition: new circuit from consumer unit\nnotifiable: True\nlegal_basis: Part P Section 2.2\ncustomer_impact: Registered electrician required; EIC certificate issued.",
+        "relevance_score": 0.6355562
+      },
+      {
+        "chunk_id": "5b8e8d09-9946-55d4-97e3-1ec997db00d7",
+        "source": "uk_domestic_electrical_kb",
+        "section_path": [
+          "11. SPECIALISED INSTALLATIONS",
+          "11.1 EV Charger Installation [^19^] [^20^] [^21^]",
+          "Regulatory Requirements"
+        ],
+        "rule_tier": "mandatory",
+        "job_type": "ev_charger",
+        "snippet": "# 11. SPECIALISED INSTALLATIONS > 11.1 EV Charger Installation [^19^] [^20^] [^21^] > Regulatory Requirements\n\n| Requirement | Detail |\n| --- | --- |\n| **Part P notification** | Yes - new dedicated circuit; must be notifiable [^21^] |\n| **BS 7671 Section 722** | Specific requirements for EV charging installations apply\u2026",
+        "relevance_score": 0.72312504
+      },
+      {
+        "chunk_id": "386336c0-cd25-5b1a-b270-f9c9f9f70024",
+        "source": "uk_domestic_electrical_kb_tables",
+        "section_path": [
+          "UK DOMESTIC ELECTRICAL JOB QUOTING - FOUNDATIONAL KNOWLEDGE BASE",
+          "11. SPECIALISED INSTALLATIONS",
+          "11.1 EV Charger Installation",
+          "Regulatory Requirements"
+        ],
+        "rule_tier": "mandatory",
+        "job_type": "ev_charger",
+        "snippet": "# UK DOMESTIC ELECTRICAL JOB QUOTING - FOUNDATIONAL KNOWLEDGE BASE > 11. SPECIALISED INSTALLATIONS > 11.1 EV Charger Installation > Regulatory Requirements\n\n| Requirement | Detail |\n| --- | --- |\n| **Part P notification** | Yes - new dedicated circuit; must be notifiable |\n| **BS 7671 Section 722** | Specific requireme\u2026",
+        "relevance_score": 0.70738244
+      },
+      {
+        "chunk_id": "c1f0f0c2-c910-58a7-9b6d-dbf422e26e3e",
+        "source": "uk_domestic_electrical_kb",
+        "section_path": [
+          "7. PROTECTION DEVICES",
+          "7.2 Surge Protection Devices (SPDs) [^37^] [^38^] [^39^]",
+          "SPD Risk Assessment Factors [^37^]"
+        ],
+        "rule_tier": "default",
+        "job_type": "ev_charger",
+        "snippet": "# 7. PROTECTION DEVICES > 7.2 Surge Protection Devices (SPDs) [^37^] [^38^] [^39^] > SPD Risk Assessment Factors [^37^]\n\n| Factor Increasing Risk | Factor Decreasing Risk |\n| --- | --- |\n| Building in exposed location (hill, open ground) | Underground cable service entry |\n| Overhead supply lines | TNC-S (PME) earthing\u2026",
+        "relevance_score": 0.5805566
+      },
+      {
+        "chunk_id": "5d217a64-ff5c-5a1e-b79d-5e345f80c95a",
+        "source": "uk_domestic_electrical_kb_tables",
+        "section_path": [
+          "UK DOMESTIC ELECTRICAL JOB QUOTING - FOUNDATIONAL KNOWLEDGE BASE",
+          "7. PROTECTION DEVICES",
+          "7.2 Surge Protection Devices (SPDs)",
+          "SPD Risk Assessment Factors"
+        ],
+        "rule_tier": "default",
+        "job_type": "ev_charger",
+        "snippet": "# UK DOMESTIC ELECTRICAL JOB QUOTING - FOUNDATIONAL KNOWLEDGE BASE > 7. PROTECTION DEVICES > 7.2 Surge Protection Devices (SPDs) > SPD Risk Assessment Factors\n\n| Factor Increasing Risk | Factor Decreasing Risk |\n| --- | --- |\n| Building in exposed location (hill, open ground) | Underground cable service entry |\n| Overh\u2026",
+        "relevance_score": 0.5619858
+      }
+    ],
+    "compliance_warnings": [
+      "Compliance check (consumer_unit): BoQ may be missing 'Metal consumer unit enclosure'. Confirm before sending to customer.",
+      "Compliance check (consumer_unit): BoQ may be missing 'Surge Protection Device (SPD)'. Confirm before sending to customer."
+    ],
+    "customer_summary_lines": [
+      {
+        "description": "Install EV charger supply and protection",
+        "total": "666.65"
+      }
+    ],
+    "margin_indicator": {
+      "material_subtotal": "227.90",
+      "labour_subtotal": "438.75",
+      "subtotal": "666.65",
+      "target_markup_percent": "25.00",
+      "estimated_margin_percent": "20.00",
+      "estimated_margin_amount": "45.58"
+    },
+    "clarification_questions": []
+  },
+  "passed": true,
+  "criteria_results": [
+    {
+      "criterion": "bom must contain dedicated 32A MCB for EV circuit",
+      "passed": true,
+      "detail": "dedicated 32a mcb for ev circuit: qty=1",
+      "soft": false
+    },
+    {
+      "criterion": "bom must contain Type A RCD (EV charging requirement BS 7671 722)",
+      "passed": true,
+      "detail": "type a rcd: qty=1",
+      "soft": false
+    },
+    {
+      "criterion": "bom must contain SWA cable (outdoor burial requirement)",
+      "passed": true,
+      "detail": "swa cable: qty=20",
+      "soft": false
+    },
+    {
+      "criterion": "bom must contain weatherproof isolator",
+      "passed": true,
+      "detail": "weatherproof isolator: qty=1",
+      "soft": false
+    },
+    {
+      "criterion": "bom must contain earth rod (TT system or supplementary)",
+      "passed": true,
+      "detail": "earth rod: qty=1",
+      "soft": false
+    },
+    {
+      "criterion": "bom must NOT contain EV charger unit (user supplies or separate quote)",
+      "passed": true,
+      "detail": "ev charger unit: qty=0",
+      "soft": false
+    },
+    {
+      "criterion": "total material cost must be between GBP 150 and GBP 350",
+      "passed": true,
+      "detail": "material cost ex-VAT = \u00a3227.90, expected \u00a3150.00-\u00a3350.00",
+      "soft": false
+    }
+  ],
+  "summary": {
+    "line_item_count": 9,
+    "material_total": 227.9,
+    "labour_hours_total": 9.75,
+    "subtotal": 666.65,
+    "total": 799.98,
+    "confidence": "0.7",
+    "analysis": {
+      "job_summary": "Install a 7kW EV charger with a new dedicated circuit in a 3-bed semi-detached house.",
+      "room_count": 3,
+      "spec_level": "mid_range",
+      "regulatory_flags": [
+        "rcd_protection",
+        "metal_cu_required"
+      ],
+      "estimated_material_cost_ex_vat": {
+        "min": "227.90",
+        "max": "227.90"
+      },
+      "estimated_labour_hours": {
+        "min": "9.75",
+        "max": "9.75"
+      },
+      "total_quote_range_ex_vat": {
+        "min": "666.65",
+        "max": "666.65"
+      }
+    },
+    "expected_material_range": {
+      "min": 150.0,
+      "max": 350.0
+    },
+    "material_cost_delta": 0.0,
+    "material_cost_delta_pct": 0.0,
+    "top_material_items": [
+      {
+        "code": "ELEC-CABLE-SWA-6.0MM",
+        "description": "SWA cable 6mm steel wire armoured",
+        "category": "Cable",
+        "quantity": 20.0,
+        "unit_price": 7.5,
+        "material_total": 150.0,
+        "pct_of_material_total": 65.8
+      },
+      {
+        "code": "ELEC-RCD-TYPE-A-40A",
+        "description": "Type A RCD 40A 30mA for EV charging circuit",
+        "category": "Circuit Protection",
+        "quantity": 1.0,
+        "unit_price": 35.0,
+        "material_total": 35.0,
+        "pct_of_material_total": 15.4
+      },
+      {
+        "code": "DOM-screwfix-321FR",
+        "description": "Wylex Wylex  100A DP  Isolator With Enclosure Supplier: screwfix",
+        "category": "Switches & Sockets",
+        "quantity": 1.0,
+        "unit_price": 21.3438,
+        "material_total": 21.34,
+        "pct_of_material_total": 9.4
+      },
+      {
+        "code": "ELEC-SWA-GLAND-20MM",
+        "description": "gland pack SWA 20mm",
+        "category": "Wiring Accessories",
+        "quantity": 2.0,
+        "unit_price": 7.5,
+        "material_total": 15.0,
+        "pct_of_material_total": 6.6
+      },
+      {
+        "code": "ELEC-EARTH-ROD-CLAMP",
+        "description": "earth rod clamp",
+        "category": "Wiring Accessories",
+        "quantity": 1.0,
+        "unit_price": 3.75,
+        "material_total": 3.75,
+        "pct_of_material_total": 1.6
+      },
+      {
+        "code": "DOM-screwfix-3365V",
+        "description": "Chint Chint EBG 32A SP B Curve  MCB Supplier: screwfix",
+        "category": "Circuit Protection",
+        "quantity": 1.0,
+        "unit_price": 2.8021,
+        "material_total": 2.8,
+        "pct_of_material_total": 1.2
+      }
+    ]
+  }
+}

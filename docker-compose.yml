@@ -1,0 +1,212 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: mtp_postgres
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-mtp}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-mtp}
+      POSTGRES_DB: ${POSTGRES_DB:-mtp}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-mtp} -d ${POSTGRES_DB:-mtp}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: mtp_redis
+    volumes:
+      - redis_data:/data
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  qdrant:
+    image: qdrant/qdrant:v1.11.5
+    container_name: mtp_qdrant
+    volumes:
+      - qdrant_storage:/qdrant/storage
+    ports:
+      - "6333:6333"
+      - "6334:6334"
+    healthcheck:
+      test: ["CMD-SHELL", "bash -c 'echo >/dev/tcp/localhost/6333'"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  minio:
+    image: minio/minio:RELEASE.2024-05-10T01-41-38Z
+    container_name: mtp_minio
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin}
+    command: server /data --console-address ":9001"
+    volumes:
+      - minio_data:/data
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    healthcheck:
+      test: ["CMD-SHELL", "bash -c 'echo >/dev/tcp/localhost/9000'"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  mailpit:
+    image: axllent/mailpit:v1.18
+    container_name: mtp_mailpit
+    ports:
+      - "1025:1025"
+      - "8025:8025"
+
+  api:
+    build:
+      context: .
+      dockerfile: services/api/Dockerfile
+    container_name: mtp_api
+    environment:
+      DATABASE_URL: postgresql+asyncpg://mtp:mtp@postgres:5432/mtp
+      REDIS_URL: redis://redis:6379/0
+      QDRANT_URL: http://qdrant:6333
+      MINIO_ENDPOINT: minio:9000
+      MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY:-minioadmin}
+      MINIO_SECRET_KEY: ${MINIO_SECRET_KEY:-minioadmin}
+      MINIO_BUCKET: ${MINIO_BUCKET:-mtp-uploads}
+      ENVIRONMENT: ${ENVIRONMENT:-development}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OLLAMA_API_BASE: ${OLLAMA_API_BASE:-http://host.docker.internal:11434}
+      EMBEDDING_MODEL: ${EMBEDDING_MODEL:-ollama/nomic-embed-text}
+      LLM_MODEL: ${LLM_MODEL:-ollama/gpt-oss:latest}
+      LLM_TIMEOUT_SECONDS: ${LLM_TIMEOUT_SECONDS:-45}
+      SMTP_HOST: ${SMTP_HOST:-mailpit}
+      SMTP_PORT: ${SMTP_PORT:-1025}
+      SUPABASE_URL: ${SUPABASE_URL:-http://host.docker.internal:54321}
+      SUPABASE_ANON_KEY: ${SUPABASE_ANON_KEY:-}
+      SUPABASE_SERVICE_ROLE_KEY: ${SUPABASE_SERVICE_ROLE_KEY:-}
+    volumes:
+      - ./services/api:/app/services/api
+      - ./packages/shared/py:/app/packages/shared/py
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      qdrant:
+        condition: service_healthy
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload --reload-dir /app/services/api --reload-dir /app/packages/shared/py
+
+  web:
+    build:
+      context: ./web/app
+      dockerfile: Dockerfile
+      target: development
+    container_name: mtp_web
+    environment:
+      # Leave empty to let the browser derive the API URL from the current
+      # hostname (e.g. demo.localhost:3000 -> demo.localhost:8000).
+      VITE_API_BASE_URL: ${VITE_API_BASE_URL:-}
+    volumes:
+      - ./web/app:/app
+      - /app/node_modules
+    ports:
+      - "3000:3000"
+    depends_on:
+      - api
+
+  admin:
+    build:
+      context: .
+      dockerfile: services/admin/Dockerfile
+    container_name: mtp_admin
+    environment:
+      DATABASE_URL: ${ADMIN_DATABASE_URL:-postgresql://mtp:mtp@postgres:5432/mtp}
+      SECRET_KEY: ${ADMIN_SECRET_KEY:-dev-secret-key-change-in-production}
+      DEBUG: ${ADMIN_DEBUG:-True}
+    volumes:
+      - ./services/admin:/app
+    ports:
+      - "8001:8001"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  data-pipeline:
+    build:
+      context: .
+      dockerfile: services/data-pipeline/Dockerfile
+    container_name: mtp_data_pipeline
+    environment:
+      DATABASE_URL: postgresql+asyncpg://mtp:mtp@postgres:5432/mtp
+      QDRANT_URL: http://qdrant:6333
+      QDRANT_COLLECTION_NAME: ${QDRANT_COLLECTION_NAME:-cost_items}
+      QDRANT_KNOWLEDGE_COLLECTION_NAME: ${QDRANT_KNOWLEDGE_COLLECTION_NAME:-quoting_knowledge}
+      EMBEDDING_MODEL: ${EMBEDDING_MODEL:-ollama/nomic-embed-text}
+      OLLAMA_API_BASE: ${OLLAMA_API_BASE:-http://host.docker.internal:11434}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      APIFY_API_TOKEN: ${APIFY_API_TOKEN:-}
+      PIPELINE_DEMO_MODE: ${PIPELINE_DEMO_MODE:-false}
+      SCREWFIX_START_URL: ${SCREWFIX_START_URL:-https://www.screwfix.com/c/electrical-lighting/cat840780}
+      SCREWFIX_MAX_ITEMS: ${SCREWFIX_MAX_ITEMS:-10000}
+      SCREWFIX_SCRAPE_DETAILS: ${SCREWFIX_SCRAPE_DETAILS:-false}
+      SCREWFIX_MAX_TOTAL_CHARGE_USD: ${SCREWFIX_MAX_TOTAL_CHARGE_USD:-50}
+      SCREWFIX_TIMEOUT_SECONDS: ${SCREWFIX_TIMEOUT_SECONDS:-600}
+      TOOLSTATION_ENABLED: ${TOOLSTATION_ENABLED:-false}
+      SCRAPE_FREQUENCY: ${SCRAPE_FREQUENCY:-monthly}
+      MONTHLY_RUN_DAY: ${MONTHLY_RUN_DAY:-1}
+      DAILY_RUN_TIME: ${DAILY_RUN_TIME:-02:00}
+    volumes:
+      - ./services/data-pipeline/src:/app/src
+      - ./services/data-pipeline/config:/app/config
+      - ./packages/shared/py:/app/packages/shared/py
+      - ./docs:/app/docs
+    depends_on:
+      postgres:
+        condition: service_healthy
+      qdrant:
+        condition: service_healthy
+
+  ocerp:
+    build:
+      context: .
+      dockerfile: services/ocerp/Dockerfile
+    container_name: mtp_ocerp
+    environment:
+      DATABASE_URL: postgresql+asyncpg://mtp:mtp@postgres:5432/mtp
+      QDRANT_URL: http://qdrant:6333
+      QDRANT_COLLECTION_NAME: ${QDRANT_COLLECTION_NAME:-cost_items}
+      QDRANT_KNOWLEDGE_COLLECTION_NAME: ${QDRANT_KNOWLEDGE_COLLECTION_NAME:-quoting_knowledge}
+      ENVIRONMENT: ${ENVIRONMENT:-development}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OLLAMA_API_BASE: ${OLLAMA_API_BASE:-http://host.docker.internal:11434}
+      EMBEDDING_MODEL: ${EMBEDDING_MODEL:-ollama/nomic-embed-text}
+      LLM_MODEL: ${LLM_MODEL:-ollama/gpt-oss:latest}
+      LLM_TIMEOUT_SECONDS: ${LLM_TIMEOUT_SECONDS:-45}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+    volumes:
+      - ./services/ocerp:/app/services/ocerp
+      - ./packages/shared/py:/app/packages/shared/py
+    ports:
+      - "8002:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      qdrant:
+        condition: service_healthy
+    command: uvicorn ocerp.main:app --host 0.0.0.0 --port 8000 --reload --reload-dir /app/services/ocerp --reload-dir /app/packages/shared/py
+
+volumes:
+  postgres_data:
+  redis_data:
+  qdrant_storage:
+  minio_data:

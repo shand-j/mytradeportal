@@ -1,0 +1,352 @@
+# Supplier Configuration for UK Electrical Trade Data Pipeline
+# This file defines all target data sources with their access methods
+
+suppliers:
+  # --- TIER 1: Official APIs (Requires trade account / partnership) ---
+  
+  edata:
+    name: "EDATA (Electrical Distributors' Association)"
+    description: "Industry-managed product data pool with 300,000+ electrotechnical products — INDUSTRIAL/INFRASTRUCTURE FOCUS"
+    tier: 1
+    access_method: "api"
+    api_type: "REST"
+    auth_type: "OAuth2"
+    coverage: "300,000+ products, 200+ brands"
+    domestic_focus: false
+    domestic_relevance: "LOW — ETIM classification heavily weighted toward industrial control gear, switchgear, power distribution. Limited domestic wiring accessories coverage."
+    data_types: ["product_specs", "images", "gtin", "etim_classification", "sustainability_data", "packaging_data"]
+    pricing_data: false  # Technical data only, no trade pricing
+    requires_account: true
+    account_type: "EDA Wholesaler membership (FREE) or paid subscription for non-members"
+    update_frequency: "Daily"
+    etim_standard: true
+    gs1_gtin: true
+    api_docs: "https://www.edata.org.uk"
+    contact: "020 3141 7350"
+    notes: "Gold standard for industrial electrical product data. ETIM classification is infrastructure/industrial heavy — domestic wiring accessories (sockets, switches, consumer units) have limited coverage. Better for cable, conduit, distribution equipment. FREE for EDA member wholesalers. API access in development."
+
+  schneider_electric:
+    name: "Schneider Electric Partner APIs"
+    description: "Full product catalog, pricing, stock, and digital assets"
+    tier: 1
+    access_method: "api"
+    api_type: "REST"
+    auth_type: "OAuth2"
+    base_url: "https://api.se.com/v2"
+    coverage: "Full Schneider Electric product range"
+    data_types: ["product_catalog", "pricing", "stock_levels", "digital_assets", "etim_classification", "order_status"]
+    pricing_data: true
+    requires_account: true
+    account_type: "Distributor/Partner account"
+    update_frequency: "Real-time"
+    etim_standard: true
+    api_docs: "https://api-explorer.se.com"
+    notes: "Comprehensive API suite including Product Catalog (ETIM 10.0), NetPrice, Stock Level, Availability, and Digital Assets"
+
+  netxl:
+    name: "NetXL"
+    description: "Tech and network hardware distributor API"
+    tier: 1
+    access_method: "api"
+    api_type: "REST"
+    auth_type: "API Key"
+    coverage: "Network hardware, tech supplies"
+    data_types: ["product_catalog", "stock_levels", "pricing", "account_details"]
+    pricing_data: true
+    requires_account: true
+    account_type: "Trade Credit Account"
+    update_frequency: "Real-time"
+    api_docs: "Available to account holders"
+    notes: "Supports boolean filters for string attributes and comparison operators for numeric attributes"
+
+  # --- TIER 2: Web Scraping (Publicly visible data, no account needed) ---
+
+  screwfix:
+    name: "Screwfix"
+    description: "UK's largest trade retailer with 670,000+ product SKUs — DOMESTIC-FOCUSED"
+    tier: 2
+    access_method: "scraping"
+    scraper_platform: "Apify"
+    actor_id: "datasaurus/screwfix"
+    alt_scraper: "thunderbit.io"
+    website: "https://www.screwfix.com"
+    coverage: "670,000+ SKUs across all trade categories"
+    domestic_focus: true
+    domestic_brands: ["British General", "LAP", "DETA", "Knightsbridge", "Marshall-Tufflex"]
+    domestic_categories:
+      - wiring_accessories: "https://www.screwfix.com/c/electrical-lighting/switches-sockets/cat830701"
+      - consumer_units: "https://www.screwfix.com/c/electrical-lighting/consumer-units-circuit-breakers/cat830702"
+      - cable: "https://www.screwfix.com/c/electrical-lighting/cable/cat830700"
+      - lighting: "https://www.screwfix.com/c/electrical-lighting/lighting/cat830703"
+      - conduit: "https://www.screwfix.com/c/electrical-lighting/conduit-trunking-cable-management/cat830705"
+      - test_equipment: "https://www.screwfix.com/c/electrical-lighting/electrical-testers-meters/cat830706"
+      - security_fire: "https://www.screwfix.com/c/electrical-lighting/security-fire-safety/cat830708"
+    data_types: ["product_name", "price", "sku", "brand", "specifications", "stock_status", "reviews", "images"]
+    pricing_data: true
+    requires_account: false
+    public_pricing: true  # Prices visible without login
+    categories:
+      - electrical
+      - lighting
+      - cables
+      - conduit
+      - consumer_units
+      - switches_sockets
+      - tools
+      - fixings
+    update_frequency: "On-demand via scraper"
+    rate_limit: "Respectful scraping recommended (1-2s delay)"
+    notes: "DOMESTIC GOLDMINE. House brands British General, LAP, DETA cover 80% of domestic rewire materials. No public API. Apify actor available ($5/1000 results). Prices are retail inc VAT, not trade."
+
+  toolstation:
+    name: "Toolstation"
+    description: "UK trade-focused hardware and tools retailer"
+    tier: 2
+    access_method: "scraping"
+    scraper_platform: "Apify"
+    actor_id: "crawlergang/toolstation-scraper"
+    website: "https://www.toolstation.com"
+    coverage: "Thousands of products across trade categories"
+    data_types: ["productId", "sku", "name", "brand", "price", "rating", "inStock", "description", "imageUrl"]
+    pricing_data: true
+    requires_account: false
+    public_pricing: true
+    update_frequency: "On-demand via scraper"
+    notes: "Uses Bloomreach Discovery search API internally. Apify scraper available (500 products/run max)."
+
+  cef:
+    name: "CEF (City Electrical Factors)"
+    description: "UK's leading electrical wholesale supplier — MIXED domestic/industrial"
+    tier: 2
+    access_method: "scraping"
+    website: "https://www.cef.co.uk"
+    coverage: "26,000 electrical products with transparent pricing"
+    domestic_focus: true
+    domestic_categories:
+      - wiring_accessories: "https://www.cef.co.uk/catalogue/categories/wiring-accessories"
+      - white_moulded: "https://www.cef.co.uk/catalogue/categories/wiring-accessories/white-moulded-slimline"
+      - scolmore_click: "https://www.cef.co.uk/catalogue/categories/wiring-accessories/white-moulded-slimline/scolmore-click-mode"
+      - consumer_units: "https://www.cef.co.uk/catalogue/categories/circuit-protection/consumer-units"
+      - cable: "https://www.cef.co.uk/catalogue/categories/cable-management/cable"
+      - lighting: "https://www.cef.co.uk/catalogue/categories/lighting"
+    domestic_brands: ["Scolmore Click", "MK Logic Plus", "Hager", "Wylex"]
+    data_types: ["product_name", "price", "description", "specifications", "stock_status"]
+    pricing_data: true
+    requires_account: false
+    public_pricing: true
+    guest_checkout: true
+    update_frequency: "Daily"
+    notes: "Strong domestic wiring accessories section including Scolmore Click Mode, MK Logic Plus, white moulded ranges. Priced trade catalogue since 2019. Guest checkout available."
+
+  tlc_direct:
+    name: "TLC Direct"
+    description: "Electrical supplies distributor with discounted pricing — DOMESTIC-FOCUSED"
+    tier: 2
+    access_method: "scraping"
+    website: "https://www.tlc-direct.co.uk"
+    coverage: "18,000+ product lines"
+    domestic_focus: true
+    domestic_brands: ["MK", "Hager", "Wylex", "Scolmore", "Aurora"]
+    data_types: ["product_name", "price", "description", "specifications"]
+    pricing_data: true
+    requires_account: false
+    public_pricing: true
+    update_frequency: "Daily"
+    notes: "DOMESTIC SPECIALIST. Caters specifically to domestic electricians doing house rewires, extensions. Competitive discounted prices. Free 356-page catalogue. £20M in stock."
+
+  wickes:
+    name: "Wickes"
+    description: "DIY and home improvement retailer — DOMESTIC ELECTRICAL"
+    tier: 2
+    access_method: "scraping"
+    website: "https://www.wickes.co.uk"
+    coverage: "Thousands of domestic electrical products"
+    domestic_focus: true
+    domestic_categories:
+      - switches_sockets: "https://www.wickes.co.uk/Products/Electrical-Lighting/Switches-Sockets/c/1000051"
+      - cable: "https://www.wickes.co.uk/Products/Electrical-Lighting/Cable-Reels/c/1000049"
+      - lighting: "https://www.wickes.co.uk/Products/Electrical-Lighting/Lighting/c/1000050"
+      - consumer_units: "https://www.wickes.co.uk/Products/Electrical-Lighting/Consumer-Units/c/1000048"
+      - security: "https://www.wickes.co.uk/Products/Electrical-Lighting/Security-Safety/c/1000053"
+    domestic_brands: ["British General", "Aurora", "Knightsbridge", "DETA"]
+    data_types: ["product_name", "price", "sku", "brand", "specifications", "stock_status"]
+    pricing_data: true
+    requires_account: false
+    public_pricing: true
+    update_frequency: "Daily"
+    notes: "DOMESTIC DIY FOCUS. Strong range of wiring accessories, consumer units, lighting for home improvement projects. Good price benchmark for retail pricing. No trade pricing."
+
+  # --- TIER 3: Commercial Pricing Databases ---
+
+  pricelynx:
+    name: "PriceLynx"
+    description: "UK electrical product database and updating service"
+    tier: 3
+    access_method: "api"
+    api_type: "Proprietary"
+    coverage: "275,000 electrical products"
+    data_types: ["product_data", "trade_prices", "manufacturer_info"]
+    pricing_data: true
+    requires_account: true
+    cost: "£35-45/month"
+    update_options:
+      - frequency: "Monthly"
+        price: "£35/month"
+      - frequency: "Anytime"
+        price: "£45/month"
+    guarantee: "At least 20% below competitor pricing"
+    notes: "Prices direct from manufacturers. Covers major manufacturers and wholesalers."
+
+  ensign:
+    name: "Ensign Electrical Estimating"
+    description: "Electrical estimating software with materials database"
+    tier: 3
+    access_method: "api"
+    coverage: "350,000+ electrical materials"
+    data_types: ["materials", "labour_times", "pricing"]
+    pricing_data: true
+    requires_account: true
+    update_frequency: "Weekly"
+    notes: "Purpose-built for electrical contractors. Full labour/material breakdowns."
+
+  sec_cypher1:
+    name: "SEC Cypher1"
+    description: "Electrical estimating database"
+    tier: 3
+    access_method: "api"
+    coverage: "500,000+ electrical items"
+    data_types: ["product_data", "pricing", "wholesaler_brands"]
+    pricing_data: true
+    requires_account: true
+    update_frequency: "Weekly LIVE UPDATE"
+    notes: "Includes wholesaler own-brand items (CEF RPP/Sentor, Rexel Newlec, etc.)"
+
+  # --- TIER 4: Product Content / Syndication (Specs only, no pricing) ---
+
+  icecat:
+    name: "IceCAT"
+    description: "Global product content syndication platform"
+    tier: 4
+    access_method: "api"
+    api_type: "REST"
+    coverage: "500,000+ datasheets, 40,000+ brands"
+    data_types: ["product_specs", "images", "descriptions", "multimedia", "gtin"]
+    pricing_data: false
+    requires_account: false  # Open catalog is free
+    cost: "Free for Open Catalog"
+    formats: ["JSON", "XML", "CSV"]
+    notes: "Free Open Catalog available. Paid Full Icecat for richer content. Includes some electrical brands."
+
+  # --- TIER 5: Barcode / GTIN Lookup ---
+
+  gs1_uk:
+    name: "GS1 UK GTIN Check API"
+    description: "Official GTIN verification and product lookup"
+    tier: 5
+    access_method: "api"
+    api_type: "REST"
+    auth_type: "API Key"
+    coverage: "GS1 registered products"
+    data_types: ["gtin_verification", "product_identity", "company_prefix"]
+    pricing_data: false
+    requires_account: true
+    account_type: "GS1 UK partner"
+    notes: "For verifying GTIN integrity and looking up product records in global registry"
+
+  brocade_io:
+    name: "Brocade.io"
+    description: "Open GTIN/barcode and product database"
+    tier: 5
+    access_method: "api"
+    api_type: "REST"
+    auth_type: "Bearer Token"
+    coverage: "Open product database"
+    data_types: ["gtin", "product_name", "brand", "properties"]
+    pricing_data: false
+    requires_account: true  # Free registration
+    cost: "Free"
+    api_docs: "https://github.com/EventideSystems/brocade.io"
+    notes: "Community-driven open database. Free API access."
+
+  ean_search:
+    name: "EAN-Search.org"
+    description: "EAN/GTIN lookup database"
+    tier: 5
+    access_method: "api"
+    api_type: "REST"
+    coverage: "1.2+ billion EAN codes"
+    data_types: ["ean_lookup", "product_name", "category"]
+    pricing_data: false
+    requires_account: true  # Free registration
+    cost: "Free tier available"
+    notes: "Bulk lookup via Excel upload. API available for registered users."
+
+  # --- TIER 6: Universal Product APIs ---
+
+  amazon_pa_api:
+    name: "Amazon Product Advertising API"
+    description: "Amazon product data and pricing"
+    tier: 6
+    access_method: "api"
+    api_type: "REST"
+    auth_type: "AWS Signature + Associates"
+    coverage: "Amazon UK product catalog"
+    data_types: ["product_info", "pricing", "images", "reviews", "sales_rank"]
+    pricing_data: true
+    requires_account: true
+    account_type: "Amazon Associates account + AWS account"
+    cost: "Free ( Associates program requirement)"
+    rate_limit: "1 TPS initial, scales with referral revenue"
+    notes: "Limited to Amazon's catalog. UK marketplace supported."
+
+  channel3:
+    name: "Channel3"
+    description: "Universal product data API for AI agents"
+    tier: 6
+    access_method: "api"
+    api_type: "REST"
+    coverage: "100M+ products, 25,000+ brands"
+    data_types: ["product_name", "price", "brand", "retailer", "images", "commission_rate"]
+    pricing_data: true
+    requires_account: true
+    cost: "1,000 free searches, then $7/1000 queries"
+    response_time: "< 1 second"
+    notes: "Built for AI shopping agents. Cross-retailer product deduplication. Built-in affiliate monetization."
+
+# --- Recommended Implementation Phases ---
+
+implementation_phases:
+  phase_1:
+    name: "Quick Start - Scraping Layer"
+    description: "Immediate access to public pricing data"
+    suppliers: ["screwfix", "toolstation", "cef", "tlc_direct"]
+    timeframe: "1-2 weeks"
+    cost: "Low (Apify credits ~$50-100/month)"
+    
+  phase_2:
+    name: "Industry Standard - EDATA Integration"
+    description: "Access manufacturer-approved product data"
+    suppliers: ["edata"]
+    timeframe: "2-4 weeks"
+    cost: "FREE if EDA member, or subscription fee"
+    
+  phase_3:
+    name: "Direct Supplier APIs"
+    description: "Real-time pricing and stock from major manufacturers"
+    suppliers: ["schneider_electric", "netxl"]
+    timeframe: "4-8 weeks"
+    cost: "Free APIs (account setup required)"
+    
+  phase_4:
+    name: "Commercial Pricing Databases"
+    description: "Comprehensive trade pricing databases"
+    suppliers: ["pricelynx", "ensign", "sec_cypher1"]
+    timeframe: "2-4 weeks"
+    cost: "£35-100/month per service"
+    
+  phase_5:
+    name: "Universal Product Coverage"
+    description: "Fill gaps with universal APIs"
+    suppliers: ["channel3", "amazon_pa_api"]
+    timeframe: "1-2 weeks"
+    cost: "Usage-based ($7/1000 queries)"

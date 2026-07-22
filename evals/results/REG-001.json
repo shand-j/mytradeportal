@@ -1,0 +1,816 @@
+{
+  "case": {
+    "id": "REG-001",
+    "category": "regulatory_edge_case",
+    "difficulty": "hard",
+    "input": "Full rewire of a 3 bed house that's been converted to 5 bedrooms for HMO. Need AFDD protection on all socket circuits.",
+    "expected": {
+      "job_summary": "Full rewire of 3-bed HMO conversion to 5 bedrooms with AFDD protection",
+      "room_count": 5,
+      "spec_level": "premium",
+      "bom": [
+        {
+          "description": "16-way consumer unit with SPD",
+          "quantity": 1,
+          "category": "consumer_units"
+        },
+        {
+          "description": "32A AFDD Type B",
+          "quantity": 3,
+          "category": "mcb_rcd_rcbo"
+        },
+        {
+          "description": "32A AFDD Type B cooker",
+          "quantity": 1,
+          "category": "mcb_rcd_rcbo"
+        },
+        {
+          "description": "20A AFDD Type B",
+          "quantity": 1,
+          "category": "mcb_rcd_rcbo"
+        },
+        {
+          "description": "6A AFDD Type B",
+          "quantity": 2,
+          "category": "mcb_rcd_rcbo"
+        },
+        {
+          "description": "13A 2-gang DP switched socket",
+          "quantity": 32,
+          "category": "switches_sockets"
+        },
+        {
+          "description": "10AX 2-gang 2-way light switch",
+          "quantity": 8,
+          "category": "switches_sockets"
+        },
+        {
+          "description": "ceiling rose with pendant",
+          "quantity": 14,
+          "category": "lighting"
+        },
+        {
+          "description": "twin and earth cable 2.5mm 100m",
+          "quantity": 4,
+          "category": "cable"
+        },
+        {
+          "description": "twin and earth cable 1.5mm 100m",
+          "quantity": 2,
+          "category": "cable"
+        },
+        {
+          "description": "smoke alarm mains powered interlinked",
+          "quantity": 6,
+          "category": "security_fire"
+        },
+        {
+          "description": "heat detector mains powered",
+          "quantity": 1,
+          "category": "security_fire"
+        },
+        {
+          "description": "CO alarm mains powered",
+          "quantity": 2,
+          "category": "security_fire"
+        },
+        {
+          "description": "emergency lighting bulkhead",
+          "quantity": 3,
+          "category": "lighting"
+        },
+        {
+          "description": "metal back box 1-gang 35mm",
+          "quantity": 55,
+          "category": "wiring_accessories"
+        },
+        {
+          "description": "metal back box 2-gang 35mm",
+          "quantity": 20,
+          "category": "wiring_accessories"
+        }
+      ],
+      "estimated_material_cost_ex_vat": {
+        "min": 1800,
+        "max": 2600
+      },
+      "regulatory_flags": [
+        "spd_required",
+        "afdd_required",
+        "smoke_alarms_required",
+        "metal_cu_required",
+        "rcd_protection"
+      ],
+      "total_quote_range_ex_vat": {
+        "min": 5000,
+        "max": 8000
+      }
+    },
+    "pass_criteria": [
+      "bom must contain AFDDs (not just MCBs or RCBOs)",
+      "bom must contain at least 5 AFDD devices",
+      "bom must flag afdd_required explicitly",
+      "bom must contain at least 6 smoke alarms (HMO requirement)",
+      "bom must contain emergency lighting (HMO escape route requirement)",
+      "bom must contain CO alarms (HMO with gas appliances)",
+      "room_count must be 5 (not 3 - HMO conversion)",
+      "total material cost must be between GBP 1600 and GBP 2800"
+    ],
+    "notes": "HMO = House in Multiple Occupation. AFDDs mandatory on socket outlets <=32A in high-risk dwellings per BS 7671 421.1.201. HMOs qualify. HMOs need enhanced fire detection (smoke in each bedroom + communal). Emergency lighting required on escape routes per Building Regs. CO alarms required in rooms with solid fuel/gas appliances. Source: BS 7671:2018+A2:2022 421.1.201, HMO licensing guidance.\n"
+  },
+  "response": {
+    "line_items": [
+      {
+        "code": "DOM-screwfix-504PF",
+        "description": "MK Sentry MK Sentry  21-Module 12-Way Populated  Dual RCD Consumer Unit with SPD Supplier: screwfix",
+        "unit": "each",
+        "quantity": "1",
+        "labour_hours": "0",
+        "labour_rate": "0",
+        "labour_total": "0",
+        "material_cost": "145.8229",
+        "material_total": "145.8229",
+        "plant_cost": "0",
+        "plant_total": "0",
+        "unit_price": "145.8229",
+        "total": "145.8229",
+        "cost_item_id": null,
+        "category": "Consumer Units",
+        "supplier": "screwfix",
+        "brand": "MK Sentry",
+        "sku": "504PF",
+        "product_url": "https://www.screwfix.com/p/504PF",
+        "retail_price_incl_vat": "139.99",
+        "notes": "Mandatory consumer unit for rewire"
+      },
+      {
+        "code": "DOM-screwfix-53010",
+        "description": "Wylex Wylex NH / NM 100A DP  Main Switch Disconnector Supplier: screwfix",
+        "unit": "each",
+        "quantity": "1",
+        "labour_hours": "0",
+        "labour_rate": "0",
+        "labour_total": "0",
+        "material_cost": "20.8229",
+        "material_total": "20.8229",
+        "plant_cost": "0",
+        "plant_total": "0",
+        "unit_price": "20.8229",
+        "total": "20.8229",
+        "cost_item_id": null,
+        "category": "Switches & Sockets",
+        "supplier": "screwfix",
+        "brand": "Wylex",
+        "sku": "53010",
+        "product_url": "https://www.screwfix.com/p/53010",
+        "retail_price_incl_vat": "19.99",
+        "notes": "Mandatory main switch"
+      },
+      {
+        "code": "DOM-screwfix-412JK",
+        "description": "Wylex Wylex NXS 32A 30mA Type A SP & N B Curve  AFDD & RCBO Supplier: screwfix",
+        "unit": "each",
+        "quantity": "6",
+        "labour_hours": "0",
+        "labour_rate": "0",
+        "labour_total": "0",
+        "material_cost": "104.1562",
+        "material_total": "624.9372",
+        "plant_cost": "0",
+        "plant_total": "0",
+        "unit_price": "104.1562",
+        "total": "624.9372",
+        "cost_item_id": null,
+        "category": "Circuit Protection",
+        "supplier": "screwfix",
+        "brand": "Wylex",
+        "sku": "412JK",
+        "product_url": "https://www.screwfix.com/p/412JK",
+        "retail_price_incl_vat": "99.99",
+        "notes": "Mandatory AFDD protection"
+      },
+      {
+        "code": "DOM-screwfix-8947P",
+        "description": "British General British General 13A 2-Gang DP Switched Socket Double pole switched socket outlet with twin earth terminals Supplier: screwfix",
+        "unit": "each",
+        "quantity": "32",
+        "labour_hours": "0",
+        "labour_rate": "0",
+        "labour_total": "0",
+        "material_cost": "5.1979",
+        "material_total": "166.3328",
+        "plant_cost": "0",
+        "plant_total": "0",
+        "unit_price": "5.1979",
+        "total": "166.3328",
+        "cost_item_id": null,
+        "category": "Switches & Sockets",
+        "supplier": "screwfix",
+        "brand": "British General",
+        "sku": "8947P",
+        "product_url": "https://www.screwfix.com/p/8947P",
+        "retail_price_incl_vat": "4.99",
+        "notes": "Mandatory sockets for rewire"
+      },
+      {
+        "code": "DOM-screwfix-643FY",
+        "description": "Colours Colours Hubaa Ceiling Light Chrome Supplier: screwfix",
+        "unit": "each",
+        "quantity": "20",
+        "labour_hours": "0",
+        "labour_rate": "0",
+        "labour_total": "0",
+        "material_cost": "10.4166",
+        "material_total": "208.3320",
+        "plant_cost": "0",
+        "plant_total": "0",
+        "unit_price": "10.4166",
+        "total": "208.3320",
+        "cost_item_id": null,
+        "category": "Lighting",
+        "supplier": "screwfix",
+        "brand": "Colours",
+        "sku": "643FY",
+        "product_url": "https://www.screwfix.com/p/643FY",
+        "retail_price_incl_vat": "10.0",
+        "notes": "Mandatory light points"
+      },
+      {
+        "code": "DOM-screwfix-79041",
+        "description": "LAP LAP  45A 2-Gang DP Cooker Switch White with Neon Supplier: screwfix",
+        "unit": "each",
+        "quantity": "1",
+        "labour_hours": "0",
+        "labour_rate": "0",
+        "labour_total": "0",
+        "material_cost": "10.4062",
+        "material_total": "10.4062",
+        "plant_cost": "0",
+        "plant_total": "0",
+        "unit_price": "10.4062",
+        "total": "10.4062",
+        "cost_item_id": null,
+        "category": "Switches & Sockets",
+        "supplier": "screwfix",
+        "brand": "LAP",
+        "sku": "79041",
+        "product_url": "https://www.screwfix.com/p/79041",
+        "retail_price_incl_vat": "9.99",
+        "notes": "Mandatory cooker switch"
+      },
+      {
+        "code": "DOM-screwfix-2238J",
+        "description": "Time Time 6242Y Grey 1.5mm\u00b2  Twin & Earth Cable 100m Drum Supplier: screwfix",
+        "unit": "m",
+        "quantity": "200",
+        "labour_hours": "0",
+        "labour_rate": "0",
+        "labour_total": "0",
+        "material_cost": "0.6040",
+        "material_total": "120.8000",
+        "plant_cost": "0",
+        "plant_total": "0",
+        "unit_price": "0.6040",
+        "total": "120.8000",
+        "cost_item_id": null,
+        "category": "Cable",
+        "supplier": "screwfix",
+        "brand": "Time",
+        "sku": "2238J",
+        "product_url": "https://www.screwfix.com/p/2238J",
+        "retail_price_incl_vat": "57.99",
+        "notes": "Mandatory lighting cable for 5-bed property 2x 100m pack (largest available)."
+      },
+      {
+        "code": "DOM-screwfix-75935",
+        "description": "Time Time 6242Y Grey 2.5mm\u00b2  Twin & Earth Cable 100m Drum Supplier: screwfix",
+        "unit": "m",
+        "quantity": "300",
+        "labour_hours": "0",
+        "labour_rate": "0",
+        "labour_total": "0",
+        "material_cost": "0.8958",
+        "material_total": "268.7400",
+        "plant_cost": "0",
+        "plant_total": "0",
+        "unit_price": "0.8958",
+        "total": "268.7400",
+        "cost_item_id": null,
+        "category": "Cable",
+        "supplier": "screwfix",
+        "brand": "Time",
+        "sku": "75935",
+        "product_url": "https://www.screwfix.com/p/75935",
+        "retail_price_incl_vat": "85.99",
+        "notes": "Mandatory socket cable for 5-bed property 3x 100m pack (largest available)."
+      },
+      {
+        "code": "DOM-screwfix-54052",
+        "description": "Prysmian Prysmian 6242Y Grey 6mm\u00b2  Twin & Earth Cable 50m Drum Supplier: screwfix",
+        "unit": "m",
+        "quantity": "50",
+        "labour_hours": "0",
+        "labour_rate": "0",
+        "labour_total": "0",
+        "material_cost": "2.6040",
+        "material_total": "130.2000",
+        "plant_cost": "0",
+        "plant_total": "0",
+        "unit_price": "2.6040",
+        "total": "130.2000",
+        "cost_item_id": null,
+        "category": "Cable",
+        "supplier": "screwfix",
+        "brand": "Prysmian",
+        "sku": "54052",
+        "product_url": "https://www.screwfix.com/p/54052",
+        "retail_price_incl_vat": "124.99",
+        "notes": "Mandatory cooker/EV cable Pack size 50m."
+      },
+      {
+        "code": "ELEC-BACKBOX-SINGLE-35MM",
+        "description": "metal back box 1-gang 35mm",
+        "unit": "each",
+        "quantity": "29",
+        "labour_hours": "0",
+        "labour_rate": "0",
+        "labour_total": "0",
+        "material_cost": "1.5000",
+        "material_total": "43.5000",
+        "plant_cost": "0",
+        "plant_total": "0",
+        "unit_price": "1.5000",
+        "total": "43.5000",
+        "cost_item_id": null,
+        "category": "Wiring Accessories",
+        "supplier": "curated",
+        "brand": "curated",
+        "sku": "ELEC-BACKBOX-SINGLE-35MM",
+        "product_url": null,
+        "retail_price_incl_vat": "1.44",
+        "notes": "Metal back boxes for rewire"
+      },
+      {
+        "code": "ELEC-BACKBOX-DOUBLE-35MM",
+        "description": "metal back box 2-gang 35mm",
+        "unit": "each",
+        "quantity": "16",
+        "labour_hours": "0",
+        "labour_rate": "0",
+        "labour_total": "0",
+        "material_cost": "1.8750",
+        "material_total": "30.0000",
+        "plant_cost": "0",
+        "plant_total": "0",
+        "unit_price": "1.8750",
+        "total": "30.0000",
+        "cost_item_id": null,
+        "category": "Wiring Accessories",
+        "supplier": "curated",
+        "brand": "curated",
+        "sku": "ELEC-BACKBOX-DOUBLE-35MM",
+        "product_url": null,
+        "retail_price_incl_vat": "1.8",
+        "notes": "Metal back boxes for rewire"
+      },
+      {
+        "code": "ELEC-SMOKE-ALARM-AICO",
+        "description": "Aico smoke alarm mains powered interlinked",
+        "unit": "each",
+        "quantity": "6",
+        "labour_hours": "0",
+        "labour_rate": "0",
+        "labour_total": "0",
+        "material_cost": "43.7500",
+        "material_total": "262.5000",
+        "plant_cost": "0",
+        "plant_total": "0",
+        "unit_price": "43.7500",
+        "total": "262.5000",
+        "cost_item_id": null,
+        "category": "Security & Fire",
+        "supplier": "curated",
+        "brand": "Aico",
+        "sku": "ELEC-SMOKE-ALARM-AICO",
+        "product_url": null,
+        "retail_price_incl_vat": "42.0",
+        "notes": "Mandatory smoke alarm"
+      },
+      {
+        "code": "ELEC-HEAT-DETECTOR-AICO",
+        "description": "Aico heat detector mains powered",
+        "unit": "each",
+        "quantity": "2",
+        "labour_hours": "0",
+        "labour_rate": "0",
+        "labour_total": "0",
+        "material_cost": "43.7500",
+        "material_total": "87.5000",
+        "plant_cost": "0",
+        "plant_total": "0",
+        "unit_price": "43.7500",
+        "total": "87.5000",
+        "cost_item_id": null,
+        "category": "Security & Fire",
+        "supplier": "curated",
+        "brand": "Aico",
+        "sku": "ELEC-HEAT-DETECTOR-AICO",
+        "product_url": null,
+        "retail_price_incl_vat": "42.0",
+        "notes": "Mandatory heat detector"
+      },
+      {
+        "code": "ELEC-CO-ALARM-AICO",
+        "description": "Aico carbon monoxide alarm mains powered",
+        "unit": "each",
+        "quantity": "2",
+        "labour_hours": "0",
+        "labour_rate": "0",
+        "labour_total": "0",
+        "material_cost": "56.2500",
+        "material_total": "112.5000",
+        "plant_cost": "0",
+        "plant_total": "0",
+        "unit_price": "56.2500",
+        "total": "112.5000",
+        "cost_item_id": null,
+        "category": "Security & Fire",
+        "supplier": "curated",
+        "brand": "Aico",
+        "sku": "ELEC-CO-ALARM-AICO",
+        "product_url": null,
+        "retail_price_incl_vat": "54.0",
+        "notes": "Mandatory CO alarm"
+      },
+      {
+        "code": "DOM-screwfix-496RE",
+        "description": "Lexco Lexco  Non-Maintained Emergency LED Twin Spotlight White 3W 450lm Supplier: screwfix",
+        "unit": "each",
+        "quantity": "3",
+        "labour_hours": "0",
+        "labour_rate": "0",
+        "labour_total": "0",
+        "material_cost": "19.7916",
+        "material_total": "59.3748",
+        "plant_cost": "0",
+        "plant_total": "0",
+        "unit_price": "19.7916",
+        "total": "59.3748",
+        "cost_item_id": null,
+        "category": "Lighting",
+        "supplier": "screwfix",
+        "brand": "Lexco",
+        "sku": "496RE",
+        "product_url": "https://www.screwfix.com/p/496RE",
+        "retail_price_incl_vat": "19.0",
+        "notes": "Mandatory emergency lighting"
+      },
+      {
+        "code": "LABOUR-ELECTRICIAN-DAY",
+        "description": "Electrician labour - day rate",
+        "unit": "day",
+        "quantity": "11",
+        "labour_hours": "8",
+        "labour_rate": "360.00",
+        "labour_total": "3960.0000",
+        "material_cost": "0",
+        "material_total": "0",
+        "plant_cost": "0",
+        "plant_total": "0",
+        "unit_price": "360.00",
+        "total": "3960.0000",
+        "cost_item_id": null,
+        "category": "Labour",
+        "supplier": "Tenant rate",
+        "brand": null,
+        "sku": null,
+        "product_url": null,
+        "retail_price_incl_vat": null,
+        "notes": "11 electrician day(s) based on BoQ scope (install/testing/certification/access)"
+      },
+      {
+        "code": "LABOUR-TESTING-HOUR",
+        "description": "Labour",
+        "unit": "hour",
+        "quantity": "2.1",
+        "labour_hours": "1",
+        "labour_rate": "45.00",
+        "labour_total": "94.5000",
+        "material_cost": "0",
+        "material_total": "0",
+        "plant_cost": "0",
+        "plant_total": "0",
+        "unit_price": "45.00",
+        "total": "94.5000",
+        "cost_item_id": null,
+        "category": "Labour",
+        "supplier": "Tenant rate",
+        "brand": null,
+        "sku": null,
+        "product_url": null,
+        "retail_price_incl_vat": null,
+        "notes": "Testing and inspection allowance"
+      },
+      {
+        "code": "LABOUR-CERTIFICATION-HOUR",
+        "description": "Labour",
+        "unit": "hour",
+        "quantity": "0.75",
+        "labour_hours": "1",
+        "labour_rate": "45.00",
+        "labour_total": "33.7500",
+        "material_cost": "0",
+        "material_total": "0",
+        "plant_cost": "0",
+        "plant_total": "0",
+        "unit_price": "45.00",
+        "total": "33.7500",
+        "cost_item_id": null,
+        "category": "Labour",
+        "supplier": "Tenant rate",
+        "brand": null,
+        "sku": null,
+        "product_url": null,
+        "retail_price_incl_vat": null,
+        "notes": "Certification and handover documentation"
+      },
+      {
+        "code": "LABOUR-MATE-DAY",
+        "description": "Electrician's mate - day rate",
+        "unit": "day",
+        "quantity": "4",
+        "labour_hours": "8",
+        "labour_rate": "198.00",
+        "labour_total": "792.0000",
+        "material_cost": "0",
+        "material_total": "0",
+        "plant_cost": "0",
+        "plant_total": "0",
+        "unit_price": "198.00",
+        "total": "792.0000",
+        "cost_item_id": null,
+        "category": "Labour",
+        "supplier": "Tenant rate",
+        "brand": null,
+        "sku": null,
+        "product_url": null,
+        "retail_price_incl_vat": null,
+        "notes": "4 mate day(s) estimated for scope"
+      }
+    ],
+    "subtotal": "7172.02",
+    "vat_rate": "0.20",
+    "vat_amount": "1434.40",
+    "total": "8606.42",
+    "confidence": "0.7",
+    "warnings": [
+      "Quality gate: cable quantities should include explicit wastage allowance (10-15%)."
+    ],
+    "notes": "This is an indicative bill of quantities based on publicly listed supplier prices and rule-based/AI estimates. It is not a fixed quote. Final pricing, availability, and specification must be confirmed with the named supplier(s) before contract. Assumed standard white fittings for sockets and switches. Included AFDDs for all socket circuits as requested.",
+    "standard": null,
+    "analysis": {
+      "job_summary": "Full rewire of a 5-bedroom HMO with AFDD protection on all socket circuits.",
+      "room_count": 5,
+      "spec_level": "mid_range",
+      "regulatory_flags": [
+        "spd_required",
+        "afdd_required",
+        "smoke_alarms_required",
+        "metal_cu_required",
+        "rcd_protection"
+      ],
+      "estimated_material_cost_ex_vat": {
+        "min": "2291.77",
+        "max": "2291.77"
+      },
+      "estimated_labour_hours": {
+        "min": "122.85",
+        "max": "122.85"
+      },
+      "total_quote_range_ex_vat": {
+        "min": "7172.02",
+        "max": "7172.02"
+      }
+    },
+    "regulatory_citations": [
+      {
+        "chunk_id": "7fc374d8-8d07-5735-a75e-6b2abdfc828e",
+        "source": "uk_domestic_electrical_kb",
+        "section_path": [
+          "4. CERTIFICATION REQUIREMENTS",
+          "4.1 Electrical Installation Certificate (EIC)"
+        ],
+        "rule_tier": "mandatory",
+        "job_type": "rewire",
+        "snippet": "# 4. CERTIFICATION REQUIREMENTS > 4.1 Electrical Installation Certificate (EIC)\n\nThe **Electrical Installation Certificate (EIC)** is the most comprehensive certification document and is required for all new installations, new circuits, consumer unit replacements, and rewires\u2026",
+        "relevance_score": 0.6160376
+      },
+      {
+        "chunk_id": "ab54fd25-c067-571e-b513-5ced72af8cbb",
+        "source": "uk_domestic_electrical_kb_tables",
+        "section_path": [
+          "UK DOMESTIC ELECTRICAL JOB QUOTING - FOUNDATIONAL KNOWLEDGE BASE",
+          "3. NOTIFIABLE vs NON-NOTIFIABLE WORK",
+          "3.1 Notifiable Work (Requires CPS Self-Certification or Building Control)"
+        ],
+        "rule_tier": "mandatory",
+        "job_type": "rewire",
+        "snippet": "# UK DOMESTIC ELECTRICAL JOB QUOTING - FOUNDATIONAL KNOWLEDGE BASE > 3. NOTIFIABLE vs NON-NOTIFIABLE WORK > 3.1 Notifiable Work (Requires CPS Self-Certification or Building Control)\n\n| Work Type | Notification Required | Certificate Type |\n| --- | --- | --- |\n| **New circuit installation** | Yes - always | Full EIC |\n|\u2026",
+        "relevance_score": 0.612249
+      },
+      {
+        "chunk_id": "c27bc1fc-c8cd-58b2-97be-782619c09c2d",
+        "source": "uk_domestic_electrical_kb",
+        "section_path": [
+          "3. NOTIFIABLE vs NON-NOTIFIABLE WORK",
+          "3.1 Notifiable Work (Requires CPS Self-Certification or Building Control)"
+        ],
+        "rule_tier": "mandatory",
+        "job_type": "rewire",
+        "snippet": "# 3. NOTIFIABLE vs NON-NOTIFIABLE WORK > 3.1 Notifiable Work (Requires CPS Self-Certification or Building Control)\n\nUnderstanding which work is **notifiable** under Part P is fundamental to accurate quoting because notifiable work requires additional time for certification, notification to the scheme provider, and pote\u2026",
+        "relevance_score": 0.5586321
+      }
+    ],
+    "compliance_warnings": [
+      "Compliance check (rewire): BoQ may be missing 'Main earth bonding / equipotential bonding'. Confirm before sending to customer."
+    ],
+    "customer_summary_lines": [
+      {
+        "description": "Electrical rewiring works",
+        "total": "7172.02"
+      }
+    ],
+    "margin_indicator": {
+      "material_subtotal": "2291.77",
+      "labour_subtotal": "4880.25",
+      "subtotal": "7172.02",
+      "target_markup_percent": "25.00",
+      "estimated_margin_percent": "20.00",
+      "estimated_margin_amount": "458.35"
+    },
+    "clarification_questions": []
+  },
+  "passed": true,
+  "criteria_results": [
+    {
+      "criterion": "bom must contain AFDDs (not just MCBs or RCBOs)",
+      "passed": true,
+      "detail": "afdds: qty=6",
+      "soft": false
+    },
+    {
+      "criterion": "bom must contain at least 5 AFDD devices",
+      "passed": true,
+      "detail": "at least 5 afdd devices: qty=6, required >= 5",
+      "soft": false
+    },
+    {
+      "criterion": "bom must flag afdd_required explicitly",
+      "passed": null,
+      "detail": "unrecognised criterion (manual review)",
+      "soft": true
+    },
+    {
+      "criterion": "bom must contain at least 6 smoke alarms (HMO requirement)",
+      "passed": true,
+      "detail": "at least 6 smoke alarms: qty=6, required >= 6",
+      "soft": false
+    },
+    {
+      "criterion": "bom must contain emergency lighting (HMO escape route requirement)",
+      "passed": true,
+      "detail": "emergency lighting: qty=3",
+      "soft": false
+    },
+    {
+      "criterion": "bom must contain CO alarms (HMO with gas appliances)",
+      "passed": true,
+      "detail": "co alarms: qty=2",
+      "soft": false
+    },
+    {
+      "criterion": "room_count must be 5 (not 3 - HMO conversion)",
+      "passed": true,
+      "detail": "room_count=5",
+      "soft": false
+    },
+    {
+      "criterion": "total material cost must be between GBP 1600 and GBP 2800",
+      "passed": true,
+      "detail": "material cost ex-VAT = \u00a32291.77, expected \u00a31600.00-\u00a32800.00",
+      "soft": false
+    }
+  ],
+  "summary": {
+    "line_item_count": 19,
+    "material_total": 2291.77,
+    "labour_hours_total": 122.85,
+    "subtotal": 7172.02,
+    "total": 8606.42,
+    "confidence": "0.7",
+    "analysis": {
+      "job_summary": "Full rewire of a 5-bedroom HMO with AFDD protection on all socket circuits.",
+      "room_count": 5,
+      "spec_level": "mid_range",
+      "regulatory_flags": [
+        "spd_required",
+        "afdd_required",
+        "smoke_alarms_required",
+        "metal_cu_required",
+        "rcd_protection"
+      ],
+      "estimated_material_cost_ex_vat": {
+        "min": "2291.77",
+        "max": "2291.77"
+      },
+      "estimated_labour_hours": {
+        "min": "122.85",
+        "max": "122.85"
+      },
+      "total_quote_range_ex_vat": {
+        "min": "7172.02",
+        "max": "7172.02"
+      }
+    },
+    "expected_material_range": {
+      "min": 1600.0,
+      "max": 2800.0
+    },
+    "material_cost_delta": 0.0,
+    "material_cost_delta_pct": 0.0,
+    "top_material_items": [
+      {
+        "code": "DOM-screwfix-412JK",
+        "description": "Wylex Wylex NXS 32A 30mA Type A SP & N B Curve  AFDD & RCBO Supplier: screwfix",
+        "category": "Circuit Protection",
+        "quantity": 6.0,
+        "unit_price": 104.1562,
+        "material_total": 624.94,
+        "pct_of_material_total": 27.3
+      },
+      {
+        "code": "DOM-screwfix-75935",
+        "description": "Time Time 6242Y Grey 2.5mm\u00b2  Twin & Earth Cable 100m Drum Supplier: screwfix",
+        "category": "Cable",
+        "quantity": 300.0,
+        "unit_price": 0.8958,
+        "material_total": 268.74,
+        "pct_of_material_total": 11.7
+      },
+      {
+        "code": "ELEC-SMOKE-ALARM-AICO",
+        "description": "Aico smoke alarm mains powered interlinked",
+        "category": "Security & Fire",
+        "quantity": 6.0,
+        "unit_price": 43.75,
+        "material_total": 262.5,
+        "pct_of_material_total": 11.5
+      },
+      {
+        "code": "DOM-screwfix-643FY",
+        "description": "Colours Colours Hubaa Ceiling Light Chrome Supplier: screwfix",
+        "category": "Lighting",
+        "quantity": 20.0,
+        "unit_price": 10.4166,
+        "material_total": 208.33,
+        "pct_of_material_total": 9.1
+      },
+      {
+        "code": "DOM-screwfix-8947P",
+        "description": "British General British General 13A 2-Gang DP Switched Socket Double pole switch",
+        "category": "Switches & Sockets",
+        "quantity": 32.0,
+        "unit_price": 5.1979,
+        "material_total": 166.33,
+        "pct_of_material_total": 7.3
+      },
+      {
+        "code": "DOM-screwfix-504PF",
+        "description": "MK Sentry MK Sentry  21-Module 12-Way Populated  Dual RCD Consumer Unit with SPD",
+        "category": "Consumer Units",
+        "quantity": 1.0,
+        "unit_price": 145.8229,
+        "material_total": 145.82,
+        "pct_of_material_total": 6.4
+      },
+      {
+        "code": "DOM-screwfix-54052",
+        "description": "Prysmian Prysmian 6242Y Grey 6mm\u00b2  Twin & Earth Cable 50m Drum Supplier: screwfi",
+        "category": "Cable",
+        "quantity": 50.0,
+        "unit_price": 2.604,
+        "material_total": 130.2,
+        "pct_of_material_total": 5.7
+      },
+      {
+        "code": "DOM-screwfix-2238J",
+        "description": "Time Time 6242Y Grey 1.5mm\u00b2  Twin & Earth Cable 100m Drum Supplier: screwfix",
+        "category": "Cable",
+        "quantity": 200.0,
+        "unit_price": 0.604,
+        "material_total": 120.8,
+        "pct_of_material_total": 5.3
+      }
+    ]
+  }
+}

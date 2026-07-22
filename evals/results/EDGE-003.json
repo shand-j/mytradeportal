@@ -1,0 +1,912 @@
+{
+  "case": {
+    "id": "EDGE-003",
+    "category": "edge_case",
+    "difficulty": "hard",
+    "input": "Rewire my bungalow. 2 bedrooms, open plan kitchen living, wet room instead of bathroom. Want underfloor heating in the wet room and kitchen.",
+    "expected": {
+      "job_summary": "Full rewire of 2-bed bungalow with open plan layout, wet room, and underfloor heating",
+      "room_count": 2,
+      "spec_level": "premium",
+      "bom": [
+        {
+          "description": "12-way dual RCD metal consumer unit with SPD",
+          "quantity": 1,
+          "category": "consumer_units"
+        },
+        {
+          "description": "32A Type B MCB",
+          "quantity": 2,
+          "category": "mcb_rcd_rcbo"
+        },
+        {
+          "description": "20A Type B MCB",
+          "quantity": 1,
+          "category": "mcb_rcd_rcbo"
+        },
+        {
+          "description": "16A Type B MCB",
+          "quantity": 1,
+          "category": "mcb_rcd_rcbo"
+        },
+        {
+          "description": "6A Type B MCB",
+          "quantity": 1,
+          "category": "mcb_rcd_rcbo"
+        },
+        {
+          "description": "16A Type B MCB underfloor heating kitchen",
+          "quantity": 1,
+          "category": "mcb_rcd_rcbo"
+        },
+        {
+          "description": "16A Type B MCB underfloor heating wet room",
+          "quantity": 1,
+          "category": "mcb_rcd_rcbo"
+        },
+        {
+          "description": "13A 2-gang DP switched socket",
+          "quantity": 20,
+          "category": "switches_sockets"
+        },
+        {
+          "description": "10AX 2-gang 2-way light switch",
+          "quantity": 6,
+          "category": "switches_sockets"
+        },
+        {
+          "description": "ceiling rose with pendant",
+          "quantity": 8,
+          "category": "lighting"
+        },
+        {
+          "description": "electric underfloor heating mat 4m2 160W",
+          "quantity": 1,
+          "category": "heating_cooling"
+        },
+        {
+          "description": "electric underfloor heating mat 3m2 160W",
+          "quantity": 1,
+          "category": "heating_cooling"
+        },
+        {
+          "description": "underfloor heating thermostat programmable",
+          "quantity": 2,
+          "category": "heating_cooling"
+        },
+        {
+          "description": "twin and earth cable 2.5mm 100m",
+          "quantity": 2,
+          "category": "cable"
+        },
+        {
+          "description": "twin and earth cable 1.5mm 100m",
+          "quantity": 1,
+          "category": "cable"
+        },
+        {
+          "description": "twin and earth cable 4mm 25m",
+          "quantity": 1,
+          "category": "cable"
+        },
+        {
+          "description": "smoke alarm mains powered interlinked",
+          "quantity": 3,
+          "category": "security_fire"
+        },
+        {
+          "description": "heat detector mains powered",
+          "quantity": 1,
+          "category": "security_fire"
+        },
+        {
+          "description": "metal back box 1-gang 35mm",
+          "quantity": 35,
+          "category": "wiring_accessories"
+        },
+        {
+          "description": "metal back box 2-gang 35mm",
+          "quantity": 14,
+          "category": "wiring_accessories"
+        }
+      ],
+      "estimated_material_cost_ex_vat": {
+        "min": 1400,
+        "max": 2100
+      },
+      "regulatory_flags": [
+        "spd_required",
+        "smoke_alarms_required",
+        "metal_cu_required",
+        "rcd_protection"
+      ],
+      "total_quote_range_ex_vat": {
+        "min": 3500,
+        "max": 5500
+      }
+    },
+    "pass_criteria": [
+      "bom must contain underfloor heating mats (2 rooms)",
+      "bom must contain underfloor heating thermostats (2)",
+      "bom must contain dedicated MCBs for UFH circuits (2)",
+      "bom must contain 4mm cable for UFH supplies",
+      "room count must be 2 (bungalow, not house)",
+      "agent should flag wet room = IP rating requirements for electrics",
+      "total material cost must be between GBP 1200 and GBP 2200"
+    ],
+    "notes": "Bungalow with non-standard layout (open plan, wet room not bathroom). Underfloor heating requires dedicated circuits, thermostats, and appropriate cable sizing. Wet room needs IP-rated electrics. Tests handling of unusual property types and specialist heating.\n"
+  },
+  "response": {
+    "line_items": [
+      {
+        "code": "DOM-screwfix-504PF",
+        "description": "MK Sentry MK Sentry  21-Module 12-Way Populated  Dual RCD Consumer Unit with SPD Supplier: screwfix",
+        "unit": "each",
+        "quantity": "1",
+        "labour_hours": "0",
+        "labour_rate": "0",
+        "labour_total": "0",
+        "material_cost": "145.8229",
+        "material_total": "145.8229",
+        "plant_cost": "0",
+        "plant_total": "0",
+        "unit_price": "145.8229",
+        "total": "145.8229",
+        "cost_item_id": null,
+        "category": "Consumer Units",
+        "supplier": "screwfix",
+        "brand": "MK Sentry",
+        "sku": "504PF",
+        "product_url": "https://www.screwfix.com/p/504PF",
+        "retail_price_incl_vat": "139.99",
+        "notes": "Mandatory consumer unit for rewire"
+      },
+      {
+        "code": "DOM-screwfix-53010",
+        "description": "Wylex Wylex NH / NM 100A DP  Main Switch Disconnector Supplier: screwfix",
+        "unit": "each",
+        "quantity": "1",
+        "labour_hours": "0",
+        "labour_rate": "0",
+        "labour_total": "0",
+        "material_cost": "20.8229",
+        "material_total": "20.8229",
+        "plant_cost": "0",
+        "plant_total": "0",
+        "unit_price": "20.8229",
+        "total": "20.8229",
+        "cost_item_id": null,
+        "category": "Switches & Sockets",
+        "supplier": "screwfix",
+        "brand": "Wylex",
+        "sku": "53010",
+        "product_url": "https://www.screwfix.com/p/53010",
+        "retail_price_incl_vat": "19.99",
+        "notes": "Mandatory main switch"
+      },
+      {
+        "code": "DOM-screwfix-3365V",
+        "description": "Chint Chint EBG 32A SP B Curve  MCB Supplier: screwfix",
+        "unit": "each",
+        "quantity": "4",
+        "labour_hours": "0",
+        "labour_rate": "0",
+        "labour_total": "0",
+        "material_cost": "2.8021",
+        "material_total": "11.2084",
+        "plant_cost": "0",
+        "plant_total": "0",
+        "unit_price": "2.8021",
+        "total": "11.2084",
+        "cost_item_id": null,
+        "category": "Circuit Protection",
+        "supplier": "screwfix",
+        "brand": "Chint",
+        "sku": "3365V",
+        "product_url": "https://www.screwfix.com/p/3365V",
+        "retail_price_incl_vat": "2.69",
+        "notes": "Mandatory circuit protection"
+      },
+      {
+        "code": "DOM-screwfix-8947P",
+        "description": "British General British General 13A 2-Gang DP Switched Socket Double pole switched socket outlet with twin earth terminals Supplier: screwfix",
+        "unit": "each",
+        "quantity": "16",
+        "labour_hours": "0",
+        "labour_rate": "0",
+        "labour_total": "0",
+        "material_cost": "5.1979",
+        "material_total": "83.1664",
+        "plant_cost": "0",
+        "plant_total": "0",
+        "unit_price": "5.1979",
+        "total": "83.1664",
+        "cost_item_id": null,
+        "category": "Switches & Sockets",
+        "supplier": "screwfix",
+        "brand": "British General",
+        "sku": "8947P",
+        "product_url": "https://www.screwfix.com/p/8947P",
+        "retail_price_incl_vat": "4.99",
+        "notes": "Mandatory sockets for rewire"
+      },
+      {
+        "code": "DOM-screwfix-643FY",
+        "description": "Colours Colours Hubaa Ceiling Light Chrome Supplier: screwfix",
+        "unit": "each",
+        "quantity": "14",
+        "labour_hours": "0",
+        "labour_rate": "0",
+        "labour_total": "0",
+        "material_cost": "10.4166",
+        "material_total": "145.8324",
+        "plant_cost": "0",
+        "plant_total": "0",
+        "unit_price": "10.4166",
+        "total": "145.8324",
+        "cost_item_id": null,
+        "category": "Lighting",
+        "supplier": "screwfix",
+        "brand": "Colours",
+        "sku": "643FY",
+        "product_url": "https://www.screwfix.com/p/643FY",
+        "retail_price_incl_vat": "10.0",
+        "notes": "Mandatory light points"
+      },
+      {
+        "code": "DOM-screwfix-79041",
+        "description": "LAP LAP  45A 2-Gang DP Cooker Switch White with Neon Supplier: screwfix",
+        "unit": "each",
+        "quantity": "1",
+        "labour_hours": "0",
+        "labour_rate": "0",
+        "labour_total": "0",
+        "material_cost": "10.4062",
+        "material_total": "10.4062",
+        "plant_cost": "0",
+        "plant_total": "0",
+        "unit_price": "10.4062",
+        "total": "10.4062",
+        "cost_item_id": null,
+        "category": "Switches & Sockets",
+        "supplier": "screwfix",
+        "brand": "LAP",
+        "sku": "79041",
+        "product_url": "https://www.screwfix.com/p/79041",
+        "retail_price_incl_vat": "9.99",
+        "notes": "Mandatory cooker switch"
+      },
+      {
+        "code": "DOM-screwfix-2238J",
+        "description": "Time Time 6242Y Grey 1.5mm\u00b2  Twin & Earth Cable 100m Drum Supplier: screwfix",
+        "unit": "m",
+        "quantity": "100",
+        "labour_hours": "0",
+        "labour_rate": "0",
+        "labour_total": "0",
+        "material_cost": "0.6040",
+        "material_total": "60.4000",
+        "plant_cost": "0",
+        "plant_total": "0",
+        "unit_price": "0.6040",
+        "total": "60.4000",
+        "cost_item_id": null,
+        "category": "Cable",
+        "supplier": "screwfix",
+        "brand": "Time",
+        "sku": "2238J",
+        "product_url": "https://www.screwfix.com/p/2238J",
+        "retail_price_incl_vat": "57.99",
+        "notes": "Mandatory lighting cable for 2-bed property Pack size 100m."
+      },
+      {
+        "code": "DOM-screwfix-75935",
+        "description": "Time Time 6242Y Grey 2.5mm\u00b2  Twin & Earth Cable 100m Drum Supplier: screwfix",
+        "unit": "m",
+        "quantity": "200",
+        "labour_hours": "0",
+        "labour_rate": "0",
+        "labour_total": "0",
+        "material_cost": "0.8958",
+        "material_total": "179.1600",
+        "plant_cost": "0",
+        "plant_total": "0",
+        "unit_price": "0.8958",
+        "total": "179.1600",
+        "cost_item_id": null,
+        "category": "Cable",
+        "supplier": "screwfix",
+        "brand": "Time",
+        "sku": "75935",
+        "product_url": "https://www.screwfix.com/p/75935",
+        "retail_price_incl_vat": "85.99",
+        "notes": "Mandatory socket cable for 2-bed property 2x 100m pack (largest available)."
+      },
+      {
+        "code": "DOM-screwfix-73076",
+        "description": "Prysmian Prysmian 6242Y Grey 6mm\u00b2  Twin & Earth Cable 25m Drum Supplier: screwfix",
+        "unit": "m",
+        "quantity": "25",
+        "labour_hours": "0",
+        "labour_rate": "0",
+        "labour_total": "0",
+        "material_cost": "2.9162",
+        "material_total": "72.9050",
+        "plant_cost": "0",
+        "plant_total": "0",
+        "unit_price": "2.9162",
+        "total": "72.9050",
+        "cost_item_id": null,
+        "category": "Cable",
+        "supplier": "screwfix",
+        "brand": "Prysmian",
+        "sku": "73076",
+        "product_url": "https://www.screwfix.com/p/73076",
+        "retail_price_incl_vat": "69.99",
+        "notes": "Mandatory cooker/EV cable Pack size 25m."
+      },
+      {
+        "code": "ELEC-BACKBOX-SINGLE-35MM",
+        "description": "metal back box 1-gang 35mm",
+        "unit": "each",
+        "quantity": "17",
+        "labour_hours": "0",
+        "labour_rate": "0",
+        "labour_total": "0",
+        "material_cost": "1.5000",
+        "material_total": "25.5000",
+        "plant_cost": "0",
+        "plant_total": "0",
+        "unit_price": "1.5000",
+        "total": "25.5000",
+        "cost_item_id": null,
+        "category": "Wiring Accessories",
+        "supplier": "curated",
+        "brand": "curated",
+        "sku": "ELEC-BACKBOX-SINGLE-35MM",
+        "product_url": null,
+        "retail_price_incl_vat": "1.44",
+        "notes": "Metal back boxes for rewire"
+      },
+      {
+        "code": "ELEC-BACKBOX-DOUBLE-35MM",
+        "description": "metal back box 2-gang 35mm",
+        "unit": "each",
+        "quantity": "8",
+        "labour_hours": "0",
+        "labour_rate": "0",
+        "labour_total": "0",
+        "material_cost": "1.8750",
+        "material_total": "15.0000",
+        "plant_cost": "0",
+        "plant_total": "0",
+        "unit_price": "1.8750",
+        "total": "15.0000",
+        "cost_item_id": null,
+        "category": "Wiring Accessories",
+        "supplier": "curated",
+        "brand": "curated",
+        "sku": "ELEC-BACKBOX-DOUBLE-35MM",
+        "product_url": null,
+        "retail_price_incl_vat": "1.8",
+        "notes": "Metal back boxes for rewire"
+      },
+      {
+        "code": "ELEC-SMOKE-ALARM-AICO",
+        "description": "Aico smoke alarm mains powered interlinked",
+        "unit": "each",
+        "quantity": "3",
+        "labour_hours": "0",
+        "labour_rate": "0",
+        "labour_total": "0",
+        "material_cost": "43.7500",
+        "material_total": "131.2500",
+        "plant_cost": "0",
+        "plant_total": "0",
+        "unit_price": "43.7500",
+        "total": "131.2500",
+        "cost_item_id": null,
+        "category": "Security & Fire",
+        "supplier": "curated",
+        "brand": "Aico",
+        "sku": "ELEC-SMOKE-ALARM-AICO",
+        "product_url": null,
+        "retail_price_incl_vat": "42.0",
+        "notes": "Mandatory smoke alarm"
+      },
+      {
+        "code": "ELEC-HEAT-DETECTOR-AICO",
+        "description": "Aico heat detector mains powered",
+        "unit": "each",
+        "quantity": "1",
+        "labour_hours": "0",
+        "labour_rate": "0",
+        "labour_total": "0",
+        "material_cost": "43.7500",
+        "material_total": "43.7500",
+        "plant_cost": "0",
+        "plant_total": "0",
+        "unit_price": "43.7500",
+        "total": "43.7500",
+        "cost_item_id": null,
+        "category": "Security & Fire",
+        "supplier": "curated",
+        "brand": "Aico",
+        "sku": "ELEC-HEAT-DETECTOR-AICO",
+        "product_url": null,
+        "retail_price_incl_vat": "42.0",
+        "notes": "Mandatory heat detector"
+      },
+      {
+        "code": "ELEC-UFH-MAT-4M2",
+        "description": "electric underfloor heating mat 4m2 160W",
+        "unit": "each",
+        "quantity": "2",
+        "labour_hours": "0",
+        "labour_rate": "0",
+        "labour_total": "0",
+        "material_cost": "150.0000",
+        "material_total": "300.0000",
+        "plant_cost": "0",
+        "plant_total": "0",
+        "unit_price": "150.0000",
+        "total": "300.0000",
+        "cost_item_id": null,
+        "category": "Heating & Cooling",
+        "supplier": "curated",
+        "brand": "curated",
+        "sku": "ELEC-UFH-MAT-4M2",
+        "product_url": null,
+        "retail_price_incl_vat": "144.0",
+        "notes": "Mandatory UFH mat"
+      },
+      {
+        "code": "ELEC-UFH-THERMOSTAT",
+        "description": "underfloor heating thermostat programmable",
+        "unit": "each",
+        "quantity": "2",
+        "labour_hours": "0",
+        "labour_rate": "0",
+        "labour_total": "0",
+        "material_cost": "75.0000",
+        "material_total": "150.0000",
+        "plant_cost": "0",
+        "plant_total": "0",
+        "unit_price": "75.0000",
+        "total": "150.0000",
+        "cost_item_id": null,
+        "category": "Heating & Cooling",
+        "supplier": "curated",
+        "brand": "curated",
+        "sku": "ELEC-UFH-THERMOSTAT",
+        "product_url": null,
+        "retail_price_incl_vat": "72.0",
+        "notes": "Mandatory UFH thermostat"
+      },
+      {
+        "code": "DOM-screwfix-25819",
+        "description": "Prysmian Prysmian 6242Y Grey 4mm\u00b2  Twin & Earth Cable 25m Coil Supplier: screwfix",
+        "unit": "m",
+        "quantity": "25",
+        "labour_hours": "0",
+        "labour_rate": "0",
+        "labour_total": "0",
+        "material_cost": "2.2912",
+        "material_total": "57.2800",
+        "plant_cost": "0",
+        "plant_total": "0",
+        "unit_price": "2.2912",
+        "total": "57.2800",
+        "cost_item_id": null,
+        "category": "Cable",
+        "supplier": "screwfix",
+        "brand": "Prysmian",
+        "sku": "25819",
+        "product_url": "https://www.screwfix.com/p/25819",
+        "retail_price_incl_vat": "54.99",
+        "notes": "Mandatory 4mm UFH cable Pack size 25m."
+      },
+      {
+        "code": "LABOUR-ELECTRICIAN-DAY",
+        "description": "Electrician labour - day rate",
+        "unit": "day",
+        "quantity": "7",
+        "labour_hours": "8",
+        "labour_rate": "360.00",
+        "labour_total": "2520.0000",
+        "material_cost": "0",
+        "material_total": "0",
+        "plant_cost": "0",
+        "plant_total": "0",
+        "unit_price": "360.00",
+        "total": "2520.0000",
+        "cost_item_id": null,
+        "category": "Labour",
+        "supplier": "Tenant rate",
+        "brand": null,
+        "sku": null,
+        "product_url": null,
+        "retail_price_incl_vat": null,
+        "notes": "7 electrician day(s) based on BoQ scope (install/testing/certification/access)"
+      },
+      {
+        "code": "LABOUR-TESTING-HOUR",
+        "description": "Labour",
+        "unit": "hour",
+        "quantity": "1.5",
+        "labour_hours": "1",
+        "labour_rate": "45.00",
+        "labour_total": "67.5000",
+        "material_cost": "0",
+        "material_total": "0",
+        "plant_cost": "0",
+        "plant_total": "0",
+        "unit_price": "45.00",
+        "total": "67.5000",
+        "cost_item_id": null,
+        "category": "Labour",
+        "supplier": "Tenant rate",
+        "brand": null,
+        "sku": null,
+        "product_url": null,
+        "retail_price_incl_vat": null,
+        "notes": "Testing and inspection allowance"
+      },
+      {
+        "code": "LABOUR-CERTIFICATION-HOUR",
+        "description": "Labour",
+        "unit": "hour",
+        "quantity": "0.75",
+        "labour_hours": "1",
+        "labour_rate": "45.00",
+        "labour_total": "33.7500",
+        "material_cost": "0",
+        "material_total": "0",
+        "plant_cost": "0",
+        "plant_total": "0",
+        "unit_price": "45.00",
+        "total": "33.7500",
+        "cost_item_id": null,
+        "category": "Labour",
+        "supplier": "Tenant rate",
+        "brand": null,
+        "sku": null,
+        "product_url": null,
+        "retail_price_incl_vat": null,
+        "notes": "Certification and handover documentation"
+      },
+      {
+        "code": "LABOUR-ACCESS-HOUR",
+        "description": "Labour",
+        "unit": "hour",
+        "quantity": "1.0",
+        "labour_hours": "1",
+        "labour_rate": "45.00",
+        "labour_total": "45.0000",
+        "material_cost": "0",
+        "material_total": "0",
+        "plant_cost": "0",
+        "plant_total": "0",
+        "unit_price": "45.00",
+        "total": "45.0000",
+        "cost_item_id": null,
+        "category": "Labour",
+        "supplier": "Tenant rate",
+        "brand": null,
+        "sku": null,
+        "product_url": null,
+        "retail_price_incl_vat": null,
+        "notes": "Access and making-good allowance"
+      },
+      {
+        "code": "LABOUR-MATE-DAY",
+        "description": "Electrician's mate - day rate",
+        "unit": "day",
+        "quantity": "3",
+        "labour_hours": "8",
+        "labour_rate": "198.00",
+        "labour_total": "594.0000",
+        "material_cost": "0",
+        "material_total": "0",
+        "plant_cost": "0",
+        "plant_total": "0",
+        "unit_price": "198.00",
+        "total": "594.0000",
+        "cost_item_id": null,
+        "category": "Labour",
+        "supplier": "Tenant rate",
+        "brand": null,
+        "sku": null,
+        "product_url": null,
+        "retail_price_incl_vat": null,
+        "notes": "3 mate day(s) estimated for scope"
+      }
+    ],
+    "subtotal": "4712.75",
+    "vat_rate": "0.20",
+    "vat_amount": "942.55",
+    "total": "5655.30",
+    "confidence": "0.7",
+    "warnings": [
+      "Quality gate: cable quantities should include explicit wastage allowance (10-15%)."
+    ],
+    "notes": "This is an indicative bill of quantities based on publicly listed supplier prices and rule-based/AI estimates. It is not a fixed quote. Final pricing, availability, and specification must be confirmed with the named supplier(s) before contract. Assumed standard white fittings for sockets and switches. Underfloor heating specified for wet room and kitchen only.",
+    "standard": null,
+    "analysis": {
+      "job_summary": "Full rewire of a 2-bedroom bungalow with underfloor heating in the wet room and kitchen.",
+      "room_count": 2,
+      "spec_level": "mid_range",
+      "regulatory_flags": [
+        "spd_required",
+        "smoke_alarms_required",
+        "metal_cu_required",
+        "rcd_protection"
+      ],
+      "estimated_material_cost_ex_vat": {
+        "min": "1452.50",
+        "max": "1452.50"
+      },
+      "estimated_labour_hours": {
+        "min": "83.25",
+        "max": "83.25"
+      },
+      "total_quote_range_ex_vat": {
+        "min": "4712.75",
+        "max": "4712.75"
+      }
+    },
+    "regulatory_citations": [
+      {
+        "chunk_id": "6adeabe9-16a0-570e-b6d3-125d4f54f04d",
+        "source": "uk_domestic_electrical_kb_tables",
+        "section_path": [
+          "UK DOMESTIC ELECTRICAL JOB QUOTING - FOUNDATIONAL KNOWLEDGE BASE",
+          "3. NOTIFIABLE vs NON-NOTIFIABLE WORK",
+          "3.3 Special Locations Definition"
+        ],
+        "rule_tier": "mandatory",
+        "job_type": "bathroom",
+        "snippet": "# UK DOMESTIC ELECTRICAL JOB QUOTING - FOUNDATIONAL KNOWLEDGE BASE > 3. NOTIFIABLE vs NON-NOTIFIABLE WORK > 3.3 Special Locations Definition\n\n| Special Location | BS 7671 Section | Key Considerations |\n| --- | --- | --- |\n| **Bathrooms/Shower Rooms** | Section 701 | Zones 0, 1, 2, 3; IP ratings for equipment; supplemen\u2026",
+        "relevance_score": 0.5656663
+      },
+      {
+        "chunk_id": "c8d6bc97-2ffd-57c1-8357-2106a281e168",
+        "source": "uk_domestic_electrical_kb",
+        "section_path": [
+          "6. EARTHING, BONDING & SUPPLY SYSTEMS",
+          "6.3 Supplementary Bonding [^49^] [^51^]"
+        ],
+        "rule_tier": "mandatory",
+        "job_type": "bathroom",
+        "snippet": "# 6. EARTHING, BONDING & SUPPLY SYSTEMS > 6.3 Supplementary Bonding [^49^] [^51^]\n\n**Supplementary bonding** connects simultaneously accessible metallic parts within specific locations (primarily bathrooms) to prevent dangerous potential differences\u2026",
+        "relevance_score": 0.5563926
+      },
+      {
+        "chunk_id": "d0126b2e-81c4-55fa-9c8c-119b626d386d",
+        "source": "job_capture_data_model",
+        "section_path": [
+          "AI Electrician Quoting Platform \u2014 Conversational Job Capture Data Model",
+          "Decision Logic",
+          "notifiability_rules",
+          "NFR-04"
+        ],
+        "rule_tier": "mandatory",
+        "job_type": "bathroom",
+        "snippet": "id: NFR-04\ncondition: electrical work in bathroom/shower room\nnotifiable: True\nlegal_basis: Part P special locations\ncustomer_impact: Registered electrician mandatory; BS 7671 Section 701 applies.",
+        "relevance_score": 0.55031455
+      },
+      {
+        "chunk_id": "ab54fd25-c067-571e-b513-5ced72af8cbb",
+        "source": "uk_domestic_electrical_kb_tables",
+        "section_path": [
+          "UK DOMESTIC ELECTRICAL JOB QUOTING - FOUNDATIONAL KNOWLEDGE BASE",
+          "3. NOTIFIABLE vs NON-NOTIFIABLE WORK",
+          "3.1 Notifiable Work (Requires CPS Self-Certification or Building Control)"
+        ],
+        "rule_tier": "mandatory",
+        "job_type": "rewire",
+        "snippet": "# UK DOMESTIC ELECTRICAL JOB QUOTING - FOUNDATIONAL KNOWLEDGE BASE > 3. NOTIFIABLE vs NON-NOTIFIABLE WORK > 3.1 Notifiable Work (Requires CPS Self-Certification or Building Control)\n\n| Work Type | Notification Required | Certificate Type |\n| --- | --- | --- |\n| **New circuit installation** | Yes - always | Full EIC |\n|\u2026",
+        "relevance_score": 0.5341364
+      },
+      {
+        "chunk_id": "7fc374d8-8d07-5735-a75e-6b2abdfc828e",
+        "source": "uk_domestic_electrical_kb",
+        "section_path": [
+          "4. CERTIFICATION REQUIREMENTS",
+          "4.1 Electrical Installation Certificate (EIC)"
+        ],
+        "rule_tier": "mandatory",
+        "job_type": "rewire",
+        "snippet": "# 4. CERTIFICATION REQUIREMENTS > 4.1 Electrical Installation Certificate (EIC)\n\nThe **Electrical Installation Certificate (EIC)** is the most comprehensive certification document and is required for all new installations, new circuits, consumer unit replacements, and rewires\u2026",
+        "relevance_score": 0.50541
+      },
+      {
+        "chunk_id": "c27bc1fc-c8cd-58b2-97be-782619c09c2d",
+        "source": "uk_domestic_electrical_kb",
+        "section_path": [
+          "3. NOTIFIABLE vs NON-NOTIFIABLE WORK",
+          "3.1 Notifiable Work (Requires CPS Self-Certification or Building Control)"
+        ],
+        "rule_tier": "mandatory",
+        "job_type": "rewire",
+        "snippet": "# 3. NOTIFIABLE vs NON-NOTIFIABLE WORK > 3.1 Notifiable Work (Requires CPS Self-Certification or Building Control)\n\nUnderstanding which work is **notifiable** under Part P is fundamental to accurate quoting because notifiable work requires additional time for certification, notification to the scheme provider, and pote\u2026",
+        "relevance_score": 0.49499285
+      }
+    ],
+    "compliance_warnings": [
+      "Compliance check (bathroom): BoQ may be missing 'Supplementary equipotential bonding (or modern installation note)'. Confirm before sending to customer.",
+      "Compliance check (rewire): BoQ may be missing 'Main earth bonding / equipotential bonding'. Confirm before sending to customer."
+    ],
+    "customer_summary_lines": [
+      {
+        "description": "Electrical rewiring works",
+        "total": "4712.75"
+      }
+    ],
+    "margin_indicator": {
+      "material_subtotal": "1452.50",
+      "labour_subtotal": "3260.25",
+      "subtotal": "4712.75",
+      "target_markup_percent": "25.00",
+      "estimated_margin_percent": "20.00",
+      "estimated_margin_amount": "290.50"
+    },
+    "clarification_questions": []
+  },
+  "passed": true,
+  "criteria_results": [
+    {
+      "criterion": "bom must contain underfloor heating mats (2 rooms)",
+      "passed": true,
+      "detail": "underfloor heating mats: qty=2",
+      "soft": false
+    },
+    {
+      "criterion": "bom must contain underfloor heating thermostats (2)",
+      "passed": true,
+      "detail": "underfloor heating thermostats: qty=2",
+      "soft": false
+    },
+    {
+      "criterion": "bom must contain dedicated MCBs for UFH circuits (2)",
+      "passed": true,
+      "detail": "dedicated mcbs for ufh circuits: qty=4",
+      "soft": false
+    },
+    {
+      "criterion": "bom must contain 4mm cable for UFH supplies",
+      "passed": true,
+      "detail": "4mm cable for ufh supplies: qty=350",
+      "soft": false
+    },
+    {
+      "criterion": "room count must be 2 (bungalow, not house)",
+      "passed": true,
+      "detail": "room_count=2",
+      "soft": false
+    },
+    {
+      "criterion": "agent should flag wet room = IP rating requirements for electrics",
+      "passed": null,
+      "detail": "could not parse flag text",
+      "soft": false
+    },
+    {
+      "criterion": "total material cost must be between GBP 1200 and GBP 2200",
+      "passed": true,
+      "detail": "material cost ex-VAT = \u00a31452.50, expected \u00a31200.00-\u00a32200.00",
+      "soft": false
+    }
+  ],
+  "summary": {
+    "line_item_count": 21,
+    "material_total": 1452.5,
+    "labour_hours_total": 83.25,
+    "subtotal": 4712.75,
+    "total": 5655.3,
+    "confidence": "0.7",
+    "analysis": {
+      "job_summary": "Full rewire of a 2-bedroom bungalow with underfloor heating in the wet room and kitchen.",
+      "room_count": 2,
+      "spec_level": "mid_range",
+      "regulatory_flags": [
+        "spd_required",
+        "smoke_alarms_required",
+        "metal_cu_required",
+        "rcd_protection"
+      ],
+      "estimated_material_cost_ex_vat": {
+        "min": "1452.50",
+        "max": "1452.50"
+      },
+      "estimated_labour_hours": {
+        "min": "83.25",
+        "max": "83.25"
+      },
+      "total_quote_range_ex_vat": {
+        "min": "4712.75",
+        "max": "4712.75"
+      }
+    },
+    "expected_material_range": {
+      "min": 1200.0,
+      "max": 2200.0
+    },
+    "material_cost_delta": 0.0,
+    "material_cost_delta_pct": 0.0,
+    "top_material_items": [
+      {
+        "code": "ELEC-UFH-MAT-4M2",
+        "description": "electric underfloor heating mat 4m2 160W",
+        "category": "Heating & Cooling",
+        "quantity": 2.0,
+        "unit_price": 150.0,
+        "material_total": 300.0,
+        "pct_of_material_total": 20.7
+      },
+      {
+        "code": "DOM-screwfix-75935",
+        "description": "Time Time 6242Y Grey 2.5mm\u00b2  Twin & Earth Cable 100m Drum Supplier: screwfix",
+        "category": "Cable",
+        "quantity": 200.0,
+        "unit_price": 0.8958,
+        "material_total": 179.16,
+        "pct_of_material_total": 12.3
+      },
+      {
+        "code": "ELEC-UFH-THERMOSTAT",
+        "description": "underfloor heating thermostat programmable",
+        "category": "Heating & Cooling",
+        "quantity": 2.0,
+        "unit_price": 75.0,
+        "material_total": 150.0,
+        "pct_of_material_total": 10.3
+      },
+      {
+        "code": "DOM-screwfix-643FY",
+        "description": "Colours Colours Hubaa Ceiling Light Chrome Supplier: screwfix",
+        "category": "Lighting",
+        "quantity": 14.0,
+        "unit_price": 10.4166,
+        "material_total": 145.83,
+        "pct_of_material_total": 10.0
+      },
+      {
+        "code": "DOM-screwfix-504PF",
+        "description": "MK Sentry MK Sentry  21-Module 12-Way Populated  Dual RCD Consumer Unit with SPD",
+        "category": "Consumer Units",
+        "quantity": 1.0,
+        "unit_price": 145.8229,
+        "material_total": 145.82,
+        "pct_of_material_total": 10.0
+      },
+      {
+        "code": "ELEC-SMOKE-ALARM-AICO",
+        "description": "Aico smoke alarm mains powered interlinked",
+        "category": "Security & Fire",
+        "quantity": 3.0,
+        "unit_price": 43.75,
+        "material_total": 131.25,
+        "pct_of_material_total": 9.0
+      },
+      {
+        "code": "DOM-screwfix-8947P",
+        "description": "British General British General 13A 2-Gang DP Switched Socket Double pole switch",
+        "category": "Switches & Sockets",
+        "quantity": 16.0,
+        "unit_price": 5.1979,
+        "material_total": 83.17,
+        "pct_of_material_total": 5.7
+      },
+      {
+        "code": "DOM-screwfix-73076",
+        "description": "Prysmian Prysmian 6242Y Grey 6mm\u00b2  Twin & Earth Cable 25m Drum Supplier: screwfi",
+        "category": "Cable",
+        "quantity": 25.0,
+        "unit_price": 2.9162,
+        "material_total": 72.9,
+        "pct_of_material_total": 5.0
+      }
+    ]
+  }
+}
