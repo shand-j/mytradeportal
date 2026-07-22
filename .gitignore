@@ -70,6 +70,9 @@ postgres_data/
 redis_data/
 qdrant_storage/
 minio_data/
+# Front-end mock fixtures are source, not local data volumes
+!web/app/src/lib/mock/data/
+!web/app/src/lib/mock/data/**
 
 # Secrets (never commit)
 *.pem
