@@ -42,18 +42,28 @@ def init_api_schema() -> None:
         return
 
     api_dir = ROOT / "services" / "api"
+    if not api_dir.exists():
+        print("[init_db] API directory not found, skipping API schema")
+        return
+
     print("[init_db] Running Alembic upgrade head")
     _run(["alembic", "upgrade", "head"], cwd=ROOT, extra_env={"PYTHONPATH": str(api_dir)})
 
 
 def init_admin_schema() -> None:
     """Create/update Django admin tables."""
-    admin_dir = ROOT / "services" / "admin"
-    manage_py = admin_dir / "manage.py"
-    if not manage_py.exists():
+    # The admin Dockerfile copies the service contents to /app, so manage.py may
+    # live at the container root. In the repo root it lives under services/admin.
+    candidates = [
+        ROOT / "services" / "admin" / "manage.py",
+        ROOT / "manage.py",
+    ]
+    manage_py = next((p for p in candidates if p.exists()), None)
+    if manage_py is None:
         print("[init_db] Django manage.py not found, skipping admin schema")
         return
 
+    admin_dir = manage_py.parent
     print("[init_db] Running Django migrate")
     _run(
         [sys.executable, "manage.py", "migrate", "--noinput"],

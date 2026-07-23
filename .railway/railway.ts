@@ -157,7 +157,7 @@ export default defineRailway(() => {
     source: github(GITHUB_REPO),
     build: { builder: "DOCKERFILE", dockerfilePath: "services/admin/Dockerfile" },
     healthcheck: "/health",
-    preDeployCommand: "python scripts/init_db.py && python services/admin/scripts/ensure_superuser.py",
+    preDeployCommand: "python scripts/init_db.py && python scripts/ensure_superuser.py",
     env: {
       // Django uses psycopg2, so the plugin's plain postgresql:// URL is correct.
       DATABASE_URL: db.env.DATABASE_URL,
