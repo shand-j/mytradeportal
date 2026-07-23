@@ -42,19 +42,22 @@ const API_PUBLIC_URL = "https://${{api.RAILWAY_PUBLIC_DOMAIN}}";
 const WEB_PUBLIC_URL = "https://${{web.RAILWAY_PUBLIC_DOMAIN}}";
 const ADMIN_PUBLIC_URL = "https://${{admin.RAILWAY_PUBLIC_DOMAIN}}";
 
+const TARGET_REGION = "eu-west"; // Closest Railway region to the UK market (Dublin).
+
 export default defineRailway(() => {
   // ---------------------------------------------------------------------
   // Databases (native plugins)
   // ---------------------------------------------------------------------
-  const db = postgres("db");
-  const cache = redis("redis");
+  const db = postgres("db", { region: TARGET_REGION });
+  const cache = redis("redis", { region: TARGET_REGION });
 
   // ---------------------------------------------------------------------
   // Infrastructure services (Docker images + volumes)
   // ---------------------------------------------------------------------
   const qdrant = service("qdrant", {
     source: image("qdrant/qdrant:v1.11.5"),
-    volumeMounts: { "/qdrant/storage": volume("qdrant-storage", { sizeMB: 5000, region: "sfo" }) },
+    volumeMounts: { "/qdrant/storage": volume("qdrant-storage", { sizeMB: 5000, region: TARGET_REGION }) },
+    regions: { [TARGET_REGION]: 1 },
   });
 
   const minio = service("minio", {
@@ -65,7 +68,8 @@ export default defineRailway(() => {
     // explicitly — Railway replaces the image entrypoint with this command.
     source: image("minio/minio:latest"),
     start: 'minio server /mnt/data --console-address ":9001"',
-    volumeMounts: { "/mnt/data": volume("minio-data", { sizeMB: 5000, region: "sfo" }) },
+    volumeMounts: { "/mnt/data": volume("minio-data", { sizeMB: 5000, region: TARGET_REGION }) },
+    regions: { [TARGET_REGION]: 1 },
     env: {
       // Set real credentials in the dashboard before first deploy.
       MINIO_ROOT_USER: preserve(),
@@ -80,6 +84,7 @@ export default defineRailway(() => {
     source: github(GITHUB_REPO),
     build: { builder: "DOCKERFILE", dockerfilePath: "services/ocerp/Dockerfile" },
     healthcheck: "/health",
+    regions: { [TARGET_REGION]: 1 },
     env: {
       ENVIRONMENT: "production",
       // No public domain → Railway doesn't inject PORT; pin it so the
@@ -102,6 +107,7 @@ export default defineRailway(() => {
     build: { builder: "DOCKERFILE", dockerfilePath: "services/api/Dockerfile" },
     healthcheck: "/health",
     preDeployCommand: "python scripts/init_db.py",
+    regions: { [TARGET_REGION]: 1 },
     env: {
       ENVIRONMENT: "production",
       LOG_LEVEL: "INFO",
@@ -145,6 +151,7 @@ export default defineRailway(() => {
     source: github(GITHUB_REPO, { rootDirectory: "web/app" }),
     build: { builder: "DOCKERFILE", dockerfilePath: "Dockerfile" },
     healthcheck: "/",
+    regions: { [TARGET_REGION]: 1 },
     env: {
       // Baked into the Vite bundle at build time (Docker build ARG).
       VITE_API_BASE_URL: API_PUBLIC_URL,
@@ -158,6 +165,7 @@ export default defineRailway(() => {
     build: { builder: "DOCKERFILE", dockerfilePath: "services/admin/Dockerfile" },
     healthcheck: "/health",
     preDeployCommand: "sh -c 'python scripts/init_db.py && python scripts/ensure_superuser.py'",
+    regions: { [TARGET_REGION]: 1 },
     env: {
       // Django uses psycopg2, so the plugin's plain postgresql:// URL is correct.
       DATABASE_URL: db.env.DATABASE_URL,
@@ -178,6 +186,7 @@ export default defineRailway(() => {
   const dataPipeline = service("data-pipeline", {
     source: github(GITHUB_REPO),
     build: { builder: "DOCKERFILE", dockerfilePath: "services/data-pipeline/Dockerfile" },
+    regions: { [TARGET_REGION]: 1 },
     env: {
       DATABASE_URL: db.env.DATABASE_URL,
       QDRANT_URL,
