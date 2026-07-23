@@ -12,20 +12,9 @@ const tabs = [
   { id: 'integrations', label: 'Integrations', icon: Link2 },
 ];
 
-const initialServices: ServiceOffering[] = [
-  { id: 'svc-1', name: 'Boiler Installation', description: 'Full boiler installation', basePrice: 1200, estimatedDuration: 240, category: 'Heating', isActive: true },
-  { id: 'svc-2', name: 'Annual Service', description: 'Annual boiler service', basePrice: 120, estimatedDuration: 60, category: 'Maintenance', isActive: true },
-  { id: 'svc-3', name: 'Emergency Repair', description: 'Out of hours emergency repair', basePrice: 200, estimatedDuration: 90, category: 'Repairs', isActive: true },
-];
+const initialServices: ServiceOffering[] = [];
 
-const initialIntegrations: IntegrationStatus[] = [
-  { provider: 'quickbooks', connected: true, accountName: 'QuickBooks Online', accountIdentifier: 'Mikes Plumbing Ltd', lastSyncAt: '2025-06-20T10:00:00Z' },
-  { provider: 'xero', connected: false, accountName: null, accountIdentifier: null, lastSyncAt: null },
-  { provider: 'stripe', connected: true, accountName: 'Stripe', accountIdentifier: '...4242', lastSyncAt: '2025-06-20T15:00:00Z' },
-  { provider: 'twilio', connected: true, accountName: 'Twilio', accountIdentifier: '+44 20 7946 0123', lastSyncAt: '2025-06-19T08:00:00Z' },
-  { provider: 'whatsapp', connected: true, accountName: 'WhatsApp Business', accountIdentifier: '+44 20 7946 0123', lastSyncAt: '2025-06-18T12:00:00Z' },
-  { provider: 'google_reviews', connected: true, accountName: 'Google Business', accountIdentifier: 'Mikes Plumbing', lastSyncAt: '2025-06-20T06:00:00Z' },
-];
+const initialIntegrations: IntegrationStatus[] = [];
 
 export function Settings() {
   const setPageTitle = useUiStore(s => s.setPageTitle);

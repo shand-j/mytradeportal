@@ -32,8 +32,8 @@ export function Login() {
   } = useForm<LoginForm>({
     resolver: zodResolver(loginSchema),
     defaultValues: {
-      tenantSlug: 'demo',
-      email: 'admin@demo.local',
+      tenantSlug: '',
+      email: '',
       password: '',
     },
   });
@@ -75,7 +75,7 @@ export function Login() {
                 type="text"
                 autoComplete="organization"
                 {...register('tenantSlug')}
-                placeholder="demo"
+                placeholder="your-business"
                 className="border-[#E7E5E4]"
               />
               {errors.tenantSlug && (
@@ -92,7 +92,7 @@ export function Login() {
                 type="email"
                 autoComplete="email"
                 {...register('email')}
-                placeholder="admin@demo.local"
+                placeholder="you@example.com"
                 className="border-[#E7E5E4]"
               />
               {errors.email && (

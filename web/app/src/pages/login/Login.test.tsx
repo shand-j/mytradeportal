@@ -43,11 +43,12 @@ describe('Login', () => {
 
     renderWithProviders(<Login />);
 
+    const slugInput = screen.getByLabelText(/business slug/i);
     const emailInput = screen.getByLabelText(/email/i);
     const passwordInput = screen.getByLabelText(/password/i);
     const submitButton = screen.getByRole('button', { name: /sign in/i });
 
-    await userEvent.clear(emailInput);
+    await userEvent.type(slugInput, 'demo');
     await userEvent.type(emailInput, 'admin@demo.local');
     await userEvent.type(passwordInput, 'password123');
     await userEvent.click(submitButton);
@@ -104,9 +105,13 @@ describe('Login', () => {
 
     renderWithProviders(<Login />);
 
+    const slugInput = screen.getByLabelText(/business slug/i);
+    const emailInput = screen.getByLabelText(/email/i);
     const passwordInput = screen.getByLabelText(/password/i);
     const submitButton = screen.getByRole('button', { name: /sign in/i });
 
+    await userEvent.type(slugInput, 'demo');
+    await userEvent.type(emailInput, 'admin@demo.local');
     await userEvent.type(passwordInput, 'wrong');
     await userEvent.click(submitButton);
 

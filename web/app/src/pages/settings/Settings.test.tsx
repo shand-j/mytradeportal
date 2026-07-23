@@ -124,7 +124,7 @@ describe('Settings', () => {
     expect(screen.queryByRole('button', { name: /integrations/i })).not.toBeInTheDocument();
   });
 
-  it('toggles an integration connection', () => {
+  it('shows an empty integrations tab when the feature flag is on', () => {
     mockUseFeatureFlags.mockReturnValue({
       data: { externalIntegrations: true, voiceAiInsights: false, demandForecasting: false },
       isLoading: false,
@@ -134,10 +134,6 @@ describe('Settings', () => {
     renderWithProviders(<Settings />);
 
     fireEvent.click(screen.getByRole('button', { name: /integrations/i }));
-    const disconnectBtn = screen.getAllByRole('button', { name: /disconnect/i })[0];
-    fireEvent.click(disconnectBtn);
-
-    fireEvent.click(screen.getByRole('button', { name: /save integrations/i }));
-    expect(mockMutate).toHaveBeenCalled();
+    expect(screen.queryByRole('button', { name: /disconnect/i })).not.toBeInTheDocument();
   });
 });
