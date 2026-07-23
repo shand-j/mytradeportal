@@ -25,16 +25,23 @@ def clean() -> None:
     test_tenant_slugs = [
         os.environ.get("E2E_TENANT_SLUG", "e2e-prod-"),
     ]
-    # Also remove any first-customer-* tenants created by the admin-onboarding test.
+    # Also remove any first-customer-* tenants created by the admin-onboarding test
+    # and any prod-smoke-* tenants created by the production smoke test.
     admin_onboarding_prefix = "first-customer-"
+    prod_smoke_prefix = "prod-smoke-"
 
     with engine.begin() as conn:
         # Find tenant IDs to delete.
         result = conn.execute(
-            text("SELECT id, slug FROM tenants WHERE slug = ANY(:slugs) OR slug LIKE :prefix"),
+            text(
+                "SELECT id, slug FROM tenants WHERE slug = ANY(:slugs) "
+                "OR slug LIKE :admin_onboarding_prefix "
+                "OR slug LIKE :prod_smoke_prefix"
+            ),
             {
                 "slugs": test_tenant_slugs,
-                "prefix": f"{admin_onboarding_prefix}%",
+                "admin_onboarding_prefix": f"{admin_onboarding_prefix}%",
+                "prod_smoke_prefix": f"{prod_smoke_prefix}%",
             },
         )
         tenant_ids = [(row.id, row.slug) for row in result]
@@ -68,14 +75,18 @@ def clean() -> None:
                 {"tenant_id": tenant_id},
             )
 
-    # Delete the Django superuser if it exists.
-    user_model = get_user_model()
-    django_username = os.environ.get("E2E_DJANGO_ADMIN_USERNAME", "e2e-superadmin")
-    deleted, _ = user_model.objects.filter(username=django_username).delete()
-    if deleted:
-        print(f"Deleted Django superuser: {django_username}")
+    # Delete the temporary Django superuser if one was explicitly configured.
+    # Never delete the production superadmin account from this script.
+    django_username = os.environ.get("E2E_DJANGO_ADMIN_USERNAME", "")
+    if django_username and django_username != "superadmin":
+        user_model = get_user_model()
+        deleted, _ = user_model.objects.filter(username=django_username).delete()
+        if deleted:
+            print(f"Deleted Django superuser: {django_username}")
+        else:
+            print(f"Django superuser not found: {django_username}")
     else:
-        print(f"Django superuser not found: {django_username}")
+        print("Skipping production superuser deletion")
 
     print("Cleanup complete")
 

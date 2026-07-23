@@ -6,7 +6,8 @@ export interface TestFixtures {
 }
 
 export const test = base.extend<TestFixtures>({
-  testId: async (_context, provide) => {
+  // eslint-disable-next-line no-empty-pattern
+  testId: async ({}, provide) => {
     const id = `e2e-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
     await provide(id);
   },
