@@ -157,7 +157,7 @@ export default defineRailway(() => {
     source: github(GITHUB_REPO),
     build: { builder: "DOCKERFILE", dockerfilePath: "services/admin/Dockerfile" },
     healthcheck: "/health",
-    preDeployCommand: "python scripts/init_db.py",
+    preDeployCommand: "python scripts/init_db.py && python services/admin/scripts/ensure_superuser.py",
     env: {
       // Django uses psycopg2, so the plugin's plain postgresql:// URL is correct.
       DATABASE_URL: db.env.DATABASE_URL,
@@ -167,6 +167,11 @@ export default defineRailway(() => {
       CSRF_TRUSTED_ORIGINS: ADMIN_PUBLIC_URL,
       // Match Dockerfile EXPOSE and gunicorn bind port; Railway overrides $PORT otherwise.
       PORT: "8001",
+      // Deploy with a Django superuser for tenant creation and admin maintenance.
+      // Set DJANGO_SUPERUSER_PASSWORD in Railway/GitHub secrets before first deploy.
+      DJANGO_SUPERUSER_USERNAME: "superadmin",
+      DJANGO_SUPERUSER_EMAIL: "admin@example.com",
+      DJANGO_SUPERUSER_PASSWORD: preserve(),
     },
   });
 

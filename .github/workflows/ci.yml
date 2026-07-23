@@ -123,6 +123,12 @@ jobs:
         working-directory: .railway
         run: npm ci
 
+      - name: Set production secrets from GitHub secrets
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+        run: |
+          railway variable set DJANGO_SUPERUSER_PASSWORD="${{ secrets.DJANGO_SUPERUSER_PASSWORD }}" --service admin --environment production
+
       - name: Apply Railway configuration
         env:
           RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
