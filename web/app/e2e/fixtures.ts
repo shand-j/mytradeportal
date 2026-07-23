@@ -6,7 +6,7 @@ export interface TestFixtures {
 }
 
 export const test = base.extend<TestFixtures>({
-  testId: async ({}, provide) => {
+  testId: async (_context, provide) => {
     const id = `e2e-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
     await provide(id);
   },

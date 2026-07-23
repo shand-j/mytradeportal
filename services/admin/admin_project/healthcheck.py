@@ -6,14 +6,19 @@ under our control, so this middleware intercepts the healthcheck path and
 returns 200 without invoking Django.
 """
 
+from collections.abc import Callable
+from typing import Any
+
 HEALTHCHECK_PATHS = {"/health", "/health/"}
 
 
 class HealthCheckMiddleware:
-    def __init__(self, app):
+    def __init__(self, app: Callable[..., Any]) -> None:
         self.app = app
 
-    def __call__(self, environ, start_response):
+    def __call__(
+        self, environ: dict[str, Any], start_response: Callable[[str, list[tuple[str, str]]], None]
+    ) -> Any:
         if environ.get("PATH_INFO") in HEALTHCHECK_PATHS:
             status = "200 OK"
             headers = [("Content-Type", "text/plain; charset=utf-8")]

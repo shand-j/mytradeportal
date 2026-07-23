@@ -1,17 +1,17 @@
 """Remove E2E tenants and the temporary Django superuser from production."""
+
 import os
-import re
 import sys
+from pathlib import Path
 
 os.environ.setdefault("DJANGO_SETTINGS_MODULE", "admin_project.settings")
-sys.path.insert(0, str(__import__("pathlib").Path(__file__).resolve().parent.parent))
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import django
-
-django.setup()
-
 from django.contrib.auth import get_user_model
 from sqlalchemy import create_engine, text
+
+django.setup()
 
 
 def clean() -> None:
@@ -31,9 +31,7 @@ def clean() -> None:
     with engine.begin() as conn:
         # Find tenant IDs to delete.
         result = conn.execute(
-            text(
-                "SELECT id, slug FROM tenants WHERE slug = ANY(:slugs) OR slug LIKE :prefix"
-            ),
+            text("SELECT id, slug FROM tenants WHERE slug = ANY(:slugs) OR slug LIKE :prefix"),
             {
                 "slugs": test_tenant_slugs,
                 "prefix": f"{admin_onboarding_prefix}%",
@@ -71,9 +69,9 @@ def clean() -> None:
             )
 
     # Delete the Django superuser if it exists.
-    User = get_user_model()
+    user_model = get_user_model()
     django_username = os.environ.get("E2E_DJANGO_ADMIN_USERNAME", "e2e-superadmin")
-    deleted, _ = User.objects.filter(username=django_username).delete()
+    deleted, _ = user_model.objects.filter(username=django_username).delete()
     if deleted:
         print(f"Deleted Django superuser: {django_username}")
     else:
