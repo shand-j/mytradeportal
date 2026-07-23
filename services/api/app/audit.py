@@ -22,13 +22,15 @@ Design choices:
 from __future__ import annotations
 
 import logging
-from typing import Any
-from uuid import UUID
-
-from sqlalchemy.ext.asyncio import AsyncSession
+from typing import TYPE_CHECKING, Any
 
 from app.models import AuditLog, User
 from app.rls import set_tenant_in_session
+
+if TYPE_CHECKING:
+    from uuid import UUID
+
+    from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = logging.getLogger(__name__)
 
@@ -60,6 +62,7 @@ class Actions:
     INVOICE_CANCELLED = "invoice.cancelled"
     INVOICE_DELETED = "invoice.deleted"
 
+    TENANT_CREATED = "tenant.created"
     TENANT_UPDATED = "tenant.updated"
 
 

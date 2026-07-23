@@ -110,8 +110,8 @@ def _brand_score(requirement: BoQRequirement, item: dict[str, Any]) -> float:
 
     This lets a "brushed steel MK" socket request resolve to a British General
     Nexus Metal brushed steel SKU when MK genuinely doesn't make a
-    brushed-steel Logic Plus — finish wins (1.5x) × brand miss (0.5x) = 0.75,
-    which beats MK Logic Plus White at brand match (1.0x) × finish miss
+    brushed-steel Logic Plus — finish wins (1.5x) x brand miss (0.5x) = 0.75,
+    which beats MK Logic Plus White at brand match (1.0x) x finish miss
     (0.4x) = 0.4.
     """
     if not requirement.attributes.get("brand"):
@@ -246,7 +246,16 @@ def _hard_reject(requirement: BoQRequirement, item: dict[str, Any]) -> bool:
         return True
 
     if concept == "swa_cable" and any(
-        bad in desc for bad in ("hdmi", "ethernet", "cat 5", "cat5", "cctv", "extension lead", "extension cable")
+        bad in desc
+        for bad in (
+            "hdmi",
+            "ethernet",
+            "cat 5",
+            "cat5",
+            "cctv",
+            "extension lead",
+            "extension cable",
+        )
     ):
         return True
 
@@ -254,7 +263,10 @@ def _hard_reject(requirement: BoQRequirement, item: dict[str, Any]) -> bool:
         return True
 
     if concept in {"double_socket", "single_socket", "socket_outlet"}:
-        if any(bad in desc for bad in ("rj45", "ethernet", "cat 5", "cat5", "cat 6", "cat6", "data", "usb")):
+        if any(
+            bad in desc
+            for bad in ("rj45", "ethernet", "cat 5", "cat5", "cat 6", "cat6", "data", "usb")
+        ):
             return True
         # Indoor sockets must not resolve to a weatherproof / outdoor SKU.
         # We have a separate `outdoor_socket` requirement when the
@@ -274,9 +286,13 @@ def _hard_reject(requirement: BoQRequirement, item: dict[str, Any]) -> bool:
             return True
 
     # Mirror image: an "indoor"-only switch must not pick a weatherproof box.
-    if concept in {"dimmer_switch", "light_switch", "cooker_switch"} and requirement.attributes.get("outdoor") is not True and any(
-        bad in desc
-        for bad in ("weatherproof", "ip66", "ip55", "ip54", "ip65", "masterseal", "outdoor")
+    if (
+        concept in {"dimmer_switch", "light_switch", "cooker_switch"}
+        and requirement.attributes.get("outdoor") is not True
+        and any(
+            bad in desc
+            for bad in ("weatherproof", "ip66", "ip55", "ip54", "ip65", "masterseal", "outdoor")
+        )
     ):
         return True
 
@@ -290,7 +306,8 @@ def _hard_reject(requirement: BoQRequirement, item: dict[str, Any]) -> bool:
         return True
 
     return any(
-        term in desc for term in ("chocbox", "choc box", "connector box", "connector block", "terminal block")
+        term in desc
+        for term in ("chocbox", "choc box", "connector box", "connector block", "terminal block")
     )
 
 
@@ -377,8 +394,7 @@ def _select_cable_candidate(
         packs_needed = max(1, math.ceil(req_qty / length))
         total_length = packs_needed * length
         updated_notes = (
-            f"{requirement.notes or ''} {packs_needed}x {length}m pack "
-            f"(largest available)."
+            f"{requirement.notes or ''} {packs_needed}x {length}m pack (largest available)."
         ).strip()
         updated = requirement.model_copy(
             update={"quantity": Decimal(str(total_length)), "notes": updated_notes}

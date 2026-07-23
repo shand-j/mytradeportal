@@ -154,7 +154,7 @@ async def _index_in_qdrant(items: list[CostItem]) -> None:
                 vector=vector,
                 payload=_cost_item_to_payload(item),
             )
-            for item, vector in zip(batch, vectors)
+            for item, vector in zip(batch, vectors, strict=False)
         ]
         await qdrant.upsert(
             collection_name=settings.qdrant_collection_name,

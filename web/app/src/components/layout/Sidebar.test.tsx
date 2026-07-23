@@ -9,6 +9,8 @@ import type { User } from '@/types';
 vi.mock('@/lib/api/hooks', () => ({
   useQuotes: () => ({ data: [] }),
   useInvoices: () => ({ data: [] }),
+  useFeatureFlags: () => ({ data: {} }),
+  useSettings: () => ({ data: undefined }),
 }));
 
 const adminUser: User = {

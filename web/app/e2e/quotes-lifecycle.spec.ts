@@ -9,12 +9,12 @@ test('create, send, approve and convert a quote', async ({ page, testId }) => {
   await expect(page.getByText(customerName)).toBeVisible();
 
   await sendQuote(page);
-  await expect(page.getByText(/sent/i)).toBeVisible();
+  await expect(page.getByText('sent', { exact: true })).toBeVisible();
 
   await approveQuote(page);
-  await expect(page.getByText(/accepted/i)).toBeVisible();
+  await expect(page.getByText('accepted', { exact: true })).toBeVisible();
 
   await convertQuoteToInvoice(page);
   await expect(page).toHaveURL(/\/invoices\/[0-9a-f-]+$/);
-  await expect(page.getByText(/paid/i).or(page.getByText(/sent/i))).toBeVisible();
+  await expect(page.getByText('draft', { exact: true })).toBeVisible();
 });

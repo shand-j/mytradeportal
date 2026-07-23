@@ -25,10 +25,6 @@ Respond with valid JSON in the following format:
 """
 
 
-def _is_ollama_model(model: str) -> bool:
-    return model.startswith("ollama/")
-
-
 def _build_user_prompt(
     job_description: str,
     property_type: str | None,
@@ -100,8 +96,7 @@ async def generate_quote_from_prompt(
     property_type: str | None = None,
 ) -> dict[str, Any]:
     """Call the configured LLM and return parsed JSON line items."""
-    is_ollama = _is_ollama_model(settings.llm_model)
-    if not is_ollama and not settings.openai_api_key:
+    if not settings.openai_api_key:
         raise RuntimeError("OPENAI_API_KEY is not configured")
 
     prompt = _build_user_prompt(job_description, property_type, cost_items, tenant_settings)
@@ -112,15 +107,9 @@ async def generate_quote_from_prompt(
             {"role": "user", "content": prompt},
         ],
         "temperature": 0.2,
+        "api_key": settings.openai_api_key,
+        "response_format": {"type": "json_object"},
     }
-
-    if is_ollama:
-        completion_kwargs["api_base"] = settings.ollama_api_base
-    elif settings.openai_api_key:
-        completion_kwargs["api_key"] = settings.openai_api_key
-
-    if not is_ollama:
-        completion_kwargs["response_format"] = {"type": "json_object"}
 
     try:
         response = await acompletion(**completion_kwargs)

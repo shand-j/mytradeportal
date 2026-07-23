@@ -144,8 +144,8 @@ export function useMarkInvoicePaid() {
   const queryClient = useQueryClient();
 
   return useMutation<Invoice, ApiError, MarkInvoicePaidVariables>({
-    mutationFn: async ({ id, paymentMethod }) => {
-      const raw = await api.patch<Record<string, unknown>>(`/invoices/${id}/mark-paid`, { paymentMethod });
+    mutationFn: async ({ id }) => {
+      const raw = await api.post<Record<string, unknown>>(`/invoices/${id}/mark-paid`, {});
       return toInvoice(raw);
     },
     onSuccess: (_, variables) => {

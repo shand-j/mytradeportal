@@ -7,10 +7,12 @@ import { Settings } from './Settings';
 const mockUseSettings = vi.fn();
 const mockMutate = vi.fn();
 const mockUseUpdateSettings = vi.fn();
+const mockUseFeatureFlags = vi.fn(() => ({ data: {}, isLoading: false, error: null }));
 
 vi.mock('@/lib/api/hooks', () => ({
-  useSettings: (...args: any[]) => mockUseSettings(...args),
-  useUpdateSettings: (...args: any[]) => mockUseUpdateSettings(...args),
+  useSettings: () => mockUseSettings(),
+  useUpdateSettings: () => mockUseUpdateSettings(),
+  useFeatureFlags: () => mockUseFeatureFlags(),
 }));
 
 const mockTenant = {
@@ -42,6 +44,8 @@ describe('Settings', () => {
   beforeEach(() => {
     mockMutate.mockReset();
     mockUseUpdateSettings.mockReturnValue({ mutate: mockMutate, isPending: false });
+    // Feature flags default off, matching production defaults.
+    mockUseFeatureFlags.mockReturnValue({ data: {}, isLoading: false, error: null });
   });
 
   it('renders a loading skeleton', () => {
@@ -113,7 +117,19 @@ describe('Settings', () => {
     expect(screen.getByDisplayValue('#D4650A')).toBeInTheDocument();
   });
 
+  it('hides the integrations tab when the feature flag is off', () => {
+    mockUseSettings.mockReturnValue({ data: mockTenant, isLoading: false, error: null });
+    renderWithProviders(<Settings />);
+
+    expect(screen.queryByRole('button', { name: /integrations/i })).not.toBeInTheDocument();
+  });
+
   it('toggles an integration connection', () => {
+    mockUseFeatureFlags.mockReturnValue({
+      data: { externalIntegrations: true, voiceAiInsights: false, demandForecasting: false },
+      isLoading: false,
+      error: null,
+    });
     mockUseSettings.mockReturnValue({ data: mockTenant, isLoading: false, error: null });
     renderWithProviders(<Settings />);
 

@@ -3,7 +3,7 @@ import { screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 
 import { Dashboard } from './Dashboard';
-import { useDashboard } from '@/lib/api/hooks';
+import { useDashboard, useFeatureFlags } from '@/lib/api/hooks';
 import { renderPage, resetStores } from '@/test/test-utils';
 import { mockDashboardData } from '@/test/fixtures';
 
@@ -12,6 +12,7 @@ vi.mock('@/lib/api/hooks', async (importOriginal) => {
   return {
     ...original,
     useDashboard: vi.fn(() => ({ data: undefined, isLoading: true, error: null })),
+    useFeatureFlags: vi.fn(() => ({ data: {}, isLoading: false, error: null })),
   };
 });
 
@@ -19,6 +20,8 @@ describe('Dashboard', () => {
   beforeEach(() => {
     resetStores();
     vi.mocked(useDashboard).mockReturnValue({ data: mockDashboardData, isLoading: false, error: null });
+    // Feature flags default off, matching production defaults.
+    vi.mocked(useFeatureFlags).mockReturnValue({ data: {}, isLoading: false, error: null });
   });
 
   it('renders a loading skeleton', () => {
@@ -38,10 +41,33 @@ describe('Dashboard', () => {
     expect(screen.getByText('Revenue This Month')).toBeInTheDocument();
     expect(screen.getByText('£24,500')).toBeInTheDocument();
     expect(screen.getByText('Active Jobs')).toBeInTheDocument();
+  });
+
+  it('hides the voice AI blocks when the feature flag is off', () => {
+    renderPage(<Dashboard />);
+    expect(screen.queryByText('Voice AI Agent is live')).not.toBeInTheDocument();
+    expect(screen.queryByText('Calls Today')).not.toBeInTheDocument();
+    expect(screen.queryByText('Voice Quotes')).not.toBeInTheDocument();
+  });
+
+  it('renders the voice AI blocks when the feature flag is on', () => {
+    vi.mocked(useFeatureFlags).mockReturnValue({
+      data: { voiceAiInsights: true, demandForecasting: false, externalIntegrations: false },
+      isLoading: false,
+      error: null,
+    });
+    renderPage(<Dashboard />);
     expect(screen.getByText('Voice AI Agent is live')).toBeInTheDocument();
+    expect(screen.getByText('Calls Today')).toBeInTheDocument();
+    expect(screen.getByText('Voice Quotes')).toBeInTheDocument();
   });
 
   it('responds to a user interaction without crashing', async () => {
+    vi.mocked(useFeatureFlags).mockReturnValue({
+      data: { voiceAiInsights: true, demandForecasting: false, externalIntegrations: false },
+      isLoading: false,
+      error: null,
+    });
     const user = userEvent.setup();
     renderPage(<Dashboard />);
 

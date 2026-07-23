@@ -11,8 +11,7 @@ from decimal import Decimal
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
-    from ocerp.services.boq_models import BoQRequirement
-    from ocerp.services.boq_models import LabourSchedule, PricingConfig
+    from ocerp.services.boq_models import BoQRequirement, LabourSchedule, PricingConfig
 
 
 def _norm(text: str | None) -> str:
@@ -103,7 +102,9 @@ def _to_day_and_hour_lines(total_hours: Decimal) -> tuple[Decimal, Decimal]:
     return days, hours
 
 
-def _derived_hours_from_requirements(requirements: list["BoQRequirement"]) -> tuple[Decimal, Decimal, Decimal]:
+def _derived_hours_from_requirements(
+    requirements: list[BoQRequirement],
+) -> tuple[Decimal, Decimal, Decimal]:
     """Return install, testing and certification hours from BoQ requirements."""
     install = Decimal("0")
     cable_metres = Decimal("0")
@@ -138,7 +139,11 @@ def _derived_hours_from_requirements(requirements: list["BoQRequirement"]) -> tu
         # Includes handling, clipping, routing and terminations.
         install += cable_metres * Decimal("0.03")
 
-    testing = max(Decimal("1.0"), circuit_count * Decimal("0.30")) if circuit_count > 0 else Decimal("1.0")
+    testing = (
+        max(Decimal("1.0"), circuit_count * Decimal("0.30"))
+        if circuit_count > 0
+        else Decimal("1.0")
+    )
     cert = Decimal("0.75") if (circuit_count > 0 or cable_metres > 0) else Decimal("0")
     return install, testing, cert
 
@@ -188,7 +193,7 @@ def estimate_labour(
     pricing_config: PricingConfig,
     labour_schedule: LabourSchedule,
     has_material_items: bool = True,
-    requirements: list["BoQRequirement"] | None = None,
+    requirements: list[BoQRequirement] | None = None,
 ) -> list[dict[str, Any]]:
     """Return synthetic labour raw line items for the job scope.
 
@@ -200,9 +205,9 @@ def estimate_labour(
     entry = _schedule_entry_for_scope(description, property_type, labour_schedule)
     lines: list[dict[str, Any]] = []
 
-    schedule_hours = (
-        (entry.electrician_days * Decimal("8")) + entry.electrician_hours
-    ).quantize(Decimal("0.01"))
+    schedule_hours = ((entry.electrician_days * Decimal("8")) + entry.electrician_hours).quantize(
+        Decimal("0.01")
+    )
 
     install_hours = Decimal("0")
     testing_hours = Decimal("0")
@@ -210,10 +215,14 @@ def estimate_labour(
     access_hours = _access_hours(description)
 
     if requirements:
-        install_hours, testing_hours, certification_hours = _derived_hours_from_requirements(requirements)
+        install_hours, testing_hours, certification_hours = _derived_hours_from_requirements(
+            requirements
+        )
 
     base_install_hours = install_hours if requirements else Decimal("0")
-    total_electrician_hours = max(schedule_hours, base_install_hours) if has_material_items else schedule_hours
+    total_electrician_hours = (
+        max(schedule_hours, base_install_hours) if has_material_items else schedule_hours
+    )
 
     electrician_days, electrician_hours = _to_day_and_hour_lines(total_electrician_hours)
 

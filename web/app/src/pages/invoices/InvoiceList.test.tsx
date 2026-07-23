@@ -3,7 +3,7 @@ import { screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 
 import { InvoiceList } from './InvoiceList';
-import { useInvoices, useContacts, useCreateInvoice, useSendInvoice } from '@/lib/api/hooks';
+import { useInvoices, useContacts } from '@/lib/api/hooks';
 import { renderPage, resetStores } from '@/test/test-utils';
 import { mockInvoices } from '@/lib/mock/data/invoices';
 import { mockCustomers } from '@/lib/mock/data/customers';

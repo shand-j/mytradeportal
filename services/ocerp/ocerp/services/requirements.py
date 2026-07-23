@@ -149,15 +149,11 @@ def _quantity_of(
     return total
 
 
-def _has_concept(
-    requirements: list[BoQRequirement], concept: str
-) -> bool:
+def _has_concept(requirements: list[BoQRequirement], concept: str) -> bool:
     return any(req.concept == concept for req in requirements)
 
 
-def _has_category(
-    requirements: list[BoQRequirement], category: str
-) -> bool:
+def _has_category(requirements: list[BoQRequirement], category: str) -> bool:
     return any(req.category.lower() == category.lower() for req in requirements)
 
 
@@ -194,7 +190,11 @@ class RequirementEngine:
         self.wants_afdd = "afdd" in self.desc
         self.is_ufh = "underfloor" in self.desc or "ufh" in self.desc
         self.is_ambiguous = len(self.desc.split()) <= 5
-        self.no_labour = "no labour" in self.desc or "materials only" in self.desc or "material list" in self.desc
+        self.no_labour = (
+            "no labour" in self.desc
+            or "materials only" in self.desc
+            or "material list" in self.desc
+        )
         self.prefers_bg = "british general" in self.desc
         self.prefers_mk = " mk" in self.desc or "mk " in self.desc or self.desc.startswith("mk ")
         self.prefers_hager = "hager" in self.desc
@@ -425,9 +425,7 @@ class RequirementEngine:
         reqs = self._dedupe(reqs)
         return reqs
 
-    def _filter_llm_requirements(
-        self, reqs: list[BoQRequirement]
-    ) -> list[BoQRequirement]:
+    def _filter_llm_requirements(self, reqs: list[BoQRequirement]) -> list[BoQRequirement]:
         """Drop labour-only LLM suggestions and anything the engine controls."""
 
         def _is_blocked(concept: str) -> bool:
@@ -522,9 +520,7 @@ class RequirementEngine:
     # LLM parsing
     # ------------------------------------------------------------------
 
-    def _parse_llm_requirements(
-        self, generated: dict[str, Any]
-    ) -> list[BoQRequirement]:
+    def _parse_llm_requirements(self, generated: dict[str, Any]) -> list[BoQRequirement]:
         """Convert LLM requirements (if present) into BoQRequirements."""
         raw_reqs = generated.get("requirements") or generated.get("line_items") or []
         parsed: list[BoQRequirement] = []
@@ -573,7 +569,11 @@ class RequirementEngine:
 
     def _scope_corrections(self, reqs: list[BoQRequirement]) -> list[BoQRequirement]:
         # Extensions / kitchen-only should not get a whole-house CU unless asked.
-        if (self.is_extension or self.is_kitchen) and "new consumer unit" not in self.desc and "consumer unit upgrade" not in self.desc:
+        if (
+            (self.is_extension or self.is_kitchen)
+            and "new consumer unit" not in self.desc
+            and "consumer unit upgrade" not in self.desc
+        ):
             reqs = [r for r in reqs if r.concept != "consumer_unit"]
         return reqs
 
@@ -768,7 +768,11 @@ class RequirementEngine:
             )
 
         # Budget jobs: downgrade RCBOs to plain MCBs unless explicitly requested.
-        if (self.is_budget or self.is_mid_range) and "rcbo" not in self.desc and not self.wants_afdd:
+        if (
+            (self.is_budget or self.is_mid_range)
+            and "rcbo" not in self.desc
+            and not self.wants_afdd
+        ):
             rcbo_qty = _quantity_of(
                 reqs,
                 category="Circuit Protection",
@@ -804,7 +808,9 @@ class RequirementEngine:
             else:
                 target_sockets = Decimal("32")
 
-            current_sockets = _quantity_of(reqs, concept="double_socket") + _quantity_of(reqs, concept="single_socket")
+            current_sockets = _quantity_of(reqs, concept="double_socket") + _quantity_of(
+                reqs, concept="single_socket"
+            )
             if current_sockets < target_sockets:
                 attrs: dict[str, Any] = {"gang": 2, "usb": False}
                 if self.prefers_chrome:
@@ -856,9 +862,13 @@ class RequirementEngine:
             target_usb = Decimal("0")
             if "usb" in self.desc:
                 target_usb = _extract_count_near(self.desc, "usb socket", default=Decimal("4"))
-            elif self.bedrooms >= 4 and (self.prefers_chrome or self.is_mid_range or self.is_premium):
+            elif self.bedrooms >= 4 and (
+                self.prefers_chrome or self.is_mid_range or self.is_premium
+            ):
                 target_usb = Decimal("6")
-            elif self.bedrooms >= 3 and (self.prefers_chrome or self.is_mid_range or self.is_premium):
+            elif self.bedrooms >= 3 and (
+                self.prefers_chrome or self.is_mid_range or self.is_premium
+            ):
                 target_usb = Decimal("4")
             current_usb = _quantity_of(reqs, concept="usb_socket")
             if current_usb < target_usb:
@@ -879,7 +889,9 @@ class RequirementEngine:
             target_dimmers = Decimal("0")
             if "dimmer" in self.desc or "dimmable" in self.desc:
                 target_dimmers = _extract_count_near(self.desc, "dimmer", default=Decimal("3"))
-            elif self.bedrooms >= 3 and (self.is_mid_range or self.is_premium or "downlight" in self.desc):
+            elif self.bedrooms >= 3 and (
+                self.is_mid_range or self.is_premium or "downlight" in self.desc
+            ):
                 target_dimmers = Decimal("3")
             current_dimmers = _quantity_of(reqs, concept="dimmer_switch")
             if current_dimmers < target_dimmers:
@@ -909,7 +921,9 @@ class RequirementEngine:
         self, reqs: list[BoQRequirement], brand: str | None
     ) -> list[BoQRequirement]:
         specified_sockets = _extract_count_near(self.desc, "socket")
-        current_sockets = _quantity_of(reqs, concept="double_socket") + _quantity_of(reqs, concept="single_socket")
+        current_sockets = _quantity_of(reqs, concept="double_socket") + _quantity_of(
+            reqs, concept="single_socket"
+        )
         if specified_sockets > 0 and current_sockets != specified_sockets:
             reqs = [r for r in reqs if r.concept not in {"double_socket", "single_socket"}]
             attrs: dict[str, Any] = {"gang": 2, "usb": False}
@@ -967,7 +981,9 @@ class RequirementEngine:
         return reqs
 
     def _cooker_switch(self, reqs: list[BoQRequirement]) -> list[BoQRequirement]:
-        if (self.is_rewire or self.is_kitchen or self.is_extension) and not _has_concept(reqs, "cooker_switch"):
+        if (self.is_rewire or self.is_kitchen or self.is_extension) and not _has_concept(
+            reqs, "cooker_switch"
+        ):
             attrs: dict[str, Any] = {}
             if self.prefers_chrome:
                 attrs["finish"] = "chrome"
@@ -1044,7 +1060,9 @@ class RequirementEngine:
                     )
                 )
 
-        if (self.is_rewire or self.is_kitchen or self.is_extension or self.is_garage) and not _has_concept(reqs, "cooker_cable_6mm"):
+        if (
+            self.is_rewire or self.is_kitchen or self.is_extension or self.is_garage
+        ) and not _has_concept(reqs, "cooker_cable_6mm"):
             # Kitchen-only jobs typically need a shorter cooker run than full rewires.
             if self.is_kitchen and not self.is_rewire:
                 cooker_qty = Decimal("15")
@@ -1500,7 +1518,11 @@ class RequirementEngine:
         return reqs
 
     def _under_cabinet(self, reqs: list[BoQRequirement]) -> list[BoQRequirement]:
-        if not ("under cabinet" in self.desc or "under-cabinet" in self.desc or "under cupboard" in self.desc):
+        if not (
+            "under cabinet" in self.desc
+            or "under-cabinet" in self.desc
+            or "under cupboard" in self.desc
+        ):
             return reqs
 
         if not _has_concept(reqs, "under_cabinet_lighting"):
@@ -1532,7 +1554,9 @@ class RequirementEngine:
         if not self.is_ambiguous or self.is_rewire:
             return reqs
 
-        current_sockets = _quantity_of(reqs, concept="double_socket") + _quantity_of(reqs, concept="single_socket")
+        current_sockets = _quantity_of(reqs, concept="double_socket") + _quantity_of(
+            reqs, concept="single_socket"
+        )
         if current_sockets < 10:
             reqs.append(
                 _req(

@@ -31,11 +31,11 @@ The authoritative product vision is in [`mtp_v2_product_spec.md`](mtp_v2_product
 | Data pipeline | Python 3.11+, FastAPI, Apify, schedule, SQLAlchemy 2 |
 | Back-office UI | React 19, TypeScript 5.9, Vite 7, Tailwind CSS 3, shadcn/ui |
 | Database | PostgreSQL 16 |
-| Vector search | Qdrant (default embedding model `ollama/nomic-embed-text`, 768 dims) |
+| Vector search | Qdrant (default embedding model `text-embedding-3-small`, 1536 dims) |
 | Cache / broker | Redis 7 |
 | Object storage | MinIO (S3-compatible) |
 | Email (dev) | Mailpit |
-| LLM routing | LiteLLM supporting OpenAI and Ollama (default `LLM_MODEL=ollama/gpt-oss:latest`) |
+| LLM routing | LiteLLM backed by OpenAI (default `LLM_MODEL=gpt-4o-mini`) |
 | Payments | Paddle Billing (checkout + webhooks) |
 | Auth | Local bcrypt/JWT session cookies; optional Supabase Auth |
 | Containerisation | Docker + Docker Compose |
@@ -110,9 +110,7 @@ mytradeportal/
 │   │   │   ├── paddle_client.py    # Paddle checkout + webhooks
 │   │   │   ├── email.py            # aiosmtplib email sender
 │   │   │   ├── pdf.py              # FPDF quote PDF generator
-│   │   │   ├── seed_admin_user.py  # Demo tenant + admin user seeder
-│   │   │   ├── seed_cost_items.py  # Built-in UK electrical cost-item seeder
-│   │   │   ├── wipe_seed_cost_items.py  # Remove seeded cost items
+│   │   │   ├── seed_admin_user.py  # Local-dev tenant + admin user seeder
 │   │   │   ├── ingest_ddc_uk.py    # DDC CWICR UK cost database ingestion
 │   │   │   ├── routers/            # Domain routers
 │   │   │   │   ├── health.py
@@ -134,8 +132,7 @@ mytradeportal/
 │   │   │   │   ├── retrieval.py
 │   │   │   │   ├── generation.py
 │   │   │   │   └── validation.py
-│   │   │   ├── clients/ocerp.py    # HTTP client for OCERP service
-│   │   │   └── data/               # Seed cost items + DDC ingestion data
+│   │   │   └── clients/ocerp.py    # HTTP client for OCERP service
 │   │   ├── alembic/                # Database migrations
 │   │   ├── tests/                  # pytest suite (20+ modules)
 │   │   └── Dockerfile
@@ -290,14 +287,17 @@ pip install -e ".[dev]"
 # Run migrations
 PYTHONPATH=services/api alembic upgrade head
 
-# Seed demo tenant + admin user
+# Seed local-dev tenant + admin user (env vars required; local dev only)
 cd services/api
-python -m app.seed_admin_user
+SEED_ADMIN_EMAIL=you@example.com SEED_ADMIN_PASSWORD=<choose-a-password> \
+  python -m app.seed_admin_user
 
-# Seed built-in UK electrical cost items and generate embeddings
-python -m app.seed_cost_items
+# Load curated UK electrical cost items and generate embeddings
+cd services/data-pipeline
+python -m data_pipeline.load_curated_seed
 
 # Ingest DDC CWICR UK cost database
+cd services/api
 python -m app.ingest_ddc_uk
 
 # Run the API directly (Postgres/Qdrant still required)
@@ -305,10 +305,10 @@ cd services/api
 uvicorn app.main:app --reload --reload-dir /app/services/api --reload-dir /app/packages/shared/py
 ```
 
-Default back-office login after seeding:
-- Business slug: `demo`
-- Email: `admin@demo.local`
-- Password: `password123`
+Back-office login after seeding:
+- Business slug: `demo` (or your `SEED_TENANT_SLUG`)
+- Email: the email you set via `SEED_ADMIN_EMAIL`
+- Password: the password you set via `SEED_ADMIN_PASSWORD`
 
 ### Lint / format / type check / test
 
@@ -527,7 +527,7 @@ Railway GitHub App. Setup, secrets, and post-deploy steps are documented in
 
 Currently wired or configured:
 
-- **Ollama** (local) and **OpenAI** for embeddings and LLM generation via LiteLLM.
+- **OpenAI** for embeddings and LLM generation via LiteLLM (`text-embedding-3-small`, `gpt-4o-mini`).
 - **Qdrant** for vector search.
 - **Paddle Billing** for checkout and payment webhooks.
 - **MinIO** (local S3) for object storage.
@@ -547,7 +547,7 @@ Key variables (see `.env.example` for the full template):
 - `QDRANT_COLLECTION_NAME`, `QDRANT_KNOWLEDGE_COLLECTION_NAME`
 - `MINIO_ENDPOINT`, `MINIO_USE_SSL`, `MINIO_ACCESS_KEY`, `MINIO_SECRET_KEY`, `MINIO_BUCKET`
 - `AUTH_SECRET_KEY`
-- `OPENAI_API_KEY`, `LLM_MODEL`, `EMBEDDING_MODEL`, `OLLAMA_API_BASE`, `LLM_TIMEOUT_SECONDS`
+- `OPENAI_API_KEY` (required), `LLM_MODEL`, `EMBEDDING_MODEL`, `LLM_TIMEOUT_SECONDS`
 - `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`
 - `VITE_API_BASE_URL`
 - `APIFY_API_TOKEN`, `PIPELINE_DEMO_MODE`, `SCREWFIX_*`, `TOOLSTATION_ENABLED`, `SCRAPE_FREQUENCY`

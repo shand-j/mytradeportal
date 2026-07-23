@@ -15,7 +15,8 @@ async def _create_contact(client: AsyncClient, name: str) -> dict[str, Any]:
         json={"name": name, "email": f"{name.lower().replace(' ', '.')}@example.com"},
     )
     assert response.status_code == 201
-    return response.json()
+    data: dict[str, Any] = response.json()
+    return data
 
 
 async def _create_quote(client: AsyncClient, contact_id: str) -> dict[str, Any]:
@@ -31,7 +32,8 @@ async def _create_quote(client: AsyncClient, contact_id: str) -> dict[str, Any]:
         },
     )
     assert response.status_code == 201
-    return response.json()
+    data: dict[str, Any] = response.json()
+    return data
 
 
 async def _create_invoice(client: AsyncClient, contact_id: str) -> dict[str, Any]:
@@ -46,7 +48,8 @@ async def _create_invoice(client: AsyncClient, contact_id: str) -> dict[str, Any
         },
     )
     assert response.status_code == 201
-    return response.json()
+    data: dict[str, Any] = response.json()
+    return data
 
 
 async def test_dashboard_returns_expected_structure(admin_client: AsyncClient) -> None:
@@ -58,6 +61,8 @@ async def test_dashboard_returns_expected_structure(admin_client: AsyncClient) -
     assert "service_breakdown" in data
     assert "recent_activity" in data
     assert "voice_stats" in data
+    # Voice AI is not yet implemented; voice_stats is returned as null.
+    assert data["voice_stats"] is None
 
 
 async def test_dashboard_kpis_reflect_data(admin_client: AsyncClient) -> None:
@@ -81,7 +86,9 @@ async def test_ai_insights_returns_expected_structure(admin_client: AsyncClient)
     assert response.status_code == 200
     data = response.json()
     assert "ai_quote_performance" in data
-    assert "demand_forecast" in data
-    assert "voice_analytics" in data
-    assert "predictions" in data["demand_forecast"]
-    assert "insight" in data["demand_forecast"]
+    assert isinstance(data["ai_quote_performance"], dict)
+    assert "total_generated" in data["ai_quote_performance"]
+    # Demand forecasting and voice analytics are not yet implemented; they are
+    # returned as null until their feature flags are enabled.
+    assert data.get("demand_forecast") is None
+    assert data.get("voice_analytics") is None

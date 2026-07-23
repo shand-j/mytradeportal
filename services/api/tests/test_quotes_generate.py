@@ -163,7 +163,7 @@ async def test_generate_quote_with_ocerp(client: AsyncClient) -> None:
         subtotal=Decimal("480.00"),
         vat_amount=Decimal("96.00"),
         total=Decimal("576.00"),
-        confidence=1.0,
+        confidence=Decimal("1.0"),
         notes="CU upgrade BoQ",
         standard="nrm1",
     )
@@ -202,7 +202,9 @@ async def test_generate_quote_with_ocerp(client: AsyncClient) -> None:
 async def test_generate_quote_with_ocerp_uses_updated_tenant_pricing_settings(
     admin_client: AsyncClient,
 ) -> None:
-    contact = await _create_contact(admin_client, admin_client.headers["X-Tenant-ID"], "Pricing Customer")
+    contact = await _create_contact(
+        admin_client, admin_client.headers["X-Tenant-ID"], "Pricing Customer"
+    )
 
     def _mock_generate_boq(request: Any) -> BoQGenerateResponse:
         tenant_settings = request.tenant_settings or {}
@@ -241,12 +243,14 @@ async def test_generate_quote_with_ocerp_uses_updated_tenant_pricing_settings(
             subtotal=subtotal,
             vat_amount=vat_amount,
             total=total,
-            confidence=1.0,
+            confidence=Decimal("1.0"),
             notes="Pricing derived from tenant settings",
             standard="nrm1",
         )
 
-    with patch("app.clients.ocerp.OCERPClient.generate_boq", new=AsyncMock(side_effect=_mock_generate_boq)):
+    with patch(
+        "app.clients.ocerp.OCERPClient.generate_boq", new=AsyncMock(side_effect=_mock_generate_boq)
+    ):
         before = await admin_client.post(
             "/quotes/generate",
             headers={"X-Tenant-ID": admin_client.headers["X-Tenant-ID"]},
@@ -319,7 +323,7 @@ async def test_regenerate_boq_keeps_customer_total_locked_while_boq_reprices(
         subtotal=Decimal("100.00"),
         vat_amount=Decimal("20.00"),
         total=Decimal("120.00"),
-        confidence=1.0,
+        confidence=Decimal("1.0"),
         notes="Initial pricing",
         standard="nrm1",
     )
@@ -344,7 +348,7 @@ async def test_regenerate_boq_keeps_customer_total_locked_while_boq_reprices(
         subtotal=Decimal("70.00"),
         vat_amount=Decimal("14.00"),
         total=Decimal("84.00"),
-        confidence=1.0,
+        confidence=Decimal("1.0"),
         notes="Repriced lower",
         standard="nrm1",
     )
@@ -416,7 +420,7 @@ async def test_manual_boq_edit_updates_boq_total_but_keeps_customer_quote_locked
         subtotal=Decimal("100.00"),
         vat_amount=Decimal("20.00"),
         total=Decimal("120.00"),
-        confidence=1.0,
+        confidence=Decimal("1.0"),
         notes="Initial pricing",
         standard="nrm1",
     )

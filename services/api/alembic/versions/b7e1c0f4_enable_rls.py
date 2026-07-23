@@ -41,9 +41,7 @@ APP_ROLE_PASSWORD = "mtp_app"
 
 def _create_app_role(conn) -> None:  # type: ignore[no-untyped-def]
     """Create a non-superuser role that respects RLS policies."""
-    existing = conn.exec_driver_sql(
-        f"SELECT 1 FROM pg_roles WHERE rolname = '{APP_ROLE}'"
-    ).first()
+    existing = conn.exec_driver_sql(f"SELECT 1 FROM pg_roles WHERE rolname = '{APP_ROLE}'").first()
     if existing is None:
         conn.exec_driver_sql(
             f"CREATE ROLE {APP_ROLE} WITH LOGIN PASSWORD '{APP_ROLE_PASSWORD}' "
@@ -55,16 +53,13 @@ def _create_app_role(conn) -> None:  # type: ignore[no-untyped-def]
     conn.exec_driver_sql(
         f"GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO {APP_ROLE}"
     )
-    conn.exec_driver_sql(
-        f"GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO {APP_ROLE}"
-    )
+    conn.exec_driver_sql(f"GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO {APP_ROLE}")
     conn.exec_driver_sql(
         f"ALTER DEFAULT PRIVILEGES IN SCHEMA public "
         f"GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO {APP_ROLE}"
     )
     conn.exec_driver_sql(
-        f"ALTER DEFAULT PRIVILEGES IN SCHEMA public "
-        f"GRANT USAGE, SELECT ON SEQUENCES TO {APP_ROLE}"
+        f"ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT USAGE, SELECT ON SEQUENCES TO {APP_ROLE}"
     )
 
 

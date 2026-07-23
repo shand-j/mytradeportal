@@ -64,15 +64,9 @@ def test_unified_product_to_cost_item_cable_per_metre() -> None:
 
 def test_deduplicate_products_keeps_first() -> None:
     products = [
-        UnifiedProduct(
-            supplier=Supplier.SCREWFIX, sku="A", name="A", current_price=1.0
-        ),
-        UnifiedProduct(
-            supplier=Supplier.SCREWFIX, sku="A", name="A2", current_price=2.0
-        ),
-        UnifiedProduct(
-            supplier=Supplier.TOOLSTATION, sku="A", name="A3", current_price=3.0
-        ),
+        UnifiedProduct(supplier=Supplier.SCREWFIX, sku="A", name="A", current_price=1.0),
+        UnifiedProduct(supplier=Supplier.SCREWFIX, sku="A", name="A2", current_price=2.0),
+        UnifiedProduct(supplier=Supplier.TOOLSTATION, sku="A", name="A3", current_price=3.0),
     ]
     unique = deduplicate_products(products)
     assert len(unique) == 2

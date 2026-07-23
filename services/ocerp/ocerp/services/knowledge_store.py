@@ -61,18 +61,12 @@ class KnowledgeStore:
         self._vector_size: int | None = None
 
     @staticmethod
-    def _is_ollama_model(model: str) -> bool:
-        return model.startswith("ollama/")
-
-    @classmethod
-    def _embedding_kwargs(cls, texts: list[str]) -> dict[str, Any]:
+    def _embedding_kwargs(texts: list[str]) -> dict[str, Any]:
         kwargs: dict[str, Any] = {
             "model": settings.embedding_model,
             "input": texts,
         }
-        if cls._is_ollama_model(settings.embedding_model):
-            kwargs["api_base"] = settings.ollama_api_base
-        elif settings.openai_api_key:
+        if settings.openai_api_key:
             kwargs["api_key"] = settings.openai_api_key
         return kwargs
 
@@ -94,8 +88,6 @@ class KnowledgeStore:
         known_dimensions = {
             "text-embedding-3-small": 1536,
             "text-embedding-3-large": 3072,
-            "ollama/nomic-embed-text": 768,
-            "nomic-embed-text": 768,
         }
         return known_dimensions.get(settings.embedding_model, 1536)
 

@@ -1,12 +1,22 @@
 #!/usr/bin/env bash
 set -e
 
-# Start the local Docker Compose stack and seed the demo admin user.
+# Start the local Docker Compose stack and bootstrap the E2E tenant/admin.
 # Intended to be invoked by Playwright's webServer option.
 
-cd "$(dirname "$0")/../.."
+ENV_FILE="${ENV_FILE:-.env}"
+COMPOSE_FILES="-f docker-compose.yml"
 
-docker compose up --build -d
+cd "$(dirname "$0")/../../.."
+
+# shellcheck source=/dev/null
+[ -f "$ENV_FILE" ] && set -a && . "$ENV_FILE" && set +a
+
+if [ "${ENVIRONMENT:-development}" = "production" ]; then
+  COMPOSE_FILES="-f docker-compose.yml -f docker-compose.prod-like.yml"
+fi
+
+docker compose ${COMPOSE_FILES} --env-file "${ENV_FILE}" up --build -d
 
 echo "Waiting for API health check..."
 for i in {1..60}; do
@@ -17,4 +27,4 @@ for i in {1..60}; do
   sleep 2
 done
 
-docker compose run --rm api python -m app.seed_admin_user
+./web/app/e2e/bootstrap-tenant.sh

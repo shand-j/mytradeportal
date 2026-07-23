@@ -8,7 +8,7 @@ import type { UserRole } from '@/types';
 import { useUiStore } from '@/stores/uiStore';
 import { useAuthStore } from '@/stores/authStore';
 import { authService } from '@/lib/api/auth';
-import { useQuotes, useInvoices } from '@/lib/api/hooks';
+import { useQuotes, useInvoices, useFeatureFlags, useSettings } from '@/lib/api/hooks';
 
 const navItems: Array<{
   to: string;
@@ -36,6 +36,12 @@ export function Sidebar() {
   const navigate = useNavigate();
   const { data: quotes } = useQuotes();
   const { data: invoices } = useInvoices();
+  const { data: featureFlags } = useFeatureFlags();
+  const { data: settings } = useSettings();
+  // Voice AI is not yet implemented; the promo stays hidden until the
+  // `voice_ai_insights` feature flag is enabled in Railway.
+  const voiceAiEnabled = featureFlags?.voiceAiInsights === true;
+  const tenantName = settings?.name ?? 'My Trade Portal';
   const currentUser = useAuthStore(s => s.user);
   const logoutUser = useAuthStore(s => s.logout);
 
@@ -87,13 +93,13 @@ export function Sidebar() {
         {!sidebarCollapsed && (
           <div className="min-w-0">
             <div className="text-sm font-semibold text-[#1C1917] truncate">mytradeportal</div>
-            <div className="text-xs text-[#78716C] truncate">Watts Electrical</div>
+            <div className="text-xs text-[#78716C] truncate">{tenantName}</div>
           </div>
         )}
       </div>
 
       {/* Voice Agent Promo */}
-      {!sidebarCollapsed && (
+      {!sidebarCollapsed && voiceAiEnabled && (
         <div className="mx-3 mb-3 p-3 rounded-lg bg-[#1C1917] border border-[#2A2A2A]">
           <div className="flex items-center gap-2 mb-2">
             <div className="w-6 h-6 rounded-full bg-[#D4650A] flex items-center justify-center">
@@ -101,14 +107,7 @@ export function Sidebar() {
             </div>
             <span className="text-[11px] font-semibold text-white uppercase tracking-[0.05em]">Voice AI</span>
           </div>
-          <p className="text-[11px] text-[#A8A29E] mb-2">AI answers calls, generates quotes, books jobs</p>
-          <div className="flex items-center gap-2">
-            <div className="flex-1 h-1.5 bg-[#333] rounded-full overflow-hidden">
-              <div className="h-full bg-[#16A34A] rounded-full" style={{ width: '92%' }} />
-            </div>
-            <span className="text-[10px] text-[#16A34A] font-semibold">92%</span>
-          </div>
-          <div className="text-[10px] text-[#78716C] mt-1">resolution rate · 48 calls today</div>
+          <p className="text-[11px] text-[#A8A29E]">AI answers calls, generates quotes, books jobs</p>
         </div>
       )}
 

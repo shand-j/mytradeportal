@@ -1,12 +1,17 @@
 import { useEffect } from 'react';
 import { Sparkles, Phone, TrendingUp } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, AreaChart, Area } from 'recharts';
-import { useAiInsights } from '@/lib/api/hooks';
+import { useAiInsights, useFeatureFlags } from '@/lib/api/hooks';
 import { useUiStore } from '@/stores/uiStore';
 
 export function AiInsights() {
   const setPageTitle = useUiStore(s => s.setPageTitle);
   const { data, isLoading, error } = useAiInsights();
+  const { data: featureFlags } = useFeatureFlags();
+  // Voice analytics and demand forecasting are not yet implemented; the
+  // cards stay hidden until their feature flags are enabled in Railway.
+  const voiceAiEnabled = featureFlags?.voiceAiInsights === true;
+  const demandForecastingEnabled = featureFlags?.demandForecasting === true;
 
   useEffect(() => {
     setPageTitle('AI Insights');
@@ -64,6 +69,7 @@ export function AiInsights() {
       </div>
 
       {/* Voice Analytics */}
+      {voiceAiEnabled && voiceAnalytics && (
       <div className="bg-white rounded-xl border border-[#E7E5E4] p-5 shadow-sm">
         <div className="flex items-center gap-2 mb-4">
           <Phone className="w-5 h-5 text-[#2563EB]" />
@@ -88,9 +94,10 @@ export function AiInsights() {
           </div>
         </div>
       </div>
+      )}
 
       {/* Demand Forecast */}
-      {demandForecast && (
+      {demandForecastingEnabled && demandForecast && (
         <div className="bg-white rounded-xl border border-[#E7E5E4] p-5 shadow-sm">
           <div className="flex items-center gap-2 mb-4">
             <TrendingUp className="w-5 h-5 text-[#16A34A]" />

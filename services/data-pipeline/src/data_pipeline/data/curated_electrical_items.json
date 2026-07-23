@@ -1,0 +1,596 @@
+[
+  {
+    "code": "ELEC-CU-HAGER-DESIGN50-16WAY",
+    "category": "Consumer Units",
+    "description": "Hager Design 50 16-way metal consumer unit with main switch and SPD",
+    "unit": "each",
+    "unit_price": "180.00",
+    "brand": "Hager",
+    "supplier": "curated"
+  },
+  {
+    "code": "ELEC-CU-HAGER-DESIGN30-16WAY",
+    "category": "Consumer Units",
+    "description": "Hager Design 30 16-way metal consumer unit with main switch and SPD",
+    "unit": "each",
+    "unit_price": "160.00",
+    "brand": "Hager",
+    "supplier": "curated"
+  },
+  {
+    "code": "ELEC-CU-BG-FORTRESS-10WAY",
+    "category": "Consumer Units",
+    "description": "British General Fortress 10-way dual RCD metal consumer unit with SPD",
+    "unit": "each",
+    "unit_price": "100.00",
+    "brand": "British General",
+    "supplier": "curated"
+  },
+  {
+    "code": "ELEC-CU-CONTACTUM-10WAY",
+    "category": "Consumer Units",
+    "description": "Contactum Defender 10-way dual RCD metal consumer unit with SPD",
+    "unit": "each",
+    "unit_price": "100.00",
+    "brand": "Contactum",
+    "supplier": "curated"
+  },
+  {
+    "code": "ELEC-CU-GARAGE-4WAY",
+    "category": "Consumer Units",
+    "description": "4-way garage consumer unit with RCD protection",
+    "unit": "each",
+    "unit_price": "40.00",
+    "brand": "curated",
+    "supplier": "curated"
+  },
+  {
+    "code": "ELEC-MAIN-SWITCH-100A",
+    "category": "Consumer Units",
+    "description": "100A main switch isolator for consumer unit",
+    "unit": "each",
+    "unit_price": "20.00",
+    "brand": "curated",
+    "supplier": "curated"
+  },
+  {
+    "code": "ELEC-SPD-MODULE",
+    "category": "Consumer Units",
+    "description": "Surge protection device SPD module for consumer unit",
+    "unit": "each",
+    "unit_price": "45.00",
+    "brand": "curated",
+    "supplier": "curated"
+  },
+  {
+    "code": "ELEC-MCB-6A",
+    "category": "Circuit Protection",
+    "description": "6A Type B SP MCB miniature circuit breaker",
+    "unit": "each",
+    "unit_price": "6.00",
+    "brand": "curated",
+    "supplier": "curated"
+  },
+  {
+    "code": "ELEC-MCB-16A",
+    "category": "Circuit Protection",
+    "description": "16A Type B SP MCB miniature circuit breaker",
+    "unit": "each",
+    "unit_price": "6.00",
+    "brand": "curated",
+    "supplier": "curated"
+  },
+  {
+    "code": "ELEC-MCB-20A",
+    "category": "Circuit Protection",
+    "description": "20A Type B SP MCB miniature circuit breaker",
+    "unit": "each",
+    "unit_price": "6.00",
+    "brand": "curated",
+    "supplier": "curated"
+  },
+  {
+    "code": "ELEC-MCB-32A",
+    "category": "Circuit Protection",
+    "description": "32A Type B SP MCB miniature circuit breaker",
+    "unit": "each",
+    "unit_price": "6.00",
+    "brand": "curated",
+    "supplier": "curated"
+  },
+  {
+    "code": "ELEC-MCB-40A",
+    "category": "Circuit Protection",
+    "description": "40A Type B SP MCB miniature circuit breaker",
+    "unit": "each",
+    "unit_price": "7.00",
+    "brand": "curated",
+    "supplier": "curated"
+  },
+  {
+    "code": "ELEC-MCB-45A",
+    "category": "Circuit Protection",
+    "description": "45A Type B SP MCB miniature circuit breaker",
+    "unit": "each",
+    "unit_price": "7.00",
+    "brand": "curated",
+    "supplier": "curated"
+  },
+  {
+    "code": "ELEC-RCBO-6A",
+    "category": "Circuit Protection",
+    "description": "6A Type B SP RCBO combined MCB and RCD",
+    "unit": "each",
+    "unit_price": "28.00",
+    "brand": "curated",
+    "supplier": "curated"
+  },
+  {
+    "code": "ELEC-RCBO-16A",
+    "category": "Circuit Protection",
+    "description": "16A Type B SP RCBO combined MCB and RCD",
+    "unit": "each",
+    "unit_price": "28.00",
+    "brand": "curated",
+    "supplier": "curated"
+  },
+  {
+    "code": "ELEC-RCBO-20A",
+    "category": "Circuit Protection",
+    "description": "20A Type B SP RCBO combined MCB and RCD",
+    "unit": "each",
+    "unit_price": "28.00",
+    "brand": "curated",
+    "supplier": "curated"
+  },
+  {
+    "code": "ELEC-RCBO-32A",
+    "category": "Circuit Protection",
+    "description": "32A Type B SP RCBO combined MCB and RCD",
+    "unit": "each",
+    "unit_price": "28.00",
+    "brand": "curated",
+    "supplier": "curated"
+  },
+  {
+    "code": "ELEC-RCBO-40A",
+    "category": "Circuit Protection",
+    "description": "40A Type B SP RCBO combined MCB and RCD",
+    "unit": "each",
+    "unit_price": "30.00",
+    "brand": "curated",
+    "supplier": "curated"
+  },
+  {
+    "code": "ELEC-AFDD-32A",
+    "category": "Circuit Protection",
+    "description": "32A Type A AFDD arc fault detection device",
+    "unit": "each",
+    "unit_price": "90.00",
+    "brand": "curated",
+    "supplier": "curated"
+  },
+  {
+    "code": "ELEC-RCD-TYPE-A-40A",
+    "category": "Circuit Protection",
+    "description": "Type A RCD 40A 30mA for EV charging circuit",
+    "unit": "each",
+    "unit_price": "28.00",
+    "brand": "curated",
+    "supplier": "curated"
+  },
+  {
+    "code": "ELEC-SOCKET-DOUBLE-WHITE",
+    "category": "Switches & Sockets",
+    "description": "13A 2-gang DP switched socket white",
+    "unit": "each",
+    "unit_price": "4.50",
+    "brand": "curated",
+    "supplier": "curated"
+  },
+  {
+    "code": "ELEC-SOCKET-SINGLE-WHITE",
+    "category": "Switches & Sockets",
+    "description": "13A 1-gang DP switched socket white",
+    "unit": "each",
+    "unit_price": "3.00",
+    "brand": "curated",
+    "supplier": "curated"
+  },
+  {
+    "code": "ELEC-SOCKET-USB-WHITE",
+    "category": "Switches & Sockets",
+    "description": "13A USB double socket white",
+    "unit": "each",
+    "unit_price": "18.00",
+    "brand": "curated",
+    "supplier": "curated"
+  },
+  {
+    "code": "ELEC-SOCKET-DOUBLE-CHROME",
+    "category": "Switches & Sockets",
+    "description": "brushed chrome 2-gang switched socket",
+    "unit": "each",
+    "unit_price": "10.00",
+    "brand": "curated",
+    "supplier": "curated"
+  },
+  {
+    "code": "ELEC-SOCKET-USB-CHROME",
+    "category": "Switches & Sockets",
+    "description": "brushed chrome USB double socket",
+    "unit": "each",
+    "unit_price": "28.00",
+    "brand": "curated",
+    "supplier": "curated"
+  },
+  {
+    "code": "ELEC-COOKER-SWITCH-WHITE",
+    "category": "Switches & Sockets",
+    "description": "45A DP cooker switch white",
+    "unit": "each",
+    "unit_price": "10.00",
+    "brand": "curated",
+    "supplier": "curated"
+  },
+  {
+    "code": "ELEC-COOKER-SWITCH-CHROME",
+    "category": "Switches & Sockets",
+    "description": "brushed chrome cooker switch",
+    "unit": "each",
+    "unit_price": "18.00",
+    "brand": "curated",
+    "supplier": "curated"
+  },
+  {
+    "code": "ELEC-SWITCH-1GANG-2WAY-WHITE",
+    "category": "Switches & Sockets",
+    "description": "10AX 1-gang 2-way light switch white",
+    "unit": "each",
+    "unit_price": "2.50",
+    "brand": "curated",
+    "supplier": "curated"
+  },
+  {
+    "code": "ELEC-SWITCH-2GANG-2WAY-WHITE",
+    "category": "Switches & Sockets",
+    "description": "10AX 2-gang 2-way light switch white",
+    "unit": "each",
+    "unit_price": "3.50",
+    "brand": "curated",
+    "supplier": "curated"
+  },
+  {
+    "code": "ELEC-DIMMER-WHITE",
+    "category": "Switches & Sockets",
+    "description": "trailing edge dimmer switch white",
+    "unit": "each",
+    "unit_price": "18.00",
+    "brand": "curated",
+    "supplier": "curated"
+  },
+  {
+    "code": "ELEC-DIMMER-CHROME",
+    "category": "Switches & Sockets",
+    "description": "brushed chrome dimmer switch",
+    "unit": "each",
+    "unit_price": "28.00",
+    "brand": "curated",
+    "supplier": "curated"
+  },
+  {
+    "code": "ELEC-ISOLATOR-WEATHERPROOF-32A",
+    "category": "Switches & Sockets",
+    "description": "weatherproof isolator switch 32A",
+    "unit": "each",
+    "unit_price": "20.00",
+    "brand": "curated",
+    "supplier": "curated"
+  },
+  {
+    "code": "ELEC-OUTDOOR-SOCKET-IP66",
+    "category": "Switches & Sockets",
+    "description": "weatherproof outdoor socket IP66",
+    "unit": "each",
+    "unit_price": "25.00",
+    "brand": "curated",
+    "supplier": "curated"
+  },
+  {
+    "code": "ELEC-CEILING-ROSE-WHITE",
+    "category": "Lighting",
+    "description": "ceiling rose with pendant white",
+    "unit": "each",
+    "unit_price": "4.50",
+    "brand": "curated",
+    "supplier": "curated"
+  },
+  {
+    "code": "ELEC-DOWNLIGHT-FR-WHITE",
+    "category": "Lighting",
+    "description": "fire-rated LED downlight white",
+    "unit": "each",
+    "unit_price": "10.00",
+    "brand": "curated",
+    "supplier": "curated"
+  },
+  {
+    "code": "ELEC-DOWNLIGHT-FR-DIMMABLE",
+    "category": "Lighting",
+    "description": "fire-rated dimmable LED downlight",
+    "unit": "each",
+    "unit_price": "14.00",
+    "brand": "curated",
+    "supplier": "curated"
+  },
+  {
+    "code": "ELEC-GU10-LAMP-WARM",
+    "category": "Lighting",
+    "description": "LED GU10 lamp warm white",
+    "unit": "each",
+    "unit_price": "2.50",
+    "brand": "curated",
+    "supplier": "curated"
+  },
+  {
+    "code": "ELEC-GU10-LAMP-DIMMABLE",
+    "category": "Lighting",
+    "description": "LED GU10 dimmable warm white",
+    "unit": "each",
+    "unit_price": "3.50",
+    "brand": "curated",
+    "supplier": "curated"
+  },
+  {
+    "code": "ELEC-LED-STRIP-UNDER-CABINET",
+    "category": "Lighting",
+    "description": "LED under cabinet strip light",
+    "unit": "each",
+    "unit_price": "15.00",
+    "brand": "curated",
+    "supplier": "curated"
+  },
+  {
+    "code": "ELEC-LED-DRIVER-60W",
+    "category": "Lighting",
+    "description": "LED driver 24V 60W",
+    "unit": "each",
+    "unit_price": "15.00",
+    "brand": "curated",
+    "supplier": "curated"
+  },
+  {
+    "code": "ELEC-LED-DRIVER-100W",
+    "category": "Lighting",
+    "description": "LED driver 24V 100W",
+    "unit": "each",
+    "unit_price": "20.00",
+    "brand": "curated",
+    "supplier": "curated"
+  },
+  {
+    "code": "ELEC-OUTDOOR-WALL-LIGHT",
+    "category": "Lighting",
+    "description": "outdoor wall light IP44",
+    "unit": "each",
+    "unit_price": "30.00",
+    "brand": "curated",
+    "supplier": "curated"
+  },
+  {
+    "code": "ELEC-BATTEN-LED-5FT",
+    "category": "Lighting",
+    "description": "LED batten light 5ft IP65",
+    "unit": "each",
+    "unit_price": "35.00",
+    "brand": "curated",
+    "supplier": "curated"
+  },
+  {
+    "code": "ELEC-EMERGENCY-BULKHEAD",
+    "category": "Lighting",
+    "description": "emergency lighting bulkhead",
+    "unit": "each",
+    "unit_price": "30.00",
+    "brand": "curated",
+    "supplier": "curated"
+  },
+  {
+    "code": "ELEC-CABLE-1.5MM-TWIN-EARTH",
+    "category": "Cable",
+    "description": "twin and earth cable 1.5mm",
+    "unit": "m",
+    "unit_price": "1.40",
+    "brand": "curated",
+    "supplier": "curated"
+  },
+  {
+    "code": "ELEC-CABLE-2.5MM-TWIN-EARTH",
+    "category": "Cable",
+    "description": "twin and earth cable 2.5mm",
+    "unit": "m",
+    "unit_price": "1.90",
+    "brand": "curated",
+    "supplier": "curated"
+  },
+  {
+    "code": "ELEC-CABLE-4.0MM-TWIN-EARTH",
+    "category": "Cable",
+    "description": "twin and earth cable 4mm",
+    "unit": "m",
+    "unit_price": "3.00",
+    "brand": "curated",
+    "supplier": "curated"
+  },
+  {
+    "code": "ELEC-CABLE-6.0MM-TWIN-EARTH",
+    "category": "Cable",
+    "description": "twin and earth cable 6mm",
+    "unit": "m",
+    "unit_price": "4.20",
+    "brand": "curated",
+    "supplier": "curated"
+  },
+  {
+    "code": "ELEC-CABLE-10.0MM-TWIN-EARTH",
+    "category": "Cable",
+    "description": "twin and earth cable 10mm",
+    "unit": "m",
+    "unit_price": "6.50",
+    "brand": "curated",
+    "supplier": "curated"
+  },
+  {
+    "code": "ELEC-CABLE-SWA-2.5MM",
+    "category": "Cable",
+    "description": "SWA cable 2.5mm steel wire armoured",
+    "unit": "m",
+    "unit_price": "3.50",
+    "brand": "curated",
+    "supplier": "curated"
+  },
+  {
+    "code": "ELEC-CABLE-SWA-6.0MM",
+    "category": "Cable",
+    "description": "SWA cable 6mm steel wire armoured",
+    "unit": "m",
+    "unit_price": "6.00",
+    "brand": "curated",
+    "supplier": "curated"
+  },
+  {
+    "code": "ELEC-CABLE-EARTH-10MM",
+    "category": "Cable",
+    "description": "green/yellow earth cable 10mm",
+    "unit": "m",
+    "unit_price": "1.50",
+    "brand": "curated",
+    "supplier": "curated"
+  },
+  {
+    "code": "ELEC-CABLE-BONDING-4MM",
+    "category": "Cable",
+    "description": "supplementary bonding cable 4mm",
+    "unit": "m",
+    "unit_price": "1.00",
+    "brand": "curated",
+    "supplier": "curated"
+  },
+  {
+    "code": "ELEC-SMOKE-ALARM-AICO",
+    "category": "Security & Fire",
+    "description": "Aico smoke alarm mains powered interlinked",
+    "unit": "each",
+    "unit_price": "35.00",
+    "brand": "Aico",
+    "supplier": "curated"
+  },
+  {
+    "code": "ELEC-HEAT-DETECTOR-AICO",
+    "category": "Security & Fire",
+    "description": "Aico heat detector mains powered",
+    "unit": "each",
+    "unit_price": "35.00",
+    "brand": "Aico",
+    "supplier": "curated"
+  },
+  {
+    "code": "ELEC-CO-ALARM-AICO",
+    "category": "Security & Fire",
+    "description": "Aico carbon monoxide alarm mains powered",
+    "unit": "each",
+    "unit_price": "45.00",
+    "brand": "Aico",
+    "supplier": "curated"
+  },
+  {
+    "code": "ELEC-BACKBOX-SINGLE-35MM",
+    "category": "Wiring Accessories",
+    "description": "metal back box 1-gang 35mm",
+    "unit": "each",
+    "unit_price": "1.20",
+    "brand": "curated",
+    "supplier": "curated"
+  },
+  {
+    "code": "ELEC-BACKBOX-DOUBLE-35MM",
+    "category": "Wiring Accessories",
+    "description": "metal back box 2-gang 35mm",
+    "unit": "each",
+    "unit_price": "1.50",
+    "brand": "curated",
+    "supplier": "curated"
+  },
+  {
+    "code": "ELEC-EARTH-ROD",
+    "category": "Wiring Accessories",
+    "description": "earth rod 1.2m with clamp",
+    "unit": "each",
+    "unit_price": "15.00",
+    "brand": "curated",
+    "supplier": "curated"
+  },
+  {
+    "code": "ELEC-EARTH-ROD-CLAMP",
+    "category": "Wiring Accessories",
+    "description": "earth rod clamp",
+    "unit": "each",
+    "unit_price": "3.00",
+    "brand": "curated",
+    "supplier": "curated"
+  },
+  {
+    "code": "ELEC-BONDING-CLAMP-10MM",
+    "category": "Wiring Accessories",
+    "description": "main equipotential bonding clamp 10mm",
+    "unit": "each",
+    "unit_price": "4.00",
+    "brand": "curated",
+    "supplier": "curated"
+  },
+  {
+    "code": "ELEC-SWA-GLAND-20MM",
+    "category": "Wiring Accessories",
+    "description": "gland pack SWA 20mm",
+    "unit": "each",
+    "unit_price": "6.00",
+    "brand": "curated",
+    "supplier": "curated"
+  },
+  {
+    "code": "ELEC-TRUNKING-16X16",
+    "category": "Conduit & Trunking",
+    "description": "PVC mini trunking 16x16mm 3m",
+    "unit": "each",
+    "unit_price": "5.00",
+    "brand": "curated",
+    "supplier": "curated"
+  },
+  {
+    "code": "ELEC-UFH-MAT-3M2",
+    "category": "Heating & Cooling",
+    "description": "electric underfloor heating mat 3m2 160W",
+    "unit": "each",
+    "unit_price": "100.00",
+    "brand": "curated",
+    "supplier": "curated"
+  },
+  {
+    "code": "ELEC-UFH-MAT-4M2",
+    "category": "Heating & Cooling",
+    "description": "electric underfloor heating mat 4m2 160W",
+    "unit": "each",
+    "unit_price": "120.00",
+    "brand": "curated",
+    "supplier": "curated"
+  },
+  {
+    "code": "ELEC-UFH-THERMOSTAT",
+    "category": "Heating & Cooling",
+    "description": "underfloor heating thermostat programmable",
+    "unit": "each",
+    "unit_price": "60.00",
+    "brand": "curated",
+    "supplier": "curated"
+  }
+]

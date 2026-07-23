@@ -1,0 +1,7 @@
+services:
+  api:
+    # Use the production CMD from the Dockerfile so migrations run before the
+    # app starts. The dev reload command in docker-compose.yml is overridden.
+    command: >
+      sh -c "alembic upgrade head &&
+             uvicorn app.main:app --host 0.0.0.0 --port 8000 --proxy-headers"

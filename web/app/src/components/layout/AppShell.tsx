@@ -4,9 +4,14 @@ import { Sidebar } from './Sidebar';
 import { TopBar } from './TopBar';
 import { ToastContainer } from './ToastContainer';
 import { VoiceAgentWidget } from '@/components/shared/VoiceAgentWidget';
+import { useFeatureFlags } from '@/lib/api/hooks';
 
 export function AppShell() {
   const location = useLocation();
+  const { data: featureFlags } = useFeatureFlags();
+  // Voice AI is not yet implemented; the widget stays hidden until the
+  // `voice_ai_insights` feature flag is enabled in Railway.
+  const voiceAiEnabled = featureFlags?.voiceAiInsights === true;
 
   useEffect(() => {
     window.scrollTo(0, 0);
@@ -27,7 +32,7 @@ export function AppShell() {
         </main>
       </div>
       <ToastContainer />
-      <VoiceAgentWidget />
+      {voiceAiEnabled && <VoiceAgentWidget />}
     </div>
   );
 }

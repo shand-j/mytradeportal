@@ -8,8 +8,8 @@ The included `docker-compose.yml` is the primary local deployment target.
 docker compose up -d
 ```
 
-All images and required variables have defaults, so it works out of the box once
-Ollama is running and reachable.
+All images and required variables have defaults; the only required secret is
+`OPENAI_API_KEY` in a `.env` file in the project root.
 
 ## Environment variables
 
@@ -32,11 +32,10 @@ the project root.
 
 | Variable | Default | Purpose |
 |---|---|---|
-| `OPENAI_API_KEY` | *(empty)* | OpenAI key (optional) |
-| `OLLAMA_API_BASE` | `http://host.docker.internal:11434` | Ollama endpoint |
-| `EMBEDDING_MODEL` | `ollama/nomic-embed-text` | Embedding model |
-| `LLM_MODEL` | `ollama/gpt-oss:latest` | Chat model |
-| `EMBEDDING_DIMENSIONS` | *(auto)* | Override vector size |
+| `OPENAI_API_KEY` | *(required)* | OpenAI key — mandatory in all environments |
+| `EMBEDDING_MODEL` | `text-embedding-3-small` | Embedding model |
+| `LLM_MODEL` | `gpt-4o-mini` | Chat model |
+| `EMBEDDING_DIMENSIONS` | `1536` | Vector size (Qdrant collections) |
 | `QDRANT_COLLECTION_NAME` | `cost_items` | Vector collection |
 | `RAG_TOP_K` | `10` | Number of items retrieved |
 
@@ -49,16 +48,12 @@ the project root.
 | `PADDLE_SANDBOX` | `true` | Use Paddle sandbox |
 | `PADDLE_DEFAULT_CURRENCY_CODE` | `GBP` | Default currency |
 
-## Ollama in production
+## AI provider
 
-For real deployments, run Ollama on a separate GPU host or use a managed
-OpenAI-compatible endpoint. Update `OLLAMA_API_BASE` to the reachable URL.
-
-If you keep Ollama on the Docker host:
-
-- Start it with `OLLAMA_HOST=0.0.0.0:11434` so containers can connect.
-- On Linux, `host.docker.internal` is not enabled by default; use the host IP or
-  add `--add-host=host.docker.internal:host-gateway`.
+OpenAI is the required AI provider in every environment, local development
+included. Set `OPENAI_API_KEY` and keep the defaults `LLM_MODEL=gpt-4o-mini`
+and `EMBEDDING_MODEL=text-embedding-3-small`; Qdrant collections are created
+at 1536 dimensions.
 
 ## Production checklist
 
@@ -80,12 +75,14 @@ If you keep Ollama on the Docker host:
 
 The whole Railway project is declared in [`.railway/railway.ts`](../.railway/railway.ts)
 using the [Railway IaC DSL](https://docs.railway.com/infrastructure-as-code)
-(TypeScript, evaluated by the Railway CLI). It defines 10 resources:
+(TypeScript, evaluated by the Railway CLI). It defines 9 services:
 
 - `db` (Postgres) and `redis` — native Railway database plugins.
-- `qdrant`, `minio`, `ollama` — Docker-image services with mounted volumes.
+- `qdrant` and `minio` — Docker-image services with mounted volumes
+  (`minio/minio:latest`, volume at `/mnt/data`).
 - `api`, `ocerp`, `web`, `admin`, `data-pipeline` — built from this repo's
-  Dockerfiles; the Railway GitHub App auto-deploys them on push.
+  Dockerfiles; the Railway GitHub App auto-deploys them on push. `api` and
+  `ocerp` pin `PORT=8000`.
 
 ### One-time setup
 
@@ -107,7 +104,8 @@ railway config apply   # apply after confirmation
 
 1. **Set secrets in the dashboard** (variables marked `preserve()` in
    `railway.ts`, so later applies never overwrite them):
-   - `api`: `AUTH_SECRET_KEY`, `MINIO_ACCESS_KEY`, `MINIO_SECRET_KEY`
+   - `api`: `OPENAI_API_KEY`, `SETUP_TOKEN`, `AUTH_SECRET_KEY`,
+     `MINIO_ACCESS_KEY`, `MINIO_SECRET_KEY`
      (mandatory — `validate_production()` refuses dev defaults), optional
      `PADDLE_API_KEY` / `PADDLE_WEBHOOK_SECRET`.
    - `minio`: `MINIO_ROOT_USER`, `MINIO_ROOT_PASSWORD` (same values as above).
@@ -119,17 +117,42 @@ railway config apply   # apply after confirmation
    `CSRF_TRUSTED_ORIGINS`) resolve automatically once the domains exist.
 3. **Create the MinIO bucket** `mtp-uploads` (e.g. via the MinIO console on
    port 9001, or `mc mb`).
-4. **Pull the Ollama models** once (they persist on the volume):
-   exec into the `ollama` service and run
-   `ollama pull nomic-embed-text && ollama pull llama3.1:8b`.
+4. **Bootstrap the first tenant**: in production, `POST /tenants` is gated by
+   the `SETUP_TOKEN` variable (a `preserve()` env on `api`) and atomically
+   creates the tenant plus its first admin user. Send the token in the
+   `X-Setup-Token` header:
+
+   ```bash
+   curl -X POST https://<api-domain>/tenants \
+     -H "Content-Type: application/json" \
+     -H "X-Setup-Token: $SETUP_TOKEN" \
+     -d '{"slug": "acme", "name": "ACME Electrical",
+          "admin_email": "you@example.com", "admin_password": "..."}'
+   ```
+
+   Remove or rotate `SETUP_TOKEN` once the first tenant exists.
 5. **Seed the database**:
-   `railway run --service api python -m app.seed_admin_user` and
-   `python -m app.seed_cost_items`, plus
+   `railway run --service data-pipeline python -m data_pipeline.load_curated_seed`
+   and
    `railway run --service data-pipeline python -m data_pipeline.knowledge_loader`.
+
+   Do **not** run `app.seed_admin_user` in production — it is a local-dev
+   bootstrap only and refuses to run when `ENVIRONMENT=production`; use the
+   `POST /tenants` flow above for the first tenant.
 
 Migrations run automatically: the API container executes `alembic upgrade
 head` before starting uvicorn, and `alembic/env.py` honours the injected
 `DATABASE_URL`.
+
+### Feature flags (Railway Signals)
+
+Unreleased features (voice AI insights, demand forecasting, external
+integrations) are gated behind runtime flags served by `GET /feature-flags`
+and default to **off**. To manage them: create a **project token** in the
+Railway dashboard (Project Settings → Tokens) and set it as `RAILWAY_TOKEN`
+on the `api` service (with `RAILWAY_PROJECT_ID` set to the project id), then
+toggle flags (e.g. `voice_ai_insights`) under **Project Settings → Feature
+Flags**. Without these variables (e.g. local dev) every flag resolves off.
 
 ### Railway-specific behaviour in the codebase
 
@@ -147,5 +170,5 @@ head` before starting uvicorn, and `alembic/env.py` honours the injected
 - Railway IaC is **experimental**; verify with `railway config plan` after any
   edit and see the header comment in `.railway/railway.ts` for current
   limitations.
-- Ollama runs CPU-only: expect slow quote generation (several LLM calls per
-  BoQ). `llama3.1:8b` needs 8–12GB RAM; scale the service accordingly.
+- Quote generation makes several OpenAI LLM calls per BoQ; monitor spend and
+  set usage limits in the OpenAI dashboard.

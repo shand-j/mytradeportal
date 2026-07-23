@@ -21,6 +21,7 @@ from app.routers import (
     auth,
     communications,
     contacts,
+    feature_flags,
     files,
     health,
     invoices,
@@ -65,20 +66,23 @@ app = FastAPI(
 # decorators (e.g. ``@limiter.limit("5/minute")``) take effect, and surface
 # 429s through slowapi's exception handler.
 app.state.limiter = limiter
-app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)  # type: ignore[arg-type]
 app.add_middleware(SlowAPIMiddleware)
 
 # CORS is restricted to the back-office UI origin. In production this should be
 # the deployed web/app URL.
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[origin.strip() for origin in settings.allowed_origins.split(",") if origin.strip()],
+    allow_origins=[
+        origin.strip() for origin in settings.allowed_origins.split(",") if origin.strip()
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
 app.include_router(health.router)
+app.include_router(feature_flags.router)
 app.include_router(tenants.router)
 app.include_router(auth.router)
 app.include_router(users.router)

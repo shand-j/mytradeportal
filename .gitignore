@@ -73,8 +73,21 @@ minio_data/
 # Front-end mock fixtures are source, not local data volumes
 !web/app/src/lib/mock/data/
 !web/app/src/lib/mock/data/**
+# Pipeline seed catalogue is source, not a local data volume
+!services/data-pipeline/src/data_pipeline/data/
+!services/data-pipeline/src/data_pipeline/data/**
+
+# Agent/tooling local state
+.kimi-code/
+
+# Django collected static files (generated at build/deploy time)
+services/admin/staticfiles/
 
 # Secrets (never commit)
 *.pem
 *.key
 secrets/
+.env.prod-like
+# OCERP default labour/pricing schedules are source, not local data volumes
+!services/ocerp/ocerp/data/
+!services/ocerp/ocerp/data/**

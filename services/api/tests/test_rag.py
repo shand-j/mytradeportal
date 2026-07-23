@@ -48,7 +48,11 @@ async def test_search_cost_items() -> None:
 async def test_generate_quote_from_prompt() -> None:
     mock_response = MagicMock()
     mock_response.choices = [
-        MagicMock(message=MagicMock(content='{"line_items": [{"code": "ELEC-SOCKET-ADD", "quantity": 2, "reason": "two sockets"}], "notes": ""}'))
+        MagicMock(
+            message=MagicMock(
+                content='{"line_items": [{"code": "ELEC-SOCKET-ADD", "quantity": 2, "reason": "two sockets"}], "notes": ""}'
+            )
+        )
     ]
 
     cost_items = [
@@ -76,9 +80,13 @@ async def test_generate_quote_from_prompt() -> None:
 @pytest.mark.asyncio
 async def test_generate_quote_from_prompt_includes_system_prompt() -> None:
     mock_response = MagicMock()
-    mock_response.choices = [MagicMock(message=MagicMock(content='{"line_items": [], "notes": ""}'))]
+    mock_response.choices = [
+        MagicMock(message=MagicMock(content='{"line_items": [], "notes": ""}'))
+    ]
 
-    with patch("app.rag.generation.acompletion", new=AsyncMock(return_value=mock_response)) as mock_acompletion:
+    with patch(
+        "app.rag.generation.acompletion", new=AsyncMock(return_value=mock_response)
+    ) as mock_acompletion:
         generation_config.settings.openai_api_key = "sk-test"
         await generate_quote_from_prompt(
             job_description="rewire a house",
@@ -103,9 +111,7 @@ def test_validate_generated_quote() -> None:
         }
     ]
     generated = {
-        "line_items": [
-            {"code": "ELEC-SOCKET-ADD", "quantity": 2, "reason": "kitchen and bedroom"}
-        ],
+        "line_items": [{"code": "ELEC-SOCKET-ADD", "quantity": 2, "reason": "kitchen and bedroom"}],
         "notes": "",
     }
 

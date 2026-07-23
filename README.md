@@ -38,7 +38,7 @@ The platform is **multi-tenant** from day one: every request carries an
 | Multi-tenant isolation | ✅ | `X-Tenant-ID` + PostgreSQL RLS |
 | Contacts / CRM | ✅ | Create, list and manage customers |
 | Manual quotes | ✅ | Create, approve, convert to invoice |
-| AI quote generation | ✅ | Local Ollama or OpenAI embeddings + LLM |
+| AI quote generation | ✅ | OpenAI embeddings + LLM via LiteLLM |
 | Cost database | ✅ | Seed data + DDC CWICR UK ingestion |
 | Jobs | ✅ | Work orders linked to quotes |
 | Appointments | ✅ | Scheduling with start/end times |
@@ -62,14 +62,17 @@ docker compose up -d
 # 2. Apply database migrations (or let the API create tables in development)
 PYTHONPATH=services/api alembic upgrade head
 
-# 3. Seed a demo tenant and admin user for the back-office UI
+# 3. Seed a demo tenant and admin user for the back-office UI (local dev only)
 cd services/api
-python -m app.seed_admin_user
+SEED_ADMIN_EMAIL=you@example.com SEED_ADMIN_PASSWORD=<choose-a-password> \
+  python -m app.seed_admin_user
 
-# 4. Seed UK electrical cost items and embed them with your configured model
-python -m app.seed_cost_items
+# 4. Load the curated UK electrical cost items and embed them
+cd services/data-pipeline
+python -m data_pipeline.load_curated_seed
 
 # 5. Ingest the DDC CWICR UK cost database (~4k electrical items)
+cd services/api
 python -m app.ingest_ddc_uk
 ```
 
@@ -78,13 +81,13 @@ OpenAPI docs: http://localhost:8000/docs
 Back-office UI: http://localhost:3000  
 Django admin: http://localhost:8001/admin  
 
-Default back-office login:
-- Business slug: `demo`
-- Email: `admin@demo.local`
-- Password: `password123`
+Back-office login (as seeded in step 3):
+- Business slug: `demo` (or your `SEED_TENANT_SLUG`)
+- Email: the email you set via `SEED_ADMIN_EMAIL`
+- Password: the password you set via `SEED_ADMIN_PASSWORD`
 
 See [`docs/getting-started.md`](docs/getting-started.md) for the full setup,
-including Ollama configuration.
+including OpenAI configuration.
 
 ---
 

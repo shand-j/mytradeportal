@@ -10,10 +10,6 @@ from app.config import settings
 from app.qdrant import ensure_collection, get_qdrant_client
 
 
-def _is_ollama_model(model: str) -> bool:
-    return model.startswith("ollama/")
-
-
 def get_embedding_dimension() -> int:
     """Return the vector dimension for the configured embedding model."""
     if settings.embedding_dimensions:
@@ -22,21 +18,17 @@ def get_embedding_dimension() -> int:
     known_dimensions = {
         "text-embedding-3-small": 1536,
         "text-embedding-3-large": 3072,
-        "ollama/nomic-embed-text": 768,
-        "nomic-embed-text": 768,
     }
     return known_dimensions.get(settings.embedding_model, 1536)
 
 
 def _embedding_kwargs(texts: list[str]) -> dict[str, Any]:
-    """Build the kwargs for litellm.aembedding based on the provider."""
+    """Build the kwargs for litellm.aembedding."""
     kwargs: dict[str, Any] = {
         "model": settings.embedding_model,
         "input": texts,
     }
-    if _is_ollama_model(settings.embedding_model):
-        kwargs["api_base"] = settings.ollama_api_base
-    elif settings.openai_api_key:
+    if settings.openai_api_key:
         kwargs["api_key"] = settings.openai_api_key
     return kwargs
 
@@ -89,8 +81,7 @@ async def search_cost_items(
         must_conditions.append(
             Filter(
                 should=[
-                    FieldCondition(key="source", match=MatchValue(value=s))
-                    for s in active_sources
+                    FieldCondition(key="source", match=MatchValue(value=s)) for s in active_sources
                 ]
             )
         )
@@ -115,7 +106,9 @@ async def search_cost_items(
             "brand": point.payload.get("brand") if point.payload else None,
             "sku": point.payload.get("sku") if point.payload else None,
             "product_url": point.payload.get("product_url") if point.payload else None,
-            "retail_price_incl_vat": point.payload.get("retail_price_incl_vat") if point.payload else None,
+            "retail_price_incl_vat": point.payload.get("retail_price_incl_vat")
+            if point.payload
+            else None,
             "metre_length": point.payload.get("metre_length") if point.payload else None,
             "score": point.score,
         }

@@ -145,9 +145,7 @@ class LabourSchedule(BaseModel):
     small_job_default: LabourEntry = Field(
         default_factory=lambda: LabourEntry(electrician_hours=Decimal("4"))
     )
-    eicr: LabourEntry = Field(
-        default_factory=lambda: LabourEntry(electrician_days=Decimal("1"))
-    )
+    eicr: LabourEntry = Field(default_factory=lambda: LabourEntry(electrician_days=Decimal("1")))
     fault_finding: LabourEntry = Field(
         default_factory=lambda: LabourEntry(electrician_hours=Decimal("1"))
     )
@@ -187,9 +185,42 @@ def _load_json_data(path: Path) -> dict[str, Any]:
         return json.load(fh)
 
 
+def _default_pricing_config() -> dict[str, Any]:
+    return {
+        "hourly_labour_rate": "45.00",
+        "daily_labour_rate": "360.00",
+        "mate_daily_rate": "0.00",
+        "mate_percent": "55.00",
+        "vat_rate": "0.20",
+        "markup_percent": "0.00",
+        "minimum_charge": "0.00",
+        "price_tolerance_percent": "0.15",
+        "min_margin_percent": "0.00",
+    }
+
+
+def _default_labour_schedule() -> dict[str, Any]:
+    return {
+        "rewire": {
+            "1_bed_flat": {"electrician_days": "4", "mate_days": "2"},
+            "2_bed_house": {"electrician_days": "5", "mate_days": "2"},
+            "3_bed_house": {"electrician_days": "7", "mate_days": "3"},
+            "4_bed_house": {"electrician_days": "9", "mate_days": "4"},
+            "5_bed_house": {"electrician_days": "11", "mate_days": "4"},
+        },
+        "consumer_unit_upgrade": {"electrician_days": "1", "mate_days": "0"},
+        "ev_charger": {"electrician_hours": "8"},
+        "extension": {"electrician_days": "2", "mate_days": "1"},
+        "garage": {"electrician_days": "1", "mate_days": "0"},
+        "small_job_default": {"electrician_hours": "4"},
+        "eicr": {"electrician_days": "1"},
+        "fault_finding": {"electrician_hours": "1"},
+    }
+
+
 def load_pricing_config(tenant_settings: dict[str, Any] | None = None) -> PricingConfig:
     """Build pricing config from default data file, overridden by tenant settings."""
-    defaults = _load_json_data(_data_file("default_pricing.json"))
+    defaults = _load_json_data(_data_file("default_pricing.json")) or _default_pricing_config()
     overrides = tenant_settings or {}
     # The API stores tenant markup under ``markup_percentage``; OCERP uses
     # ``markup_percent``.  Accept both for interoperability.
@@ -202,7 +233,9 @@ def load_pricing_config(tenant_settings: dict[str, Any] | None = None) -> Pricin
 
 def load_labour_schedule(tenant_settings: dict[str, Any] | None = None) -> LabourSchedule:
     """Build labour schedule from default data file, overridden by tenant settings."""
-    defaults = _load_json_data(_data_file("default_labour_schedule.json"))
+    defaults = (
+        _load_json_data(_data_file("default_labour_schedule.json")) or _default_labour_schedule()
+    )
     overrides = tenant_settings or {}
     data = {**defaults, **{k: v for k, v in overrides.items() if k in LabourSchedule.model_fields}}
     return LabourSchedule.model_validate(data)

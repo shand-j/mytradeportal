@@ -57,6 +57,18 @@ def decode_access_token(token: str) -> dict[str, Any] | None:
         return None
 
 
+def _cookie_secure() -> bool:
+    """Return whether the auth cookie should carry the Secure flag.
+
+    Defaults to ``True`` in production so cookies are only sent over HTTPS.
+    Override with ``AUTH_COOKIE_SECURE=false`` for local production-mode
+    testing over plain HTTP.
+    """
+    if settings.environment == "production":
+        return settings.auth_cookie_secure
+    return False
+
+
 def _cookie_samesite() -> Literal["lax", "none"]:
     """Return the SameSite policy for the auth cookie.
 
@@ -66,7 +78,7 @@ def _cookie_samesite() -> Literal["lax", "none"]:
     ``credentials: 'include'``. In development everything is same-site
     localhost, where ``Lax`` is safer.
     """
-    return "none" if settings.environment == "production" else "lax"
+    return "none" if _cookie_secure() else "lax"
 
 
 def set_auth_cookie(response: Response, token: str) -> None:
@@ -76,7 +88,7 @@ def set_auth_cookie(response: Response, token: str) -> None:
         key=AUTH_COOKIE_NAME,
         value=token,
         httponly=True,
-        secure=settings.environment == "production",
+        secure=_cookie_secure(),
         samesite=_cookie_samesite(),
         max_age=max_age,
     )
@@ -87,6 +99,6 @@ def clear_auth_cookie(response: Response) -> None:
     response.delete_cookie(
         key=AUTH_COOKIE_NAME,
         httponly=True,
-        secure=settings.environment == "production",
+        secure=_cookie_secure(),
         samesite=_cookie_samesite(),
     )

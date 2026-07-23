@@ -1,4 +1,5 @@
 """Rule-based scorer for the domestic electrical golden dataset."""
+
 from __future__ import annotations
 
 import re
@@ -90,6 +91,7 @@ def _labour_cost_total(items: list[dict[str, Any]]) -> Decimal:
 # Item matchers
 # ---------------------------------------------------------------------------
 
+
 def _matches_category(item: dict[str, Any], dataset_category: str) -> bool:
     cost_cats = DATASET_TO_COST_CATEGORIES.get(dataset_category, [])
     if not cost_cats:
@@ -128,7 +130,7 @@ def _extract_leading_brand(concept: str) -> tuple[str | None, str]:
     """If concept starts with a known brand, return (brand, rest)."""
     for brand in sorted(KNOWN_BRANDS, key=len, reverse=True):
         if concept == brand or concept.startswith(f"{brand} "):
-            return brand, concept[len(brand):].strip()
+            return brand, concept[len(brand) :].strip()
     return None, concept
 
 
@@ -148,32 +150,78 @@ def _match_concept(items: list[dict[str, Any]], concept: str) -> list[dict[str, 
 
     # Category-level concepts
     if concept in {"consumer unit", "fuse box", "fusebox", "distribution board", "cu"}:
-        predicates.append(lambda it: _matches_category(it, "consumer_units") or _desc_any(it, ["consumer unit", "fuse box", "fusebox", "distribution board"]))
+        predicates.append(
+            lambda it: (
+                _matches_category(it, "consumer_units")
+                or _desc_any(it, ["consumer unit", "fuse box", "fusebox", "distribution board"])
+            )
+        )
     elif concept in {"garage consumer unit", "garage cu"}:
-        predicates.append(lambda it: (_matches_category(it, "consumer_units") and _desc_contains(it, ["garage"])))
+        predicates.append(
+            lambda it: _matches_category(it, "consumer_units") and _desc_contains(it, ["garage"])
+        )
     elif concept in {"house consumer unit", "main consumer unit"}:
-        predicates.append(lambda it: (_matches_category(it, "consumer_units") and not _desc_contains(it, ["garage"])))
+        predicates.append(
+            lambda it: (
+                _matches_category(it, "consumer_units") and not _desc_contains(it, ["garage"])
+            )
+        )
     elif "socket" in concept and "usb" in concept:
-        predicates.append(lambda it: (_matches_category(it, "switches_sockets") and _desc_contains(it, ["usb"])))
+        predicates.append(
+            lambda it: _matches_category(it, "switches_sockets") and _desc_contains(it, ["usb"])
+        )
     elif "socket" in concept:
-        predicates.append(lambda it: _matches_category(it, "switches_sockets") and _desc_any(it, ["socket", "switched"]))
+        predicates.append(
+            lambda it: (
+                _matches_category(it, "switches_sockets") and _desc_any(it, ["socket", "switched"])
+            )
+        )
     elif "double socket" in concept or "2-gang socket" in concept:
-        predicates.append(lambda it: (_matches_category(it, "switches_sockets") and _desc_any(it, ["2-gang", "2 gang", "double socket"])))
+        predicates.append(
+            lambda it: (
+                _matches_category(it, "switches_sockets")
+                and _desc_any(it, ["2-gang", "2 gang", "double socket"])
+            )
+        )
     elif "cooker switch" in concept or "cooker circuit" in concept:
-        predicates.append(lambda it: (_matches_category(it, "switches_sockets") and _desc_any(it, ["cooker", "45a"])) or (_matches_category(it, "mcb_rcd_rcbo") and _desc_contains(it, ["cooker"])))
+        predicates.append(
+            lambda it: (
+                (_matches_category(it, "switches_sockets") and _desc_any(it, ["cooker", "45a"]))
+                or (_matches_category(it, "mcb_rcd_rcbo") and _desc_contains(it, ["cooker"]))
+            )
+        )
     elif "light point" in concept or "lighting point" in concept:
-        predicates.append(lambda it: _matches_category(it, "lighting") and not _desc_contains(it, ["driver", "led lamp", "gu10"]))
+        predicates.append(
+            lambda it: (
+                _matches_category(it, "lighting")
+                and not _desc_contains(it, ["driver", "led lamp", "gu10"])
+            )
+        )
     elif "downlight" in concept or "spotlight" in concept:
-        predicates.append(lambda it: _matches_category(it, "lighting") and _desc_any(it, ["downlight", "spotlight", "down light", "spot light"]))
+        predicates.append(
+            lambda it: (
+                _matches_category(it, "lighting")
+                and _desc_any(it, ["downlight", "spotlight", "down light", "spot light"])
+            )
+        )
     elif "batten" in concept:
-        predicates.append(lambda it: _matches_category(it, "lighting") and _desc_contains(it, ["batten"]))
+        predicates.append(
+            lambda it: _matches_category(it, "lighting") and _desc_contains(it, ["batten"])
+        )
     elif concept in {"light", "lights"}:
         predicates.append(
-            lambda it: _matches_category(it, "lighting")
-            and not _desc_contains(it, ["driver", "led lamp", "gu10"])
+            lambda it: (
+                _matches_category(it, "lighting")
+                and not _desc_contains(it, ["driver", "led lamp", "gu10"])
+            )
         )
     elif "smoke/heat detector" in concept or "smoke heat detector" in concept:
-        predicates.append(lambda it: _matches_category(it, "security_fire") and _desc_any(it, ["smoke", "heat", "detector", "alarm"]))
+        predicates.append(
+            lambda it: (
+                _matches_category(it, "security_fire")
+                and _desc_any(it, ["smoke", "heat", "detector", "alarm"])
+            )
+        )
     elif "/" in concept and ("detector" in concept or "alarm" in concept):
         # Slash-OR concepts such as "smoke/heat/co alarms"
         tokens = [t.strip() for t in concept.split("/") if t.strip()]
@@ -183,72 +231,147 @@ def _match_concept(items: list[dict[str, Any]], concept: str) -> list[dict[str, 
 
         predicates.append(_slash_or_match)
     elif "smoke alarm" in concept or "smoke detector" in concept:
-        predicates.append(lambda it: _matches_category(it, "security_fire") and _desc_contains(it, ["smoke"]))
+        predicates.append(
+            lambda it: _matches_category(it, "security_fire") and _desc_contains(it, ["smoke"])
+        )
     elif "heat detector" in concept or "heat alarm" in concept:
-        predicates.append(lambda it: _matches_category(it, "security_fire") and _desc_contains(it, ["heat"]))
+        predicates.append(
+            lambda it: _matches_category(it, "security_fire") and _desc_contains(it, ["heat"])
+        )
     elif "co alarm" in concept or "carbon monoxide" in concept:
-        predicates.append(lambda it: _matches_category(it, "security_fire") and _desc_any(it, ["carbon monoxide", "co alarm"]))
+        predicates.append(
+            lambda it: (
+                _matches_category(it, "security_fire")
+                and _desc_any(it, ["carbon monoxide", "co alarm"])
+            )
+        )
     elif "emergency lighting" in concept:
-        predicates.append(lambda it: _matches_category(it, "lighting") and _desc_any(it, ["emergency", "bulkhead"]))
+        predicates.append(
+            lambda it: (
+                _matches_category(it, "lighting") and _desc_any(it, ["emergency", "bulkhead"])
+            )
+        )
     elif "rcbo" in concept or "rcbos" in concept:
-        predicates.append(lambda it: _matches_category(it, "mcb_rcd_rcbo") and _desc_contains(it, ["rcbo"]))
+        predicates.append(
+            lambda it: _matches_category(it, "mcb_rcd_rcbo") and _desc_contains(it, ["rcbo"])
+        )
     elif "afdd" in concept:
-        predicates.append(lambda it: _matches_category(it, "mcb_rcd_rcbo") and _desc_contains(it, ["afdd"]))
+        predicates.append(
+            lambda it: _matches_category(it, "mcb_rcd_rcbo") and _desc_contains(it, ["afdd"])
+        )
     elif "type a rcd" in concept or "type-a rcd" in concept:
         predicates.append(
-            lambda it: _matches_category(it, "mcb_rcd_rcbo")
-            and _desc_any(it, ["type a", "type-a"])
-            and _desc_contains(it, ["rcd"])
+            lambda it: (
+                _matches_category(it, "mcb_rcd_rcbo")
+                and _desc_any(it, ["type a", "type-a"])
+                and _desc_contains(it, ["rcd"])
+            )
         )
     elif "spd" in concept or "surge" in concept:
         predicates.append(lambda it: _desc_any(it, ["spd", "surge"]))
-    elif concept in {"mcb", "mcbs", "standard mcb", "miniature circuit breaker", "miniature circuit breakers"}:
+    elif concept in {
+        "mcb",
+        "mcbs",
+        "standard mcb",
+        "miniature circuit breaker",
+        "miniature circuit breakers",
+    }:
         predicates.append(
-            lambda it: _matches_category(it, "mcb_rcd_rcbo")
-            and _desc_contains(it, ["mcb"])
-            and not _desc_any(it, ["rcbo", "afdd", "rcd"])
+            lambda it: (
+                _matches_category(it, "mcb_rcd_rcbo")
+                and _desc_contains(it, ["mcb"])
+                and not _desc_any(it, ["rcbo", "afdd", "rcd"])
+            )
         )
     elif "32a mcb" in concept or "32a breaker" in concept:
-        predicates.append(lambda it: _matches_category(it, "mcb_rcd_rcbo") and _desc_contains(it, ["32a"]) and _desc_contains(it, ["mcb"]))
+        predicates.append(
+            lambda it: (
+                _matches_category(it, "mcb_rcd_rcbo")
+                and _desc_contains(it, ["32a"])
+                and _desc_contains(it, ["mcb"])
+            )
+        )
     elif "swa cable" in concept or "armoured cable" in concept:
-        predicates.append(lambda it: _matches_category(it, "cable") and _desc_any(it, ["swa", "armoured"]))
+        predicates.append(
+            lambda it: _matches_category(it, "cable") and _desc_any(it, ["swa", "armoured"])
+        )
     elif re.match(r"^(\d+)mm\s*cable$", concept):
         mm = re.match(r"^(\d+)mm\s*cable$", concept).group(1)  # type: ignore[union-attr]
-        predicates.append(lambda it, mm=mm: _matches_category(it, "cable") and _desc_contains(it, [f"{mm}mm"]))  # type: ignore[misc]
+        predicates.append(
+            lambda it, mm=mm: _matches_category(it, "cable") and _desc_contains(it, [f"{mm}mm"])
+        )  # type: ignore[misc]
     elif "earth rod" in concept:
         predicates.append(lambda it: _desc_contains(it, ["earth rod"]))
     elif "bonding clamp" in concept or "main equipotential" in concept:
-        predicates.append(lambda it: _desc_any(it, ["bonding clamp", "equipotential", "main bonding"]))
+        predicates.append(
+            lambda it: _desc_any(it, ["bonding clamp", "equipotential", "main bonding"])
+        )
     elif "supplementary bonding" in concept:
         predicates.append(lambda it: _desc_contains(it, ["supplementary bonding"]))
     elif "weatherproof isolator" in concept:
         predicates.append(lambda it: _desc_any(it, ["weatherproof isolator", "isolator"]))
     elif "outdoor socket" in concept:
-        predicates.append(lambda it: _matches_category(it, "switches_sockets") and _desc_any(it, ["weatherproof", "outdoor", "ip66"]))
+        predicates.append(
+            lambda it: (
+                _matches_category(it, "switches_sockets")
+                and _desc_any(it, ["weatherproof", "outdoor", "ip66"])
+            )
+        )
     elif "outdoor wall light" in concept:
-        predicates.append(lambda it: _matches_category(it, "lighting") and _desc_any(it, ["outdoor", "wall light", "ip44"]))
+        predicates.append(
+            lambda it: (
+                _matches_category(it, "lighting")
+                and _desc_any(it, ["outdoor", "wall light", "ip44"])
+            )
+        )
     elif "underfloor heating mat" in concept:
-        predicates.append(lambda it: _matches_category(it, "heating_cooling") and _desc_contains(it, ["underfloor heating mat"]))
+        predicates.append(
+            lambda it: (
+                _matches_category(it, "heating_cooling")
+                and _desc_contains(it, ["underfloor heating mat"])
+            )
+        )
     elif "underfloor heating thermostat" in concept or "ufh thermostat" in concept:
-        predicates.append(lambda it: _matches_category(it, "heating_cooling") and _desc_contains(it, ["thermostat"]))
+        predicates.append(
+            lambda it: (
+                _matches_category(it, "heating_cooling") and _desc_contains(it, ["thermostat"])
+            )
+        )
     elif "dedicated mcb" in concept and "ufh" in concept:
         predicates.append(
-            lambda it: _matches_category(it, "mcb_rcd_rcbo")
-            and _desc_contains(it, ["mcb"])
-            and not _desc_any(it, ["rcbo", "afdd", "rcd"])
+            lambda it: (
+                _matches_category(it, "mcb_rcd_rcbo")
+                and _desc_contains(it, ["mcb"])
+                and not _desc_any(it, ["rcbo", "afdd", "rcd"])
+            )
         )
     elif "led driver" in concept:
-        predicates.append(lambda it: _matches_category(it, "lighting") and _desc_contains(it, ["driver"]))
+        predicates.append(
+            lambda it: _matches_category(it, "lighting") and _desc_contains(it, ["driver"])
+        )
     elif "under cabinet" in concept or "under-cabinet" in concept:
-        predicates.append(lambda it: _matches_category(it, "lighting") and _desc_any(it, ["under cabinet", "under-cabinet"]))
+        predicates.append(
+            lambda it: (
+                _matches_category(it, "lighting")
+                and _desc_any(it, ["under cabinet", "under-cabinet"])
+            )
+        )
     elif "dimmer switch" in concept or "dimmer" in concept:
-        predicates.append(lambda it: _matches_category(it, "switches_sockets") and _desc_contains(it, ["dimmer"]))
+        predicates.append(
+            lambda it: _matches_category(it, "switches_sockets") and _desc_contains(it, ["dimmer"])
+        )
     elif "dimmable downlight" in concept:
-        predicates.append(lambda it: _matches_category(it, "lighting") and _desc_contains(it, ["dimmable", "downlight"]))
+        predicates.append(
+            lambda it: (
+                _matches_category(it, "lighting") and _desc_contains(it, ["dimmable", "downlight"])
+            )
+        )
     elif "brushed chrome" in concept or "brushed steel" in concept:
         predicates.append(lambda it: _desc_any(it, ["chrome", "brushed"]))
     elif "trunking" in concept:
-        predicates.append(lambda it: _matches_category(it, "conduit_trunking") or _desc_contains(it, ["trunking"]))
+        predicates.append(
+            lambda it: _matches_category(it, "conduit_trunking") or _desc_contains(it, ["trunking"])
+        )
     elif ("cable" in concept and "metre" in concept) or "cable" in concept:
         predicates.append(lambda it: _matches_category(it, "cable"))
     else:
@@ -269,12 +392,15 @@ def _match_concept(items: list[dict[str, Any]], concept: str) -> list[dict[str, 
 
     # Generic brand-only searches such as "Aico detectors" - no specific item
     # type was given, so match any item of that brand in the relevant category.
-    if not matched and target_brand and concept in {"detectors", "detector", "alarms", "alarm", "devices", "device"}:
+    if (
+        not matched
+        and target_brand
+        and concept in {"detectors", "detector", "alarms", "alarm", "devices", "device"}
+    ):
         matched = [
             it
             for it in items
-            if target_brand in _norm(it.get("brand", ""))
-            and _matches_category(it, "security_fire")
+            if target_brand in _norm(it.get("brand", "")) and _matches_category(it, "security_fire")
         ]
 
     return matched
@@ -283,6 +409,7 @@ def _match_concept(items: list[dict[str, Any]], concept: str) -> list[dict[str, 
 # ---------------------------------------------------------------------------
 # Criterion evaluation helpers
 # ---------------------------------------------------------------------------
+
 
 @dataclass
 class CriterionResult:
@@ -320,7 +447,9 @@ def _extract_quoted_strings(text: str) -> list[str]:
 def _extract_range(text: str) -> tuple[Decimal | None, Decimal | None]:
     """Extract a numeric range such as 'between GBP 500 and GBP 800' or '6-12 hours'."""
     text = text.lower()
-    m = re.search(r"between\s+gbp?\s*(\d[\d,]*(?:\.\d+)?)\s+and\s+gbp?\s*(\d[\d,]*(?:\.\d+)?)", text)
+    m = re.search(
+        r"between\s+gbp?\s*(\d[\d,]*(?:\.\d+)?)\s+and\s+gbp?\s*(\d[\d,]*(?:\.\d+)?)", text
+    )
     if m:
         return Decimal(m.group(1).replace(",", "")), Decimal(m.group(2).replace(",", ""))
     m = re.search(r"between\s+(\d[\d,]*(?:\.\d+)?)\s+and\s+(\d[\d,]*(?:\.\d+)?)", text)
@@ -377,6 +506,7 @@ def _split_conjunctions(phrase: str) -> list[str]:
 # ---------------------------------------------------------------------------
 # Individual criterion handlers
 # ---------------------------------------------------------------------------
+
 
 def _check_spec_level(criterion: str, response: dict[str, Any]) -> CriterionResult:
     quoted = _extract_quoted_strings(criterion)
@@ -461,9 +591,7 @@ def _check_all_accessories_brand(criterion: str, response: dict[str, Any]) -> Cr
         return CriterionResult(criterion, None, "could not parse brand")
     items = response.get("line_items", [])
     accessory_items = [it for it in items if (it.get("category") or "") in ACCESSORY_CATEGORIES]
-    mismatches = [
-        it for it in accessory_items if brand.lower() not in _norm(it.get("brand", ""))
-    ]
+    mismatches = [it for it in accessory_items if brand.lower() not in _norm(it.get("brand", ""))]
     passed = len(accessory_items) > 0 and len(mismatches) == 0
     detail = f"{len(accessory_items)} accessory line(s), {len(mismatches)} not {brand}"
     return CriterionResult(criterion, passed, detail, soft=True)
@@ -572,8 +700,10 @@ def _check_item_presence(criterion: str, response: dict[str, Any]) -> CriterionR
     # Auto-detect threshold words in the phrase if no explicit constraint
     if op is None:
         num, item_text = _extract_number_and_item(criterion)
-        if num is not None and item_text is not None and any(
-            tok in phrase for tok in item_text.split()
+        if (
+            num is not None
+            and item_text is not None
+            and any(tok in phrase for tok in item_text.split())
         ):
             if "exactly" in text:
                 op, qty_target = "==", num
@@ -630,6 +760,7 @@ def _check_item_absence(criterion: str, response: dict[str, Any]) -> CriterionRe
 # Criterion dispatcher
 # ---------------------------------------------------------------------------
 
+
 def evaluate_criterion(criterion: str, response: dict[str, Any]) -> CriterionResult:
     text = criterion.lower()
 
@@ -655,9 +786,7 @@ def evaluate_criterion(criterion: str, response: dict[str, Any]) -> CriterionRes
         result = _check_all_accessories_brand(criterion, response)
         if result.passed is None:
             return CriterionResult(criterion, None, result.detail, soft=True)
-        return CriterionResult(
-            criterion, result.passed, result.detail, soft=True
-        )
+        return CriterionResult(criterion, result.passed, result.detail, soft=True)
 
     if "agent should flag" in text:
         return _check_flag_in_output(criterion, response)
@@ -710,7 +839,9 @@ def _cost_attribution(items: list[dict[str, Any]], top_n: int = 8) -> list[dict[
                 "description": (it.get("description") or "")[:80],
                 "category": it.get("category"),
                 "quantity": float(_to_decimal(it.get("quantity", 0))),
-                "unit_price": float(_to_decimal(it.get("unit_price", 0)).quantize(Decimal("0.0001"))),
+                "unit_price": float(
+                    _to_decimal(it.get("unit_price", 0)).quantize(Decimal("0.0001"))
+                ),
                 "material_total": float(mt),
                 "pct_of_material_total": pct,
             }

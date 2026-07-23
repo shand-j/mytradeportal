@@ -9,13 +9,34 @@ on:
 jobs:
   python:
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: mtp
+          POSTGRES_PASSWORD: mtp
+          POSTGRES_DB: mtp
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U mtp"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+      qdrant:
+        image: qdrant/qdrant:v1.11.5
+        ports:
+          - 6333:6333
+    env:
+      DATABASE_URL: postgresql+asyncpg://mtp:mtp@localhost:5432/mtp
+      QDRANT_URL: http://localhost:6333
     steps:
       - uses: actions/checkout@v4
 
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: "3.12"
+          python-version: "3.11"
 
       - name: Install dependencies
         run: |
@@ -29,30 +50,82 @@ jobs:
         run: ruff format --check .
 
       - name: Type check with mypy
-        run: mypy services/api packages/shared/py
+        run: |
+          mypy services/api packages/shared/py
+          mypy --config-file mypy-admin.ini services/admin
 
       - name: Test with pytest
         run: pytest
 
   typescript:
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web/app
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "pnpm"
+          cache-dependency-path: web/app/pnpm-lock.yaml
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Lint
+        run: pnpm lint
+
+      - name: Test
+        run: pnpm test
+
+      - name: Build
+        run: pnpm build
+
+  deploy:
+    # Deploy the production stack from the IaC in .railway/railway.ts.
+    # Requires the RAILWAY_TOKEN (project-scoped) GitHub secret and an
+    # existing Railway project wired to this repo. Runs only after both test
+    # jobs pass on main.
+    needs: [python, typescript]
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    runs-on: ubuntu-latest
+    environment: MyTradePortal/Production
     steps:
       - uses: actions/checkout@v4
 
       - name: Set up Node
         uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version: "22"
           cache: "npm"
+          cache-dependency-path: .railway/package-lock.json
 
-      - name: Install dependencies
+      - name: Cache Railway CLI
+        uses: actions/cache@v4
+        with:
+          path: ~/.npm
+          key: railway-cli-${{ runner.os }}-${{ hashFiles('**/package.json') }}
+          restore-keys: |
+            railway-cli-${{ runner.os }}-
+
+      - name: Install Railway CLI
+        run: npm install -g @railway/cli
+
+      - name: Install IaC runner dependencies
+        working-directory: .railway
         run: npm ci
 
-      - name: Lint
-        run: npm run lint:ts
-
-      - name: Build PWA
-        run: npm run build --workspace=services/pwa
-
-      - name: Build chatbot widget
-        run: npm run build --workspace=services/chatbot-widget
+      - name: Apply Railway configuration
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+          RAILWAY_ENVIRONMENT: production
+          RAILWAY_IAC_TS_BIN: .railway/node_modules/.bin/railway-iac-ts
+        run: railway config apply --yes

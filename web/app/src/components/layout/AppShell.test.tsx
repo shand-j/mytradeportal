@@ -9,6 +9,8 @@ import { useAuthStore } from '@/stores/authStore';
 vi.mock('@/lib/api/hooks', () => ({
   useQuotes: () => ({ data: [], isLoading: false, error: null }),
   useInvoices: () => ({ data: [], isLoading: false, error: null }),
+  useFeatureFlags: () => ({ data: {}, isLoading: false, error: null }),
+  useSettings: () => ({ data: undefined, isLoading: false, error: null }),
 }));
 
 function Home() {

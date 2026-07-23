@@ -13,6 +13,7 @@ import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 
 const loginSchema = z.object({
+  tenantSlug: z.string().min(1, 'Business slug is required'),
   email: z.string().email('Enter a valid email'),
   password: z.string().min(1, 'Password is required'),
 });
@@ -31,6 +32,7 @@ export function Login() {
   } = useForm<LoginForm>({
     resolver: zodResolver(loginSchema),
     defaultValues: {
+      tenantSlug: 'demo',
       email: 'admin@demo.local',
       password: '',
     },
@@ -64,6 +66,23 @@ export function Login() {
         </CardHeader>
         <CardContent>
           <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="tenantSlug" className="text-[#1C1917]">
+                Business slug
+              </Label>
+              <Input
+                id="tenantSlug"
+                type="text"
+                autoComplete="organization"
+                {...register('tenantSlug')}
+                placeholder="demo"
+                className="border-[#E7E5E4]"
+              />
+              {errors.tenantSlug && (
+                <p className="text-xs text-[#DC2626]">{errors.tenantSlug.message}</p>
+              )}
+            </div>
+
             <div className="space-y-2">
               <Label htmlFor="email" className="text-[#1C1917]">
                 Email

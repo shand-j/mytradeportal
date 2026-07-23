@@ -35,9 +35,7 @@ async def _ensure_test_database(database_url: str) -> str:
     try:
         # Start each test run with a fresh database so migrations are applied
         # from scratch and schema always matches the migration history.
-        await conn.execute(
-            f"DROP DATABASE IF EXISTS {test_db_name} WITH (FORCE)"
-        )
+        await conn.execute(f"DROP DATABASE IF EXISTS {test_db_name} WITH (FORCE)")
         await conn.execute(f"CREATE DATABASE {test_db_name}")
     finally:
         await conn.close()
@@ -46,10 +44,21 @@ async def _ensure_test_database(database_url: str) -> str:
 
 def _run_alembic_migrations(database_url: str) -> None:
     """Apply all Alembic migrations to the given database."""
-    root_dir = Path(__file__).resolve().parents[3]
-    cfg = Config(str(root_dir / "alembic.ini"))
-    cfg.set_main_option("sqlalchemy.url", database_url)
-    command.upgrade(cfg, "head")
+    # env.py prefers the ``DATABASE_URL`` environment variable, so make sure it
+    # points at the freshly created test database instead of the default app DB.
+    import os
+
+    previous_database_url = os.environ.get("DATABASE_URL")
+    os.environ["DATABASE_URL"] = database_url
+    try:
+        root_dir = Path(__file__).resolve().parents[3]
+        cfg = Config(str(root_dir / "alembic.ini"))
+        command.upgrade(cfg, "head")
+    finally:
+        if previous_database_url is None:
+            os.environ.pop("DATABASE_URL", None)
+        else:
+            os.environ["DATABASE_URL"] = previous_database_url
 
 
 def _app_role_database_url(admin_url: str) -> str:
@@ -68,13 +77,28 @@ def _app_role_database_url(admin_url: str) -> str:
     return parsed._replace(netloc=new_netloc).geturl()
 
 
-@pytest_asyncio.fixture(loop_scope="session", scope="session")
+@pytest_asyncio.fixture(loop_scope="session", scope="session", autouse=True)
 async def test_database_url() -> str:
     url = await _ensure_test_database(settings.database_url)
     await asyncio.to_thread(_run_alembic_migrations, url)
     # Migrations create the ``mtp_app`` role; tests connect through it so RLS
     # policies are actually enforced.
-    return _app_role_database_url(url)
+    app_role_url = _app_role_database_url(url)
+    # Patch the module-level engine so tests that don't use the ``client``
+    # fixture still hit the migrated test database instead of the default app DB.
+    from app.database import engine as app_engine
+
+    await app_engine.dispose()
+    new_engine = create_async_engine(app_role_url, echo=False, poolclass=NullPool)
+    app_engine.pool = new_engine.pool
+    app_engine.url = new_engine.url
+    app_engine.dialect = new_engine.dialect
+    app_engine.sync_engine = new_engine.sync_engine
+    # Rebind the sessionmaker so get_db() uses the test DB too.
+    from app.database import AsyncSessionLocal
+
+    AsyncSessionLocal.configure(bind=new_engine)
+    return app_role_url
 
 
 @pytest_asyncio.fixture(loop_scope="function")
@@ -102,31 +126,29 @@ async def client(test_database_url: str) -> AsyncIterator[AsyncClient]:
     # Outer connection transaction is rolled back at the end of the test,
     # ensuring no data persists between tests.
     async with engine.connect() as conn, conn.begin() as trans:
-            # Open a savepoint so that FastAPI endpoints can call session.commit()
-            # without closing the connection-level transaction.
-            await conn.begin_nested()
+        # Open a savepoint so that FastAPI endpoints can call session.commit()
+        # without closing the connection-level transaction.
+        await conn.begin_nested()
 
-            session = AsyncSession(bind=conn, expire_on_commit=False)
+        session = AsyncSession(bind=conn, expire_on_commit=False)
 
-            async def override_get_db() -> AsyncIterator[AsyncSession]:
-                try:
-                    yield session
-                finally:
-                    # Return to a clean savepoint for the next request, but do
-                    # not close the underlying connection or outer transaction.
-                    if not session.in_transaction():
-                        await session.begin_nested()
+        async def override_get_db() -> AsyncIterator[AsyncSession]:
+            try:
+                yield session
+            finally:
+                # Return to a clean savepoint for the next request, but do
+                # not close the underlying connection or outer transaction.
+                if not session.in_transaction():
+                    await session.begin_nested()
 
-            app.dependency_overrides[get_db] = override_get_db
+        app.dependency_overrides[get_db] = override_get_db
 
-            async with AsyncClient(
-                transport=ASGITransport(app=app), base_url="http://test"
-            ) as c:
-                yield c
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
+            yield c
 
-            app.dependency_overrides.clear()
-            await session.close()
-            await trans.rollback()
+        app.dependency_overrides.clear()
+        await session.close()
+        await trans.rollback()
 
     await engine.dispose()
 

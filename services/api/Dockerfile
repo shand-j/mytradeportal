@@ -22,4 +22,6 @@ COPY services/api ./services/api
 EXPOSE 8000
 
 # Apply migrations, then serve. Railway injects $PORT; default to 8000 locally.
-CMD ["sh", "-c", "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000}"]
+# --proxy-headers lets uvicorn honour X-Forwarded-For from Railway's edge proxy
+# so slowapi sees real client IPs instead of the proxy's.
+CMD ["sh", "-c", "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000} --proxy-headers"]

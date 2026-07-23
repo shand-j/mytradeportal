@@ -13,7 +13,8 @@ pytestmark = pytest.mark.asyncio
 async def _create_tenant(client: AsyncClient, slug: str) -> dict[str, Any]:
     response = await client.post("/tenants", json={"slug": slug, "name": f"{slug} Ltd"})
     assert response.status_code == 201
-    return response.json()
+    data: dict[str, Any] = response.json()
+    return data
 
 
 async def _create_contact(client: AsyncClient, tenant_id: str, name: str) -> dict[str, Any]:
@@ -23,7 +24,8 @@ async def _create_contact(client: AsyncClient, tenant_id: str, name: str) -> dic
         json={"name": name, "email": f"{name.lower().replace(' ', '.')}@example.com"},
     )
     assert response.status_code == 201
-    return response.json()
+    data: dict[str, Any] = response.json()
+    return data
 
 
 async def _create_appointment(
@@ -44,14 +46,17 @@ async def _create_appointment(
         },
     )
     assert response.status_code == 201
-    return response.json()
+    data: dict[str, Any] = response.json()
+    return data
 
 
 async def test_update_appointment(client: AsyncClient) -> None:
     tenant = await _create_tenant(client, f"appt-{uuid4().hex[:8]}")
     contact = await _create_contact(client, tenant["id"], "Appt Updater")
     start = datetime.utcnow().replace(hour=10, minute=0, second=0, microsecond=0)
-    appt = await _create_appointment(client, tenant["id"], contact["id"], start, start + timedelta(hours=1))
+    appt = await _create_appointment(
+        client, tenant["id"], contact["id"], start, start + timedelta(hours=1)
+    )
 
     response = await client.patch(
         f"/appointments/{appt['id']}",
@@ -68,7 +73,9 @@ async def test_delete_appointment(client: AsyncClient) -> None:
     tenant = await _create_tenant(client, f"appt-{uuid4().hex[:8]}")
     contact = await _create_contact(client, tenant["id"], "Appt Deleter")
     start = datetime.utcnow().replace(hour=11, minute=0, second=0, microsecond=0)
-    appt = await _create_appointment(client, tenant["id"], contact["id"], start, start + timedelta(hours=1))
+    appt = await _create_appointment(
+        client, tenant["id"], contact["id"], start, start + timedelta(hours=1)
+    )
 
     response = await client.delete(
         f"/appointments/{appt['id']}",

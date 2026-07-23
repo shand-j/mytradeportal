@@ -47,10 +47,9 @@ class Settings(BaseSettings):
 
     # AI / RAG Quote Engine
     openai_api_key: str = Field(default="")
-    ollama_api_base: str = Field(default="http://localhost:11434")
-    embedding_model: str = Field(default="ollama/nomic-embed-text")
+    embedding_model: str = Field(default="text-embedding-3-small")
     embedding_dimensions: int | None = Field(default=None)
-    llm_model: str = Field(default="ollama/gpt-oss:latest")
+    llm_model: str = Field(default="gpt-4o-mini")
     llm_timeout_seconds: int = Field(default=60)
     qdrant_collection_name: str = Field(default="cost_items")
     qdrant_knowledge_collection_name: str = Field(default="quoting_knowledge")
@@ -71,6 +70,7 @@ class Settings(BaseSettings):
     # Auth
     auth_secret_key: str = Field(default="dev-auth-secret-key-change-in-production")
     auth_access_token_expire_minutes: int = Field(default=60 * 24 * 7)  # 1 week
+    auth_cookie_secure: bool = Field(default=True)
 
     # Tenancy
     default_tenant_slug: str = Field(default="demo")
@@ -83,6 +83,12 @@ class Settings(BaseSettings):
 
     # Setup / bootstrap token required to create the first tenant in production.
     setup_token: str = Field(default="")
+
+    # Railway feature flags (Signals). Project-scoped token + project id used
+    # to read the flag registry from Railway's public GraphQL API at runtime.
+    # Empty in local dev — flags then resolve to their (off) defaults.
+    railway_token: str = Field(default="")
+    railway_project_id: str = Field(default="")
 
     @field_validator("database_url")
     @classmethod

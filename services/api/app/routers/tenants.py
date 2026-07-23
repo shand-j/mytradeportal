@@ -11,8 +11,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.audit import Actions, write_audit_log
 from app.database import get_db
 from app.dependencies import ActiveUserDep, TenantDep
-from app.models import Tenant
-from app.schemas import TenantCreate, TenantRead, TenantUpdate
+from app.models import Tenant, User
+from app.rls import set_tenant_in_session
+from app.schemas import TenantBootstrapRead, TenantCreate, TenantRead, TenantUpdate, UserRead
+from app.security import get_password_hash
 
 router = APIRouter(prefix="/tenants", tags=["Tenants"])
 DbDep = Annotated[AsyncSession, Depends(get_db)]
@@ -53,11 +55,15 @@ async def create_tenant(
     data: TenantCreate,
     db: DbDep,
     x_setup_token: Annotated[str | None, Header(alias="X-Setup-Token")] = None,
-) -> TenantRead:
+) -> TenantBootstrapRead:
     """Create a new tenant (electrical business).
 
     Requires the ``X-Setup-Token`` header in production. This endpoint is
     intended for bootstrap and the super-admin onboarding flow only.
+
+    When ``admin_email``/``admin_password``/``admin_name`` are provided, the
+    tenant's first admin user is created atomically in the same transaction
+    so a fresh tenant is immediately able to log in.
     """
     _require_setup_token(x_setup_token)
     existing = await db.execute(select(Tenant).where(Tenant.slug == data.slug))
@@ -66,11 +72,44 @@ async def create_tenant(
             status_code=status.HTTP_409_CONFLICT,
             detail="Tenant slug already exists",
         )
-    tenant = Tenant(**data.model_dump())
+    tenant = Tenant(slug=data.slug, name=data.name)
     db.add(tenant)
+    await db.flush()
+
+    admin_user: User | None = None
+    if data.admin_email and data.admin_password and data.admin_name:
+        # The users table is tenant-scoped under RLS; declare which tenant
+        # this session operates on before inserting the first user.
+        await set_tenant_in_session(db, tenant.id)
+        admin_user = User(
+            tenant_id=tenant.id,
+            email=data.admin_email,
+            full_name=data.admin_name,
+            role="admin",
+            password_hash=get_password_hash(data.admin_password),
+            is_active=True,
+        )
+        db.add(admin_user)
+        await db.flush()
+
+    await write_audit_log(
+        db,
+        tenant_id=tenant.id,
+        actor=admin_user,
+        action=Actions.TENANT_CREATED,
+        entity_type="tenant",
+        entity_id=tenant.id,
+        payload={
+            "slug": tenant.slug,
+            "admin_email": admin_user.email if admin_user is not None else None,
+        },
+    )
     await db.commit()
     await db.refresh(tenant)
-    return TenantRead.model_validate(tenant)
+    result = TenantBootstrapRead.model_validate(tenant)
+    if admin_user is not None:
+        result.admin_user = UserRead.model_validate(admin_user)
+    return result
 
 
 @router.get("/me")

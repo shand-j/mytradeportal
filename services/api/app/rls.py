@@ -157,4 +157,3 @@ async def clear_rls_session(session: AsyncSession) -> None:
     """Reset both RLS session variables. Useful for tests."""
     await session.execute(text("SELECT set_config('app.current_tenant', '', false)"))
     await session.execute(text("SELECT set_config('app.bypass_rls', '', false)"))
-

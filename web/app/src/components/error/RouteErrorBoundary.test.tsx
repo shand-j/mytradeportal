@@ -1,5 +1,4 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { useState } from 'react';
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 
@@ -42,7 +41,7 @@ describe('RouteErrorBoundary', () => {
     const user = userEvent.setup();
 
     function ToggleBomb() {
-      const [throwError, setThrowError] = useState(true);
+      const throwError = true;
       return (
         <RouteErrorBoundary>
           {throwError ? (

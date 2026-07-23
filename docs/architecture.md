@@ -74,5 +74,5 @@ Core entities are managed by FastAPI/SQLAlchemy and mirrored read-only in Django
 | `Communication` | Logged email/SMS/call/chat |
 | `AuditLog` | Immutable audit trail |
 
-The vector search schema lives in Qdrant in the `cost_items` collection (768 dims
-with the default Ollama embedding model).
+The vector search schema lives in Qdrant in the `cost_items` collection (1536
+dims with the default `text-embedding-3-small` embedding model).

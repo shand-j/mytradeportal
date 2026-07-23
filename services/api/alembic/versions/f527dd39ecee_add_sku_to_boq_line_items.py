@@ -5,6 +5,7 @@ Revises: add_boq_supplier_attribution
 Create Date: 2026-06-22 22:44:12.472708
 
 """
+
 from collections.abc import Sequence
 
 import sqlalchemy as sa

@@ -25,14 +25,17 @@ class SiteSurvey(BaseModel):
 
     model_config = ConfigDict(extra="allow")
 
-    property_type: Literal[
-        "detached",
-        "semi-detached",
-        "terraced",
-        "flat",
-        "bungalow",
-        "maisonette",
-    ] | None = None
+    property_type: (
+        Literal[
+            "detached",
+            "semi-detached",
+            "terraced",
+            "flat",
+            "bungalow",
+            "maisonette",
+        ]
+        | None
+    ) = None
     property_age: str | None = None
     bedroom_count: int | None = None
     room_count: int | None = None
@@ -125,7 +128,10 @@ _Question = tuple[str, str]  # (field, question text)
 
 _REQUIRED_FIELDS: dict[str, list[_Question]] = {
     "rewire": [
-        ("property_type", "What type of property is this (detached, semi, terraced, flat, bungalow)?"),
+        (
+            "property_type",
+            "What type of property is this (detached, semi, terraced, flat, bungalow)?",
+        ),
         ("bedroom_count", "How many bedrooms are there?"),
         ("consumer_unit_age", "How old is the existing consumer unit / fuse board?"),
         ("earthing_system", "Do you know the earthing system (PME/TN-C-S, TN-S or TT)?"),
@@ -136,12 +142,18 @@ _REQUIRED_FIELDS: dict[str, list[_Question]] = {
         ("consumer_unit_age", "How old is the existing consumer unit / fuse board?"),
         ("consumer_unit_location", "Where is the consumer unit located?"),
         ("earthing_system", "Do you know the earthing system (PME/TN-C-S, TN-S or TT)?"),
-        ("preferred_spec", "Do you want a dual-RCD board, an RCBO board, or a premium branded board?"),
+        (
+            "preferred_spec",
+            "Do you want a dual-RCD board, an RCBO board, or a premium branded board?",
+        ),
     ],
     "ev_charger": [
         ("property_type", "What type of property is this?"),
         ("parking", "Where will the vehicle be parked (driveway, garage, on-street)?"),
-        ("consumer_unit_location", "Where is the consumer unit in relation to the parking location?"),
+        (
+            "consumer_unit_location",
+            "Where is the consumer unit in relation to the parking location?",
+        ),
         ("earthing_system", "Do you know the earthing system?"),
     ],
     "extension": [

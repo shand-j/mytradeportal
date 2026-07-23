@@ -5,6 +5,7 @@ Revises: f88f49db60e7
 Create Date: 2026-06-22 15:37:18.335696
 
 """
+
 from collections.abc import Sequence
 from uuid import uuid4
 
@@ -13,8 +14,8 @@ from alembic import op
 from sqlalchemy.dialects import postgresql
 
 # revision identifiers, used by Alembic.
-revision: str = '75e833e344cf'
-down_revision: str | Sequence[str] | None = 'f88f49db60e7'
+revision: str = "75e833e344cf"
+down_revision: str | Sequence[str] | None = "f88f49db60e7"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
@@ -157,12 +158,8 @@ def upgrade() -> None:
 
 def downgrade() -> None:
     """Downgrade schema."""
-    op.drop_index(
-        op.f("ix_quote_line_items_boq_line_item_id"), table_name="quote_line_items"
-    )
-    op.drop_index(
-        op.f("ix_quote_line_items_cost_item_id"), table_name="quote_line_items"
-    )
+    op.drop_index(op.f("ix_quote_line_items_boq_line_item_id"), table_name="quote_line_items")
+    op.drop_index(op.f("ix_quote_line_items_cost_item_id"), table_name="quote_line_items")
     op.drop_column("quote_line_items", "boq_line_item_id")
     op.drop_column("quote_line_items", "cost_item_id")
     op.drop_table("boq_line_items")

@@ -7,11 +7,15 @@ accidentally drops an audit call is caught.
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 import pytest
 from app.models import AuditLog
-from httpx import AsyncClient
 from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
+
+if TYPE_CHECKING:
+    from httpx import AsyncClient
+    from sqlalchemy.ext.asyncio import AsyncSession
 
 
 async def _audit_actions_for_entity(
@@ -36,9 +40,7 @@ async def test_contact_lifecycle_writes_audit_log(
     assert create.status_code == 201, create.text
     contact_id = create.json()["id"]
 
-    update = await admin_client.patch(
-        f"/contacts/{contact_id}", json={"phone": "07123456789"}
-    )
+    update = await admin_client.patch(f"/contacts/{contact_id}", json={"phone": "07123456789"})
     assert update.status_code == 200, update.text
 
     delete = await admin_client.delete(f"/contacts/{contact_id}")
@@ -103,9 +105,7 @@ async def test_quote_lifecycle_writes_audit_log(
     send = await admin_client.post(f"/quotes/{quote_id}/send")
     assert send.status_code == 200, send.text
 
-    approve = await admin_client.post(
-        f"/quotes/{quote_id}/approve", json={"approved": True}
-    )
+    approve = await admin_client.post(f"/quotes/{quote_id}/approve", json={"approved": True})
     assert approve.status_code == 200, approve.text
 
     delete = await admin_client.delete(f"/quotes/{quote_id}")
@@ -134,9 +134,7 @@ async def test_invoice_paid_writes_audit_log_with_total(
         "/invoices",
         json={
             "contact_id": contact_id,
-            "line_items": [
-                {"description": "Callout", "quantity": 1, "unit_price": 75.0}
-            ],
+            "line_items": [{"description": "Callout", "quantity": 1, "unit_price": 75.0}],
         },
     )
     assert create.status_code == 201, create.text
@@ -161,9 +159,7 @@ async def test_invoice_paid_writes_audit_log_with_total(
 
 
 @pytest.mark.asyncio
-async def test_audit_logs_are_tenant_scoped(
-    admin_client: AsyncClient, db: AsyncSession
-) -> None:
+async def test_audit_logs_are_tenant_scoped(admin_client: AsyncClient, db: AsyncSession) -> None:
     """Audit rows from tenant A must not be visible to tenant B via the API."""
     contact = await admin_client.post(
         "/contacts", json={"name": "Scoped Customer", "email": "scoped@test.local"}
@@ -177,9 +173,7 @@ async def test_audit_logs_are_tenant_scoped(
 
     tenant_a = UUID(admin_client.headers["X-Tenant-ID"])
     await set_tenant_in_session(db, tenant_a)
-    rows_a = (
-        await db.execute(select(AuditLog).where(AuditLog.action == "contact.created"))
-    ).all()
+    rows_a = (await db.execute(select(AuditLog).where(AuditLog.action == "contact.created"))).all()
     assert len(rows_a) >= 1
 
     # Switch session to a different tenant — must see zero audit rows for
@@ -188,7 +182,5 @@ async def test_audit_logs_are_tenant_scoped(
 
     other_tenant = uuid4()  # unrelated id — RLS just compares text equality
     await set_tenant_in_session(db, other_tenant)
-    rows_b = (
-        await db.execute(select(AuditLog).where(AuditLog.action == "contact.created"))
-    ).all()
+    rows_b = (await db.execute(select(AuditLog).where(AuditLog.action == "contact.created"))).all()
     assert rows_b == [], "RLS leaked audit rows from another tenant"

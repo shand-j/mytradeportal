@@ -8,7 +8,7 @@ env = environ.Env(
     DEBUG=(bool, True),
     SECRET_KEY=(str, "dev-secret-key-change-in-production"),
     DATABASE_URL=(str, "postgresql://mtp:mtp@postgres:5432/mtp"),
-    ALLOWED_HOSTS=(list, ["*"]),
+    ALLOWED_HOSTS=(list, ["localhost", "127.0.0.1"]),
     CSRF_TRUSTED_ORIGINS=(list, []),
 )
 
@@ -30,6 +30,7 @@ INSTALLED_APPS = [
 
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
+    "whitenoise.middleware.WhiteNoiseMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
@@ -42,6 +43,9 @@ ROOT_URLCONF = "admin_project.urls"
 WSGI_APPLICATION = "admin_project.wsgi.application"
 
 DATABASES = {"default": env.db()}
+# The API uses asyncpg; Django expects the synchronous psycopg2 backend.
+if DATABASES["default"]["ENGINE"] == "postgresql+asyncpg":
+    DATABASES["default"]["ENGINE"] = "django.db.backends.postgresql"
 
 TEMPLATES = [
     {
@@ -65,6 +69,7 @@ USE_I18N = True
 USE_TZ = True
 
 STATIC_URL = "static/"
+STATIC_ROOT = BASE_DIR / "staticfiles"
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
 CSRF_TRUSTED_ORIGINS = [

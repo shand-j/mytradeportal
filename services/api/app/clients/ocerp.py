@@ -148,25 +148,25 @@ def build_quote_from_ocerp_response(
     # detailed T&M split lives only in the BoQ.
     quote.line_items = []
     if response.customer_summary_lines:
-        for item in response.customer_summary_lines:
+        for summary in response.customer_summary_lines:
             quote.line_items.append(
                 QuoteLineItem(
                     tenant_id=quote.tenant_id,
-                    description=item.description,
+                    description=summary.description,
                     quantity=1,
-                    unit_price=item.total,
-                    total=item.total,
+                    unit_price=summary.total,
+                    total=summary.total,
                 )
             )
     else:
-        for item in response.line_items:
+        for boq_item in response.line_items:
             quote.line_items.append(
                 QuoteLineItem(
                     tenant_id=quote.tenant_id,
-                    description=item.description,
-                    quantity=item.quantity,
-                    unit_price=item.unit_price,
-                    total=item.total,
+                    description=boq_item.description,
+                    quantity=boq_item.quantity,
+                    unit_price=boq_item.unit_price,
+                    total=boq_item.total,
                 )
             )
 

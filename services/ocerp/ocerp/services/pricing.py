@@ -69,9 +69,9 @@ def price_material_item(resolved: ResolvedCostItem, config: PricingConfig) -> Bo
 
     min_margin = getattr(config, "min_margin_percent", Decimal("0"))
     if min_margin > 0:
-        floor = (
-            unit_price_ex_markup * (Decimal("1") + min_margin / Decimal("100"))
-        ).quantize(Decimal("0.0001"))
+        floor = (unit_price_ex_markup * (Decimal("1") + min_margin / Decimal("100"))).quantize(
+            Decimal("0.0001")
+        )
         if material_cost < floor:
             raise PriceFloorViolationError(
                 f"Cost item {cost_item.get('code')!r} priced at {material_cost} "
@@ -86,9 +86,7 @@ def price_material_item(resolved: ResolvedCostItem, config: PricingConfig) -> Bo
     # For dedicated circuit labels, append the requirement note so the
     # description carries context (e.g. "loft circuit") without affecting
     # all line items.
-    if resolved.requirement.notes and resolved.requirement.concept in {
-        "loft_rcbo", "garage_rcbo"
-    }:
+    if resolved.requirement.notes and resolved.requirement.concept in {"loft_rcbo", "garage_rcbo"}:
         description = f"{description} ({resolved.requirement.notes})"
 
     return BoQLineItem(
@@ -106,7 +104,9 @@ def price_material_item(resolved: ResolvedCostItem, config: PricingConfig) -> Bo
         unit_price=unit_price,
         total=total,
         category=str(cost_item.get("category")),
-        supplier=str(cost_item.get("supplier") or cost_item.get("source") or resolved.resolution_source),
+        supplier=str(
+            cost_item.get("supplier") or cost_item.get("source") or resolved.resolution_source
+        ),
         brand=str(cost_item.get("brand")) if cost_item.get("brand") else None,
         sku=str(cost_item.get("sku")) if cost_item.get("sku") else None,
         product_url=str(cost_item.get("product_url")) if cost_item.get("product_url") else None,

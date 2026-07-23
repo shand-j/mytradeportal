@@ -1,12 +1,14 @@
 import { test, expect } from '@playwright/test';
 
+test.skip(!process.env.RUN_AI_E2E, 'AI E2E tests skipped by default; set RUN_AI_E2E=1 to run');
+
 test.setTimeout(240000);
 
 test('generate a BoQ-driven AI quote and save artifacts', async ({ page }) => {
   await page.goto('/login');
 
-  await page.getByLabel(/email/i).fill('admin@demo.local');
-  await page.getByLabel(/password/i).fill('password123');
+  await page.getByLabel(/email/i).fill('admin@demo.example.com');
+  await page.getByLabel(/password/i).fill('e2e-password-123');
   await page.getByRole('button', { name: /sign in/i }).click();
 
   await page.waitForURL('**/');

@@ -42,8 +42,12 @@ RUN pnpm build
 FROM nginx:alpine AS production
 
 COPY --from=production-build /app/dist /usr/share/nginx/html
-COPY nginx.conf /etc/nginx/conf.d/default.conf
+# The nginx image entrypoint runs envsubst over /etc/nginx/templates/*.template
+# into /etc/nginx/conf.d/, so ${PORT} in nginx.conf is resolved at container
+# start. Railway injects $PORT; default to 80 locally.
+COPY nginx.conf /etc/nginx/templates/default.conf.template
 
+ENV PORT=80
 EXPOSE 80
 
 CMD ["nginx", "-g", "daemon off;"]

@@ -17,9 +17,13 @@ existing integration tests are not perturbed; a dedicated test in
 
 from __future__ import annotations
 
-from fastapi import Request
+from typing import TYPE_CHECKING
+
 from slowapi import Limiter
 from slowapi.util import get_remote_address
+
+if TYPE_CHECKING:
+    from fastapi import Request
 
 
 def _tenant_key(request: Request) -> str:

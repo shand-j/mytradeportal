@@ -3,7 +3,7 @@ import { screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 
 import { Reviews } from './Reviews';
-import { useReviews, useReviewStats, useCreateReview } from '@/lib/api/hooks';
+import { useReviews, useCreateReview } from '@/lib/api/hooks';
 import { renderPage, resetStores } from '@/test/test-utils';
 import { mockReviews } from '@/lib/mock/data/reviews';
 import { mockReviewStats } from '@/test/fixtures';

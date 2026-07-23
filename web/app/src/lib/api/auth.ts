@@ -4,6 +4,9 @@ import { api } from './client';
 export interface LoginCredentials {
   email: string;
   password: string;
+  // Sent as tenant_slug (the API client decamelizes keys); lets login resolve
+  // the tenant explicitly instead of relying on the Host subdomain.
+  tenantSlug?: string;
 }
 
 export const authService = {

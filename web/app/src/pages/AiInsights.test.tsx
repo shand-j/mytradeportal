@@ -1,13 +1,19 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { screen } from '@testing-library/react';
 
 import { renderWithProviders } from '@/test/test-utils';
 import { AiInsights } from './AiInsights';
 
 const mockUseAiInsights = vi.fn();
+const mockUseFeatureFlags = vi.fn(() => ({
+  data: { voiceAiInsights: true, demandForecasting: true, externalIntegrations: false },
+  isLoading: false,
+  error: null,
+}));
 
 vi.mock('@/lib/api/hooks', () => ({
-  useAiInsights: (...args: any[]) => mockUseAiInsights(...args),
+  useAiInsights: () => mockUseAiInsights(),
+  useFeatureFlags: () => mockUseFeatureFlags(),
 }));
 
 const mockData = {
@@ -37,6 +43,14 @@ const mockData = {
 };
 
 describe('AiInsights', () => {
+  beforeEach(() => {
+    mockUseFeatureFlags.mockReturnValue({
+      data: { voiceAiInsights: true, demandForecasting: true, externalIntegrations: false },
+      isLoading: false,
+      error: null,
+    });
+  });
+
   it('renders a loading skeleton', () => {
     mockUseAiInsights.mockReturnValue({ data: undefined, isLoading: true, error: null });
     renderWithProviders(<AiInsights />);
@@ -59,5 +73,14 @@ describe('AiInsights', () => {
     expect(screen.getByText('68%')).toBeInTheDocument();
     expect(screen.getByText('86')).toBeInTheDocument();
     expect(screen.getByText(/demand is expected to rise/i)).toBeInTheDocument();
+  });
+
+  it('hides voice analytics and demand forecast when their feature flags are off', () => {
+    mockUseFeatureFlags.mockReturnValue({ data: {}, isLoading: false, error: null });
+    mockUseAiInsights.mockReturnValue({ data: mockData, isLoading: false, error: null });
+    renderWithProviders(<AiInsights />);
+    expect(screen.getByText('AI Quote Performance')).toBeInTheDocument();
+    expect(screen.queryByText('Voice Agent Activity')).not.toBeInTheDocument();
+    expect(screen.queryByText('Demand Forecast')).not.toBeInTheDocument();
   });
 });

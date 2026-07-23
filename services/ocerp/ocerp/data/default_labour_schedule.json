@@ -1,0 +1,48 @@
+{
+  "rewire": {
+    "1_bed_flat": {
+      "electrician_days": "4",
+      "mate_days": "2"
+    },
+    "2_bed_house": {
+      "electrician_days": "5",
+      "mate_days": "2"
+    },
+    "3_bed_house": {
+      "electrician_days": "7",
+      "mate_days": "3"
+    },
+    "4_bed_house": {
+      "electrician_days": "9",
+      "mate_days": "4"
+    },
+    "5_bed_house": {
+      "electrician_days": "11",
+      "mate_days": "4"
+    }
+  },
+  "consumer_unit_upgrade": {
+    "electrician_days": "1",
+    "mate_days": "0"
+  },
+  "ev_charger": {
+    "electrician_hours": "8"
+  },
+  "extension": {
+    "electrician_days": "2",
+    "mate_days": "1"
+  },
+  "garage": {
+    "electrician_days": "1",
+    "mate_days": "0"
+  },
+  "small_job_default": {
+    "electrician_hours": "4"
+  },
+  "eicr": {
+    "electrician_days": "1"
+  },
+  "fault_finding": {
+    "electrician_hours": "1"
+  }
+}

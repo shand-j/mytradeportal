@@ -4,7 +4,7 @@
 
 - [Docker](https://docs.docker.com/get-docker/) + Docker Compose
 - Python 3.11+ (only if you want to run scripts outside the container)
-- (Optional) [Ollama](https://ollama.com/) for local AI embeddings and chat
+- An [OpenAI](https://platform.openai.com/) API key (required by the AI quote engine)
 
 ## Start the local stack
 
@@ -32,49 +32,51 @@ In development the API creates tables on startup. For explicit control:
 PYTHONPATH=services/api alembic upgrade head
 ```
 
-## Configure AI (Ollama)
+## Configure AI (OpenAI)
 
-The default models are local Ollama models:
+The AI quote engine uses OpenAI via LiteLLM in every environment, local
+development included:
 
-- Embeddings: `ollama/nomic-embed-text`
-- Chat: `ollama/gpt-oss:latest`
+- Chat: `gpt-4o-mini` (`LLM_MODEL`)
+- Embeddings: `text-embedding-3-small` (`EMBEDDING_MODEL`, 1536 dimensions)
 
-1. Install and start Ollama so it listens on all interfaces (required for Docker):
+Set your key in a `.env` file in the project root (or export it) before
+starting the stack:
 
-   ```bash
-   OLLAMA_HOST=0.0.0.0:11434 ollama serve
-   ```
+```bash
+OPENAI_API_KEY=sk-...
+```
 
-2. Pull the models:
-
-   ```bash
-   ollama pull nomic-embed-text
-   ollama pull gpt-oss:latest
-   ```
-
-The API container already points to `http://host.docker.internal:11434` via the
-`OLLAMA_API_BASE` variable in `docker-compose.yml`.
-
-To use OpenAI instead, set `OPENAI_API_KEY`, `EMBEDDING_MODEL` and `LLM_MODEL` in
-a `.env` file or export them before running `docker compose up`.
+`docker compose up` injects it into the API, OCERP and data-pipeline
+containers. AI quote generation fails until a valid key is present.
 
 ## Seed data
 
-Seed the built-in UK electrical cost items and generate embeddings:
+Seed a local-dev tenant and admin user (credentials come from environment
+variables — there are no defaults):
 
 ```bash
 cd services/api
-python -m app.seed_cost_items
+SEED_ADMIN_EMAIL=you@example.com SEED_ADMIN_PASSWORD=<choose-a-password> \
+  python -m app.seed_admin_user
+```
+
+Load the curated UK electrical cost items and generate embeddings:
+
+```bash
+cd services/data-pipeline
+python -m data_pipeline.load_curated_seed
 ```
 
 Ingest the larger DDC CWICR UK electrical cost database:
 
 ```bash
+cd services/api
 python -m app.ingest_ddc_uk
 ```
 
-> These scripts need the database and Ollama to be reachable. The first run may
-> take a few minutes while descriptions are embedded.
+> These scripts need the database and a valid `OPENAI_API_KEY` to be reachable.
+> The first run may take a few minutes while descriptions are embedded.
 
 ## Verify the API
 

@@ -382,8 +382,8 @@ export interface VoiceAnalytics {
 
 export interface AiInsightsData {
   aiQuotePerformance: AiQuotePerformance;
-  voiceAnalytics: VoiceAnalytics;
-  demandForecast: DemandForecast;
+  voiceAnalytics?: VoiceAnalytics;
+  demandForecast?: DemandForecast;
 }
 
 export interface ReviewPlatformBreakdown {

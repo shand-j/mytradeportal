@@ -1,8 +1,8 @@
 """Quote endpoints."""
 
 import asyncio
-from decimal import Decimal
 from datetime import datetime, timedelta
+from decimal import Decimal
 from io import BytesIO
 from typing import Annotated, Any
 from uuid import UUID
@@ -27,8 +27,8 @@ from app.rag.validation import build_quote_from_validation
 from app.rls import set_tenant_in_session
 from app.routers.invoices import _get_invoice, generate_invoice_number
 from app.schemas import (
-    BillOfQuantitiesUpdate,
     BillOfQuantitiesRead,
+    BillOfQuantitiesUpdate,
     InvoiceRead,
     QuoteApprove,
     QuoteConvertToInvoice,
@@ -329,19 +329,17 @@ async def delete_quote(
     await db.commit()
 
 
-@router.post("/generate", status_code=status.HTTP_201_CREATED)
-@limiter.limit("10/minute", key_func=tenant_key)
-async def generate_quote(
-    request: Request,
+async def _generate_quote_impl(
     data: QuoteGenerateRequest,
     tenant: TenantDep,
     current_user: CurrentUserDep,
     db: DbDep,
 ) -> QuoteRead:
-    """Generate a draft quote from a natural-language job description.
+    """Shared implementation for the quote-generation routes.
 
-    Rate limited to 10 generations per minute per tenant — LLM + OCERP calls
-    are expensive and a runaway client can otherwise exhaust the budget.
+    Kept decorator-free: slowapi fires on internal calls too, so routes must
+    wrap this rather than calling each other, or one request debits the
+    tenant's rate-limit bucket twice.
     """
     await set_tenant_in_session(db, tenant.id)
 
@@ -419,7 +417,25 @@ async def generate_quote(
     return QuoteRead.model_validate(await _get_quote(db, tenant.id, quote.id))
 
 
+@router.post("/generate", status_code=status.HTTP_201_CREATED)
+@limiter.limit("10/minute", key_func=tenant_key)
+async def generate_quote(
+    request: Request,
+    data: QuoteGenerateRequest,
+    tenant: TenantDep,
+    current_user: CurrentUserDep,
+    db: DbDep,
+) -> QuoteRead:
+    """Generate a draft quote from a natural-language job description.
+
+    Rate limited to 10 generations per minute per tenant — LLM + OCERP calls
+    are expensive and a runaway client can otherwise exhaust the budget.
+    """
+    return await _generate_quote_impl(data, tenant, current_user, db)
+
+
 @router.post("/generate-boq", status_code=status.HTTP_201_CREATED)
+@limiter.limit("10/minute", key_func=tenant_key)
 async def generate_boq_quote(
     request: Request,
     data: QuoteGenerateRequest,
@@ -429,12 +445,12 @@ async def generate_boq_quote(
 ) -> QuoteRead:
     """Generate a draft quote using the OpenConstructionERP BoQ engine.
 
-    Rate limiting is inherited from :func:`generate_quote` which this
-    delegates to; do not decorate this wrapper or the bucket is debited
-    twice for a single request.
+    Rate limited to 10 generations per minute per tenant, matching
+    ``/quotes/generate`` — the BoQ path always calls the OCERP engine, which
+    is the most expensive generation route.
     """
     data.use_ocerp = True
-    return await generate_quote(request, data, tenant, current_user, db)
+    return await _generate_quote_impl(data, tenant, current_user, db)
 
 
 @router.get("/{quote_id}/boq")
@@ -589,7 +605,9 @@ async def regenerate_quote_boq(
 
     build_quote_from_ocerp_response(quote, boq_response)
 
-    regenerated_boq_total = quote.bill_of_quantities.total if quote.bill_of_quantities else Decimal("0.00")
+    regenerated_boq_total = (
+        quote.bill_of_quantities.total if quote.bill_of_quantities else Decimal("0.00")
+    )
     margin_delta = (previous_customer_total - regenerated_boq_total).quantize(MONEY_QUANTIZE)
     if quote.bill_of_quantities is not None:
         if margin_delta > 0:
@@ -757,39 +775,39 @@ def _render_quote_pdf(snapshot: dict[str, Any]) -> bytes:
 
     # Header
     pdf.set_font("Helvetica", "B", 16)
-    pdf.cell(0, 10, snapshot["tenant_name"], ln=True)
+    pdf.cell(0, 10, snapshot["tenant_name"], ln=True)  # type: ignore[arg-type]
     pdf.set_font("Helvetica", "", 12)
-    pdf.cell(0, 10, "Quote", ln=True)
+    pdf.cell(0, 10, "Quote", ln=True)  # type: ignore[arg-type]
     pdf.line(10, pdf.get_y(), 200, pdf.get_y())
     pdf.ln(5)
 
     # Customer details
     contact = snapshot["contact"]
     pdf.set_font("Helvetica", "B", 11)
-    pdf.cell(0, 8, "Customer", ln=True)
+    pdf.cell(0, 8, "Customer", ln=True)  # type: ignore[arg-type]
     pdf.set_font("Helvetica", "", 11)
-    pdf.cell(0, 8, contact["name"], ln=True)
+    pdf.cell(0, 8, contact["name"], ln=True)  # type: ignore[arg-type]
     if contact["email"]:
-        pdf.cell(0, 8, contact["email"], ln=True)
+        pdf.cell(0, 8, contact["email"], ln=True)  # type: ignore[arg-type]
     if contact["phone"]:
-        pdf.cell(0, 8, contact["phone"], ln=True)
+        pdf.cell(0, 8, contact["phone"], ln=True)  # type: ignore[arg-type]
     pdf.ln(5)
 
     # Quote summary
     pdf.set_font("Helvetica", "B", 12)
-    pdf.cell(0, 10, snapshot["title"], ln=True)
+    pdf.cell(0, 10, snapshot["title"], ln=True)  # type: ignore[arg-type]
     pdf.set_font("Helvetica", "", 10)
-    pdf.cell(0, 6, f"Date: {snapshot['created_at'].strftime('%d/%m/%Y')}", ln=True)
-    pdf.cell(0, 6, f"Status: {snapshot['status'].upper()}", ln=True)
+    pdf.cell(0, 6, f"Date: {snapshot['created_at'].strftime('%d/%m/%Y')}", ln=True)  # type: ignore[arg-type]
+    pdf.cell(0, 6, f"Status: {snapshot['status'].upper()}", ln=True)  # type: ignore[arg-type]
     pdf.ln(5)
 
     # Line items table
     pdf.set_fill_color(245, 244, 240)
     pdf.set_font("Helvetica", "B", 10)
-    pdf.cell(100, 8, "Item", 1, 0, "L", True)
-    pdf.cell(25, 8, "Qty", 1, 0, "C", True)
-    pdf.cell(30, 8, "Unit Price", 1, 0, "R", True)
-    pdf.cell(30, 8, "Total", 1, 1, "R", True)
+    pdf.cell(100, 8, "Item", 1, 0, "L", True)  # type: ignore[arg-type]
+    pdf.cell(25, 8, "Qty", 1, 0, "C", True)  # type: ignore[arg-type]
+    pdf.cell(30, 8, "Unit Price", 1, 0, "R", True)  # type: ignore[arg-type]
+    pdf.cell(30, 8, "Total", 1, 1, "R", True)  # type: ignore[arg-type]
 
     pdf.set_font("Helvetica", "", 10)
     for item in snapshot["line_items"]:
@@ -797,27 +815,22 @@ def _render_quote_pdf(snapshot: dict[str, Any]) -> bytes:
         pdf.multi_cell(100, 8, item["description"], border=1, align="L")
         row_h = pdf.get_y() - start_y
         pdf.set_xy(110, start_y)
-        pdf.cell(25, row_h, str(item["quantity"]), 1, 0, "C")
+        pdf.cell(25, row_h, str(item["quantity"]), 1, 0, "C")  # type: ignore[arg-type]
         pdf.set_xy(135, start_y)
-        pdf.cell(30, row_h, f"£{item['unit_price']:,.2f}", 1, 0, "R")
+        pdf.cell(30, row_h, f"£{item['unit_price']:,.2f}", 1, 0, "R")  # type: ignore[arg-type]
         pdf.set_xy(165, start_y)
-        pdf.cell(30, row_h, f"£{item['total']:,.2f}", 1, 1, "R")
+        pdf.cell(30, row_h, f"£{item['total']:,.2f}", 1, 1, "R")  # type: ignore[arg-type]
 
     pdf.ln(5)
 
     # Totals
     pdf.set_font("Helvetica", "B", 11)
-    pdf.cell(0, 8, f"Subtotal: £{snapshot['subtotal']:,.2f}", ln=True, align="R")
-    pdf.cell(
-        0,
-        8,
-        f"VAT ({snapshot['vat_rate'] * 100:.0f}%): £{snapshot['vat_amount']:,.2f}",
-        ln=True,
-        align="R",
-    )
-    pdf.cell(0, 8, f"Total: £{snapshot['total']:,.2f}", ln=True, align="R")
+    pdf.cell(0, 8, f"Subtotal: £{snapshot['subtotal']:,.2f}", ln=True, align="R")  # type: ignore[arg-type]
+    vat_label = f"VAT ({snapshot['vat_rate'] * 100:.0f}%): £{snapshot['vat_amount']:,.2f}"
+    pdf.cell(0, 8, vat_label, ln=True, align="R")  # type: ignore[arg-type]
+    pdf.cell(0, 8, f"Total: £{snapshot['total']:,.2f}", ln=True, align="R")  # type: ignore[arg-type]
 
-    output = pdf.output(dest="S")
+    output = pdf.output(dest="S")  # type: ignore[call-overload]
     # fpdf2 returns bytearray; older fpdf returns str. Normalise to bytes.
     if isinstance(output, str):
         return output.encode("latin-1")

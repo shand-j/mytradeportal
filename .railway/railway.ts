@@ -6,9 +6,9 @@
  *   railway config plan    # preview the diff against the linked environment
  *   railway config apply   # apply after confirmation
  *
- * Layout (10 resources):
+ * Layout (9 resources):
  *   postgres + redis      — native Railway database plugins
- *   qdrant, minio, ollama — Docker-image services with mounted volumes
+ *   qdrant, minio         — Docker-image services with mounted volumes
  *   api, ocerp, web, admin, data-pipeline — built from this GitHub repo
  *
  * Things this file CANNOT do (Railway IaC beta limitations):
@@ -16,7 +16,6 @@
  *     in the dashboard for: api, web, admin, minio (target port 9000). Until
  *     then the `*_RAILWAY_PUBLIC_DOMAIN` references below stay empty.
  *   - Register custom domains (dashboard only, then `railway config pull`).
- *   - Pull Ollama models (exec into the ollama service once, see docs/deployment.md).
  *
  * Secrets use preserve(): they are set once in the dashboard and are never
  * overwritten by applies.
@@ -37,11 +36,11 @@ import {
 // GitHub repo deployed via the Railway GitHub App.
 const GITHUB_REPO = process.env.MTP_GITHUB_REPO ?? "shand-j/mytradeportal";
 
-const OLLAMA_BASE = "http://${{ollama.RAILWAY_PRIVATE_DOMAIN}}:11434";
 const QDRANT_URL = "http://${{qdrant.RAILWAY_PRIVATE_DOMAIN}}:6333";
 const OCERP_URL = "http://${{ocerp.RAILWAY_PRIVATE_DOMAIN}}:8000";
 const API_PUBLIC_URL = "https://${{api.RAILWAY_PUBLIC_DOMAIN}}";
 const WEB_PUBLIC_URL = "https://${{web.RAILWAY_PUBLIC_DOMAIN}}";
+const ADMIN_PUBLIC_URL = "https://${{admin.RAILWAY_PUBLIC_DOMAIN}}";
 
 export default defineRailway(() => {
   // ---------------------------------------------------------------------
@@ -74,18 +73,6 @@ export default defineRailway(() => {
     },
   });
 
-  // CPU-only inference: sized for llama3.1:8b (8–12GB RAM). Models live on
-  // the volume and must be pulled once after first deploy:
-  //   railway ssh into ollama → ollama pull nomic-embed-text && ollama pull llama3.1:8b
-  const ollama = service("ollama", {
-    source: image("ollama/ollama:latest"),
-    volumeMounts: { "/root/.ollama": volume("ollama-models", { sizeMB: 5000, region: "sfo" }) },
-    env: {
-      // Listen on all interfaces so private-network traffic can reach it.
-      OLLAMA_HOST: "0.0.0.0",
-    },
-  });
-
   // ---------------------------------------------------------------------
   // Application services (built from this repo via the GitHub App)
   // ---------------------------------------------------------------------
@@ -102,9 +89,9 @@ export default defineRailway(() => {
       QDRANT_URL,
       QDRANT_COLLECTION_NAME: "cost_items",
       QDRANT_KNOWLEDGE_COLLECTION_NAME: "quoting_knowledge",
-      OLLAMA_API_BASE: OLLAMA_BASE,
-      EMBEDDING_MODEL: "ollama/nomic-embed-text",
-      LLM_MODEL: "ollama/llama3.1:8b",
+      OPENAI_API_KEY: preserve(),
+      EMBEDDING_MODEL: "text-embedding-3-small",
+      LLM_MODEL: "gpt-4o-mini",
       LLM_TIMEOUT_SECONDS: "300",
       LOG_LEVEL: "INFO",
     },
@@ -133,19 +120,30 @@ export default defineRailway(() => {
       MINIO_ACCESS_KEY: preserve(),
       MINIO_SECRET_KEY: preserve(),
       MINIO_BUCKET: "mtp-uploads",
-      OLLAMA_API_BASE: OLLAMA_BASE,
-      EMBEDDING_MODEL: "ollama/nomic-embed-text",
-      LLM_MODEL: "ollama/llama3.1:8b",
+      OPENAI_API_KEY: preserve(),
+      EMBEDDING_MODEL: "text-embedding-3-small",
+      LLM_MODEL: "gpt-4o-mini",
       LLM_TIMEOUT_SECONDS: "300",
       ALLOWED_ORIGINS: WEB_PUBLIC_URL,
       // Mandatory in production (validate_production refuses dev defaults):
       AUTH_SECRET_KEY: preserve(),
+      // Gates POST /tenants, which bootstraps the first tenant + admin user.
+      SETUP_TOKEN: preserve(),
+      // Lets GET /feature-flags read this project's Railway Signals registry
+      // (RAILWAY_PROJECT_ID is injected natively by Railway). Without it all
+      // flags serve their default (off).
+      RAILWAY_TOKEN: preserve(),
+      // Payments are wired in code but out of alpha scope; set when enabling.
+      PADDLE_API_KEY: preserve(),
+      PADDLE_WEBHOOK_SECRET: preserve(),
+      PADDLE_SANDBOX: "true",
     },
   });
 
   const web = service("web", {
     source: github(GITHUB_REPO, { rootDirectory: "web/app" }),
     build: { builder: "DOCKERFILE", dockerfilePath: "Dockerfile" },
+    healthcheck: "/",
     env: {
       // Baked into the Vite bundle at build time (Docker build ARG).
       VITE_API_BASE_URL: API_PUBLIC_URL,
@@ -155,12 +153,14 @@ export default defineRailway(() => {
   const admin = service("admin", {
     source: github(GITHUB_REPO),
     build: { builder: "DOCKERFILE", dockerfilePath: "services/admin/Dockerfile" },
+    healthcheck: "/admin/login/",
     env: {
       // Django uses psycopg2, so the plugin's plain postgresql:// URL is correct.
       DATABASE_URL: db.env.DATABASE_URL,
       SECRET_KEY: preserve(),
       DEBUG: "False",
-      CSRF_TRUSTED_ORIGINS: "https://${{admin.RAILWAY_PUBLIC_DOMAIN}}",
+      ALLOWED_HOSTS: "${{admin.RAILWAY_PUBLIC_DOMAIN}}",
+      CSRF_TRUSTED_ORIGINS: ADMIN_PUBLIC_URL,
     },
   });
 
@@ -172,8 +172,8 @@ export default defineRailway(() => {
       QDRANT_URL,
       QDRANT_COLLECTION_NAME: "cost_items",
       QDRANT_KNOWLEDGE_COLLECTION_NAME: "quoting_knowledge",
-      OLLAMA_API_BASE: OLLAMA_BASE,
-      EMBEDDING_MODEL: "ollama/nomic-embed-text",
+      OPENAI_API_KEY: preserve(),
+      EMBEDDING_MODEL: "text-embedding-3-small",
       APIFY_API_TOKEN: preserve(),
       PIPELINE_DEMO_MODE: "false",
       SCREWFIX_START_URL: "https://www.screwfix.com/c/electrical-lighting/cat840780",
@@ -187,6 +187,6 @@ export default defineRailway(() => {
   });
 
   return project("mytradeportal", {
-    resources: [db, cache, qdrant, minio, ollama, api, ocerp, web, admin, dataPipeline],
+    resources: [db, cache, qdrant, minio, api, ocerp, web, admin, dataPipeline],
   });
 });

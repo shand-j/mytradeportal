@@ -297,17 +297,13 @@ class BillOfQuantities(Base, TimestampMixin):
     )
     # Operator-facing warnings for mandatory items the rule-based compliance
     # checker did not find in the BoQ.
-    compliance_warnings: Mapped[list[str]] = mapped_column(
-        JSONB, default=list, nullable=False
-    )
+    compliance_warnings: Mapped[list[str]] = mapped_column(JSONB, default=list, nullable=False)
     # Customer-facing collapsed lines for quote documents (no internal T&M split).
     customer_summary_lines: Mapped[list[dict[str, Any]]] = mapped_column(
         JSONB, default=list, nullable=False
     )
     # Back-office only profitability indicator snapshot from OCERP.
-    margin_indicator: Mapped[dict[str, Any]] = mapped_column(
-        JSONB, default=dict, nullable=False
-    )
+    margin_indicator: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict, nullable=False)
     standard: Mapped[str | None] = mapped_column(String(50), nullable=True)
 
     quote: Mapped[Quote] = relationship("Quote", back_populates="bill_of_quantities")

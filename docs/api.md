@@ -15,8 +15,8 @@ Content-Type: application/json
 
 {
   "tenant_slug": "demo",
-  "email": "admin@demo.local",
-  "password": "password123"
+  "email": "you@example.com",
+  "password": "<the password you set via SEED_ADMIN_PASSWORD>"
 }
 ```
 
@@ -27,7 +27,8 @@ X-Tenant-ID: <tenant-uuid>
 ```
 
 Create a tenant via `POST /tenants` to obtain an ID, or use `python -m
-app.seed_admin_user` to bootstrap a demo tenant and admin user.
+app.seed_admin_user` (with `SEED_ADMIN_EMAIL` and `SEED_ADMIN_PASSWORD` set) to
+bootstrap a local-dev tenant and admin user.
 
 Webhook endpoints (`/webhooks/*`) do **not** use the tenant header; they identify
 the tenant from the provider payload.
@@ -169,4 +170,4 @@ The API returns standard HTTP status codes:
 
 - `400` — invalid request data or tenant mismatch
 - `404` — resource not found
-- `503` — AI provider unavailable (e.g. Ollama not running or OpenAI quota issue)
+- `503` — AI provider unavailable (e.g. OpenAI API unreachable or quota exceeded)

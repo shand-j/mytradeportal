@@ -406,7 +406,7 @@ def main() -> None:
         "--batch-size",
         type=int,
         default=8,
-        help="Number of chunks to embed per batch. Lower is better for local Ollama.",
+        help="Number of chunks to embed per batch. Lower values reduce API request size.",
     )
     args = parser.parse_args()
 

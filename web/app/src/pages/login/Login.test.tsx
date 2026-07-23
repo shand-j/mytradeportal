@@ -55,7 +55,45 @@ describe('Login', () => {
     await waitFor(() => {
       expect(authService.login).toHaveBeenCalledTimes(1);
       expect(authService.login).toHaveBeenCalledWith({
+        tenantSlug: 'demo',
         email: 'admin@demo.local',
+        password: 'password123',
+      });
+    });
+  });
+
+  it('submits a custom business slug when edited', async () => {
+    const user: User = {
+      id: 'u1',
+      tenantId: 't2',
+      fullName: 'Admin User',
+      email: 'admin@acme.example.com',
+      phone: null,
+      role: 'admin',
+      avatarUrl: null,
+      isActive: true,
+    };
+
+    vi.mocked(authService.login).mockResolvedValueOnce(user);
+
+    renderWithProviders(<Login />);
+
+    const slugInput = screen.getByLabelText(/business slug/i);
+    const emailInput = screen.getByLabelText(/email/i);
+    const passwordInput = screen.getByLabelText(/password/i);
+    const submitButton = screen.getByRole('button', { name: /sign in/i });
+
+    await userEvent.clear(slugInput);
+    await userEvent.type(slugInput, 'acme-electrical');
+    await userEvent.clear(emailInput);
+    await userEvent.type(emailInput, 'admin@acme.example.com');
+    await userEvent.type(passwordInput, 'password123');
+    await userEvent.click(submitButton);
+
+    await waitFor(() => {
+      expect(authService.login).toHaveBeenCalledWith({
+        tenantSlug: 'acme-electrical',
+        email: 'admin@acme.example.com',
         password: 'password123',
       });
     });

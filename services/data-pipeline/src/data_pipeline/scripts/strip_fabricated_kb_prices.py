@@ -40,10 +40,7 @@ KB_JSON = (
     / "uk_domestic_electrical_knowledge_base.json"
 )
 JOB_CAPTURE_JSON = (
-    REPO_ROOT
-    / "docs"
-    / "ai_electrician_quoting_platform_research"
-    / "job_capture_data_model.json"
+    REPO_ROOT / "docs" / "ai_electrician_quoting_platform_research" / "job_capture_data_model.json"
 )
 
 STUB = (
@@ -81,7 +78,7 @@ TABLE_REDACTIONS: list[tuple[str, str]] = [
 
 def _is_table_line(line: str) -> bool:
     stripped = line.lstrip()
-    return stripped.startswith("|") or stripped.startswith("- ")
+    return stripped.startswith(("|", "- "))
 
 
 def _is_price_line(line: str) -> bool:
@@ -110,46 +107,58 @@ def _delete_section(lines: list[str], heading_prefix: str, end_pat: re.Pattern[s
     return out
 
 
+def _collect_table_block(lines: list[str], start: int) -> tuple[list[str], int]:
+    """Collect contiguous markdown table lines starting at ``start``."""
+    i = start
+    n = len(lines)
+    while i < n and _is_table_line(lines[i]):
+        i += 1
+    return lines[start:i], i
+
+
+def _process_section_until_marker(
+    lines: list[str], start: int, prose_marker: str, out: list[str]
+) -> int:
+    """Append lines until marker; redact £-bearing table blocks."""
+    i = start
+    n = len(lines)
+
+    while i < n and prose_marker not in lines[i]:
+        line = lines[i]
+        if not _is_table_line(line):
+            out.append(line)
+            i += 1
+            continue
+
+        table_block, i = _collect_table_block(lines, i)
+        if any(_is_price_line(row) for row in table_block):
+            out.append(STUB)
+            out.append("\n")
+        else:
+            out.extend(table_block)
+
+    return i
+
+
 def _redact_tables_in_section(
     lines: list[str], heading_prefix: str, prose_marker: str
 ) -> list[str]:
-    """Replace markdown tables containing £ inside a sub-section with a stub.
-
-    Walks lines starting at ``heading_prefix``, collects table runs until the
-    ``prose_marker`` appears, and substitutes any £-bearing table with a stub.
-    """
+    """Replace markdown tables containing £ inside a sub-section with a stub."""
     out: list[str] = []
     i = 0
     n = len(lines)
+
     while i < n:
         line = lines[i]
         if not line.startswith(heading_prefix):
             out.append(line)
             i += 1
             continue
+
         out.append(line)
         i += 1
-        while i < n and prose_marker not in lines[i]:
-            current = lines[i]
-            if _is_table_line(current):
-                # Collect the whole table block
-                block_start = i
-                while i < n and (_is_table_line(lines[i]) or lines[i].strip() == ""):
-                    if lines[i].strip() == "":
-                        # Tables end at the next blank line
-                        if any(_is_table_line(lines[j]) for j in range(block_start, i)):
-                            break
-                    i += 1
-                table_block = lines[block_start:i]
-                if any(_is_price_line(b) for b in table_block):
-                    out.append(STUB)
-                    out.append("\n")
-                else:
-                    out.extend(table_block)
-            else:
-                out.append(current)
-                i += 1
-        # Continue main loop from prose_marker line (or EOF)
+        i = _process_section_until_marker(lines, i, prose_marker, out)
+
     return out
 
 
@@ -248,10 +257,7 @@ def main() -> None:
         f"JSON tables: {before} -> {len(new_json['tables'])} "
         f"(dropped {before - len(new_json['tables'])})"
     )
-    print(
-        f"Job capture: stripped {stripped_prices} fabricated "
-        "typical_price_range fields"
-    )
+    print(f"Job capture: stripped {stripped_prices} fabricated typical_price_range fields")
 
 
 if __name__ == "__main__":

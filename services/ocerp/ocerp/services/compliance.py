@@ -114,14 +114,19 @@ _MANDATORY_ITEMS: dict[str, list[tuple[str, tuple[str, ...]]]] = {
     ],
     "ev_charger": [
         ("Dedicated 32A protective device for EV circuit", ("32a", "rcbo", "mcb")),
-        ("Type A RCD protection (or built-in DC fault detection)", ("type a rcd", "type a", "dc fault")),
+        (
+            "Type A RCD protection (or built-in DC fault detection)",
+            ("type a rcd", "type a", "dc fault"),
+        ),
         ("Weatherproof isolator", ("isolator", "weatherproof")),
         ("SWA / armoured cable supply", ("swa", "armoured")),
     ],
     "bathroom": [
         ("RCD protection for bathroom circuits", ("rcd", "rcbo")),
-        ("Supplementary equipotential bonding (or modern installation note)",
-         ("supplementary bonding", "equipotential")),
+        (
+            "Supplementary equipotential bonding (or modern installation note)",
+            ("supplementary bonding", "equipotential"),
+        ),
     ],
     "outdoor": [
         ("Weatherproof IP-rated accessory or enclosure", ("ip54", "ip55", "ip65", "weatherproof")),
@@ -150,8 +155,7 @@ def detect_job_types(description: str) -> list[str]:
     """Return the set of job-type tags that match the customer description."""
     haystack = (description or "").lower()
     detected = [
-        tag for tag, hints in _JOB_TYPE_HINTS.items()
-        if any(hint in haystack for hint in hints)
+        tag for tag, hints in _JOB_TYPE_HINTS.items() if any(hint in haystack for hint in hints)
     ]
     # Stable ordering for reproducibility.
     return sorted(set(detected))
@@ -244,16 +248,13 @@ async def gather_compliance_context(
                         )
                     except Exception as exc:  # pragma: no cover - defensive
                         logger.warning(
-                            "knowledge.retrieval_failed", extra={"job_type": job_type, "tier": tier, "err": str(exc)}
+                            "knowledge.retrieval_failed",
+                            extra={"job_type": job_type, "tier": tier, "err": str(exc)},
                         )
                         knowledge_available = False
-                        warnings.append(
-                            f"Knowledge retrieval failed for {job_type}/{tier}: {exc}"
-                        )
+                        warnings.append(f"Knowledge retrieval failed for {job_type}/{tier}: {exc}")
                         continue
-                    citations.extend(
-                        _result_to_citation(r, job_type=job_type) for r in results
-                    )
+                    citations.extend(_result_to_citation(r, job_type=job_type) for r in results)
         else:
             try:
                 results = await store.search(
@@ -352,10 +353,7 @@ def render_citations_for_prompt(citations: list[RegulatoryCitation], max_chars: 
     total = 0
     for c in ordered:
         section = " > ".join(c.section_path) if c.section_path else "(root)"
-        entry = (
-            f"- [{c.rule_tier}] [{c.chunk_id}] {c.source} — {section}\n"
-            f"  {c.snippet}"
-        )
+        entry = f"- [{c.rule_tier}] [{c.chunk_id}] {c.source} — {section}\n  {c.snippet}"
         if total + len(entry) > max_chars and rendered:
             break
         rendered.append(entry)

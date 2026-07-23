@@ -4,6 +4,7 @@ from typing import ClassVar
 
 from django.contrib import admin
 
+from operations.forms import TenantAdminForm, UserAdminForm
 from operations.models import (
     Appointment,
     AuditLog,
@@ -59,6 +60,7 @@ class PaymentInline(admin.TabularInline):
 class TenantAdmin(admin.ModelAdmin):
     """Admin for tenants/businesses."""
 
+    form = TenantAdminForm
     list_display = ("name", "slug", "is_active", "paddle_sandbox", "created_at")
     list_filter = ("is_active", "paddle_sandbox")
     search_fields = ("name", "slug")
@@ -79,6 +81,7 @@ class ContactAdmin(TenantScopedAdminMixin, admin.ModelAdmin):
 class UserAdmin(TenantScopedAdminMixin, admin.ModelAdmin):
     """Admin for tenant staff."""
 
+    form = UserAdminForm
     list_display = ("full_name", "email", "role", "tenant", "is_active")
     list_filter = ("tenant", "role", "is_active")
     search_fields = ("full_name", "email")
@@ -92,7 +95,16 @@ class QuoteAdmin(TenantScopedAdminMixin, admin.ModelAdmin):
     list_display = ("title", "contact", "tenant", "status", "total", "created_at")
     list_filter = ("tenant", "status")
     search_fields = ("title", "contact__name")
-    readonly_fields = ("id", "subtotal", "vat_amount", "total", "approved_at", "sent_at", "created_at", "updated_at")
+    readonly_fields = (
+        "id",
+        "subtotal",
+        "vat_amount",
+        "total",
+        "approved_at",
+        "sent_at",
+        "created_at",
+        "updated_at",
+    )
     inlines = [QuoteLineItemInline]
 
 

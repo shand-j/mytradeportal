@@ -2,6 +2,7 @@ export * from './analytics';
 export * from './appointments';
 export * from './communications';
 export * from './contacts';
+export * from './featureFlags';
 export * from './invoices';
 export * from './jobs';
 export * from './quotes';

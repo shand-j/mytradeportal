@@ -5,7 +5,7 @@ from decimal import Decimal
 from typing import Any
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, computed_field
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, computed_field, model_validator
 
 # ---------------------------------------------------------------------------
 # Tenant
@@ -15,6 +15,20 @@ from pydantic import BaseModel, ConfigDict, Field, computed_field
 class TenantCreate(BaseModel):
     slug: str = Field(..., min_length=2, max_length=63)
     name: str = Field(..., min_length=1, max_length=255)
+
+    # Optional atomic bootstrap of the tenant's first admin user. All three
+    # fields must be provided together; when omitted only the tenant is
+    # created (used by tests and seed scripts).
+    admin_email: EmailStr | None = None
+    admin_password: str | None = Field(default=None, min_length=12, max_length=128)
+    admin_name: str | None = Field(default=None, min_length=1, max_length=255)
+
+    @model_validator(mode="after")
+    def _admin_fields_all_or_none(self) -> "TenantCreate":
+        provided = (self.admin_email, self.admin_password, self.admin_name)
+        if any(v is not None for v in provided) and not all(v is not None for v in provided):
+            raise ValueError("admin_email, admin_password and admin_name must be provided together")
+        return self
 
 
 class TenantUpdate(BaseModel):
@@ -78,7 +92,9 @@ class TenantRead(BaseModel):
     mate_percent: float = Field(default=55.0, serialization_alias="matePercent")
     markup_percentage: float = Field(default=0.0, serialization_alias="markupPercentage")
     min_margin_percent: float = Field(default=0.0, serialization_alias="minMarginPercent")
-    price_tolerance_percent: float = Field(default=15.0, serialization_alias="priceTolerancePercent")
+    price_tolerance_percent: float = Field(
+        default=15.0, serialization_alias="priceTolerancePercent"
+    )
     minimum_charge: float = Field(default=0.0, serialization_alias="minimumCharge")
     vat_rate: float = Field(default=20.0, serialization_alias="vatRate")
 
@@ -125,12 +141,12 @@ class ContactRead(BaseModel):
     created_at: datetime
     updated_at: datetime
 
-    @computed_field
+    @computed_field  # type: ignore[prop-decorator]
     @property
     def first_name(self) -> str:
         return self.name.split(" ", 1)[0]
 
-    @computed_field
+    @computed_field  # type: ignore[prop-decorator]
     @property
     def last_name(self) -> str:
         parts = self.name.split(" ", 1)
@@ -233,7 +249,7 @@ class BillOfQuantitiesRead(BaseModel):
     total: Decimal
     confidence: float
     warnings: list[str]
-    regulatory_citations: list[dict] = Field(default_factory=list)
+    regulatory_citations: list[dict[str, Any]] = Field(default_factory=list)
     compliance_warnings: list[str] = Field(default_factory=list)
     customer_summary_lines: list[CustomerSummaryLineRead] = Field(default_factory=list)
     margin_indicator: MarginIndicatorRead | None = None
@@ -598,7 +614,7 @@ class DashboardData(BaseModel):
     revenue_chart: RevenueChartData
     service_breakdown: list[ServiceBreakdownItem]
     recent_activity: list[Activity]
-    voice_stats: VoiceStats
+    voice_stats: VoiceStats | None = None
 
 
 class AiQuotePerformanceMonthlyData(BaseModel):
@@ -646,8 +662,8 @@ class DemandForecast(BaseModel):
 
 class AIInsights(BaseModel):
     ai_quote_performance: AiQuotePerformance
-    demand_forecast: DemandForecast
-    voice_analytics: VoiceAnalytics
+    demand_forecast: DemandForecast | None = None
+    voice_analytics: VoiceAnalytics | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -704,3 +720,13 @@ class UserRead(BaseModel):
 class UserLogin(BaseModel):
     email: str = Field(..., min_length=1, max_length=255)
     password: str = Field(..., min_length=1, max_length=128)
+    # Optional explicit tenant slug. When provided it takes precedence over
+    # Host-subdomain resolution so login works on bare domains (e.g.
+    # Railway's *.up.railway.app) where every tenant shares one hostname.
+    tenant_slug: str | None = Field(default=None, min_length=2, max_length=63)
+
+
+class TenantBootstrapRead(TenantRead):
+    """Tenant plus the first admin user created alongside it (if requested)."""
+
+    admin_user: UserRead | None = None

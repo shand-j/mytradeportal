@@ -4,12 +4,15 @@ from __future__ import annotations
 
 import asyncio
 from decimal import Decimal
+from typing import TYPE_CHECKING
 from unittest.mock import patch
 
 import pytest
 from app.routers.quotes import _render_quote_pdf
-from httpx import AsyncClient
-from sqlalchemy.ext.asyncio import AsyncSession
+
+if TYPE_CHECKING:
+    from httpx import AsyncClient
+    from sqlalchemy.ext.asyncio import AsyncSession
 
 
 async def _create_quote_with_lines(admin_client: AsyncClient) -> str:
@@ -63,7 +66,8 @@ async def test_quote_pdf_is_built_in_a_worker_thread(
     """
     quote_id = await _create_quote_with_lines(admin_client)
 
-    captured: dict[str, int | None] = {"thread_id": None, "calls": 0}
+    captured_thread_id: int | None = None
+    captured_calls: int = 0
     main_thread_id = asyncio.get_running_loop()._thread_id  # type: ignore[attr-defined]
 
     real_render = _render_quote_pdf
@@ -71,17 +75,18 @@ async def test_quote_pdf_is_built_in_a_worker_thread(
     def spy_render(snapshot: dict) -> bytes:  # type: ignore[type-arg]
         import threading
 
-        captured["thread_id"] = threading.get_ident()
-        captured["calls"] += 1
+        nonlocal captured_thread_id, captured_calls
+        captured_thread_id = threading.get_ident()
+        captured_calls += 1
         return real_render(snapshot)
 
     with patch("app.routers.quotes._render_quote_pdf", side_effect=spy_render):
         response = await admin_client.get(f"/quotes/{quote_id}/pdf")
 
     assert response.status_code == 200
-    assert captured["calls"] == 1
-    assert captured["thread_id"] is not None
-    assert captured["thread_id"] != main_thread_id, (
+    assert captured_calls == 1
+    assert captured_thread_id is not None
+    assert captured_thread_id != main_thread_id, (
         "PDF render ran on the asyncio main thread — it must be offloaded "
         "via asyncio.to_thread() to keep the event loop responsive."
     )

@@ -119,6 +119,7 @@ vi.mock('@/lib/api/hooks', async (importOriginal) => {
     useReviews: vi.fn(() => ({ data: [], isLoading: false, error: null })),
     useReviewStats: vi.fn(() => ({ data: mockReviewStats, isLoading: false, error: null })),
     useAiInsights: vi.fn(() => ({ data: mockAiInsightsData, isLoading: false, error: null })),
+    useFeatureFlags: vi.fn(() => ({ data: {}, isLoading: false, error: null })),
     useSettings: vi.fn(() => ({ data: undefined, isLoading: false, error: null })),
     useUpdateSettings: vi.fn(defaultMutation),
     useCreateQuote: vi.fn(defaultMutation),
@@ -195,7 +196,8 @@ describe('App routing', () => {
   it('lands on the dashboard when authenticated', async () => {
     renderApp(['/']);
     expect(await screen.findByText(/Revenue This Month/i)).toBeInTheDocument();
-    expect(screen.getByText(/Voice AI Agent is live/i)).toBeInTheDocument();
+    // Voice AI blocks stay hidden while the feature flag defaults off.
+    expect(screen.queryByText(/Voice AI Agent is live/i)).not.toBeInTheDocument();
   });
 
   it('navigates through sidebar links without a real backend', async () => {

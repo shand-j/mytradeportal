@@ -72,10 +72,6 @@ Example requirement:
 """
 
 
-def _is_ollama_model(model: str) -> bool:
-    return model.startswith("ollama/")
-
-
 def _build_user_prompt(
     job_description: str,
     property_type: str | None,
@@ -174,8 +170,7 @@ async def generate_boq_from_prompt(
     compliance_context: str = "",
 ) -> dict[str, Any]:
     """Call the configured LLM and return parsed JSON BoQ requirements."""
-    is_ollama = _is_ollama_model(settings.llm_model)
-    if not is_ollama and not settings.openai_api_key:
+    if not settings.openai_api_key:
         raise RuntimeError("OPENAI_API_KEY is not configured")
 
     prompt = _build_user_prompt(
@@ -197,6 +192,8 @@ async def generate_boq_from_prompt(
         # opting in to creative quote exploration.
         "temperature": 0.0,
         "seed": 0,
+        "api_key": settings.openai_api_key,
+        "response_format": {"type": "json_object"},
     }
 
     # Hash the prompt + model so we can attribute a generated BoQ to a
@@ -213,12 +210,6 @@ async def generate_boq_from_prompt(
         },
     )
 
-    if is_ollama:
-        completion_kwargs["api_base"] = settings.ollama_api_base
-    elif settings.openai_api_key:
-        completion_kwargs["api_key"] = settings.openai_api_key
-        completion_kwargs["response_format"] = {"type": "json_object"}
-
     try:
         response = await asyncio.wait_for(
             acompletion(**completion_kwargs), timeout=settings.llm_timeout_seconds
@@ -234,7 +225,11 @@ async def generate_boq_from_prompt(
 
     content = response.choices[0].message.content
     if not content:
-        return {"requirements": [], "notes": "LLM returned empty content", "_meta": {"prompt_hash": prompt_hash, "model": settings.llm_model}}
+        return {
+            "requirements": [],
+            "notes": "LLM returned empty content",
+            "_meta": {"prompt_hash": prompt_hash, "model": settings.llm_model},
+        }
 
     parsed = _parse_json_response(content)
     # Attach generation metadata so callers can persist it on the quote for

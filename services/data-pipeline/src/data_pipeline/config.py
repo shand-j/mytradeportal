@@ -24,8 +24,7 @@ class Settings(BaseSettings):
     qdrant_knowledge_collection_name: str = "quoting_knowledge"
 
     # Embeddings (mirrors OCERP configuration)
-    embedding_model: str = "ollama/nomic-embed-text"
-    ollama_api_base: str = "http://host.docker.internal:11434"
+    embedding_model: str = "text-embedding-3-small"
     openai_api_key: str = ""
     embedding_dimensions: int | None = None
 

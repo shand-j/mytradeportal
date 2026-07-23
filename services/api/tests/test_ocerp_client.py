@@ -32,7 +32,7 @@ async def test_generate_boq() -> None:
         ],
         subtotal=Decimal("170.00"),
         total=Decimal("204.00"),
-        confidence=1.0,
+        confidence=Decimal("1.0"),
     )
     mock_response = AsyncMock()
     mock_response.json = Mock(return_value=expected.model_dump(mode="json"))
@@ -113,7 +113,7 @@ def test_build_quote_from_ocerp_response() -> None:
         subtotal=Decimal("170.00"),
         vat_amount=Decimal("34.00"),
         total=Decimal("204.00"),
-        confidence=1.0,
+        confidence=Decimal("1.0"),
         notes="Test",
         standard="nrm1",
     )
@@ -124,7 +124,7 @@ def test_build_quote_from_ocerp_response() -> None:
     assert len(quote.bill_of_quantities.line_items) == 1
     assert quote.bill_of_quantities.line_items[0].labour_hours == Decimal("0.50")
     assert quote.bill_of_quantities.total == Decimal("204.00")
-    assert quote.bill_of_quantities.confidence == 1.0
+    assert quote.bill_of_quantities.confidence == Decimal("1.0")
     assert quote.bill_of_quantities.standard == "nrm1"
 
     assert len(quote.line_items) == 1

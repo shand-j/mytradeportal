@@ -13,6 +13,7 @@ dependencies = [
     "uvicorn[standard]>=0.30.0",
     "pydantic>=2.7.0",
     "pydantic-settings>=2.3.0",
+    "email-validator>=2.0.0",
     # Database
     "sqlalchemy[asyncio]>=2.0.30",
     "asyncpg>=0.29.0",
@@ -54,7 +55,7 @@ dev = [
     "factory-boy>=3.3.0",
     "faker>=25.0.0",
     "ruff>=0.4.0",
-    "mypy>=1.10.0",
+    "mypy>=1.10.0,<2.2.0",
     "pre-commit>=3.7.0",
     "types-passlib",
     "types-python-jose",
@@ -81,18 +82,14 @@ ignore = ["E501", "B008"]
 [tool.ruff.format]
 quote-style = "double"
 indent-style = "space"
+exclude = ["*.md", "**/*.md"]
 
 [tool.mypy]
-python_version = "3.11"
+python_version = "3.12"
 strict = true
 warn_return_any = true
 warn_unused_ignores = true
 ignore_missing_imports = true
-plugins = ["mypy_django_plugin.main"]
-mypy_path = ["services/admin"]
-
-[tool.django-stubs]
-django_settings_module = "admin_project.settings"
 
 [[tool.mypy.overrides]]
 module = "operations.*"
@@ -101,6 +98,10 @@ disallow_any_generics = false
 [[tool.mypy.overrides]]
 module = "admin_project.*"
 disallow_any_generics = false
+
+[[tool.mypy.overrides]]
+module = "app.ingest_ddc_uk"
+warn_unused_ignores = false
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"

@@ -3,15 +3,7 @@ import { screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 
 import { QuotesList } from './QuotesList';
-import {
-  useQuotes,
-  useContacts,
-  useCreateQuote,
-  useSendQuote,
-  useRejectQuote,
-  useDeleteQuote,
-  useGenerateQuote,
-} from '@/lib/api/hooks';
+import { useQuotes, useContacts } from '@/lib/api/hooks';
 import { renderPage, resetStores } from '@/test/test-utils';
 import { mockQuotes } from '@/lib/mock/data/quotes';
 import { mockCustomers } from '@/lib/mock/data/customers';

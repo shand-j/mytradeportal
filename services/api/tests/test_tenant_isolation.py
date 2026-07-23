@@ -12,16 +12,19 @@ These tests exercise multiple layers of defence:
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
 from uuid import uuid4
 
 import pytest
 from app.models import Contact, Tenant, User
 from app.rls import bypass_rls_in_session, clear_rls_session, set_tenant_in_session
 from app.security import get_password_hash
-from httpx import AsyncClient
 from sqlalchemy import text
 from sqlalchemy.exc import DBAPIError
-from sqlalchemy.ext.asyncio import AsyncSession
+
+if TYPE_CHECKING:
+    from httpx import AsyncClient
+    from sqlalchemy.ext.asyncio import AsyncSession
 
 
 async def _create_tenant_with_admin(
@@ -49,9 +52,7 @@ async def _create_tenant_with_admin(
 
 
 @pytest.mark.asyncio
-async def test_cross_tenant_header_swap_is_rejected(
-    client: AsyncClient, db: AsyncSession
-) -> None:
+async def test_cross_tenant_header_swap_is_rejected(client: AsyncClient, db: AsyncSession) -> None:
     """A user logged in to tenant A cannot act on tenant B by changing X-Tenant-ID."""
     tenant_a, user_a = await _create_tenant_with_admin(
         db, slug=f"a-{uuid4().hex[:6]}", email="a@example.com"
@@ -83,7 +84,7 @@ async def test_listing_does_not_leak_other_tenants_rows(
     client: AsyncClient, db: AsyncSession
 ) -> None:
     """A contact created for tenant A must not appear in tenant B's /contacts list."""
-    tenant_a, user_a = await _create_tenant_with_admin(
+    tenant_a, _user_a = await _create_tenant_with_admin(
         db, slug=f"a-{uuid4().hex[:6]}", email="a@example.com"
     )
     tenant_b, user_b = await _create_tenant_with_admin(
@@ -104,9 +105,7 @@ async def test_listing_does_not_leak_other_tenants_rows(
     )
     assert login.status_code == 200
 
-    listing = await client.get(
-        "/contacts", headers={"X-Tenant-ID": str(tenant_b.id)}
-    )
+    listing = await client.get("/contacts", headers={"X-Tenant-ID": str(tenant_b.id)})
     assert listing.status_code == 200
     body = listing.json()
     names = [c.get("name") for c in body]
@@ -114,9 +113,7 @@ async def test_listing_does_not_leak_other_tenants_rows(
 
 
 @pytest.mark.asyncio
-async def test_get_other_tenant_contact_returns_404(
-    client: AsyncClient, db: AsyncSession
-) -> None:
+async def test_get_other_tenant_contact_returns_404(client: AsyncClient, db: AsyncSession) -> None:
     """Direct GET on another tenant's contact must return 404, not the row."""
     tenant_a, _user_a = await _create_tenant_with_admin(
         db, slug=f"a-{uuid4().hex[:6]}", email="a@example.com"

@@ -22,6 +22,6 @@ test('quote request becomes a paid invoice', async ({ page, testId }) => {
   await sendInvoice(page);
   await markInvoicePaid(page);
 
-  await expect(page.getByText(/paid/i)).toBeVisible();
+  await expect(page.getByText('paid', { exact: true })).toBeVisible();
   await expect(page.getByText(/amount due/i)).not.toBeVisible();
 });

@@ -2,6 +2,7 @@ import { Search, Bell, Plus, RefreshCw, Phone } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { useState, useEffect } from 'react';
 import { useUiStore } from '@/stores/uiStore';
+import { useFeatureFlags } from '@/lib/api/hooks';
 import { formatDistanceToNow } from 'date-fns';
 import type { Notification } from '@/types';
 
@@ -9,6 +10,10 @@ export function TopBar() {
   const pageTitle = useUiStore(s => s.currentPageTitle);
   const notificationOpen = useUiStore(s => s.notificationOpen);
   const setNotificationOpen = useUiStore(s => s.setNotificationOpen);
+  const { data: featureFlags } = useFeatureFlags();
+  // Voice AI is not yet implemented; the button stays hidden until the
+  // `voice_ai_insights` feature flag is enabled in Railway.
+  const voiceAiEnabled = featureFlags?.voiceAiInsights === true;
   const [notifications] = useState<Notification[]>([]);
   const unreadCount = notifications.filter(n => !n.read).length;
   const [scrolled, setScrolled] = useState(false);
@@ -37,10 +42,12 @@ export function TopBar() {
         <button className="h-9 w-9 flex items-center justify-center rounded-lg text-[#57534E] hover:bg-[#F5F4F0] transition-colors">
           <RefreshCw className="w-[18px] h-[18px]" />
         </button>
+        {voiceAiEnabled && (
         <button className="h-9 w-9 flex items-center justify-center rounded-lg text-[#7C3AED] hover:bg-[#F5F3FF] transition-colors relative" title="Voice AI Agent">
           <Phone className="w-[18px] h-[18px]" />
           <span className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-[#16A34A]" />
         </button>
+        )}
 
         <div className="relative">
           <button

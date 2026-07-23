@@ -46,7 +46,5 @@ def test_materials_only_has_no_labour_requirements() -> None:
 
 def test_ambiguous_description_adds_defaults() -> None:
     reqs = generate_requirements("Add sockets")
-    socket_qty = sum(
-        r.quantity for r in reqs if r.concept in {"double_socket", "single_socket"}
-    )
+    socket_qty = sum(r.quantity for r in reqs if r.concept in {"double_socket", "single_socket"})
     assert socket_qty >= Decimal("10")

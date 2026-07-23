@@ -39,7 +39,7 @@ def _extract_tenant_slug(host: str | None) -> str | None:
     return None
 
 
-async def _resolve_tenant(db: AsyncSession, slug: str | None) -> Tenant:
+async def resolve_tenant(db: AsyncSession, slug: str | None) -> Tenant:
     """Look up a tenant by slug.
 
     Falls back to the configured default only when no subdomain was provided
@@ -82,7 +82,7 @@ async def get_current_tenant(
         tenant = await db.get(Tenant, x_tenant_id)
     else:
         slug = _extract_tenant_slug(request.headers.get("host"))
-        tenant = await _resolve_tenant(db, slug)
+        tenant = await resolve_tenant(db, slug)
     if tenant is None or not tenant.is_active:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,

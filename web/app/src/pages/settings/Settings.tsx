@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Building2, Paintbrush, Wrench, Link2, CheckCircle, XCircle, RefreshCw, Save, Plus } from 'lucide-react';
-import { useSettings, useUpdateSettings } from '@/lib/api/hooks';
+import { useSettings, useUpdateSettings, useFeatureFlags } from '@/lib/api/hooks';
 import { useUiStore } from '@/stores/uiStore';
 import { toast } from 'sonner';
 import type { IntegrationStatus, ServiceOffering, Tenant } from '@/types';
@@ -30,6 +30,12 @@ const initialIntegrations: IntegrationStatus[] = [
 export function Settings() {
   const setPageTitle = useUiStore(s => s.setPageTitle);
   const { data: tenant, isLoading, error } = useSettings();
+  const { data: featureFlags } = useFeatureFlags();
+  // External integrations (accounting sync, WhatsApp, Twilio, …) are not yet
+  // implemented; the tab stays hidden until the `external_integrations`
+  // feature flag is enabled in Railway.
+  const externalIntegrationsEnabled = featureFlags?.externalIntegrations === true;
+  const visibleTabs = externalIntegrationsEnabled ? tabs : tabs.filter(tab => tab.id !== 'integrations');
   const updateSettings = useUpdateSettings();
   const [activeTab, setActiveTab] = useState('business');
   const [localServices, setLocalServices] = useState<ServiceOffering[]>(initialServices);
@@ -83,7 +89,7 @@ export function Settings() {
       <div className="flex gap-6">
         {/* Settings nav */}
         <div className="w-40 flex-shrink-0 space-y-0.5">
-          {tabs.map(tab => (
+          {visibleTabs.map(tab => (
             <button
               key={tab.id}
               onClick={() => setActiveTab(tab.id)}
@@ -111,7 +117,7 @@ export function Settings() {
             <ServicesTab services={localServices} onChange={setLocalServices} onSave={handleSaveServices} isSubmitting={updateSettings.isPending} />
           )}
 
-          {activeTab === 'integrations' && (
+          {activeTab === 'integrations' && externalIntegrationsEnabled && (
             <IntegrationsTab integrations={localIntegrations} onChange={setLocalIntegrations} onSave={handleSaveIntegrations} isSubmitting={updateSettings.isPending} />
           )}
         </div>

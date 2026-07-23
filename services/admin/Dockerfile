@@ -17,4 +17,6 @@ ENV DJANGO_SETTINGS_MODULE=admin_project.settings
 
 EXPOSE 8001
 
-CMD ["python", "manage.py", "runserver", "0.0.0.0:8001"]
+# Collect static assets for whitenoise, run migrations, then serve with gunicorn.
+# Railway injects $PORT; default to 8001 locally.
+CMD ["sh", "-c", "python manage.py migrate --noinput && python manage.py collectstatic --noinput && gunicorn admin_project.wsgi --bind 0.0.0.0:${PORT:-8001}"]

@@ -140,7 +140,9 @@ class ScrewfixScraper:
             if settings.pipeline_demo_mode:
                 print("WARNING: No Apify API token provided. Using demo mode with sample data.")
                 return self._get_demo_data(category_url, max_items)
-            print("WARNING: No Apify API token provided and demo mode is disabled. Skipping scrape.")
+            print(
+                "WARNING: No Apify API token provided and demo mode is disabled. Skipping scrape."
+            )
             return []
 
         # Build the actor input for datasaurus/screwfix-event

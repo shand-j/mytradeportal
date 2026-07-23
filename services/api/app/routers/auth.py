@@ -3,9 +3,10 @@
 from fastapi import APIRouter, HTTPException, Request, Response, status
 from sqlalchemy import select
 
-from app.dependencies import ActiveUserDep, DbDep, TenantDep
+from app.dependencies import ActiveUserDep, DbDep, get_current_tenant, resolve_tenant
 from app.limiter import limiter
 from app.models import User
+from app.rls import set_tenant_in_session
 from app.schemas import UserLogin, UserRead
 from app.security import (
     clear_auth_cookie,
@@ -25,13 +26,26 @@ async def login(
     data: UserLogin,
     response: Response,
     db: DbDep,
-    tenant: TenantDep,
 ) -> UserRead:
     """Authenticate a staff user and set an HTTP-only session cookie.
 
     Rate limited to 5 attempts per minute per source IP to slow credential
     stuffing. The limit is enforced regardless of which tenant is targeted.
+
+    When ``tenant_slug`` is provided it takes precedence over Host-subdomain
+    resolution, so login works on bare domains (e.g. Railway's
+    ``*.up.railway.app``) where every tenant shares one hostname. When
+    omitted, the tenant is resolved from the Host header as before.
     """
+    if data.tenant_slug:
+        # Resolve explicitly by slug. An unknown slug is a 401, same as an
+        # unknown subdomain, so tenant enumeration behaviour is unchanged.
+        # A stale session cookie for another tenant must not block logging
+        # in to this one — the new cookie simply overwrites it.
+        tenant = await resolve_tenant(db, data.tenant_slug)
+        await set_tenant_in_session(db, tenant.id)
+    else:
+        tenant = await get_current_tenant(request, db=db)
     user_result = await db.execute(
         select(User).where(User.email == data.email, User.tenant_id == tenant.id)
     )
@@ -46,9 +60,7 @@ async def login(
             # Prefer matching by Supabase UID; fall back to email+tenant.
             if user is None and sb_uid:
                 user_result = await db.execute(
-                    select(User).where(
-                        User.supabase_uid == sb_uid, User.tenant_id == tenant.id
-                    )
+                    select(User).where(User.supabase_uid == sb_uid, User.tenant_id == tenant.id)
                 )
                 user = user_result.scalar_one_or_none()
             authenticated = True

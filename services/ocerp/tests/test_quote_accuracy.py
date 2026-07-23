@@ -88,7 +88,7 @@ def _make_req(finish: str | None = None) -> BoQRequirement:
 
 def _make_item(description: str, brand: str = "MK", score: float = 0.7) -> dict[str, object]:
     return {
-        "code": f"DOM-{abs(hash(description))%9999}",
+        "code": f"DOM-{abs(hash(description)) % 9999}",
         "description": description,
         "brand": brand,
         "score": score,
@@ -129,12 +129,8 @@ def test_score_candidate_prefers_brushed_steel_over_white_when_chrome_asked() ->
     IP66 plate doesn't sneak in via the gap).
     """
     req = _make_req(finish="chrome")
-    white = _make_item(
-        "MK Logic Plus 13A 2-Gang DP Switched Socket White", score=0.8
-    )
-    brushed = _make_item(
-        "MK Logic Plus 13A 2-Gang DP Switched Socket Brushed Steel", score=0.65
-    )
+    white = _make_item("MK Logic Plus 13A 2-Gang DP Switched Socket White", score=0.8)
+    brushed = _make_item("MK Logic Plus 13A 2-Gang DP Switched Socket Brushed Steel", score=0.65)
     assert _score_candidate(req, brushed) > _score_candidate(req, white)
     # White must remain pickable as a fallback rather than being hard-zeroed.
     assert _score_candidate(req, white) > 0

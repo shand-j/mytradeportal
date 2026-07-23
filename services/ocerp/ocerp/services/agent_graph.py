@@ -16,8 +16,6 @@ import logging
 from decimal import Decimal
 from typing import TYPE_CHECKING, Any
 
-from pydantic import BaseModel, ConfigDict, Field, ValidationError
-
 from mtp_shared import (
     BoQGenerateRequest,
     BoQGenerateResponse,
@@ -26,12 +24,15 @@ from mtp_shared import (
     MarginIndicator,
     QuoteAnalysis,
 )
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 if TYPE_CHECKING:
     from ocerp.services.knowledge_store import KnowledgeStore
 
 from ocerp.generation import generate_boq_from_prompt
-from ocerp.retrieval import search_cost_items  # noqa: F401 - kept for test monkeypatch compatibility
+from ocerp.retrieval import (
+    search_cost_items,  # noqa: F401 - kept for test monkeypatch compatibility
+)
 from ocerp.services.boq_models import (
     BoQRequirement,
     PricingConfig,
@@ -108,7 +109,9 @@ class QuoteGraphState:
     logging and debugging.
     """
 
-    def __init__(self, request: BoQGenerateRequest, knowledge_store: KnowledgeStore | None = None) -> None:
+    def __init__(
+        self, request: BoQGenerateRequest, knowledge_store: KnowledgeStore | None = None
+    ) -> None:
         self.request = request
         self.knowledge_store = knowledge_store
         self.pricing_config: PricingConfig | None = None
@@ -234,7 +237,9 @@ async def price_node(state: QuoteGraphState) -> None:
             line_items.append(price_material_item(item, state.pricing_config))
         except PriceFloorViolationError as exc:
             logger.warning(
-                "Dropping line below price floor: %s", exc, extra={"requirement": item.requirement.id}
+                "Dropping line below price floor: %s",
+                exc,
+                extra={"requirement": item.requirement.id},
             )
             state.warnings.append(
                 f"Dropped {item.requirement.concept} ({item.cost_item.get('code')!r}): {exc}"
@@ -455,16 +460,12 @@ def validation_node(state: QuoteGraphState) -> None:
         any(token in desc for token in ("rewire", "consumer unit", "new circuit", "ev"))
         and "certification" not in labour_notes
     ):
-        quality_warnings.append(
-            "Quality gate: certification and handover allowance is missing."
-        )
+        quality_warnings.append("Quality gate: certification and handover allowance is missing.")
     if (
         any(token in desc for token in ("loft", "floorboard", "chasing", "solid wall", "access"))
         and "access" not in labour_notes
     ):
-        quality_warnings.append(
-            "Quality gate: access/making-good time appears to be missing."
-        )
+        quality_warnings.append("Quality gate: access/making-good time appears to be missing.")
 
     if quality_warnings:
         state.warnings.extend(quality_warnings)

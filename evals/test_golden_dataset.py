@@ -158,9 +158,7 @@ async def test_golden_dataset_summary(
                 "category": r.category,
                 "difficulty": r.difficulty,
                 "passed": r.passed,
-                "failed_criteria": [
-                    c.criterion for c in r.criteria_results if c.passed is False
-                ],
+                "failed_criteria": [c.criterion for c in r.criteria_results if c.passed is False],
                 # Per-case self-diagnostics so a future eval failure says
                 # WHY without anyone having to grep results/*.json.
                 "material_total": r.summary.get("material_total"),

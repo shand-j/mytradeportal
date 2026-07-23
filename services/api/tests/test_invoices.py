@@ -15,9 +15,7 @@ async def _create_tenant(client: AsyncClient, slug: str) -> dict[str, Any]:
     return response.json()  # type: ignore[no-any-return]
 
 
-async def _create_contact(
-    client: AsyncClient, tenant_id: str, name: str
-) -> dict[str, Any]:
+async def _create_contact(client: AsyncClient, tenant_id: str, name: str) -> dict[str, Any]:
     response = await client.post(
         "/contacts",
         headers={"X-Tenant-ID": tenant_id},
@@ -27,9 +25,7 @@ async def _create_contact(
     return response.json()  # type: ignore[no-any-return]
 
 
-async def _create_quote(
-    client: AsyncClient, tenant_id: str, contact_id: str
-) -> dict[str, Any]:
+async def _create_quote(client: AsyncClient, tenant_id: str, contact_id: str) -> dict[str, Any]:
     response = await client.post(
         "/quotes",
         headers={"X-Tenant-ID": tenant_id},

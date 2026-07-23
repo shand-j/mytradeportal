@@ -264,7 +264,7 @@ export function useApproveQuote() {
 
   return useMutation<Quote, ApiError, string>({
     mutationFn: async (id) => {
-      const raw = await api.post<Record<string, unknown>>(`/quotes/${id}/approve`);
+      const raw = await api.post<Record<string, unknown>>(`/quotes/${id}/approve`, { approved: true });
       return toQuote(raw);
     },
     onSuccess: (_, id) => {
@@ -395,7 +395,7 @@ export function useConvertQuoteToInvoice() {
   const queryClient = useQueryClient();
 
   return useMutation<Invoice, ApiError, string>({
-    mutationFn: (id) => api.post(`/quotes/${id}/convert-to-invoice`),
+    mutationFn: (id) => api.post(`/quotes/${id}/convert-to-invoice`, {}),
     onSuccess: (_, id) => {
       queryClient.invalidateQueries({ queryKey: quoteKeys.all });
       queryClient.invalidateQueries({ queryKey: quoteKeys.detail(id) });

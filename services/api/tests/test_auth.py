@@ -1,5 +1,6 @@
 """Tests for authentication and user management endpoints."""
 
+from typing import Any
 from uuid import uuid4
 
 import pytest
@@ -36,7 +37,7 @@ async def _create_admin_user(db: AsyncSession) -> tuple[Tenant, User, str]:
 
 
 @pytest.fixture
-async def admin_credentials(client: AsyncClient, db: AsyncSession) -> dict:
+async def admin_credentials(client: AsyncClient, db: AsyncSession) -> dict[str, Any]:
     """Return login credentials for a freshly created admin user."""
     tenant, _, password = await _create_admin_user(db)
     return {
@@ -47,7 +48,7 @@ async def admin_credentials(client: AsyncClient, db: AsyncSession) -> dict:
     }
 
 
-async def test_login_success(client: AsyncClient, admin_credentials: dict) -> None:
+async def test_login_success(client: AsyncClient, admin_credentials: dict[str, Any]) -> None:
     response = await client.post(
         "/auth/login",
         headers={"host": admin_credentials["host"]},
@@ -63,7 +64,9 @@ async def test_login_success(client: AsyncClient, admin_credentials: dict) -> No
     assert "session" in response.cookies
 
 
-async def test_login_invalid_password(client: AsyncClient, admin_credentials: dict) -> None:
+async def test_login_invalid_password(
+    client: AsyncClient, admin_credentials: dict[str, Any]
+) -> None:
     response = await client.post(
         "/auth/login",
         headers={"host": admin_credentials["host"]},
@@ -75,12 +78,81 @@ async def test_login_invalid_password(client: AsyncClient, admin_credentials: di
     assert response.status_code == 401
 
 
+async def test_login_with_explicit_tenant_slug(client: AsyncClient, db: AsyncSession) -> None:
+    """An explicit tenant_slug authenticates a non-default tenant's user even
+    when the Host header carries no tenant subdomain (bare domain)."""
+    tenant, user, password = await _create_admin_user(db)
+    response = await client.post(
+        "/auth/login",
+        json={
+            "email": user.email,
+            "password": password,
+            "tenant_slug": tenant.slug,
+        },
+    )
+    assert response.status_code == 200
+    assert response.json()["email"] == user.email
+    assert "session" in response.cookies
+
+
+async def test_login_tenant_slug_overrides_host_subdomain(
+    client: AsyncClient, db: AsyncSession
+) -> None:
+    """When both are present, tenant_slug wins over Host-subdomain resolution."""
+    tenant, user, password = await _create_admin_user(db)
+    other = Tenant(slug=f"other-{uuid4().hex[:8]}", name="Other Electrical")
+    db.add(other)
+    await db.commit()
+    response = await client.post(
+        "/auth/login",
+        headers={"host": f"{other.slug}.localhost"},
+        json={
+            "email": user.email,
+            "password": password,
+            "tenant_slug": tenant.slug,
+        },
+    )
+    assert response.status_code == 200
+    assert response.json()["tenant_id"] == str(tenant.id)
+
+
+async def test_login_with_unknown_tenant_slug_is_401(
+    client: AsyncClient, admin_credentials: dict[str, Any]
+) -> None:
+    response = await client.post(
+        "/auth/login",
+        json={
+            "email": admin_credentials["email"],
+            "password": admin_credentials["password"],
+            "tenant_slug": "no-such-tenant",
+        },
+    )
+    assert response.status_code == 401
+
+
+async def test_login_with_tenant_slug_and_wrong_password_is_401(
+    client: AsyncClient, db: AsyncSession
+) -> None:
+    tenant, user, _ = await _create_admin_user(db)
+    response = await client.post(
+        "/auth/login",
+        json={
+            "email": user.email,
+            "password": "wrong-password",
+            "tenant_slug": tenant.slug,
+        },
+    )
+    assert response.status_code == 401
+
+
 async def test_me_requires_authentication(client: AsyncClient) -> None:
     response = await client.get("/auth/me")
     assert response.status_code == 401
 
 
-async def test_me_returns_authenticated_user(client: AsyncClient, admin_credentials: dict) -> None:
+async def test_me_returns_authenticated_user(
+    client: AsyncClient, admin_credentials: dict[str, Any]
+) -> None:
     await client.post(
         "/auth/login",
         headers={"host": admin_credentials["host"]},
@@ -95,7 +167,7 @@ async def test_me_returns_authenticated_user(client: AsyncClient, admin_credenti
     assert data["email"] == admin_credentials["email"]
 
 
-async def test_logout_clears_cookie(client: AsyncClient, admin_credentials: dict) -> None:
+async def test_logout_clears_cookie(client: AsyncClient, admin_credentials: dict[str, Any]) -> None:
     await client.post(
         "/auth/login",
         headers={"host": admin_credentials["host"]},
@@ -109,7 +181,9 @@ async def test_logout_clears_cookie(client: AsyncClient, admin_credentials: dict
     assert response.cookies.get("session") is None
 
 
-async def test_create_user_requires_admin(client: AsyncClient, admin_credentials: dict) -> None:
+async def test_create_user_requires_admin(
+    client: AsyncClient, admin_credentials: dict[str, Any]
+) -> None:
     await client.post(
         "/auth/login",
         headers={"host": admin_credentials["host"]},
@@ -156,7 +230,8 @@ async def test_login_with_supabase_user(
     await db.commit()
 
     monkeypatch.setattr("app.routers.auth.is_supabase_configured", lambda: True)
-    async def _sign_in(email: str, password: str) -> dict:
+
+    async def _sign_in(email: str, password: str) -> dict[str, Any]:
         return {"user": {"id": supabase_uid}}
 
     monkeypatch.setattr("app.routers.auth.sign_in_with_password", _sign_in)
@@ -172,10 +247,11 @@ async def test_login_with_supabase_user(
 
 
 async def test_login_fails_when_supabase_rejects_credentials(
-    client: AsyncClient, admin_credentials: dict, monkeypatch: pytest.MonkeyPatch
+    client: AsyncClient, admin_credentials: dict[str, Any], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """When Supabase is configured but rejects credentials, do not fall back local."""
     monkeypatch.setattr("app.routers.auth.is_supabase_configured", lambda: True)
+
     async def _sign_in(email: str, password: str) -> None:
         return None
 

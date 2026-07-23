@@ -25,7 +25,9 @@ if TYPE_CHECKING:
 class _RecordingKnowledgeStore:
     """Stub store that returns canned chunks and records every search request."""
 
-    def __init__(self, chunks_by_filter: dict[tuple[str | None, str | None], list[KnowledgeSearchResult]]):
+    def __init__(
+        self, chunks_by_filter: dict[tuple[str | None, str | None], list[KnowledgeSearchResult]]
+    ):
         self._chunks = chunks_by_filter
         self.calls: list[dict[str, Any]] = []
 
@@ -73,7 +75,10 @@ def _chunk(
         ("Install a wall-mounted EV charger on the driveway", {"ev_charger", "outdoor"}),
         ("Rewire of a 3 bed semi detached house", {"rewire"}),
         ("Replace consumer unit with metal CU including SPD", {"consumer_unit"}),
-        ("Add downlights to the bathroom and replace shower circuit", {"bathroom", "lighting", "shower"}),
+        (
+            "Add downlights to the bathroom and replace shower circuit",
+            {"bathroom", "lighting", "shower"},
+        ),
         ("EICR for landlord", {"eicr"}),
         ("Add a double socket in the living room", set()),  # no triggering keyword
     ],
@@ -138,7 +143,9 @@ async def test_gather_compliance_context_degrades_when_store_raises() -> None:
 
     assert context.knowledge_available is False
     assert context.citations == []
-    assert any("unreachable" in w.lower() or "failed" in w.lower() for w in context.retrieval_warnings)
+    assert any(
+        "unreachable" in w.lower() or "failed" in w.lower() for w in context.retrieval_warnings
+    )
 
 
 @pytest.mark.asyncio

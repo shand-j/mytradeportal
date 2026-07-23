@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterator
+from typing import TYPE_CHECKING
 from uuid import uuid4
 
 import pytest
@@ -10,8 +10,12 @@ from app.limiter import limiter
 from app.models import Tenant, User
 from app.rls import set_tenant_in_session
 from app.security import get_password_hash
-from httpx import AsyncClient
-from sqlalchemy.ext.asyncio import AsyncSession
+
+if TYPE_CHECKING:
+    from collections.abc import Iterator
+
+    from httpx import AsyncClient
+    from sqlalchemy.ext.asyncio import AsyncSession
 
 
 @pytest.fixture()

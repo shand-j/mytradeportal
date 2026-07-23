@@ -19,12 +19,8 @@ from app.schemas import (
     AiQuotePerformanceMonthlyData,
     DashboardData,
     DashboardKPIs,
-    DemandForecast,
-    DemandForecastPrediction,
     RevenueChartData,
     ServiceBreakdownItem,
-    VoiceAnalytics,
-    VoiceStats,
 )
 
 router = APIRouter(prefix="/analytics", tags=["Analytics"])
@@ -59,11 +55,7 @@ def _last_6_months() -> list[tuple[datetime, str, str]]:
     m = _month_start(now)
     for _ in range(6):
         starts.insert(0, m)
-        m = (
-            m.replace(year=m.year - 1, month=12)
-            if m.month == 1
-            else m.replace(month=m.month - 1)
-        )
+        m = m.replace(year=m.year - 1, month=12) if m.month == 1 else m.replace(month=m.month - 1)
     return [(s, s.strftime("%b"), s.strftime("%Y-%m")) for s in starts]
 
 
@@ -124,7 +116,9 @@ async def dashboard(tenant: TenantDep, db: DbDep) -> DashboardData:
 
     # Pending quotes
     pending_quotes_result = await db.execute(
-        select(Quote.status, func.count(Quote.id).label("cnt"), func.sum(Quote.total).label("value"))
+        select(
+            Quote.status, func.count(Quote.id).label("cnt"), func.sum(Quote.total).label("value")
+        )
         .where(Quote.tenant_id == tenant.id, Quote.status.in_({"draft", "sent"}))
         .group_by(Quote.status)
     )
@@ -148,8 +142,9 @@ async def dashboard(tenant: TenantDep, db: DbDep) -> DashboardData:
 
     # Reviews
     review_stats = await db.execute(
-        select(func.avg(Review.rating).label("avg"), func.count(Review.id).label("cnt"))
-        .where(Review.tenant_id == tenant.id)
+        select(func.avg(Review.rating).label("avg"), func.count(Review.id).label("cnt")).where(
+            Review.tenant_id == tenant.id
+        )
     )
     review_row = review_stats.one_or_none()
     average_rating = round(_to_float(review_row.avg) if review_row else 0.0, 1)
@@ -285,12 +280,7 @@ async def dashboard(tenant: TenantDep, db: DbDep) -> DashboardData:
         ),
         service_breakdown=service_breakdown,
         recent_activity=recent,
-        voice_stats=VoiceStats(
-            calls_today=4,
-            resolution_rate=92,
-            quotes_from_voice=3,
-            avg_call_duration="3m 24s",
-        ),
+        voice_stats=None,
     )
 
 
@@ -341,18 +331,6 @@ async def ai_insights(tenant: TenantDep, db: DbDep) -> AIInsights:
             )
         )
 
-    now = datetime.utcnow()
-    demand_predictions: list[DemandForecastPrediction] = []
-    for i in range(1, 5):
-        week_start = now + timedelta(weeks=i)
-        demand_predictions.append(
-            DemandForecastPrediction(
-                week=week_start.strftime("%d %b"),
-                predicted_jobs=i,
-                confidence=round(0.65 + 0.05 * i, 2),
-            )
-        )
-
     return AIInsights(
         ai_quote_performance=AiQuotePerformance(
             total_generated=total_generated,
@@ -361,15 +339,6 @@ async def ai_insights(tenant: TenantDep, db: DbDep) -> AIInsights:
             average_generation_time=12.5,
             monthly_data=monthly_data,
         ),
-        demand_forecast=DemandForecast(
-            predictions=demand_predictions,
-            insight="Demand is expected to grow steadily over the next month based on current quote pipeline.",
-        ),
-        voice_analytics=VoiceAnalytics(
-            total_calls=0,
-            average_duration="0m 0s",
-            resolution_rate=0.0,
-            total_revenue=0.0,
-            recent_calls=[],
-        ),
+        demand_forecast=None,
+        voice_analytics=None,
     )

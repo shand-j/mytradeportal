@@ -1,4 +1,22 @@
-"""Bootstrap a demo tenant and admin user for local development."""
+"""Bootstrap a tenant and admin user for LOCAL DEVELOPMENT only.
+
+This is a convenience script for spinning up a local dev environment. It is
+not a production provisioning path: the script refuses to run when
+ENVIRONMENT=production. In production, create the first tenant via
+``POST /tenants`` gated by ``SETUP_TOKEN`` (see docs/deployment.md).
+
+Required environment variables (no defaults are provided — the seed must not
+bake in credentials):
+
+- ``SEED_ADMIN_EMAIL`` — login email for the seeded admin user.
+- ``SEED_ADMIN_PASSWORD`` — password for the seeded admin user (never printed).
+
+Optional environment variables:
+
+- ``SEED_TENANT_SLUG`` — tenant slug (default ``demo``).
+- ``SEED_TENANT_NAME`` — tenant display name (default ``Demo Electrical``).
+- ``SEED_ADMIN_NAME`` — admin full name (default ``Demo Admin``).
+"""
 
 import asyncio
 import os
@@ -13,17 +31,27 @@ from app.rls import bypass_rls_in_session
 from app.security import get_password_hash
 from app.supabase import admin_create_user, is_supabase_configured
 
-DEFAULT_TENANT_SLUG = os.environ.get("SEED_TENANT_SLUG", "demo")
-DEFAULT_TENANT_NAME = os.environ.get("SEED_TENANT_NAME", "Demo Electrical")
-DEFAULT_ADMIN_EMAIL = os.environ.get("SEED_ADMIN_EMAIL", "admin@demo.local")
-DEFAULT_ADMIN_PASSWORD = os.environ.get("SEED_ADMIN_PASSWORD", "password123")
-DEFAULT_ADMIN_NAME = os.environ.get("SEED_ADMIN_NAME", "Demo Admin")
+
+def _require_env(name: str) -> str:
+    """Return a required environment variable or fail fast with a clear message."""
+    value = os.environ.get(name)
+    if not value:
+        raise RuntimeError(
+            f"{name} must be set to run this seed script; no default credentials are provided"
+        )
+    return value
 
 
 async def seed() -> None:
-    """Create the demo tenant and admin user if they do not already exist."""
+    """Create the tenant and admin user if they do not already exist."""
     if settings.environment == "production":
         raise RuntimeError("This seed script must not be run in production")
+
+    tenant_slug = os.environ.get("SEED_TENANT_SLUG", "demo")
+    tenant_name = os.environ.get("SEED_TENANT_NAME", "Demo Electrical")
+    admin_email = _require_env("SEED_ADMIN_EMAIL")
+    admin_password = _require_env("SEED_ADMIN_PASSWORD")
+    admin_name = os.environ.get("SEED_ADMIN_NAME", "Demo Admin")
 
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
@@ -33,12 +61,10 @@ async def seed() -> None:
         # explicitly for this connection so the User insert can supply any
         # tenant_id without depending on app.current_tenant being set.
         await bypass_rls_in_session(session)
-        tenant_result = await session.execute(
-            select(Tenant).where(Tenant.slug == DEFAULT_TENANT_SLUG)
-        )
+        tenant_result = await session.execute(select(Tenant).where(Tenant.slug == tenant_slug))
         tenant = tenant_result.scalar_one_or_none()
         if tenant is None:
-            tenant = Tenant(slug=DEFAULT_TENANT_SLUG, name=DEFAULT_TENANT_NAME)
+            tenant = Tenant(slug=tenant_slug, name=tenant_name)
             session.add(tenant)
             await session.flush()
             await session.refresh(tenant)
@@ -47,9 +73,7 @@ async def seed() -> None:
             print(f"Tenant already exists: {tenant.slug}")
 
         user_result = await session.execute(
-            select(User).where(
-                User.email == DEFAULT_ADMIN_EMAIL, User.tenant_id == tenant.id
-            )
+            select(User).where(User.email == admin_email, User.tenant_id == tenant.id)
         )
         user = user_result.scalar_one_or_none()
         supabase_uid: str | None = None
@@ -57,7 +81,7 @@ async def seed() -> None:
 
         if is_supabase_configured():
             try:
-                sb_user = admin_create_user(DEFAULT_ADMIN_EMAIL, DEFAULT_ADMIN_PASSWORD)
+                sb_user = admin_create_user(admin_email, admin_password)
                 supabase_uid = sb_user.get("id")
                 print(f"Created Supabase auth user: {supabase_uid}")
             except RuntimeError as exc:
@@ -67,7 +91,7 @@ async def seed() -> None:
                 with httpx.Client() as client:
                     response = client.get(
                         f"{settings.supabase_url.rstrip('/')}/auth/v1/admin/users",
-                        params={"email": DEFAULT_ADMIN_EMAIL},
+                        params={"email": admin_email},
                         headers={
                             "apikey": settings.supabase_service_role_key,
                             "Authorization": f"Bearer {settings.supabase_service_role_key}",
@@ -83,13 +107,13 @@ async def seed() -> None:
                     else:
                         raise exc
         else:
-            password_hash = get_password_hash(DEFAULT_ADMIN_PASSWORD)
+            password_hash = get_password_hash(admin_password)
 
         if user is None:
             user = User(
                 tenant_id=tenant.id,
-                email=DEFAULT_ADMIN_EMAIL,
-                full_name=DEFAULT_ADMIN_NAME,
+                email=admin_email,
+                full_name=admin_name,
                 role="admin",
                 password_hash=password_hash,
                 supabase_uid=supabase_uid,
@@ -107,10 +131,9 @@ async def seed() -> None:
             else:
                 print(f"Admin user already exists: {user.email}")
 
-        print("\nLogin with:")
+        print("\nSeed complete.")
         print(f"  Tenant slug: {tenant.slug}")
-        print(f"  Email:       {DEFAULT_ADMIN_EMAIL}")
-        print(f"  Password:    {DEFAULT_ADMIN_PASSWORD}")
+        print(f"  Admin email: {admin_email}")
 
 
 if __name__ == "__main__":

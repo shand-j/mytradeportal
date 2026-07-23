@@ -3,8 +3,8 @@ import { test, expect } from '@playwright/test';
 test('admin can log in and interact with the dashboard', async ({ page }) => {
   await page.goto('/login');
 
-  await page.getByLabel(/email/i).fill('admin@demo.local');
-  await page.getByLabel(/password/i).fill('password123');
+  await page.getByLabel(/email/i).fill('admin@demo.example.com');
+  await page.getByLabel(/password/i).fill('e2e-password-123');
   await page.getByRole('button', { name: /sign in/i }).click();
 
   await page.waitForURL('**/');
