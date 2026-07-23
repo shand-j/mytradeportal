@@ -11,12 +11,14 @@ COPY services/admin/requirements.txt ./
 RUN pip install --no-cache-dir -r requirements.txt
 
 COPY services/admin ./
+COPY scripts/init_db.py ./scripts/init_db.py
 
 ENV PYTHONUNBUFFERED=1
 ENV DJANGO_SETTINGS_MODULE=admin_project.settings
 
 EXPOSE 8001
 
-# Collect static assets for whitenoise, run migrations, then serve with gunicorn.
+# Collect static assets for whitenoise, then serve with gunicorn.
+# Migrations are run via scripts/init_db.py (Railway preDeployCommand).
 # Railway injects $PORT; default to 8001 locally.
-CMD ["sh", "-c", "python manage.py migrate --noinput && python manage.py collectstatic --noinput && gunicorn admin_project.wsgi --bind 0.0.0.0:${PORT:-8001}"]
+CMD ["sh", "-c", "python manage.py collectstatic --noinput && gunicorn admin_project.wsgi --bind 0.0.0.0:${PORT:-8001}"]

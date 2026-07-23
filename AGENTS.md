@@ -284,8 +284,8 @@ docker compose down -v && docker compose up -d
 source .venv/bin/activate
 pip install -e ".[dev]"
 
-# Run migrations
-PYTHONPATH=services/api alembic upgrade head
+# Run database initialisation (Alembic + Django tables)
+python scripts/init_db.py
 
 # Seed local-dev tenant + admin user (env vars required; local dev only)
 cd services/api
