@@ -1,5 +1,8 @@
 import { test, expect } from '@playwright/test';
 
+const adminEmail = process.env.E2E_ADMIN_EMAIL ?? 'admin@demo.example.com';
+const adminPassword = process.env.E2E_ADMIN_PASSWORD ?? 'e2e-password-123';
+
 test.skip(!process.env.RUN_AI_E2E, 'AI E2E tests skipped by default; set RUN_AI_E2E=1 to run');
 
 test.setTimeout(120000);
@@ -7,14 +10,14 @@ test.setTimeout(120000);
 test('generate an AI draft quote from the quotes page', async ({ page }) => {
   await page.goto('/login');
 
-  await page.getByLabel(/email/i).fill('admin@demo.example.com');
-  await page.getByLabel(/password/i).fill('e2e-password-123');
+  await page.getByLabel(/email/i).fill(adminEmail);
+  await page.getByLabel(/password/i).fill(adminPassword);
   await page.getByRole('button', { name: /sign in/i }).click();
 
   await page.waitForURL('**/');
 
   await page.goto('/quotes');
-  await expect(page).toHaveURL('http://demo.localhost:3000/quotes');
+  await expect(page).toHaveURL('/quotes');
 
   await page.getByTestId('generate-ai-quote').click();
   await expect(page.getByRole('heading', { name: /generate quote with ai/i })).toBeVisible();
