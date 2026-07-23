@@ -147,20 +147,24 @@ export default defineRailway(() => {
     env: {
       // Baked into the Vite bundle at build time (Docker build ARG).
       VITE_API_BASE_URL: API_PUBLIC_URL,
+      // Match nginx template ${PORT}; Railway overrides $PORT otherwise.
+      PORT: "80",
     },
   });
 
   const admin = service("admin", {
     source: github(GITHUB_REPO),
     build: { builder: "DOCKERFILE", dockerfilePath: "services/admin/Dockerfile" },
-    healthcheck: "/admin/login/",
+    healthcheck: "/health",
     env: {
       // Django uses psycopg2, so the plugin's plain postgresql:// URL is correct.
       DATABASE_URL: db.env.DATABASE_URL,
       SECRET_KEY: preserve(),
       DEBUG: "False",
-      ALLOWED_HOSTS: "${{admin.RAILWAY_PUBLIC_DOMAIN}}",
+      ALLOWED_HOSTS: "${{admin.RAILWAY_PUBLIC_DOMAIN}},${{admin.RAILWAY_PRIVATE_DOMAIN}},localhost,127.0.0.1",
       CSRF_TRUSTED_ORIGINS: ADMIN_PUBLIC_URL,
+      // Match Dockerfile EXPOSE and gunicorn bind port; Railway overrides $PORT otherwise.
+      PORT: "8001",
     },
   });
 
