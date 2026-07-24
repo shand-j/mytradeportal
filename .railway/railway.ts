@@ -78,8 +78,10 @@ export default defineRailway(() => {
     regions: { [TARGET_REGION]: 1 },
     env: {
       // MinIO root credentials are required. Set them as environment-level
-      // variables in Railway; not managed by IaC so they survive teardowns.
-      // MINIO_ROOT_USER / MINIO_ROOT_PASSWORD: set via Railway dashboard
+      // variables in Railway, but IaC must reference them with preserve() so
+      // they are not deleted on apply/teardown.
+      MINIO_ROOT_USER: preserve(),
+      MINIO_ROOT_PASSWORD: preserve(),
       // MinIO API listens on 9000; Railway uses $PORT to target healthchecks.
       PORT: "9000",
     },
@@ -132,19 +134,19 @@ export default defineRailway(() => {
       // reached via its PUBLIC domain over HTTPS (MINIO_USE_SSL=true).
       MINIO_ENDPOINT: minio.env.RAILWAY_PUBLIC_DOMAIN,
       MINIO_USE_SSL: "true",
-      // These three secrets are required for production startup. They are
-      // intentionally omitted from IaC so they are not reset on apply/teardown.
-      // Set them as environment-level variables in the Railway dashboard before
-      // the first deploy (and never commit them).
       MINIO_BUCKET: "mtp-uploads",
+      // These secrets are required for production startup. They are set as
+      // environment-level variables in Railway, but IaC must reference them with
+      // preserve() so they are not deleted on apply/teardown.
+      MINIO_ACCESS_KEY: preserve(),
+      MINIO_SECRET_KEY: preserve(),
       OPENAI_API_KEY: preserve(),
       EMBEDDING_MODEL: "text-embedding-3-small",
       LLM_MODEL: "gpt-4o-mini",
       LLM_TIMEOUT_SECONDS: "300",
       ALLOWED_ORIGINS: WEB_PUBLIC_URL,
       // Mandatory in production (validate_production refuses dev defaults).
-      // Set as an environment-level variable in Railway; not managed by IaC.
-      // AUTH_SECRET_KEY: set via Railway dashboard
+      AUTH_SECRET_KEY: preserve(),
       // Gates POST /tenants, which bootstraps the first tenant + admin user.
       SETUP_TOKEN: preserve(),
       // Lets GET /feature-flags read this project's Railway Signals registry
@@ -197,6 +199,7 @@ export default defineRailway(() => {
   const dataPipeline = service("data-pipeline", {
     source: github(GITHUB_REPO),
     build: { builder: "DOCKERFILE", dockerfilePath: "services/data-pipeline/Dockerfile" },
+    preDeployCommand: "python scripts/init_data_pipeline.py",
     regions: { [TARGET_REGION]: 1 },
     env: {
       DATABASE_URL: db.env.DATABASE_URL,

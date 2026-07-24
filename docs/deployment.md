@@ -212,9 +212,10 @@ railway service redeploy --service admin
 
 ### Secrets
 
-Variables marked `preserve()` in `railway.ts` are set once in the Railway
-dashboard and are never overwritten by later applies. They must be set before the
-first deploy:
+Variables marked `preserve()` in `railway.ts` are set once as
+environment-level variables in the Railway dashboard and are never
+overwritten or deleted by later applies. They must be set before the first
+deploy:
 
 | Service | Variable | Notes |
 |---|---|---|
@@ -284,11 +285,12 @@ in `.github/workflows/ci.yml`).
 In the Railway dashboard, set the `preserve()` variables for every service
 before the first deploy. Do **not** rely on defaults in production.
 
-Required minimum:
+Required minimum (set as **environment-level variables** in the Railway dashboard, and declared in `.railway/railway.ts` with `preserve()` so they are not deleted on later IaC applies):
 
 1. `api` → `OPENAI_API_KEY`, `AUTH_SECRET_KEY`, `SETUP_TOKEN`,
    `MINIO_ACCESS_KEY`, `MINIO_SECRET_KEY`, `RAILWAY_TOKEN`.
-2. `minio` → `MINIO_ROOT_USER`, `MINIO_ROOT_PASSWORD` (same values as above).
+2. `minio` → `MINIO_ROOT_USER`, `MINIO_ROOT_PASSWORD` (same values as
+   `MINIO_ACCESS_KEY` / `MINIO_SECRET_KEY`).
 3. `admin` → `SECRET_KEY`, `DJANGO_SUPERUSER_PASSWORD`.
 4. `data-pipeline` → `OPENAI_API_KEY`, `APIFY_API_TOKEN`.
 
@@ -378,16 +380,18 @@ Remove or rotate `SETUP_TOKEN` after the first tenant is created.
 
 ### 10. Seed the cost database and knowledge base
 
-Run the data-pipeline loaders once:
+The data-pipeline pre-deploy command runs `scripts/init_data_pipeline.py` on
+every deploy, which in turn runs the curated seed loader and the knowledge
+loader. These create the `cost_items` and `quoting_knowledge` Qdrant
+collections and populate the Postgres `cost_items` table. They are idempotent
+and can be re-run if needed.
+
+To run them manually:
 
 ```bash
 railway run --service data-pipeline python -m data_pipeline.load_curated_seed
 railway run --service data-pipeline python -m data_pipeline.knowledge_loader
 ```
-
-These create the `cost_items` and `quoting_knowledge` Qdrant collections and
-populate the Postgres `cost_items` table. They are idempotent and can be re-run
-if needed.
 
 ### 11. Verify the deployment
 
