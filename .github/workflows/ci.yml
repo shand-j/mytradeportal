@@ -1,5 +1,5 @@
 name: CI
-
+## FIXME: This workflow was a wrongful implementation of what shout have been dev only kimi agentic pen-test workflow. It is now deprecated and should be removed once the agentic-pen-test workflow is fully functional and tested.
 on:
   push:
     branches: [main]
