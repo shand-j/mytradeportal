@@ -11,7 +11,6 @@ COPY services/admin/requirements.txt ./
 RUN pip install --no-cache-dir -r requirements.txt
 
 COPY services/admin ./
-COPY scripts/init_db.py ./scripts/init_db.py
 
 ENV PYTHONUNBUFFERED=1
 ENV DJANGO_SETTINGS_MODULE=admin_project.settings
