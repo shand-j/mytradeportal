@@ -55,19 +55,23 @@ export default defineRailway(() => {
   // Infrastructure services (Docker images + volumes)
   // ---------------------------------------------------------------------
   const qdrant = service("qdrant", {
-    source: image("qdrant/qdrant:v1.11.5"),
+    // Docker Hub rate limits and availability issues are common in CI/CD.
+    // Pull the Qdrant image from GitHub Container Registry instead.
+    source: image("ghcr.io/qdrant/qdrant:v1.11.5"),
+    healthcheck: "/healthz",
     volumeMounts: { "/qdrant/storage": volume("qdrant-storage", { sizeMB: 5000, region: TARGET_REGION }) },
     regions: { [TARGET_REGION]: 1 },
   });
 
   const minio = service("minio", {
-    // NOTE: the previously pinned 2024 tag fails to start on Railway (instant
-    // FAILED deploy with no logs); latest deploys cleanly. The volume is
-    // mounted at /mnt/data to stay clear of the image's VOLUME /data
-    // directive, and the start command must invoke the `minio` binary
-    // explicitly — Railway replaces the image entrypoint with this command.
-    source: image("minio/minio:latest"),
+    // MinIO stopped publishing free images to Docker Hub in late 2025. Use
+    // the Quay.io mirror instead. The volume is mounted at /mnt/data to stay
+    // clear of the image's VOLUME /data directive, and the start command must
+    // invoke the `minio` binary explicitly — Railway replaces the image
+    // entrypoint with this command.
+    source: image("quay.io/minio/minio:RELEASE.2025-07-23T15-54-02Z"),
     start: 'minio server /mnt/data --console-address ":9001"',
+    healthcheck: "/minio/health/live",
     volumeMounts: { "/mnt/data": volume("minio-data", { sizeMB: 5000, region: TARGET_REGION }) },
     regions: { [TARGET_REGION]: 1 },
     env: {

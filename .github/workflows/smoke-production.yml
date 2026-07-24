@@ -15,7 +15,7 @@ concurrency:
 jobs:
   smoke-production:
     # Only run when the CI workflow succeeded (and was a deploy).
-    if: github.event_name == 'workflow_dispatch' || (github.event.workflow_run?.conclusion == 'success' && github.event.workflow_run?.event == 'push')
+    if: github.event_name == 'workflow_dispatch' || (github.event.workflow_run && github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push')
     runs-on: ubuntu-latest
     environment: MyTradePortal/Production
     defaults:
