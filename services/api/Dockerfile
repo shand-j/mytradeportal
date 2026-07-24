@@ -21,6 +21,9 @@ COPY scripts/init_db.py ./scripts/init_db.py
 COPY scripts/init_data_pipeline.py ./scripts/init_data_pipeline.py
 COPY scripts/init_api.py ./scripts/init_api.py
 COPY services/data-pipeline/src ./services/data-pipeline/src
+COPY docs/UK_Domestic_Electrical_Quoting_Knowledge_Base.md ./docs/UK_Domestic_Electrical_Quoting_Knowledge_Base.md
+COPY docs/ai_electrician_quoting_platform_research/uk_domestic_electrical_knowledge_base.json ./docs/ai_electrician_quoting_platform_research/uk_domestic_electrical_knowledge_base.json
+COPY docs/ai_electrician_quoting_platform_research/job_capture_data_model.json ./docs/ai_electrician_quoting_platform_research/job_capture_data_model.json
 
 COPY services/api ./services/api
 

@@ -54,10 +54,13 @@ export default defineRailway(() => {
   // ---------------------------------------------------------------------
   // Infrastructure services (Docker images + volumes)
   // ---------------------------------------------------------------------
+  const qdrantStorage = volume("qdrant-storage", { sizeMB: 5000, region: TARGET_REGION });
+  const minioData = volume("minio-data", { sizeMB: 5000, region: TARGET_REGION });
+
   const qdrant = service("qdrant", {
     source: image("qdrant/qdrant:v1.11.5"),
     healthcheck: "/healthz",
-    volumeMounts: { "/qdrant/storage": volume("qdrant-storage", { sizeMB: 5000, region: TARGET_REGION }) },
+    volumeMounts: { "/qdrant/storage": qdrantStorage },
     regions: { [TARGET_REGION]: 1 },
     env: {
       // Qdrant listens on 6333; Railway uses $PORT to target healthchecks.
@@ -74,7 +77,7 @@ export default defineRailway(() => {
     source: image("quay.io/minio/minio:RELEASE.2025-07-23T15-54-02Z"),
     start: 'minio server /mnt/data --console-address ":9001"',
     healthcheck: "/minio/health/live",
-    volumeMounts: { "/mnt/data": volume("minio-data", { sizeMB: 5000, region: TARGET_REGION }) },
+    volumeMounts: { "/mnt/data": minioData },
     regions: { [TARGET_REGION]: 1 },
     env: {
       // MinIO root credentials are required. Set them as environment-level
@@ -221,6 +224,6 @@ export default defineRailway(() => {
   });
 
   return project("mytradeportal", {
-    resources: [db, cache, qdrant, minio, api, ocerp, web, admin, dataPipeline],
+    resources: [db, cache, qdrant, minio, api, ocerp, web, admin, dataPipeline, qdrantStorage, minioData],
   });
 });
