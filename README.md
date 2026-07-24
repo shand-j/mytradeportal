@@ -45,9 +45,9 @@ The platform is **multi-tenant** from day one: every request carries an
 | Invoicing | ✅ | Auto-numbering, VAT, quote conversion |
 | Paddle payments | ✅ | Checkout creation + webhook recording |
 | Django admin | ✅ | Read-only mirror of operational schema |
-| Back-office UI | 🚧 | Auth + API client integrated; CRUD pages in progress |
+| Back-office UI | ✅ | React SPA, all core pages implemented |
 | Customer PWA | 🚧 | Planned |
-| Voice AI agent | 🚧 | Planned |
+| Voice AI agent | 🚧 | Planned (behind feature flag) |
 | Web chatbot | 🚧 | Planned |
 | Accounting sync | 🚧 | Planned |
 
@@ -98,7 +98,7 @@ including OpenAI configuration.
 - [`docs/api.md`](docs/api.md) — endpoints, auth and examples
 - [`docs/ai-quote-engine.md`](docs/ai-quote-engine.md) — RAG flow and cost database
 - [`docs/development.md`](docs/development.md) — tests, linting, migrations
-- [`docs/deployment.md`](docs/deployment.md) — Docker Compose and production notes
+- [`docs/deployment.md`](docs/deployment.md) — local Docker Compose, Railway IaC, and production deploy playbooks
 
 ---
 
