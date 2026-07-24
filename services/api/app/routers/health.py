@@ -5,7 +5,7 @@ from typing import Any
 from fastapi import APIRouter
 
 from app.config import settings
-from app.qdrant import ensure_collection, get_qdrant_client
+from app.qdrant import get_qdrant_client
 
 router = APIRouter(tags=["Health"])
 
