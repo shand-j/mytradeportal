@@ -171,10 +171,16 @@ def main() -> None:
     parser = argparse.ArgumentParser(
         description="Import all Apify datasets into the cost database, deduplicated"
     )
-    parser.add_argument(
+    group = parser.add_mutually_exclusive_group()
+    group.add_argument(
         "--execute",
         action="store_true",
-        help="Actually write to Postgres and Qdrant; without this, dry-run",
+        help="Actually write to Postgres and Qdrant (default: dry-run)",
+    )
+    group.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Show what would be imported without writing (default behaviour)",
     )
     parser.add_argument(
         "--actor-id",
