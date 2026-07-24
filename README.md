@@ -99,6 +99,10 @@ including OpenAI configuration.
 - [`docs/ai-quote-engine.md`](docs/ai-quote-engine.md) — RAG flow and cost database
 - [`docs/development.md`](docs/development.md) — tests, linting, migrations
 - [`docs/deployment.md`](docs/deployment.md) — local Docker Compose, Railway IaC, and production deploy playbooks
+- [`docs/runbooks/`](docs/runbooks/) — operational runbooks (maintenance, incident response, custom domains, CI/CD, go-live)
+- [`docs/compliance/gdpr-uk.md`](docs/compliance/gdpr-uk.md) — UK GDPR and data protection compliance
+- [`docs/guides/business-owner-onboarding.md`](docs/guides/business-owner-onboarding.md) — non-technical onboarding for tradespeople
+- [`docs/production-test-report.md`](docs/production-test-report.md) — latest pre-go-live production test results
 - [`user-docs/`](user-docs/) — Mintlify customer help centre (quotes, jobs, invoices, payments)
 
 ---

@@ -579,7 +579,11 @@ Planned features not yet implemented: voice AI agent, WhatsApp/SMS messaging, re
 - [`docs/architecture.md`](docs/architecture.md) — layers, services, multi-tenancy.
 - [`docs/api.md`](docs/api.md) — REST API overview.
 - [`docs/ai-quote-engine.md`](docs/ai-quote-engine.md) — RAG flow and cost database.
-- [`docs/deployment.md`](docs/deployment.md) — Docker Compose, Railway (IaC), and production notes.
+- [`docs/deployment.md`](docs/deployment.md) — Docker Compose, Railway (IaC), and production deploy playbooks.
+- [`docs/runbooks/`](docs/runbooks/) — operational runbooks (maintenance, incident response, custom domains, CI/CD, go-live checklist).
+- [`docs/compliance/gdpr-uk.md`](docs/compliance/gdpr-uk.md) — UK GDPR and data protection compliance.
+- [`docs/guides/business-owner-onboarding.md`](docs/guides/business-owner-onboarding.md) — non-technical onboarding for tradespeople.
+- [`docs/production-test-report.md`](docs/production-test-report.md) — latest pre-go-live production test results.
 - [`docs/agent_knowledge_foundation.md`](docs/agent_knowledge_foundation.md) — knowledge-base design for the quoting agent.
 - [`docs/boq_deterministic_rules_audit.md`](docs/boq_deterministic_rules_audit.md) — audit of the BoQ deterministic rules.
 - [`docs/UK_Domestic_Electrical_Quoting_Knowledge_Base.md`](docs/UK_Domestic_Electrical_Quoting_Knowledge_Base.md) — curated UK electrical quoting knowledge.
