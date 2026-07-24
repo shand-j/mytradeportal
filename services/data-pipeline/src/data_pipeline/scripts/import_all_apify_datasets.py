@@ -40,6 +40,7 @@ def _list_datasets(
     api_token: str,
     actor_id: str | None = None,
     limit: int = 1000,
+    verbose: bool = False,
 ) -> list[dict[str, Any]]:
     """Return all accessible Apify datasets, optionally filtered by actor id."""
     url = f"{APIFY_BASE}/datasets"
@@ -49,10 +50,30 @@ def _list_datasets(
 
     while True:
         params["offset"] = offset
+        if verbose:
+            print(f"GET {url} with offset={offset} limit={limit}")
         response = requests.get(url, params=params, timeout=60)
         response.raise_for_status()
         data = response.json()
-        page_items = data.get("data", {}).get("items", [])
+
+        if verbose:
+            print(f"Raw response keys: {list(data.keys())}")
+            if isinstance(data.get("data"), dict):
+                print(f"  data keys: {list(data['data'].keys())}")
+                print(f"  total: {data['data'].get('total')}")
+                print(f"  count: {data['data'].get('count')}")
+                print(f"  items count: {len(data['data'].get('items', []))}")
+
+        # Apify returns {"data": {"items": [...], "total": N, ...}}
+        # Defensive: also handle {"items": [...]} or {"data": [...]} shapes.
+        payload = data.get("data", data)
+        if isinstance(payload, dict):
+            page_items = payload.get("items", [])
+        elif isinstance(payload, list):
+            page_items = payload
+        else:
+            page_items = []
+
         if not page_items:
             break
         items.extend(page_items)
@@ -102,6 +123,7 @@ def _deduplicate_across_datasets(
 async def import_all_datasets(
     execute: bool,
     actor_id: str | None = None,
+    verbose: bool = False,
 ) -> dict[str, int]:
     """Discover all Apify datasets, deduplicate, and upsert into Postgres + Qdrant."""
     if not settings.apify_api_token:
@@ -109,7 +131,7 @@ async def import_all_datasets(
 
     scraper = ScrewfixScraper(api_token=settings.apify_api_token)
 
-    datasets = _list_datasets(settings.apify_api_token, actor_id=actor_id)
+    datasets = _list_datasets(settings.apify_api_token, actor_id=actor_id, verbose=verbose)
     if actor_id:
         print(f"Discovered {len(datasets)} Apify datasets for actor {actor_id!r}")
     else:
@@ -197,9 +219,16 @@ def main() -> None:
         default=None,
         help="Only import datasets created by this actor (by default all datasets are imported)",
     )
+    parser.add_argument(
+        "--verbose",
+        action="store_true",
+        help="Print raw Apify API response details for debugging",
+    )
     args = parser.parse_args()
 
-    result = asyncio.run(import_all_datasets(execute=args.execute, actor_id=args.actor_id))
+    result = asyncio.run(
+        import_all_datasets(execute=args.execute, actor_id=args.actor_id, verbose=args.verbose)
+    )
     print("Import summary:")
     for key, value in result.items():
         print(f"  {key}: {value}")
