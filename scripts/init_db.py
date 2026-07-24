@@ -56,6 +56,10 @@ def _create_app_role(conn: Connection) -> None:
             f"CREATE ROLE {APP_ROLE} WITH LOGIN PASSWORD '{APP_ROLE_PASSWORD}' "
             f"NOSUPERUSER NOBYPASSRLS NOCREATEDB NOCREATEROLE"
         )
+    else:
+        # Keep the role password in sync with the env var in case it was
+        # rotated after the role was first created.
+        conn.exec_driver_sql(f"ALTER ROLE {APP_ROLE} WITH PASSWORD '{APP_ROLE_PASSWORD}'")
     conn.exec_driver_sql(f"GRANT USAGE ON SCHEMA public TO {APP_ROLE}")
     conn.exec_driver_sql(
         f"GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO {APP_ROLE}"
