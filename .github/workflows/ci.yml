@@ -140,4 +140,7 @@ jobs:
           RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
           RAILWAY_ENVIRONMENT: production
           RAILWAY_IAC_TS_BIN: .railway/node_modules/.bin/railway-iac-ts
-        run: railway config apply --yes
+        # --confirm-destructive is required because the IaC corrects region
+        # drift for native DB plugins and re-attaches existing Docker volumes.
+        # These are expected, pre-go-live changes.
+        run: railway config apply --yes --confirm-destructive
