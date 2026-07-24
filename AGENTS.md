@@ -156,9 +156,8 @@ mytradeportal/
 │   │   ├── src/data_pipeline/
 │   │   │   ├── scrapers/           # Apify supplier scrapers
 │   │   │   ├── normalizer/         # Product normalisation
-│   │   │   ├── scripts/            # One-off loader scripts
+│   │   │   ├── scripts/            # One-off loader and cleanup scripts
 │   │   │   ├── loader.py           # Postgres/Qdrant upserts
-│   │   │   ├── load_curated_seed.py
 │   │   │   ├── knowledge_loader.py # Regulatory/quoting knowledge base loader
 │   │   │   └── scheduler.py        # Daily/monthly schedule
 │   │   ├── config/suppliers.yaml
@@ -248,7 +247,7 @@ Core services (`ocerp/services/`):
 - Scrapes Screwfix via Apify (`datasaurus~screwfix-event`); Toolstation support exists but is disabled (`TOOLSTATION_ENABLED=false`).
 - Normalises products into a `UnifiedProduct` schema (`normalizer/`).
 - Upserts `cost_items` into Postgres and indexes embeddings in Qdrant (`cost_items` and `quoting_knowledge` collections).
-- Loads a curated seed catalogue and a regulatory/quoting knowledge base (`load_curated_seed.py`, `knowledge_loader.py`).
+- Loads a regulatory/quoting knowledge base (`knowledge_loader.py`).
 - Runs on a daily/monthly schedule inside the `mtp_data_pipeline` container (`scheduler.py`).
 
 ### Back-office UI (`web/app`)
@@ -292,9 +291,13 @@ cd services/api
 SEED_ADMIN_EMAIL=you@example.com SEED_ADMIN_PASSWORD=<choose-a-password> \
   python -m app.seed_admin_user
 
-# Load curated UK electrical cost items and generate embeddings
+# Load Screwfix data via the Apify pipeline
 cd services/data-pipeline
-python -m data_pipeline.load_curated_seed
+python -m data_pipeline.loader
+
+# Or import an existing Apify dataset
+cd services/data-pipeline
+python -m data_pipeline.import_apify_dataset <dataset-id>
 
 # Ingest DDC CWICR UK cost database
 cd services/api
@@ -347,7 +350,7 @@ pytest services/ocerp/tests -v
 # The scheduler runs in Docker; to run one-off loader scripts:
 cd services/data-pipeline
 python -m src.data_pipeline.loader
-python -m src.data_pipeline.load_curated_seed
+python -m src.data_pipeline.import_apify_dataset <dataset-id>
 python -m src.data_pipeline.knowledge_loader
 
 # Tests

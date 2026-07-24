@@ -192,7 +192,7 @@ railway link --project 30feaeee-9464-41ac-9b17-d07ae4cfcd09 --environment produc
 ```bash
 railway run --service api python scripts/init_db.py
 railway run --service admin python scripts/ensure_superuser.py
-railway run --service data-pipeline python -m data_pipeline.load_curated_seed
+railway run --service data-pipeline python -m data_pipeline.scripts.delete_curated_seed --execute
 railway run --service data-pipeline python -m data_pipeline.knowledge_loader
 ```
 

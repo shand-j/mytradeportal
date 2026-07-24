@@ -22,21 +22,10 @@ async def test_resolver_prefers_domestic_pipeline() -> None:
             "score": 0.85,
         }
     ]
-    curated = [
-        {
-            "code": "ELEC-SOCKET-DOUBLE-WHITE",
-            "description": "13A 2-gang DP switched socket white",
-            "unit": "each",
-            "unit_price": "4.50",
-            "category": "Switches & Sockets",
-            "supplier": "curated",
-            "score": 0.9,
-        }
-    ]
 
     with patch(
         "ocerp.services.resolver.search_cost_items",
-        new=AsyncMock(side_effect=[domestic, curated]),
+        new=AsyncMock(return_value=domestic),
     ):
         resolver = CatalogueResolver()
         req = BoQRequirement(
@@ -54,22 +43,10 @@ async def test_resolver_prefers_domestic_pipeline() -> None:
 
 
 @pytest.mark.asyncio
-async def test_resolver_falls_back_to_curated() -> None:
-    curated = [
-        {
-            "code": "ELEC-SPD-MODULE",
-            "description": "Surge protection device SPD module",
-            "unit": "each",
-            "unit_price": "45.00",
-            "category": "Consumer Units",
-            "supplier": "curated",
-            "score": 0.95,
-        }
-    ]
-
+async def test_resolver_returns_none_when_no_domestic_match() -> None:
     with patch(
         "ocerp.services.resolver.search_cost_items",
-        new=AsyncMock(side_effect=[[], curated]),
+        new=AsyncMock(return_value=[]),
     ):
         resolver = CatalogueResolver()
         req = BoQRequirement(
@@ -81,9 +58,7 @@ async def test_resolver_falls_back_to_curated() -> None:
         )
         result = await resolver.resolve_one(req)
 
-    assert result is not None
-    assert result.resolution_source == "curated_seed"
-    assert result.cost_item["code"] == "ELEC-SPD-MODULE"
+    assert result is None
 
 
 @pytest.mark.asyncio

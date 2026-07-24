@@ -315,8 +315,8 @@ railway variable set DJANGO_SUPERUSER_PASSWORD="<new-password>" --service admin 
 
 # Re-run security tests
 source .venv/bin/activate
-export SECURITY_API_BASE_URL=https://api-production-83b8.up.railway.app
-export SECURITY_ADMIN_BASE_URL=https://admin-production-5c08.up.railway.app
+export SECURITY_API_BASE_URL=https://<api-domain>
+export SECURITY_ADMIN_BASE_URL=https://<admin-domain>
 pytest -m security -v --no-cov
 ```
 
@@ -366,7 +366,7 @@ PY
 ### Export a contact’s data (after implementing the DSR endpoint)
 
 ```bash
-curl -X POST https://api-production-83b8.up.railway.app/data-subjects/export \
+curl -X POST https://<api-domain>/data-subjects/export \
   -H "Content-Type: application/json" \
   -H "X-Tenant-ID: $TENANT_ID" \
   -b session=$SESSION_COOKIE \

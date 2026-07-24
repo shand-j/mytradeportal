@@ -61,11 +61,18 @@ SEED_ADMIN_EMAIL=you@example.com SEED_ADMIN_PASSWORD=<choose-a-password> \
   python -m app.seed_admin_user
 ```
 
-Load the curated UK electrical cost items and generate embeddings:
+Populate the cost database by running the Screwfix data pipeline:
 
 ```bash
 cd services/data-pipeline
-python -m data_pipeline.load_curated_seed
+python -m data_pipeline.loader
+```
+
+If you already have Apify dataset IDs, import them instead of scraping:
+
+```bash
+cd services/data-pipeline
+python -m data_pipeline.import_apify_dataset <dataset-id>
 ```
 
 Ingest the larger DDC CWICR UK electrical cost database:

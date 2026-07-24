@@ -48,7 +48,7 @@ class ResolvedCostItem(BaseModel):
 
     requirement: BoQRequirement
     cost_item: dict[str, Any]
-    resolution_source: str  # domestic_pipeline | curated_seed
+    resolution_source: str  # domestic_pipeline
     score: float = 0.0
 
 

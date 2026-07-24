@@ -1,8 +1,7 @@
 """Generic requirement generation for the BoQ engine.
 
-This module replaces `boq_normalizer.py`.  Instead of injecting hard-coded
-`curated_seed` item codes, it emits brandless `BoQRequirement` objects that are
-later resolved to real catalogue items by the `CatalogueResolver`.
+This module emits brandless `BoQRequirement` objects that are later resolved
+to real catalogue items by the `CatalogueResolver`.
 """
 
 from __future__ import annotations

@@ -250,11 +250,17 @@ curl -X POST https://api-production-83b8.up.railway.app/tenants \
 Run from the `data-pipeline` service:
 
 ```bash
-railway run --service data-pipeline python -m data_pipeline.load_curated_seed
+railway run --service data-pipeline python -m data_pipeline.loader
 railway run --service data-pipeline python -m data_pipeline.knowledge_loader
 ```
 
 These populate the `cost_items` and `quoting_knowledge` Qdrant collections needed for AI quotes.
+
+If legacy `curated_seed` items remain in the database, remove them before running the pipeline:
+
+```bash
+railway run --service data-pipeline python -m data_pipeline.scripts.delete_curated_seed --execute
+```
 
 ---
 

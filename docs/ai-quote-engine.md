@@ -19,15 +19,27 @@ description into a draft quote grounded in real cost data.
 
 The cost database has two sources:
 
-- **Curated seed** — a small curated set of UK electrical items (consumer
-  units, sockets, EV chargers, EICRs, etc.) in
-  `services/data-pipeline/src/data_pipeline/data/curated_electrical_items.json`,
-  loaded by `python -m data_pipeline.load_curated_seed`.
+- **Domestic pipeline** — live Screwfix product data scraped via Apify,
+  normalised and loaded by `python -m data_pipeline.loader`. Existing Apify
+  datasets can also be imported with `python -m data_pipeline.import_apify_dataset
+  <dataset-id>`.
 - **DDC CWICR UK** — ~4,200 electrical scope-of-work rows from the
   OpenConstructionERP project, downloaded and ingested by
   `services/api/app/ingest_ddc_uk.py`.
 
 Both sources are stored in PostgreSQL and embedded into Qdrant.
+
+## Removing stale seed data
+
+If the database still contains legacy `curated_seed` items from earlier
+prototypes, delete them with:
+
+```bash
+cd services/data-pipeline
+python -m data_pipeline.scripts.delete_curated_seed --execute
+```
+
+Run without `--execute` first to see the row counts by source.
 
 ## Configuration
 
@@ -45,11 +57,15 @@ Relevant environment variables:
 ## Ingestion scripts
 
 ```bash
-# Load the curated items
+# Load Screwfix data via the Apify pipeline
 cd services/data-pipeline
-python -m data_pipeline.load_curated_seed
+python -m data_pipeline.loader
 
-# Ingest DDC CWICR UK data (~4k items)
+# Or import an existing Apify dataset
+cd services/data-pipeline
+python -m data_pipeline.import_apify_dataset <dataset-id>
+
+# Ingest the larger DDC CWICR UK electrical cost database
 cd services/api
 python -m app.ingest_ddc_uk
 ```

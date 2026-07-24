@@ -2,9 +2,7 @@
 
 The resolver is connector-based so that future supplier integrations can be
 plugged in without changing the engine.  For the MVP we implement a
-Screwfix-first connector backed by the `domestic_pipeline` source, with the
-existing `curated_seed` catalogue as the fallback for safety/regulatory items
-that Screwfix does not carry.
+Screwfix-first connector backed by the `domestic_pipeline` source.
 """
 
 from __future__ import annotations
@@ -450,20 +448,17 @@ class CatalogueResolver:
 
     Resolution order:
         1. Primary supplier connector (Screwfix / domestic_pipeline).
-        2. Curated seed fallback.
-        3. Unresolved requirements emit a warning.
+        2. Unresolved requirements emit a warning.
     """
 
     def __init__(
         self,
         primary: SupplierConnector | None = None,
-        fallback: SupplierConnector | None = None,
         min_score: float = 0.15,
         trade: str = "electrical",
         region: str = "UK",
     ):
         self.primary = primary or SourceConnector("domestic_pipeline")
-        self.fallback = fallback or SourceConnector("curated_seed")
         self.min_score = min_score
         self.trade = trade
         self.region = region
@@ -494,8 +489,7 @@ class CatalogueResolver:
         requested_brand = requirement.attributes.get("brand")
         if requested_brand:
             primary_candidates = await self.primary.search(requirement, self.trade, self.region)
-            fallback_candidates = await self.fallback.search(requirement, self.trade, self.region)
-            if not self._any_brand_match(requirement, primary_candidates + fallback_candidates):
+            if not self._any_brand_match(requirement, primary_candidates):
                 self._warnings.append(
                     f"Brand {requested_brand!r} unavailable for {requirement.concept}; "
                     "falling back to generic alternatives."
@@ -521,17 +515,6 @@ class CatalogueResolver:
                 requirement=updated_requirement,
                 cost_item=item,
                 resolution_source=self.primary.name,
-                score=_score_candidate(updated_requirement, item),
-            )
-
-        fallback_candidates = await self.fallback.search(requirement, self.trade, self.region)
-        fallback_choice = self._pick_best(requirement, fallback_candidates)
-        if fallback_choice is not None:
-            item, updated_requirement = fallback_choice
-            return ResolvedCostItem(
-                requirement=updated_requirement,
-                cost_item=item,
-                resolution_source=self.fallback.name,
                 score=_score_candidate(updated_requirement, item),
             )
 
