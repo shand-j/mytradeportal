@@ -116,6 +116,14 @@ Production is hosted on **Railway** in the **`europe-west4-drams3a` (Amsterdam)*
 in [`.railway/railway.ts`](../.railway/railway.ts) and deployed automatically by
 GitHub Actions on every push to `main` after tests pass.
 
+> **Region drift note:** the native Railway Postgres and Redis plugins are
+> currently deployed in `sfo` while the rest of the stack is in Amsterdam. For
+> the UK market this adds cross-continent latency. Because the platform is
+> pre-go-live, the simplest fix is to recreate the `db` and `redis` services in
+> `europe-west4-drams3a` from the Railway dashboard (or by removing and
+> re-adding them in IaC) before the first real tenants are onboarded. Document
+> any decision to defer this in the go-live checklist.
+
 ### Production-first principles
 
 - **No demo or test data is seeded.** The `app.seed_admin_user` script refuses
@@ -183,9 +191,24 @@ After the first apply, generate domains in the dashboard for:
 - `admin`
 - `minio` (target port **9000**)
 
+You can also use the CLI:
+
+```bash
+railway domain --service api
+railway domain --service web
+railway domain --service admin
+railway domain --service minio --port 9000
+```
+
 Cross-service references (`VITE_API_BASE_URL`, `ALLOWED_ORIGINS`,
 `MINIO_ENDPOINT`, `CSRF_TRUSTED_ORIGINS`) resolve automatically once the
-domains exist.
+domains exist. If the admin panel returns **400 Bad Request** after a domain is
+generated, the Django container was deployed before the domain existed. Trigger
+a redeploy of the `admin` service so it picks up the updated `ALLOWED_HOSTS`:
+
+```bash
+railway service redeploy --service admin
+```
 
 ### Secrets
 

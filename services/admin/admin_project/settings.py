@@ -18,6 +18,17 @@ SECRET_KEY = env("SECRET_KEY")
 DEBUG = env("DEBUG")
 ALLOWED_HOSTS = env("ALLOWED_HOSTS")
 
+# Defensive: always accept the Railway-assigned domains so the admin panel keeps
+# working even if ALLOWED_HOSTS was baked into the image before a public domain
+# was generated, or if the domain changes after a redeploy.
+_ALLOWED_HOSTS_ENV = {
+    *ALLOWED_HOSTS,
+    env("RAILWAY_PUBLIC_DOMAIN", default=""),
+    env("RAILWAY_PRIVATE_DOMAIN", default=""),
+    env("RAILWAY_STATIC_URL", default=""),
+}
+ALLOWED_HOSTS = [h for h in _ALLOWED_HOSTS_ENV if h]
+
 INSTALLED_APPS = [
     "django.contrib.admin",
     "django.contrib.auth",
@@ -77,3 +88,8 @@ CSRF_TRUSTED_ORIGINS = [
     "http://127.0.0.1:8001",
     *env("CSRF_TRUSTED_ORIGINS"),
 ]
+# Defensive: always trust the Railway public domain so admin login forms work
+# even if the variable was baked before the public domain existed.
+_railway_public = env("RAILWAY_PUBLIC_DOMAIN", default="")
+if _railway_public:
+    CSRF_TRUSTED_ORIGINS.append(f"https://{_railway_public}")

@@ -6,17 +6,17 @@ This runbook covers the day-to-day care, feeding, and incident response for My T
 
 | Service | Current Domain | Health Check |
 |---|---|---|
-| API | `https://api-production-83b8.up.railway.app` | `GET /health` |
-| Web | `https://web-production-0919a.up.railway.app` | `GET /` |
-| Admin | `https://admin-production-5c08.up.railway.app` | `GET /health` |
+| API | `https://api-production-8c41.up.railway.app` | `GET /health` |
+| Web | `https://web-production-80365.up.railway.app` | `GET /` |
+| Admin | `https://admin-production-2dab.up.railway.app` | `GET /health` |
 | OCERP | Internal (`${{ocerp.RAILWAY_PRIVATE_DOMAIN}}`) | `GET /health` |
 | Data Pipeline | Internal | N/A (scheduled task) |
 | PostgreSQL | Native Railway plugin | N/A |
 | Redis | Native Railway plugin | N/A |
 | Qdrant | Internal Docker service | Qdrant REST API |
-| MinIO | Public domain required | Console + S3 API |
+| MinIO | `https://minio-production-c601.up.railway.app` | Console + S3 API |
 
-**Known infrastructure note:** all services are deployed in the IaC target region `europe-west4-drams3a` (Amsterdam). If Railway ever shows a region drift after an apply, verify the deployment region in the dashboard before assuming it is intentional.
+**Known infrastructure note:** application services and MinIO are in `europe-west4-drams3a` (Amsterdam). The native Postgres and Redis plugins are currently in `sfo`; treat this as a region drift that should be resolved before go-live. Domains change whenever they are regenerated, so prefer `railway service list --json` over hard-coding URLs.
 
 ---
 
@@ -48,9 +48,9 @@ In the dashboard, confirm:
 Then hit the public health endpoints:
 
 ```bash
-curl -s https://api-production-83b8.up.railway.app/health
-curl -s https://web-production-0919a.up.railway.app
-curl -s https://admin-production-5c08.up.railway.app/health
+curl -s https://api-production-8c41.up.railway.app/health
+curl -s https://web-production-80365.up.railway.app
+curl -s https://admin-production-2dab.up.railway.app/health
 ```
 
 Expected: HTTP 200 for each. If OCERP is exposed publicly for diagnostics, check:

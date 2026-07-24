@@ -9,8 +9,8 @@ This document provides the operational procedures for detecting, responding to, 
 | Railway project | `MyTradePortal` (`30feaeee-9464-41ac-9b17-d07ae4cfcd09`) |
 | Environment | `production` |
 | Region target | `europe-west4-drams3a` (Amsterdam) via [`.railway/railway.ts`](../../.railway/railway.ts) |
-| Known discrepancy | None — all services are aligned to the IaC target region. Document any future region-related incidents here. |
-| Public services | `https://api-production-83b8.up.railway.app`, `https://web-production-0919a.up.railway.app`, `https://admin-production-5c08.up.railway.app` |
+| Known discrepancy | Native Postgres and Redis plugins are currently in `sfo`. Application services and MinIO are in Amsterdam. |
+| Public services | `https://api-production-8c41.up.railway.app`, `https://web-production-80365.up.railway.app`, `https://admin-production-2dab.up.railway.app` |
 | Internal services | `ocerp`, `data-pipeline`, `minio`, `qdrant`, Postgres, Redis |
 
 ## 1. Severity classification
@@ -58,17 +58,18 @@ This document provides the operational procedures for detecting, responding to, 
 
 ```bash
 # API
-export API_URL=https://api-production-83b8.up.railway.app
+export API_URL=https://api-production-8c41.up.railway.app
 curl -s "$API_URL/health" | jq .
 
 # OCERP
-curl -s https://<ocerp-public-domain>/health
+# Only if exposed publicly; otherwise use private networking or skip.
+# curl -s https://<ocerp-public-domain>/health
 
 # Admin
-curl -s https://admin-production-5c08.up.railway.app/health
+curl -s https://admin-production-2dab.up.railway.app/health
 
 # Web (should return 200 on the SPA index)
-curl -s -o /dev/null -w "%{http_code}" https://web-production-0919a.up.railway.app
+curl -s -o /dev/null -w "%{http_code}" https://web-production-80365.up.railway.app
 ```
 
 ## 5. Common incident procedures
@@ -97,7 +98,27 @@ curl -s -o /dev/null -w "%{http_code}" https://web-production-0919a.up.railway.a
 5. If the issue is a database connection failure, check Postgres status in Railway dashboard.
 6. If `Settings.validate_production()` is blocking startup, verify preserved secrets are set (`AUTH_SECRET_KEY`, `SETUP_TOKEN`, `MINIO_ACCESS_KEY`, `MINIO_SECRET_KEY`, `OPENAI_API_KEY`).
 
-### 5.2 Database / PostgreSQL issues
+### 5.2 Admin returns 400 Bad Request
+
+**Symptoms**: `/admin/login/` or `/admin/` returns HTTP 400; static files (`/static/...`) load fine.
+
+**Root cause**: the Django container was deployed before the admin public domain existed, so `ALLOWED_HOSTS` and `CSRF_TRUSTED_ORIGINS` are stale.
+
+1. Confirm the admin public domain is generated:
+   ```bash
+   railway domain list --service admin --json
+   ```
+2. Trigger a redeploy so Django picks up the updated variables:
+   ```bash
+   railway service redeploy --service admin
+   ```
+3. If the problem persists, check the `ALLOWED_HOSTS` and `CSRF_TRUSTED_ORIGINS` variables in the Railway dashboard and compare them to the current domain.
+4. Verify the fix:
+   ```bash
+   curl -s -o /dev/null -w "%{http_code}" https://admin-production-2dab.up.railway.app/admin/login/
+   ```
+
+### 5.3 Database / PostgreSQL issues
 
 **Symptoms**: API returns database errors, queries timeout, Django admin fails to load.
 
@@ -122,15 +143,15 @@ curl -s -o /dev/null -w "%{http_code}" https://web-production-0919a.up.railway.a
    - Re-run `scripts/init_db.py` only if you understand the impact; it is idempotent but does not restore data.
 5. For data corruption or suspected loss, restore from Railway Postgres backup; do not attempt manual row edits in production without a ticket trail.
 
-### 5.3 Multi-tenant isolation failure (P1)
+### 5.4 Multi-tenant isolation failure (P1)
 
 **Symptoms**: A user sees another tenant's contacts, quotes, or invoices.
 
 1. **Contain**: Immediately disable the affected endpoint or set the service to sleep via Railway dashboard if no safe fix is available.
 2. **Verify**: Use the security test suite to confirm the breach scope:
    ```bash
-   export SECURITY_API_BASE_URL=https://api-production-83b8.up.railway.app
-   export SECURITY_ADMIN_BASE_URL=https://admin-production-5c08.up.railway.app
+   export SECURITY_API_BASE_URL=https://api-production-8c41.up.railway.app
+   export SECURITY_ADMIN_BASE_URL=https://admin-production-2dab.up.railway.app
    export SECURITY_TENANT_SLUG=<affected-tenant>
    export SECURITY_ADMIN_EMAIL=<admin-email>
    export SECURITY_ADMIN_PASSWORD=<password>
@@ -148,7 +169,7 @@ curl -s -o /dev/null -w "%{http_code}" https://web-production-0919a.up.railway.a
 5. Document affected tenants and data access; notify compliance lead for SOC2/CC6.1 review.
 6. After remediation, run the full security suite before declaring the incident closed.
 
-### 5.4 AI / OpenAI quote generation failure (P2)
+### 5.5 AI / OpenAI quote generation failure (P2)
 
 **Symptoms**: `POST /quotes/generate` or `POST /quotes/generate-boq` returns 5xx or hangs; users cannot create AI quotes.
 
@@ -171,7 +192,7 @@ curl -s -o /dev/null -w "%{http_code}" https://web-production-0919a.up.railway.a
 5. If OCERP is down, the in-house RAG path (`/quotes/generate`) may still work. Verify the `OCERP_URL` variable in the API service points to the correct private domain.
 6. As a temporary mitigation, disable AI generation in the UI and instruct users to create manual quotes.
 
-### 5.5 Paddle payment / webhook failure (P2)
+### 5.6 Paddle payment / webhook failure (P2)
 
 **Symptoms**: Invoices fail to mark paid, Paddle checkout errors, or webhook logs show HMAC failures.
 
@@ -182,7 +203,7 @@ curl -s -o /dev/null -w "%{http_code}" https://web-production-0919a.up.railway.a
 4. Replay a failed webhook only after verifying the payload authenticity.
 5. If webhooks are broadly failing, contact Paddle support and switch to manual reconciliation via Django admin.
 
-### 5.6 MinIO / file upload failure (P2)
+### 5.7 MinIO / file upload failure (P2)
 
 **Symptoms**: Presigned upload URLs fail, uploads return 403, or uploaded files are unreachable.
 
@@ -197,7 +218,7 @@ curl -s -o /dev/null -w "%{http_code}" https://web-production-0919a.up.railway.a
 3. Verify the `mtp-uploads` bucket exists via the MinIO console (port 9001).
 4. If credentials are rotated, redeploy both `minio` and `api` services so the changes propagate.
 
-### 5.7 OCERP microservice failure (P2)
+### 5.8 OCERP microservice failure (P2)
 
 **Symptoms**: BoQ generation fails, but other API endpoints work.
 
@@ -210,7 +231,7 @@ curl -s -o /dev/null -w "%{http_code}" https://web-production-0919a.up.railway.a
 3. If the failure is data-related (Qdrant missing collections), re-run the loaders from section 5.4.
 4. If OCERP fails to start with `validate_production` errors, check `OPENAI_API_KEY` and Qdrant connectivity.
 
-### 5.8 Security incident (P1/P2)
+### 5.9 Security incident (P1/P2)
 
 **Symptoms**: Unauthorized access, suspicious API traffic, leaked secret, or agentic pen-test critical finding.
 
@@ -230,7 +251,7 @@ curl -s -o /dev/null -w "%{http_code}" https://web-production-0919a.up.railway.a
    ```
 6. Notify the compliance lead for SOC2/CC7.2/CC7.1 review.
 
-### 5.9 Deploy failure or CI breakage (P2)
+### 5.10 Deploy failure or CI breakage (P2)
 
 **Symptoms**: GitHub Actions CI fails, `railway config apply` fails, or service deploys but never becomes healthy.
 
