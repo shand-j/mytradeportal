@@ -19,6 +19,7 @@ RUN pip install --no-cache-dir -e ".[dev]"
 
 COPY scripts/init_db.py ./scripts/init_db.py
 COPY scripts/init_data_pipeline.py ./scripts/init_data_pipeline.py
+COPY scripts/init_api.py ./scripts/init_api.py
 COPY services/data-pipeline/src ./services/data-pipeline/src
 
 COPY services/api ./services/api
