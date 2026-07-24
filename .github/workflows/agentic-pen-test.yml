@@ -3,16 +3,16 @@ name: Agentic Penetration Test
 on:
   workflow_dispatch:
     inputs:
-      target:
-        description: "Public target URL"
+      target_url:
+        description: "Public web UI URL to attack (e.g. https://web-production-XXXX.up.railway.app)"
         required: true
         type: string
-      api_url:
-        description: "API base URL"
+      api_base_url:
+        description: "API base URL (e.g. https://api-production-XXXX.up.railway.app)"
         required: true
         type: string
-      admin_url:
-        description: "Admin base URL"
+      admin_base_url:
+        description: "Django admin base URL (e.g. https://admin-production-XXXX.up.railway.app)"
         required: true
         type: string
 
@@ -22,15 +22,15 @@ concurrency:
 
 jobs:
   agentic-pen-test:
-    name: Multi-Agent White-Hat Assessment
     runs-on: ubuntu-latest
     environment: MyTradePortal/Production
     env:
       OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-      LLM_MODEL: ${{ secrets.LLM_MODEL || 'gpt-4o-mini' }}
-      SECURITY_TARGET_URL: ${{ inputs.target }}
-      SECURITY_API_BASE_URL: ${{ inputs.api_url }}
-      SECURITY_ADMIN_BASE_URL: ${{ inputs.admin_url }}
+      LLM_MODEL: ${{ vars.LLM_MODEL || 'gpt-4o-mini' }}
+      LLM_TIMEOUT_SECONDS: "300"
+      SECURITY_TARGET_URL: ${{ github.event.inputs.target_url }}
+      SECURITY_API_BASE_URL: ${{ github.event.inputs.api_base_url }}
+      SECURITY_ADMIN_BASE_URL: ${{ github.event.inputs.admin_base_url }}
       AGENT_ARTIFACT_DIR: security/reports
     steps:
       - uses: actions/checkout@v4
@@ -49,16 +49,9 @@ jobs:
         run: python -m security.agents.orchestrator
 
       - name: Upload pen-test reports
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: pen-test-reports
           path: security/reports/*.json
           if-no-files-found: ignore
-
-      - name: Print summary
-        run: |
-          echo "## Agentic Penetration Test Results" >> "$GITHUB_STEP_SUMMARY"
-          echo "Target: ${{ inputs.target }}" >> "$GITHUB_STEP_SUMMARY"
-          echo "" >> "$GITHUB_STEP_SUMMARY"
-          echo "Reports saved to: security/reports/" >> "$GITHUB_STEP_SUMMARY"
-          echo "Download the artifact to review the consolidated report and remediation plan." >> "$GITHUB_STEP_SUMMARY"
