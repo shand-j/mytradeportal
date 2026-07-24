@@ -1,0 +1,64 @@
+name: Agentic Penetration Test
+
+on:
+  workflow_dispatch:
+    inputs:
+      target:
+        description: "Public target URL"
+        required: true
+        type: string
+      api_url:
+        description: "API base URL"
+        required: true
+        type: string
+      admin_url:
+        description: "Admin base URL"
+        required: true
+        type: string
+
+concurrency:
+  group: agentic-pen-test
+  cancel-in-progress: false
+
+jobs:
+  agentic-pen-test:
+    name: Multi-Agent White-Hat Assessment
+    runs-on: ubuntu-latest
+    environment: MyTradePortal/Production
+    env:
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      LLM_MODEL: ${{ secrets.LLM_MODEL || 'gpt-4o-mini' }}
+      SECURITY_TARGET_URL: ${{ inputs.target }}
+      SECURITY_API_BASE_URL: ${{ inputs.api_url }}
+      SECURITY_ADMIN_BASE_URL: ${{ inputs.admin_url }}
+      AGENT_ARTIFACT_DIR: security/reports
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+
+      - name: Run agentic penetration test
+        run: python -m security.agents.orchestrator
+
+      - name: Upload pen-test reports
+        uses: actions/upload-artifact@v4
+        with:
+          name: pen-test-reports
+          path: security/reports/*.json
+          if-no-files-found: ignore
+
+      - name: Print summary
+        run: |
+          echo "## Agentic Penetration Test Results" >> "$GITHUB_STEP_SUMMARY"
+          echo "Target: ${{ inputs.target }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "Reports saved to: security/reports/" >> "$GITHUB_STEP_SUMMARY"
+          echo "Download the artifact to review the consolidated report and remediation plan." >> "$GITHUB_STEP_SUMMARY"

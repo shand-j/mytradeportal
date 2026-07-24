@@ -61,6 +61,8 @@ dev = [
     "types-python-jose",
     "django-stubs[compatible-mypy]>=5.0",
     "django-environ>=0.11.2",
+    "httpx>=0.27.0",
+    "pip-audit>=2.7.0",
 ]
 
 [tool.setuptools.packages.find]
@@ -78,6 +80,7 @@ ignore = ["E501", "B008"]
 
 [tool.ruff.lint.per-file-ignores]
 "services/admin/**/*.py" = ["RUF012"]
+"security/**/*.py" = ["RUF012"]
 
 [tool.ruff.format]
 quote-style = "double"
@@ -103,14 +106,19 @@ disallow_any_generics = false
 module = "app.ingest_ddc_uk"
 warn_unused_ignores = false
 
+[[tool.mypy.overrides]]
+module = "security.*"
+disallow_any_generics = false
+
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
-testpaths = ["services", "packages", "evals"]
-addopts = "-m 'not eval' --cov=services --cov=packages --cov-report=term-missing"
+testpaths = ["services", "packages", "evals", "security"]
+addopts = "-m 'not eval and not security' --cov=services --cov=packages --cov-report=term-missing"
 markers = [
     "eval: Golden-dataset end-to-end evaluation against the OCERP service",
+    "security: Security tests that require live target credentials and are not run by default",
 ]
 
 [tool.coverage.run]
-source = ["services", "packages"]
+source = ["services", "packages", "security"]
 omit = ["*/tests/*", "*/test_*"]
