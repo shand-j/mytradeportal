@@ -44,7 +44,9 @@ the service will start in `ENVIRONMENT=production`.
 | Variable | Default | Purpose |
 |---|---|---|
 | `ENVIRONMENT` | `development` | `development` / `production` |
-| `DATABASE_URL` | `postgresql+asyncpg://mtp:mtp@postgres:5432/mtp` | Postgres connection (asyncpg for API, psycopg2 for admin) |
+| `DATABASE_URL` | `postgresql+asyncpg://mtp:mtp@postgres:5432/mtp` | Postgres owner/superuser URL (used by preDeploy; Railway injects this) |
+| `APP_ROLE_NAME` | `mtp_app` | Non-superuser role the API/OCERP/pipeline connect as in production |
+| `APP_ROLE_PASSWORD` | `mtp_app` | **Required in production** — password for `APP_ROLE_NAME`; must be changed from default |
 | `REDIS_URL` | `redis://redis:6379/0` | Redis connection |
 | `QDRANT_URL` | `http://qdrant:6333` | Qdrant connection |
 | `MINIO_ENDPOINT` | `minio:9000` | S3-compatible storage endpoint |
@@ -77,8 +79,8 @@ the service will start in `ENVIRONMENT=production`.
 
 | Variable | Default | Purpose |
 |---|---|---|
-| `DJANGO_SUPERUSER_USERNAME` | `superadmin` | Django admin superuser username |
-| `DJANGO_SUPERUSER_EMAIL` | `admin@example.com` | Superuser email |
+| `DJANGO_SUPERUSER_USERNAME` | *(empty)* | **Required in production** — Django admin superuser username |
+| `DJANGO_SUPERUSER_EMAIL` | *(empty)* | **Required in production** — superuser email |
 | `DJANGO_SUPERUSER_PASSWORD` | *(empty)* | **Required in production** — set via GitHub / Railway secret |
 | `SECRET_KEY` | `dev-secret-key-change-in-production` | Django secret key |
 
@@ -222,15 +224,21 @@ deploy:
 | `api` | `OPENAI_API_KEY` | Required |
 | `api` | `AUTH_SECRET_KEY` | Strong random string; required |
 | `api` | `SETUP_TOKEN` | Strong random string; required |
+| `api` | `APP_ROLE_PASSWORD` | Strong random string; required (used to derive the RLS-enforced app-role DB URL) |
 | `api` | `MINIO_ACCESS_KEY` | Required |
 | `api` | `MINIO_SECRET_KEY` | Required |
 | `api` | `RAILWAY_TOKEN` | Project token for feature flags |
+| `api` | `NEW_RELIC_LICENSE_KEY` | Optional; enables APM in New Relic |
 | `minio` | `MINIO_ROOT_USER` | Same as `MINIO_ACCESS_KEY` |
 | `minio` | `MINIO_ROOT_PASSWORD` | Same as `MINIO_SECRET_KEY` |
 | `admin` | `SECRET_KEY` | Django secret |
+| `admin` | `DJANGO_SUPERUSER_USERNAME` | Required |
+| `admin` | `DJANGO_SUPERUSER_EMAIL` | Required |
 | `admin` | `DJANGO_SUPERUSER_PASSWORD` | Set from GitHub secret (see below) |
+| `admin` | `NEW_RELIC_LICENSE_KEY` | Optional; enables APM in New Relic |
 | `data-pipeline` | `OPENAI_API_KEY` | Required for embeddings |
 | `data-pipeline` | `APIFY_API_TOKEN` | Required for Screwfix scraping |
+| `data-pipeline` | `APP_ROLE_PASSWORD` | Same value as `api` service |
 
 ### GitHub Actions secrets
 
@@ -287,12 +295,13 @@ before the first deploy. Do **not** rely on defaults in production.
 
 Required minimum (set as **environment-level variables** in the Railway dashboard, and declared in `.railway/railway.ts` with `preserve()` so they are not deleted on later IaC applies):
 
-1. `api` → `OPENAI_API_KEY`, `AUTH_SECRET_KEY`, `SETUP_TOKEN`,
+1. `api` → `OPENAI_API_KEY`, `AUTH_SECRET_KEY`, `SETUP_TOKEN`, `APP_ROLE_PASSWORD`,
    `MINIO_ACCESS_KEY`, `MINIO_SECRET_KEY`, `RAILWAY_TOKEN`.
 2. `minio` → `MINIO_ROOT_USER`, `MINIO_ROOT_PASSWORD` (same values as
    `MINIO_ACCESS_KEY` / `MINIO_SECRET_KEY`).
-3. `admin` → `SECRET_KEY`, `DJANGO_SUPERUSER_PASSWORD`.
-4. `data-pipeline` → `OPENAI_API_KEY`, `APIFY_API_TOKEN`.
+3. `admin` → `SECRET_KEY`, `DJANGO_SUPERUSER_USERNAME`, `DJANGO_SUPERUSER_EMAIL`,
+   `DJANGO_SUPERUSER_PASSWORD`.
+4. `data-pipeline` → `OPENAI_API_KEY`, `APIFY_API_TOKEN`, `APP_ROLE_PASSWORD`.
 
 ### 4. Apply the infrastructure
 
@@ -339,13 +348,14 @@ railway run --service admin python scripts/init_db.py
 ### 8. Create the production Django superuser
 
 The admin service creates the superuser automatically on first deploy if
-`DJANGO_SUPERUSER_PASSWORD` is set. Verify by logging in to:
+`DJANGO_SUPERUSER_PASSWORD`, `DJANGO_SUPERUSER_USERNAME`, and
+`DJANGO_SUPERUSER_EMAIL` are set. Verify by logging in to:
 
 ```text
 https://<admin-domain>/admin/
 ```
 
-with username `superadmin` and the password from `DJANGO_SUPERUSER_PASSWORD`.
+with the configured username and password.
 
 If you need to rotate the password later, set the new value in the Railway
 dashboard and redeploy the admin service; the pre-deploy command will not
@@ -381,9 +391,12 @@ Remove or rotate `SETUP_TOKEN` after the first tenant is created.
 ### 10. Populate cost data via the data-pipeline
 
 The data-pipeline is **not** run during deploy. It runs on a Railway cron
-schedule (monthly by default) and can also be triggered ad-hoc. The default
-pipeline fetches Screwfix electrical product data through Apify and upserts it
-into the Postgres `cost_items` table and the Qdrant `cost_items` collection.
+schedule (monthly by default) and can also be triggered ad-hoc. The pipeline
+fetches Screwfix electrical product data through Apify and upserts it into the
+Postgres `cost_items` table and the Qdrant `cost_items` collection.
+
+> **Pre-seeded catalogues are no longer used.** Cost data is sourced from the
+> live Screwfix scrape only.
 
 To trigger an ad-hoc run:
 
@@ -399,7 +412,8 @@ railway run --service data-pipeline python -m data_pipeline.loader
 
 > **Note:** The Apify account currently has a monthly hard-limit. If the run
 > fails with `Monthly usage hard limit exceeded`, either wait for the limit to
-> reset or upgrade the Apify plan before populating cost data.
+> reset or upgrade the Apify plan before populating cost data. Until cost data
+> is available, AI quotes will only generate labour-line items.
 
 ### 11. Verify the deployment
 
@@ -552,7 +566,32 @@ Known flags:
 | `demand_forecasting` | `false` | Demand forecasting dashboard |
 | `external_integrations` | `false` | External accounting/messaging integrations |
 
-### Backups
+### New Relic observability (optional)
+
+Set `NEW_RELIC_LICENSE_KEY` and `NEW_RELIC_APP_NAME` on the `api` and `admin`
+services to enable APM tracing in the New Relic free tier. If the license key is
+not set, the services boot normally without the New Relic agent.
+
+| Variable | Purpose |
+|---|---|
+| `NEW_RELIC_LICENSE_KEY` | New Relic ingest license key |
+| `NEW_RELIC_APP_NAME` | e.g. `mytradeportal-api`, `mytradeportal-admin` |
+
+### Security and compliance workflows
+
+Two GitHub Actions workflows support production security:
+
+- `.github/workflows/security-audit.yml` — dependency audit, OWASP-style checks,
+  multi-tenancy regression tests, and SOC2 evidence checks. Runs only on
+  `workflow_dispatch` so it can be pointed at production on demand.
+- `.github/workflows/agentic-pen-test.yml` — spawns white-hat agentic pen testers
+  against the production endpoints, consolidates their findings, and produces a
+  remediation report. Also runs only on `workflow_dispatch`.
+
+Both workflows expect the same secrets as the production smoke test, plus
+`SECURITY_API_BASE_URL`, `SECURITY_ADMIN_BASE_URL`, and optional secondary tenant
+secrets for cross-tenant isolation tests.
+
 
 - Railway Postgres provides automated backups; configure retention and test
   restores regularly.
@@ -573,8 +612,9 @@ Known flags:
 ### API or admin fails to start with "dev defaults refused"
 
 `Settings.validate_production()` blocks the app when insecure defaults are
-present. Check that `AUTH_SECRET_KEY`, `SETUP_TOKEN`, `MINIO_ACCESS_KEY`, and
-`MINIO_SECRET_KEY` are set to strong non-default values on the `api` service.
+present. Check that `AUTH_SECRET_KEY`, `SETUP_TOKEN`, `APP_ROLE_PASSWORD`,
+`MINIO_ACCESS_KEY`, and `MINIO_SECRET_KEY` are set to strong non-default values
+on the `api` service.
 
 ### Admin deploy fails with "relation does not exist"
 

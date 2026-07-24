@@ -13,9 +13,9 @@ This runbook covers the final checks and actions required before My Trade Portal
 
 | Service | Type | Current public domain / note |
 |---|---|---|
-| `api` | FastAPI backend | `https://api-production-83b8.up.railway.app` |
-| `web` | React back-office SPA | `https://web-production-0919a.up.railway.app` |
-| `admin` | Django admin panel | `https://admin-production-5c08.up.railway.app` |
+| `api` | FastAPI backend | `https://<api-domain>` |
+| `web` | React back-office SPA | `https://<web-domain>` |
+| `admin` | Django admin panel | `https://<admin-domain>` |
 | `ocerp` | BoQ / pricing engine | Private service; no public domain. Used by `api` over internal Railway network |
 | `data-pipeline` | Cost-data loader / scraper | No public domain; runs on demand |
 | `minio` | Object storage (S3-compatible) | Public domain required; target port `9000` |
@@ -87,9 +87,9 @@ Required domains:
 Quick checks:
 
 ```bash
-curl -I https://api-production-83b8.up.railway.app/health
-curl -I https://web-production-0919a.up.railway.app
-curl -I https://admin-production-5c08.up.railway.app/health
+curl -I https://<api-domain>/health
+curl -I https://<web-domain>
+curl -I https://<admin-domain>/health
 ```
 
 All should return `200 OK` over TLS.
@@ -107,15 +107,21 @@ The following `preserve()` variables must be set in the Railway dashboard (not i
 | `api` | `OPENAI_API_KEY` | Required | LLM + embeddings |
 | `api` | `AUTH_SECRET_KEY` | Required | Strong random string, JWT signing |
 | `api` | `SETUP_TOKEN` | Required | Strong random string; gates `POST /tenants` |
+| `api` | `APP_ROLE_PASSWORD` | Required | Strong random string; RLS-enforced DB role |
 | `api` | `MINIO_ACCESS_KEY` | Required | Matches `MINIO_ROOT_USER` |
 | `api` | `MINIO_SECRET_KEY` | Required | Matches `MINIO_ROOT_PASSWORD` |
 | `api` | `RAILWAY_TOKEN` | Required | Project token for `GET /feature-flags` |
+| `api` | `NEW_RELIC_LICENSE_KEY` | Optional | New Relic APM |
 | `minio` | `MINIO_ROOT_USER` | Required | Same as `MINIO_ACCESS_KEY` |
 | `minio` | `MINIO_ROOT_PASSWORD` | Required | Same as `MINIO_SECRET_KEY` |
 | `admin` | `SECRET_KEY` | Required | Django secret key |
+| `admin` | `DJANGO_SUPERUSER_USERNAME` | Required | Superuser username |
+| `admin` | `DJANGO_SUPERUSER_EMAIL` | Required | Superuser email |
 | `admin` | `DJANGO_SUPERUSER_PASSWORD` | Required | Set via GitHub secret / Railway dashboard |
+| `admin` | `NEW_RELIC_LICENSE_KEY` | Optional | New Relic APM |
 | `data-pipeline` | `OPENAI_API_KEY` | Required | Embeddings |
 | `data-pipeline` | `APIFY_API_TOKEN` | Required | Screwfix scraping |
+| `data-pipeline` | `APP_ROLE_PASSWORD` | Required | Same value as `api` service |
 | `api` | `PADDLE_API_KEY` | Optional | Payments; set if Paddle is enabled |
 | `api` | `PADDLE_WEBHOOK_SECRET` | Optional | Webhook HMAC verification |
 | `api` | `PADDLE_SANDBOX` | Optional | Default `true` in IaC; set `false` for live payments |
@@ -140,8 +146,8 @@ railway variables --service api --environment production
 
 ## 4. Database and schema readiness
 
-- [ ] The API pre-deploy command `python scripts/init_db.py` has run successfully on the latest deploy.
-- [ ] The admin pre-deploy command `sh -c 'python scripts/init_db.py && python scripts/ensure_superuser.py'` has run successfully.
+- [ ] The API pre-deploy command `python scripts/init_api.py` has run successfully on the latest deploy.
+- [ ] The admin pre-deploy command `sh -c 'python manage.py migrate --noinput && python scripts/ensure_superuser.py'` has run successfully.
 - [ ] The `mtp_app` role exists and cannot bypass Row-Level Security (RLS).
 - [ ] All tenant-scoped tables (`users`, `contacts`, `quotes`, `quote_line_items`, `bill_of_quantities`, `boq_line_items`, `jobs`, `appointments`, `invoices`, `invoice_line_items`, `payments`, `communications`, `reviews`, `audit_logs`) have RLS enabled.
 
@@ -185,20 +191,23 @@ Test presigned upload generation by logging into the back office and uploading a
 
 ## 6. AI / RAG / cost data readiness
 
-### 6.1 Seed the cost database and knowledge base
+### 6.1 Populate cost data via the data-pipeline
 
-Run these from the Railway CLI once, or re-run if data appears missing:
+Cost data is sourced from the live Screwfix scrape only. The pre-seeded catalogue
+loader has been removed. Trigger the pipeline ad-hoc:
 
 ```bash
-railway run --service data-pipeline python -m data_pipeline.load_curated_seed
-railway run --service data-pipeline python -m data_pipeline.knowledge_loader
+railway run --service data-pipeline python -m data_pipeline.loader
 ```
 
-These commands populate:
+This populates:
 
 - Postgres `cost_items` table
 - Qdrant `cost_items` collection
-- Qdrant `quoting_knowledge` collection
+
+> **Apify monthly limit:** If the run fails with `Monthly usage hard limit
+> exceeded`, AI quotes will only generate labour-line items until the limit
+> resets or the Apify plan is upgraded.
 
 ### 6.2 Verify Qdrant collections and API health
 
@@ -233,7 +242,8 @@ Expected: `{"status":"ok"}`.
 
 ### Option A: Django admin UI
 
-1. Log in at `https://admin-production-5c08.up.railway.app/admin/` with username `superadmin` and the password from `DJANGO_SUPERUSER_PASSWORD`.
+1. Log in at `https://<admin-domain>/admin/` with the configured superuser
+   credentials (`DJANGO_SUPERUSER_USERNAME` / `DJANGO_SUPERUSER_PASSWORD`).
 2. Go to **Operations → Tenants → Add**.
 3. Create a slug (e.g. `demo`) and name.
 4. Go to **Operations → Users → Add**.
@@ -242,7 +252,7 @@ Expected: `{"status":"ok"}`.
 ### Option B: Gated `POST /tenants` endpoint
 
 ```bash
-curl -X POST https://api-production-83b8.up.railway.app/tenants \
+curl -X POST https://<api-domain>/tenants \
   -H "Content-Type: application/json" \
   -H "X-Setup-Token: $SETUP_TOKEN" \
   -d '{
@@ -291,9 +301,17 @@ All tests should pass. Failures indicate a potential isolation or access-control
 
 ### 8.3 Trigger the Security Audit GitHub Actions workflow
 
-In the GitHub Actions tab, run `.github/workflows/security-audit.yml` manually (workflow dispatch) against production. Review the OWASP, multi-tenancy, SOC2, and dependency-audit results.
+In the GitHub Actions tab, run `.github/workflows/security-audit.yml` manually
+(workflow dispatch) against production. Review the OWASP, multi-tenancy, SOC2,
+and dependency-audit results.
 
-### 8.4 SOC2 evidence readiness
+### 8.4 Trigger the Agentic Pen-Test workflow
+
+Run `.github/workflows/agentic-pen-test.yml` manually. It spawns white-hat
+agents against production, consolidates findings, and produces a report. If
+findings are reported, run the remediation workflow or fix them before go-live.
+
+### 8.5 SOC2 evidence readiness
 
 Confirm these evidence artifacts are current (see `docs/soc2-controls.md` and `security/README.md`):
 
@@ -310,9 +328,9 @@ Confirm these evidence artifacts are current (see `docs/soc2-controls.md` and `s
 ### 9.1 Manual health checks
 
 ```bash
-curl https://api-production-83b8.up.railway.app/health
-curl https://web-production-0919a.up.railway.app
-curl https://admin-production-5c08.up.railway.app/health
+curl https://<api-domain>/health
+curl https://<web-domain>
+curl https://<admin-domain>/health
 railway run --service ocerp curl http://localhost:8000/health
 ```
 
@@ -320,7 +338,7 @@ All should return `200`.
 
 ### 9.2 Back-office login
 
-1. Open `https://web-production-0919a.up.railway.app/login`.
+1. Open `https://<web-domain>/login`.
 2. Enter the tenant slug (e.g. `demo`), admin email, and password.
 3. Confirm the dashboard loads and the tenant selector resolves correctly.
 
@@ -348,9 +366,9 @@ From the `web/app` directory:
 
 ```bash
 cd web/app
-E2E_BASE_URL=https://web-production-0919a.up.railway.app \
-E2E_ADMIN_BASE_URL=https://admin-production-5c08.up.railway.app \
-E2E_DJANGO_ADMIN_USERNAME=superadmin \
+E2E_BASE_URL=https://<web-domain> \
+E2E_ADMIN_BASE_URL=https://<admin-domain> \
+E2E_DJANGO_ADMIN_USERNAME=<superuser-username> \
 E2E_DJANGO_ADMIN_PASSWORD=... \
 pnpm exec playwright test --config=playwright.config.prod-smoke.ts
 ```
@@ -431,6 +449,7 @@ For database issues, restore from the most recent Railway Postgres backup. Do no
 
 - [ ] Watch Railway service health and deploy logs for all services.
 - [ ] Monitor OpenAI usage dashboard for unexpected cost spikes.
+- [ ] Monitor New Relic APM (if `NEW_RELIC_LICENSE_KEY` is configured) for error rates and latency.
 - [ ] Monitor Paddle transaction webhooks (if enabled) and the `payments` / `webhook_logs` tables.
 - [ ] Check `audit_logs` for failed logins, tenant access violations, and quote-generation errors.
 - [ ] Verify daily/scheduled data-pipeline runs: `SCRAPE_FREQUENCY` is set to `monthly` or `daily` as intended.
@@ -476,11 +495,10 @@ railway logs --service web
 
 # Manual database init (if needed)
 railway run --service api python scripts/init_db.py
-railway run --service admin python scripts/init_db.py
+railway run --service admin python manage.py migrate --noinput
 
-# Seed data
-railway run --service data-pipeline python -m data_pipeline.load_curated_seed
-railway run --service data-pipeline python -m data_pipeline.knowledge_loader
+# Populate cost data (ad-hoc pipeline run)
+railway run --service data-pipeline python -m data_pipeline.loader
 
 # Security checks
 pytest -m security -v --no-cov
@@ -489,14 +507,14 @@ cd web/app && pnpm audit --audit-level=high
 
 # Production smoke test (manual)
 cd web/app
-E2E_BASE_URL=https://web-production-0919a.up.railway.app \
-E2E_ADMIN_BASE_URL=https://admin-production-5c08.up.railway.app \
-E2E_DJANGO_ADMIN_USERNAME=superadmin \
+E2E_BASE_URL=https://<web-domain> \
+E2E_ADMIN_BASE_URL=https://<admin-domain> \
+E2E_DJANGO_ADMIN_USERNAME=<superuser-username> \
 E2E_DJANGO_ADMIN_PASSWORD=... \
 pnpm exec playwright test --config=playwright.config.prod-smoke.ts
 
 # Health checks
-curl https://api-production-83b8.up.railway.app/health
-curl https://admin-production-5c08.up.railway.app/health
-curl https://web-production-0919a.up.railway.app
+curl https://<api-domain>/health
+curl https://<admin-domain>/health
+curl https://<web-domain>
 ```

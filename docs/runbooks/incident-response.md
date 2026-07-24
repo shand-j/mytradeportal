@@ -10,7 +10,7 @@ This document provides the operational procedures for detecting, responding to, 
 | Environment | `production` |
 | Region target | `europe-west4-drams3a` (Amsterdam) via [`.railway/railway.ts`](../../.railway/railway.ts) |
 | Known discrepancy | Native Postgres and Redis plugins are currently in `sfo`. Application services and MinIO are in Amsterdam. |
-| Public services | `https://api-production-8c41.up.railway.app`, `https://web-production-80365.up.railway.app`, `https://admin-production-2dab.up.railway.app` |
+| Public services | `https://<api-domain>`, `https://<web-domain>`, `https://<admin-domain>` |
 | Internal services | `ocerp`, `data-pipeline`, `minio`, `qdrant`, Postgres, Redis |
 
 ## 1. Severity classification
@@ -58,7 +58,7 @@ This document provides the operational procedures for detecting, responding to, 
 
 ```bash
 # API
-export API_URL=https://api-production-8c41.up.railway.app
+export API_URL=https://<api-domain>
 curl -s "$API_URL/health" | jq .
 
 # OCERP
@@ -66,10 +66,10 @@ curl -s "$API_URL/health" | jq .
 # curl -s https://<ocerp-public-domain>/health
 
 # Admin
-curl -s https://admin-production-2dab.up.railway.app/health
+curl -s https://<admin-domain>/health
 
 # Web (should return 200 on the SPA index)
-curl -s -o /dev/null -w "%{http_code}" https://web-production-80365.up.railway.app
+curl -s -o /dev/null -w "%{http_code}" https://<web-domain>
 ```
 
 ## 5. Common incident procedures
@@ -96,7 +96,7 @@ curl -s -o /dev/null -w "%{http_code}" https://web-production-80365.up.railway.a
    ```
 4. If the incident started with the latest deploy, **rollback immediately** (see section 7).
 5. If the issue is a database connection failure, check Postgres status in Railway dashboard.
-6. If `Settings.validate_production()` is blocking startup, verify preserved secrets are set (`AUTH_SECRET_KEY`, `SETUP_TOKEN`, `MINIO_ACCESS_KEY`, `MINIO_SECRET_KEY`, `OPENAI_API_KEY`).
+6. If `Settings.validate_production()` is blocking startup, verify preserved secrets are set (`AUTH_SECRET_KEY`, `SETUP_TOKEN`, `APP_ROLE_PASSWORD`, `MINIO_ACCESS_KEY`, `MINIO_SECRET_KEY`, `OPENAI_API_KEY`).
 
 ### 5.2 Admin returns 400 Bad Request
 
@@ -115,7 +115,7 @@ curl -s -o /dev/null -w "%{http_code}" https://web-production-80365.up.railway.a
 3. If the problem persists, check the `ALLOWED_HOSTS` and `CSRF_TRUSTED_ORIGINS` variables in the Railway dashboard and compare them to the current domain.
 4. Verify the fix:
    ```bash
-   curl -s -o /dev/null -w "%{http_code}" https://admin-production-2dab.up.railway.app/admin/login/
+   curl -s -o /dev/null -w "%{http_code}" https://<admin-domain>/admin/login/
    ```
 
 ### 5.3 Database / PostgreSQL issues
@@ -150,8 +150,8 @@ curl -s -o /dev/null -w "%{http_code}" https://web-production-80365.up.railway.a
 1. **Contain**: Immediately disable the affected endpoint or set the service to sleep via Railway dashboard if no safe fix is available.
 2. **Verify**: Use the security test suite to confirm the breach scope:
    ```bash
-   export SECURITY_API_BASE_URL=https://api-production-8c41.up.railway.app
-   export SECURITY_ADMIN_BASE_URL=https://admin-production-2dab.up.railway.app
+   export SECURITY_API_BASE_URL=https://<api-domain>
+   export SECURITY_ADMIN_BASE_URL=https://<admin-domain>
    export SECURITY_TENANT_SLUG=<affected-tenant>
    export SECURITY_ADMIN_EMAIL=<admin-email>
    export SECURITY_ADMIN_PASSWORD=<password>
@@ -184,11 +184,12 @@ curl -s -o /dev/null -w "%{http_code}" https://web-production-80365.up.railway.a
    curl -s http://<qdrant-private-domain>:6333/collections/cost_items
    curl -s http://<qdrant-private-domain>:6333/collections/quoting_knowledge
    ```
-4. If collections are empty or missing, re-run the loaders:
+4. If collections are empty or missing, trigger the data-pipeline Screwfix scrape:
    ```bash
-   railway run --service data-pipeline python -m data_pipeline.load_curated_seed
-   railway run --service data-pipeline python -m data_pipeline.knowledge_loader
+   railway run --service data-pipeline python -m data_pipeline.loader
    ```
+   > If Apify reports a monthly usage limit, AI quotes will only produce
+   > labour-line items until the limit resets or the plan is upgraded.
 5. If OCERP is down, the in-house RAG path (`/quotes/generate`) may still work. Verify the `OCERP_URL` variable in the API service points to the correct private domain.
 6. As a temporary mitigation, disable AI generation in the UI and instruct users to create manual quotes.
 
@@ -261,7 +262,8 @@ curl -s -o /dev/null -w "%{http_code}" https://web-production-80365.up.railway.a
    - **`railway config apply` failure**: ensure `RAILWAY_TOKEN` is valid, Railway CLI is installed, and the linked project/environment matches.
    - **Admin fails to start with "relation does not exist"**: re-run the pre-deploy command manually:
      ```bash
-     railway run --service admin python scripts/init_db.py
+     railway run --service api python scripts/init_db.py
+     railway run --service admin python manage.py migrate --noinput
      ```
    - **Service never becomes healthy**: check that `PORT` matches the Dockerfile/healthcheck target (`api`/`ocerp`: 8000, `admin`: 8001, `web`: 80).
 3. If the deploy is partially applied, redeploy the previous healthy deployment of the affected service from the Railway dashboard.
@@ -357,11 +359,10 @@ railway logs --service minio --tail 100
 
 # Manual database init (idempotent; use with caution)
 railway run --service api python scripts/init_db.py
-railway run --service admin python scripts/init_db.py
+railway run --service admin python manage.py migrate --noinput
 
-# Re-run data loaders
-railway run --service data-pipeline python -m data_pipeline.load_curated_seed
-railway run --service data-pipeline python -m data_pipeline.knowledge_loader
+# Populate cost data (ad-hoc pipeline run)
+railway run --service data-pipeline python -m data_pipeline.loader
 
 # Run tests locally
 source .venv/bin/activate
@@ -370,9 +371,9 @@ pytest -m security -v --no-cov
 
 # Run production smoke test manually
 cd web/app
-E2E_BASE_URL=https://web-production-0919a.up.railway.app \
-E2E_ADMIN_BASE_URL=https://admin-production-5c08.up.railway.app \
-E2E_DJANGO_ADMIN_USERNAME=superadmin \
+E2E_BASE_URL=https://<web-domain> \
+E2E_ADMIN_BASE_URL=https://<admin-domain> \
+E2E_DJANGO_ADMIN_USERNAME=<superuser-username> \
 E2E_DJANGO_ADMIN_PASSWORD=<password> \
 pnpm exec playwright test --config=playwright.config.prod-smoke.ts
 ```

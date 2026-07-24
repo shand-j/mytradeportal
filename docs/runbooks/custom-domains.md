@@ -8,10 +8,10 @@ Configure custom domains for the My Trade Portal V2 production stack on Railway.
 
 - Railway Project: `MyTradePortal` (`30feaeee-9464-41ac-9b17-d07ae4cfcd09`)
 - Environment: `production`
-- Current service domains:
-  - API: `https://api-production-83b8.up.railway.app`
-  - Web: `https://web-production-0919a.up.railway.app`
-  - Admin: `https://admin-production-5c08.up.railway.app`
+- Current service domains (use `railway service list --json` to get the exact values for your environment):
+  - API: `https://<api-domain>`
+  - Web: `https://<web-domain>`
+  - Admin: `https://<admin-domain>`
 - IaC target region: `europe-west4-drams3a` (Amsterdam). All services are deployed in this region.
 
 ---
@@ -86,11 +86,11 @@ Railway IaC cannot register custom domains (`.railway/railway.ts` comment at lin
 
 | Type | Name | Value |
 |---|---|---|
-| CNAME | `api` | `api-production-83b8.up.railway.app` (or the Railway-provided target) |
-| CNAME | `admin` | `admin-production-5c08.up.railway.app` (or the Railway-provided target) |
-| CNAME | `app` | `web-production-0919a.up.railway.app` (or the Railway-provided target) |
-| CNAME | `storage` | `minio.up.railway.app` (or the Railway-provided target) |
-| CNAME | `*.app` | `web-production-0919a.up.railway.app` (or the Railway-provided target) |
+| CNAME | `api` | `<api-domain>` (or the Railway-provided target) |
+| CNAME | `admin` | `<admin-domain>` (or the Railway-provided target) |
+| CNAME | `app` | `<web-domain>` (or the Railway-provided target) |
+| CNAME | `storage` | `<minio-domain>` (or the Railway-provided target) |
+| CNAME | `*.app` | `<web-domain>` (or the Railway-provided target) |
 
 > **Tip:** Use the exact CNAME targets Railway gives you, not the old `*.up.railway.app` URLs from this runbook. The examples above are the current service domains; Railway may rewrite them through its edge.
 
@@ -143,11 +143,11 @@ railway variable set VITE_API_BASE_URL="https://api.example.com" --service web -
 
 | Variable | New value | Why |
 |---|---|---|
-| `ALLOWED_HOSTS` | `admin.example.com,admin-production-5c08.up.railway.app,localhost,127.0.0.1` | Django rejects hostnames not in this list. Keep the old Railway domain as a fallback during cutover. |
+| `ALLOWED_HOSTS` | `admin.example.com,<admin-domain>,localhost,127.0.0.1` | Django rejects hostnames not in this list. Keep the old Railway domain as a fallback during cutover. |
 | `CSRF_TRUSTED_ORIGINS` | `https://admin.example.com` | Required for Django admin POST requests. |
 
 ```bash
-railway variable set ALLOWED_HOSTS="admin.example.com,admin-production-5c08.up.railway.app,localhost,127.0.0.1" --service admin --environment production
+railway variable set ALLOWED_HOSTS="admin.example.com,<admin-domain>,localhost,127.0.0.1" --service admin --environment production
 railway variable set CSRF_TRUSTED_ORIGINS="https://admin.example.com" --service admin --environment production
 ```
 
@@ -204,7 +204,7 @@ All should return `200 OK` or `302` (admin login redirect).
 2. Enter a tenant slug and log in.
 3. Create a test quote and confirm the BoQ/AI generation path succeeds (calls `https://api.example.com`).
 4. Upload a file in the quote or job view and confirm the presigned URL points to `https://storage.example.com`.
-5. Log in to `https://admin.example.com/admin/` with the `superadmin` account and verify the Django admin loads without CSRF errors.
+5. Log in to `https://admin.example.com/admin/` with the configured Django superuser and verify the Django admin loads without CSRF errors.
 
 ---
 
@@ -281,11 +281,11 @@ If the custom domain cutover breaks production, roll back quickly without losing
 1. Revert the environment variables to the previous Railway service domains:
 
    ```bash
-   railway variable set ALLOWED_ORIGINS="https://api-production-83b8.up.railway.app" --service api --environment production
-   railway variable set MINIO_ENDPOINT="minio.up.railway.app" --service api --environment production
-   railway variable set VITE_API_BASE_URL="https://api-production-83b8.up.railway.app" --service web --environment production
-   railway variable set ALLOWED_HOSTS="admin-production-5c08.up.railway.app,localhost,127.0.0.1" --service admin --environment production
-   railway variable set CSRF_TRUSTED_ORIGINS="https://admin-production-5c08.up.railway.app" --service admin --environment production
+   railway variable set ALLOWED_ORIGINS="https://<api-domain>" --service api --environment production
+   railway variable set MINIO_ENDPOINT="<minio-domain>" --service api --environment production
+   railway variable set VITE_API_BASE_URL="https://<api-domain>" --service web --environment production
+   railway variable set ALLOWED_HOSTS="<admin-domain>,localhost,127.0.0.1" --service admin --environment production
+   railway variable set CSRF_TRUSTED_ORIGINS="https://<admin-domain>" --service admin --environment production
    ```
 
 2. Redeploy `api`, `web`, and `admin`.

@@ -28,7 +28,7 @@ Current production environment:
 | Railway project | `MyTradePortal` (`30feaeee-9464-41ac-9b17-d07ae4cfcd09`) |
 | Environment | `production` |
 | Services | `api`, `web`, `admin`, `ocerp`, `data-pipeline`, `minio`, `qdrant`, `Postgres`, `Redis` |
-| Public domains | `api-production-83b8.up.railway.app`, `web-production-0919a.up.railway.app`, `admin-production-5c08.up.railway.app` |
+| Public domains | `<api-domain>`, `<web-domain>`, `<admin-domain>` |
 
 The platform is multi-tenant with PostgreSQL Row-Level Security (RLS), uses OpenAI for AI quote generation, Paddle for payments, Qdrant for vector search, and MinIO for file uploads.
 
@@ -184,6 +184,8 @@ These secrets are required by the `deploy` and `smoke-production` workflows:
 | Secret | Required by | Purpose |
 |--------|-------------|---------|
 | `RAILWAY_TOKEN` | `deploy` | Railway project token for `railway config apply` |
+| `DJANGO_SUPERUSER_USERNAME` | `deploy` | Production Django superuser username |
+| `DJANGO_SUPERUSER_EMAIL` | `deploy` | Production Django superuser email |
 | `DJANGO_SUPERUSER_PASSWORD` | `deploy`, `smoke-production` | Production Django superuser password |
 | `E2E_BASE_URL` | `smoke-production` | Public URL of the `web` service |
 | `E2E_ADMIN_BASE_URL` | `smoke-production` | Public URL of the `admin` service |
@@ -205,15 +207,21 @@ These are set once in the Railway dashboard and are never overwritten by IaC app
 | `api` | `OPENAI_API_KEY` | Required |
 | `api` | `AUTH_SECRET_KEY` | Strong random string; required in production |
 | `api` | `SETUP_TOKEN` | Strong random string; gates `POST /tenants` |
+| `api` | `APP_ROLE_PASSWORD` | Strong random string; RLS-enforced DB role |
 | `api` | `MINIO_ACCESS_KEY` | Required |
 | `api` | `MINIO_SECRET_KEY` | Required |
 | `api` | `RAILWAY_TOKEN` | Project token for feature flags |
+| `api` | `NEW_RELIC_LICENSE_KEY` | Optional; New Relic APM |
 | `minio` | `MINIO_ROOT_USER` | Must match `MINIO_ACCESS_KEY` |
 | `minio` | `MINIO_ROOT_PASSWORD` | Must match `MINIO_SECRET_KEY` |
 | `admin` | `SECRET_KEY` | Django secret |
+| `admin` | `DJANGO_SUPERUSER_USERNAME` | Required |
+| `admin` | `DJANGO_SUPERUSER_EMAIL` | Required |
 | `admin` | `DJANGO_SUPERUSER_PASSWORD` | Set from GitHub secret on deploy |
+| `admin` | `NEW_RELIC_LICENSE_KEY` | Optional; New Relic APM |
 | `data-pipeline` | `OPENAI_API_KEY` | Required for embeddings |
 | `data-pipeline` | `APIFY_API_TOKEN` | Required for Screwfix scraping |
+| `data-pipeline` | `APP_ROLE_PASSWORD` | Same value as `api` service |
 
 ---
 
@@ -254,10 +262,10 @@ pip-audit --desc --audit-level=high
 pnpm audit --audit-level=high
 
 # Security tests against production (requires live credentials)
-export SECURITY_API_BASE_URL=https://api-production-83b8.up.railway.app
-export SECURITY_ADMIN_BASE_URL=https://admin-production-5c08.up.railway.app
+export SECURITY_API_BASE_URL=https://<api-domain>
+export SECURITY_ADMIN_BASE_URL=https://<admin-domain>
 export SECURITY_TENANT_SLUG=demo
-export SECURITY_ADMIN_EMAIL=admin@example.com
+export SECURITY_ADMIN_EMAIL=owner@demo-electrical.example.com
 export SECURITY_ADMIN_PASSWORD=...
 pytest -m security -v --no-cov
 ```
@@ -298,14 +306,17 @@ See the full playbook in [`docs/deployment.md`](../deployment.md#playbook-1-clea
 4. Apply the IaC with `railway config apply`.
 5. Generate public domains in the Railway dashboard for `api`, `web`, `admin`, and `minio`.
 6. Create the MinIO bucket `mtp-uploads`.
-7. Run the database initialisation via the `api`/`admin` pre-deploy commands (or manually with `python scripts/init_db.py`).
+7. Run the database initialisation via the `api` pre-deploy command (the `admin` pre-deploy command runs Django migrations and creates the superuser separately).
 8. Create the first tenant through the Django admin UI or the gated `POST /tenants` endpoint.
-9. Seed the cost database and knowledge base:
+9. Populate cost data by running the data-pipeline:
 
    ```bash
-   railway run --service data-pipeline python -m data_pipeline.load_curated_seed
-   railway run --service data-pipeline python -m data_pipeline.knowledge_loader
+   railway run --service data-pipeline python -m data_pipeline.loader
    ```
+
+   > **Note:** AI quotes will only produce labour-line items until cost data is
+   > available. If Apify reports a monthly usage limit, wait for the limit to reset
+   > or upgrade the Apify plan.
 
 ---
 
@@ -322,9 +333,9 @@ After every deploy, the `Production Smoke Test` workflow:
 ### Manual health checks
 
 ```bash
-curl https://api-production-83b8.up.railway.app/health
-curl https://web-production-0919a.up.railway.app/
-curl https://admin-production-5c08.up.railway.app/health
+curl https://<api-domain>/health
+curl https://<web-domain>/
+curl https://<admin-domain>/health
 ```
 
 OCERP does not have a public domain by default; check via the Railway private network or dashboard logs.
@@ -408,7 +419,7 @@ docker compose up -d postgres qdrant
 
 ### API fails to start with "dev defaults refused"
 
-`Settings.validate_production()` blocks the app when insecure defaults are present. Check that `AUTH_SECRET_KEY`, `SETUP_TOKEN`, `MINIO_ACCESS_KEY`, and `MINIO_SECRET_KEY` are set to strong non-default values on the `api` service.
+`Settings.validate_production()` blocks the app when insecure defaults are present. Check that `AUTH_SECRET_KEY`, `SETUP_TOKEN`, `APP_ROLE_PASSWORD`, `MINIO_ACCESS_KEY`, and `MINIO_SECRET_KEY` are set to strong non-default values on the `api` service.
 
 ### Admin deploy fails with "relation does not exist"
 

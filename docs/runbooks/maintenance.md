@@ -6,9 +6,9 @@ This runbook covers the day-to-day care, feeding, and incident response for My T
 
 | Service | Current Domain | Health Check |
 |---|---|---|
-| API | `https://api-production-8c41.up.railway.app` | `GET /health` |
-| Web | `https://web-production-80365.up.railway.app` | `GET /` |
-| Admin | `https://admin-production-2dab.up.railway.app` | `GET /health` |
+| API | `https://<api-domain>` | `GET /health` |
+| Web | `https://<web-domain>` | `GET /` |
+| Admin | `https://<admin-domain>` | `GET /health` |
 | OCERP | Internal (`${{ocerp.RAILWAY_PRIVATE_DOMAIN}}`) | `GET /health` |
 | Data Pipeline | Internal | N/A (scheduled task) |
 | PostgreSQL | Native Railway plugin | N/A |
@@ -48,9 +48,9 @@ In the dashboard, confirm:
 Then hit the public health endpoints:
 
 ```bash
-curl -s https://api-production-8c41.up.railway.app/health
-curl -s https://web-production-80365.up.railway.app
-curl -s https://admin-production-2dab.up.railway.app/health
+curl -s https://<api-domain>/health
+curl -s https://<web-domain>
+curl -s https://<admin-domain>/health
 ```
 
 Expected: HTTP 200 for each. If OCERP is exposed publicly for diagnostics, check:
@@ -65,8 +65,8 @@ curl -s https://<ocerp-domain>/health
 In the Railway dashboard, inspect the **Deploy logs** for the last deploy of `api` and `admin`. Confirm that the pre-deploy command ran successfully:
 
 ```text
-python scripts/init_db.py
-sh -c 'python scripts/init_db.py && python scripts/ensure_superuser.py'
+python scripts/init_api.py
+sh -c 'python manage.py migrate --noinput && python scripts/ensure_superuser.py'
 ```
 
 Stream the API logs for a few minutes to spot repeated errors or exceptions:
@@ -103,7 +103,7 @@ Look for:
 
 ### 4. Spot-check quote generation
 
-Log in to the back office at `https://web-production-0919a.up.railway.app` with an existing tenant and create a quick test quote. This validates the full chain: web → API → OCERP → Qdrant → OpenAI. Any failure here is worth investigating before users report it.
+Log in to the back office at `https://<web-domain>` with an existing tenant and create a quick test quote. This validates the full chain: web → API → OCERP → Qdrant → OpenAI. Any failure here is worth investigating before users report it.
 
 ---
 
@@ -111,7 +111,7 @@ Log in to the back office at `https://web-production-0919a.up.railway.app` with 
 
 ### 1. Security and audit review
 
-1. Open the Django admin panel at `https://admin-production-5c08.up.railway.app/admin/`.
+1. Open the Django admin panel at `https://<admin-domain>/admin/`.
 2. Review the **Operations → Audit logs** entries for the last 7 days.
 3. Look for:
    - Failed logins from unexpected IPs or tenants.
@@ -122,8 +122,8 @@ Run the security test suite against production if you have the credentials:
 
 ```bash
 source .venv/bin/activate
-export SECURITY_API_BASE_URL=https://api-production-83b8.up.railway.app
-export SECURITY_ADMIN_BASE_URL=https://admin-production-5c08.up.railway.app
+export SECURITY_API_BASE_URL=https://<api-domain>
+export SECURITY_ADMIN_BASE_URL=https://<admin-domain>
 export SECURITY_TENANT_SLUG=<tenant-slug>
 export SECURITY_ADMIN_EMAIL=<admin-email>
 export SECURITY_ADMIN_PASSWORD=<admin-password>
@@ -134,9 +134,9 @@ For a deeper review, run the agentic penetration test (read-only by default):
 
 ```bash
 export OPENAI_API_KEY=...
-export SECURITY_TARGET_URL=https://web-production-0919a.up.railway.app
-export SECURITY_API_BASE_URL=https://api-production-83b8.up.railway.app
-export SECURITY_ADMIN_BASE_URL=https://admin-production-5c08.up.railway.app
+export SECURITY_TARGET_URL=https://<web-domain>
+export SECURITY_API_BASE_URL=https://<api-domain>
+export SECURITY_ADMIN_BASE_URL=https://<admin-domain>
 python -m security.agents.orchestrator
 ```
 
@@ -282,14 +282,13 @@ railway run --service db psql $DATABASE_URL
 
 ### Seeding and re-indexing cost data
 
-To refresh the cost database or knowledge base after a product data change:
+To refresh the cost database after a product data change:
 
 ```bash
-railway run --service data-pipeline python -m data_pipeline.load_curated_seed
-railway run --service data-pipeline python -m data_pipeline.knowledge_loader
+railway run --service data-pipeline python -m data_pipeline.loader
 ```
 
-These recreate the Qdrant collections and populate the Postgres `cost_items` table. Run them after any Qdrant data loss or when the knowledge base has been updated in the repo.
+This populates the Postgres `cost_items` table and the Qdrant `cost_items` collection from the live Screwfix scrape. Run it after any Qdrant data loss or when the product catalogue needs refreshing.
 
 ### Database restore from backup
 
@@ -313,7 +312,7 @@ Feature flags are read from Railway Signals via `GET /feature-flags` on the `api
 ### Ensure the flag reader is working
 
 ```bash
-curl -s https://api-production-83b8.up.railway.app/feature-flags
+curl -s https://<api-domain>/feature-flags
 ```
 
 Expected: a JSON object with flags and their current values.
@@ -344,7 +343,7 @@ If a flag is not applying, check the API logs for Railway GraphQL errors and con
 Symptoms: `api` service shows `UNHEALTHY` or deploy fails repeatedly.
 
 1. Check the deploy logs for `Settings.validate_production refused`.
-   - Confirm `AUTH_SECRET_KEY`, `SETUP_TOKEN`, `MINIO_ACCESS_KEY`, `MINIO_SECRET_KEY` are set to non-default values on the `api` service.
+   - Confirm `AUTH_SECRET_KEY`, `SETUP_TOKEN`, `APP_ROLE_PASSWORD`, `MINIO_ACCESS_KEY`, `MINIO_SECRET_KEY` are set to non-default values on the `api` service.
 2. Check `DATABASE_URL`, `REDIS_URL`, `QDRANT_URL` are reachable from the service.
 3. Check for a migration/schema error. Re-run:
    ```bash
@@ -359,10 +358,10 @@ Symptoms: `admin` service unhealthy or admin login page shows an error.
 1. Check deploy logs for `relation does not exist` errors. The admin pre-deploy command needs the FastAPI schema to exist first. If the race failed, run:
    ```bash
    railway run --service api python scripts/init_db.py
-   railway run --service admin python scripts/init_db.py
+   railway run --service admin python manage.py migrate --noinput
    ```
-2. Verify `SECRET_KEY`, `DJANGO_SUPERUSER_PASSWORD` are set.
-3. Verify `CSRF_TRUSTED_ORIGINS` matches the actual admin public domain (`https://admin-production-5c08.up.railway.app`).
+2. Verify `SECRET_KEY`, `DJANGO_SUPERUSER_USERNAME`, `DJANGO_SUPERUSER_EMAIL`, `DJANGO_SUPERUSER_PASSWORD` are set.
+3. Verify `CSRF_TRUSTED_ORIGINS` matches the actual admin public domain (`https://<admin-domain>`).
 4. Confirm `PORT=8001` is set in the admin variables (Django gunicorn binds to this port).
 
 ### Quote generation fails or returns bad results
@@ -377,11 +376,12 @@ Symptoms: `admin` service unhealthy or admin login page shows an error.
    railway run --service ocerp curl http://$QDRANT_URL/collections/cost_items
    railway run --service ocerp curl http://$QDRANT_URL/collections/quoting_knowledge
    ```
-4. If the collections are empty, re-run:
+4. If the collections are empty, trigger the Screwfix scrape:
    ```bash
-   railway run --service data-pipeline python -m data_pipeline.load_curated_seed
-   railway run --service data-pipeline python -m data_pipeline.knowledge_loader
+   railway run --service data-pipeline python -m data_pipeline.loader
    ```
+   > If Apify reports a monthly usage limit, AI quotes will only produce
+   > labour-line items until the limit resets or the plan is upgraded.
 5. Review the OCERP logs for deterministic rule failures or resolver errors.
 
 ### File uploads fail
@@ -394,7 +394,7 @@ Symptoms: `admin` service unhealthy or admin login page shows an error.
 
 ### Paddle webhooks not received or fail verification
 
-1. Confirm the webhook endpoint is `https://api-production-83b8.up.railway.app/webhooks/paddle` and registered in Paddle.
+1. Confirm the webhook endpoint is `https://<api-domain>/webhooks/paddle` and registered in Paddle.
 2. Verify `PADDLE_WEBHOOK_SECRET` is set on `api` and matches the value in Paddle.
 3. Verify `PADDLE_API_KEY` is set and the sandbox flag matches the environment.
 4. Check the API logs for `HMAC verification failed` or `Paddle API error`.
@@ -403,7 +403,7 @@ Symptoms: `admin` service unhealthy or admin login page shows an error.
 
 The production smoke test creates tenants with slug prefix `prod-smoke-` or `first-customer-`. If a workflow run is cancelled, the teardown step may not run.
 
-1. Log in to the Django admin at `https://admin-production-5c08.up.railway.app/admin/`.
+1. Log in to the Django admin at `https://<admin-domain>/admin/`.
 2. Navigate to **Operations → Tenants**, filter by slug prefix `prod-smoke-`, and delete the leftover tenants.
 3. Alternatively, run the cleanup script manually:
    ```bash
@@ -476,11 +476,10 @@ railway logs --service <api|web|admin|ocerp|data-pipeline> --environment product
 
 # Re-run schema init
 railway run --service api python scripts/init_db.py
-railway run --service admin python scripts/init_db.py
+railway run --service admin python manage.py migrate --noinput
 
-# Re-seed cost and knowledge data
-railway run --service data-pipeline python -m data_pipeline.load_curated_seed
-railway run --service data-pipeline python -m data_pipeline.knowledge_loader
+# Populate cost data (ad-hoc pipeline run)
+railway run --service data-pipeline python -m data_pipeline.loader
 
 # Run security tests
 pytest -m security -v --no-cov
