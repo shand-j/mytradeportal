@@ -34,8 +34,13 @@ if str(API_DIR) not in sys.path:
 from app.models import Base  # noqa: E402
 from app.rls import TENANT_SCOPED_TABLES, apply_tenant_rls_sync  # noqa: E402
 
-APP_ROLE = "mtp_app"
-APP_ROLE_PASSWORD = "mtp_app"
+# Load shared settings so the production app-role password is read from env.
+from mtp_shared import get_settings  # noqa: E402
+
+_shared_settings = get_settings()
+
+APP_ROLE = _shared_settings.app_role_name
+APP_ROLE_PASSWORD = _shared_settings.app_role_password
 
 DATABASE_URL = os.environ["DATABASE_URL"]
 

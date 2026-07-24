@@ -20,13 +20,20 @@ django.setup()
 
 User = get_user_model()
 
-username = os.environ.get("DJANGO_SUPERUSER_USERNAME", "superadmin")
-email = os.environ.get("DJANGO_SUPERUSER_EMAIL", "admin@example.com")
+username = os.environ.get("DJANGO_SUPERUSER_USERNAME")
+email = os.environ.get("DJANGO_SUPERUSER_EMAIL")
 password = os.environ.get("DJANGO_SUPERUSER_PASSWORD")
 
 if not password:
     print("[ensure_superuser] DJANGO_SUPERUSER_PASSWORD not set; skipping superuser creation")
     sys.exit(0)
+
+if not username or not email:
+    print(
+        "[ensure_superuser] DJANGO_SUPERUSER_USERNAME and DJANGO_SUPERUSER_EMAIL "
+        "must be set when DJANGO_SUPERUSER_PASSWORD is set"
+    )
+    sys.exit(1)
 
 if User.objects.filter(username=username).exists():
     print(f"[ensure_superuser] Superuser already exists: {username}")

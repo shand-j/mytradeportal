@@ -1,6 +1,7 @@
 """Configuration for the domestic electrical data pipeline."""
 
 from typing import Literal
+from urllib.parse import quote, urlparse, urlunparse
 
 from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -17,6 +18,11 @@ class Settings(BaseSettings):
 
     # Database
     database_url: str = "postgresql+asyncpg://mtp:mtp@postgres:5432/mtp"
+    app_role_name: str = "mtp_app"
+    app_role_password: str = "mtp_app"
+
+    # Runtime environment
+    environment: str = "development"
 
     # Qdrant
     qdrant_url: str = "http://qdrant:6333"
@@ -58,6 +64,15 @@ class Settings(BaseSettings):
         if value.startswith("postgres://"):
             return "postgresql+asyncpg://" + value[len("postgres://") :]
         return value
+
+    def get_app_database_url(self) -> str:
+        """Return ``database_url`` rewritten to authenticate as ``app_role_name``."""
+        parsed = urlparse(self.database_url)
+        host = parsed.hostname or "localhost"
+        port = f":{parsed.port}" if parsed.port else ""
+        password = quote(self.app_role_password, safe="")
+        new_netloc = f"{self.app_role_name}:{password}@{host}{port}"
+        return urlunparse(parsed._replace(netloc=new_netloc))
 
 
 settings = Settings()

@@ -1,6 +1,7 @@
 """Shared configuration helpers."""
 
 from functools import lru_cache
+from urllib.parse import urlparse, urlunparse
 
 from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -38,6 +39,13 @@ class Settings(BaseSettings):
     minio_secret_key: str = Field(default="minioadmin")
     minio_bucket: str = Field(default="mtp-uploads")
     log_level: str = Field(default="INFO")
+
+    # Database role used by the application at runtime. This role must be a
+    # regular non-superuser without BYPASSRLS so that PostgreSQL Row-Level
+    # Security policies are enforced. The password must be changed from the
+    # local-dev default before deploying to production.
+    app_role_name: str = Field(default="mtp_app")
+    app_role_password: str = Field(default="mtp_app")
 
     # Payments (Paddle merchant of record)
     paddle_api_key: str = Field(default="")
@@ -106,6 +114,23 @@ class Settings(BaseSettings):
             return "postgresql+asyncpg://" + value[len("postgres://") :]
         return value
 
+    def get_app_database_url(self) -> str:
+        """Return ``database_url`` rewritten to authenticate as ``app_role_name``.
+
+        ``database_url`` is expected to be the Railway-managed superuser URL
+        (or any owner URL). The application should connect through the
+        lower-privileged app role so Row-Level Security policies are enforced.
+        """
+        parsed = urlparse(self.database_url)
+        host = parsed.hostname or "localhost"
+        port = f":{parsed.port}" if parsed.port else ""
+        # URL-encode the password so special characters do not break the DSN.
+        from urllib.parse import quote
+
+        password = quote(self.app_role_password, safe="")
+        new_netloc = f"{self.app_role_name}:{password}@{host}{port}"
+        return urlunparse(parsed._replace(netloc=new_netloc))
+
     def validate_production(self) -> None:
         """Fail fast if production is configured with insecure dev defaults.
 
@@ -120,6 +145,10 @@ class Settings(BaseSettings):
             value = getattr(self, field_name, "")
             if value in bad_values:
                 violations.append(field_name)
+
+        # The app role must not use the local-dev default password in production.
+        if self.app_role_password in {"mtp_app", ""}:
+            violations.append("app_role_password")
 
         # CORS must not be wide open in production.
         if "*" in self.allowed_origins:

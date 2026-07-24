@@ -70,10 +70,10 @@ def _app_role_database_url(admin_url: str) -> str:
     rows rather than being silently bypassed.
     """
     parsed = urlparse(admin_url)
-    # urlparse keeps the userinfo in ``netloc``; swap it for mtp_app:mtp_app.
+    # urlparse keeps the userinfo in ``netloc``; swap it for mtp_app:<env password>.
     host = parsed.hostname or "localhost"
     port = f":{parsed.port}" if parsed.port else ""
-    new_netloc = f"mtp_app:mtp_app@{host}{port}"
+    new_netloc = f"mtp_app:{settings.app_role_password}@{host}{port}"
     return parsed._replace(netloc=new_netloc).geturl()
 
 

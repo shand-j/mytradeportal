@@ -7,8 +7,17 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 
 from ocerp.config import settings
 
+# In production the app MUST connect through the low-privilege role that is
+# subject to Row-Level Security policies. The owner/superuser DATABASE_URL is
+# only used by preDeploy schema initialisation.
+_DATABASE_URL = (
+    settings.get_app_database_url()
+    if settings.environment == "production"
+    else settings.database_url
+)
+
 engine = create_async_engine(
-    settings.database_url,
+    _DATABASE_URL,
     echo=settings.environment == "development",
     future=True,
 )

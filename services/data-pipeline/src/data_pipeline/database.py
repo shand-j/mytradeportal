@@ -7,8 +7,16 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 
 from data_pipeline.config import settings
 
+# In production the pipeline connects through the low-privilege role used by
+# the rest of the application stack.
+_DATABASE_URL = (
+    settings.get_app_database_url()
+    if settings.environment == "production"
+    else settings.database_url
+)
+
 engine = create_async_engine(
-    settings.database_url,
+    _DATABASE_URL,
     echo=False,
     future=True,
 )

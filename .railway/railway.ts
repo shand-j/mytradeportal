@@ -112,6 +112,8 @@ export default defineRailway(() => {
       LLM_MODEL: "gpt-4o-mini",
       LLM_TIMEOUT_SECONDS: "300",
       LOG_LEVEL: "INFO",
+      APP_ROLE_NAME: "mtp_app",
+      APP_ROLE_PASSWORD: preserve(),
     },
   });
 
@@ -163,6 +165,9 @@ export default defineRailway(() => {
       // New Relic observability (free tier). Set NEW_RELIC_LICENSE_KEY to enable APM.
       NEW_RELIC_LICENSE_KEY: preserve(),
       NEW_RELIC_APP_NAME: "mytradeportal-api",
+      // The API connects as a lower-privilege role so RLS policies are enforced.
+      APP_ROLE_NAME: "mtp_app",
+      APP_ROLE_PASSWORD: preserve(),
     },
   });
 
@@ -195,13 +200,15 @@ export default defineRailway(() => {
       // Match Dockerfile EXPOSE and gunicorn bind port; Railway overrides $PORT otherwise.
       PORT: "8001",
       // Deploy with a Django superuser for tenant creation and admin maintenance.
-      // Set DJANGO_SUPERUSER_PASSWORD in Railway/GitHub secrets before first deploy.
-      DJANGO_SUPERUSER_USERNAME: "superadmin",
-      DJANGO_SUPERUSER_EMAIL: "admin@example.com",
+      // Set these values in Railway/GitHub secrets before first deploy.
+      DJANGO_SUPERUSER_USERNAME: preserve(),
+      DJANGO_SUPERUSER_EMAIL: preserve(),
       DJANGO_SUPERUSER_PASSWORD: preserve(),
       // New Relic observability (free tier). Set NEW_RELIC_LICENSE_KEY to enable APM.
       NEW_RELIC_LICENSE_KEY: preserve(),
       NEW_RELIC_APP_NAME: "mytradeportal-admin",
+      APP_ROLE_NAME: "mtp_app",
+      APP_ROLE_PASSWORD: preserve(),
     },
   });
 
@@ -226,6 +233,8 @@ export default defineRailway(() => {
       SCREWFIX_TIMEOUT_SECONDS: "600",
       TOOLSTATION_ENABLED: "false",
       SCRAPE_FREQUENCY: "monthly",
+      APP_ROLE_NAME: "mtp_app",
+      APP_ROLE_PASSWORD: preserve(),
     },
   });
 

@@ -19,6 +19,7 @@ table. The API container can then be pointed at a ``DATABASE_URL`` that
 authenticates as ``mtp_app`` while migrations continue running as the owner.
 """
 
+import os
 from collections.abc import Sequence
 
 from alembic import op
@@ -36,7 +37,7 @@ depends_on: str | Sequence[str] | None = None
 
 
 APP_ROLE = "mtp_app"
-APP_ROLE_PASSWORD = "mtp_app"
+APP_ROLE_PASSWORD = os.environ.get("APP_ROLE_PASSWORD", "mtp_app")
 
 
 def _create_app_role(conn) -> None:  # type: ignore[no-untyped-def]

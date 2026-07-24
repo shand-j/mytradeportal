@@ -8,14 +8,11 @@ ENVIRONMENT=production. In production, create the first tenant via
 Required environment variables (no defaults are provided — the seed must not
 bake in credentials):
 
+- ``SEED_TENANT_SLUG`` — tenant slug.
+- ``SEED_TENANT_NAME`` — tenant display name.
 - ``SEED_ADMIN_EMAIL`` — login email for the seeded admin user.
 - ``SEED_ADMIN_PASSWORD`` — password for the seeded admin user (never printed).
-
-Optional environment variables:
-
-- ``SEED_TENANT_SLUG`` — tenant slug (default ``demo``).
-- ``SEED_TENANT_NAME`` — tenant display name (default ``Demo Electrical``).
-- ``SEED_ADMIN_NAME`` — admin full name (default ``Demo Admin``).
+- ``SEED_ADMIN_NAME`` — admin full name.
 """
 
 import asyncio
@@ -47,11 +44,11 @@ async def seed() -> None:
     if settings.environment == "production":
         raise RuntimeError("This seed script must not be run in production")
 
-    tenant_slug = os.environ.get("SEED_TENANT_SLUG", "demo")
-    tenant_name = os.environ.get("SEED_TENANT_NAME", "Demo Electrical")
+    tenant_slug = _require_env("SEED_TENANT_SLUG")
+    tenant_name = _require_env("SEED_TENANT_NAME")
     admin_email = _require_env("SEED_ADMIN_EMAIL")
     admin_password = _require_env("SEED_ADMIN_PASSWORD")
-    admin_name = os.environ.get("SEED_ADMIN_NAME", "Demo Admin")
+    admin_name = _require_env("SEED_ADMIN_NAME")
 
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
