@@ -26,4 +26,5 @@ COPY services/api ./services/api
 EXPOSE 8000
 
 # Serve only. Schema is created via scripts/init_db.py (Railway preDeployCommand).
-CMD ["sh", "-c", "uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000} --proxy-headers"]
+# New Relic APM wrapper is enabled automatically when NEW_RELIC_LICENSE_KEY is set.
+CMD ["sh", "-c", "newrelic-admin run-program uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000} --proxy-headers"]

@@ -18,6 +18,6 @@ ENV DJANGO_SETTINGS_MODULE=admin_project.settings
 EXPOSE 8001
 
 # Collect static assets for whitenoise, then serve with gunicorn.
-# Migrations are run via scripts/init_db.py (Railway preDeployCommand).
-# Railway injects $PORT; default to 8001 locally.
-CMD ["sh", "-c", "python manage.py collectstatic --noinput && gunicorn admin_project.wsgi --bind 0.0.0.0:${PORT:-8001}"]
+# Migrations are run via scripts/ensure_superuser.py (Railway preDeployCommand).
+# New Relic APM wrapper is enabled automatically when NEW_RELIC_LICENSE_KEY is set.
+CMD ["sh", "-c", "python manage.py collectstatic --noinput && newrelic-admin run-program gunicorn admin_project.wsgi --bind 0.0.0.0:${PORT:-8001}"]

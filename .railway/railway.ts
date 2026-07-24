@@ -160,6 +160,9 @@ export default defineRailway(() => {
       PADDLE_API_KEY: preserve(),
       PADDLE_WEBHOOK_SECRET: preserve(),
       PADDLE_SANDBOX: "true",
+      // New Relic observability (free tier). Set NEW_RELIC_LICENSE_KEY to enable APM.
+      NEW_RELIC_LICENSE_KEY: preserve(),
+      NEW_RELIC_APP_NAME: "mytradeportal-api",
     },
   });
 
@@ -196,6 +199,9 @@ export default defineRailway(() => {
       DJANGO_SUPERUSER_USERNAME: "superadmin",
       DJANGO_SUPERUSER_EMAIL: "admin@example.com",
       DJANGO_SUPERUSER_PASSWORD: preserve(),
+      // New Relic observability (free tier). Set NEW_RELIC_LICENSE_KEY to enable APM.
+      NEW_RELIC_LICENSE_KEY: preserve(),
+      NEW_RELIC_APP_NAME: "mytradeportal-admin",
     },
   });
 

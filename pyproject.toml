@@ -45,6 +45,7 @@ dependencies = [
     "opentelemetry-api>=1.25.0",
     "opentelemetry-sdk>=1.25.0",
     "opentelemetry-instrumentation-fastapi>=0.46b0",
+    "newrelic>=9.0.0",
 ]
 
 [project.optional-dependencies]
