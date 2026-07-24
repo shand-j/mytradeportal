@@ -42,7 +42,7 @@ const API_PUBLIC_URL = "https://${{api.RAILWAY_PUBLIC_DOMAIN}}";
 const WEB_PUBLIC_URL = "https://${{web.RAILWAY_PUBLIC_DOMAIN}}";
 const ADMIN_PUBLIC_URL = "https://${{admin.RAILWAY_PUBLIC_DOMAIN}}";
 
-const TARGET_REGION = "eu-west"; // Closest Railway region to the UK market (Dublin).
+const TARGET_REGION = "europe-west4-drams3a"; // EU West Metal (Amsterdam) — closest Railway region to the UK market.
 
 export default defineRailway(() => {
   // ---------------------------------------------------------------------
@@ -55,9 +55,7 @@ export default defineRailway(() => {
   // Infrastructure services (Docker images + volumes)
   // ---------------------------------------------------------------------
   const qdrant = service("qdrant", {
-    // Docker Hub rate limits and availability issues are common in CI/CD.
-    // Pull the Qdrant image from GitHub Container Registry instead.
-    source: image("ghcr.io/qdrant/qdrant:v1.11.5"),
+    source: image("qdrant/qdrant:v1.11.5"),
     healthcheck: "/healthz",
     volumeMounts: { "/qdrant/storage": volume("qdrant-storage", { sizeMB: 5000, region: TARGET_REGION }) },
     regions: { [TARGET_REGION]: 1 },
