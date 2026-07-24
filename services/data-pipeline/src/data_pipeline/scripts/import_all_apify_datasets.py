@@ -110,7 +110,16 @@ async def import_all_datasets(
     scraper = ScrewfixScraper(api_token=settings.apify_api_token)
 
     datasets = _list_datasets(settings.apify_api_token, actor_id=actor_id)
-    print(f"Discovered {len(datasets)} Apify datasets")
+    if actor_id:
+        print(f"Discovered {len(datasets)} Apify datasets for actor {actor_id!r}")
+    else:
+        print(f"Discovered {len(datasets)} Apify datasets")
+
+    for dataset in datasets:
+        created = dataset.get("createdAt", "?")
+        name = dataset.get("name", "<unnamed>")
+        act_id = dataset.get("actId") or dataset.get("actorId") or "<unknown>"
+        print(f"  - {dataset['id']} | actor={act_id} | created={created} | {name}")
 
     if not datasets:
         return {"datasets": 0, "raw_products": 0, "normalized": 0, "cost_items": 0}
@@ -185,8 +194,8 @@ def main() -> None:
     parser.add_argument(
         "--actor-id",
         type=str,
-        default="datasaurus~screwfix-event",
-        help="Only import datasets created by this actor (default: datasaurus~screwfix-event)",
+        default=None,
+        help="Only import datasets created by this actor (by default all datasets are imported)",
     )
     args = parser.parse_args()
 
