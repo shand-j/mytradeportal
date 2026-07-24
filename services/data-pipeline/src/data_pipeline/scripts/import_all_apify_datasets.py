@@ -36,14 +36,13 @@ if TYPE_CHECKING:
 APIFY_BASE = "https://api.apify.com/v2"
 
 
-def _list_datasets(
+def _apify_paginated_get(
+    url: str,
     api_token: str,
-    actor_id: str | None = None,
     limit: int = 1000,
     verbose: bool = False,
 ) -> list[dict[str, Any]]:
-    """Return all accessible Apify datasets, optionally filtered by actor id."""
-    url = f"{APIFY_BASE}/datasets"
+    """Generic helper for Apify paginated list endpoints."""
     params: dict[str, Any] = {"token": api_token, "limit": limit, "desc": "true"}
     items: list[dict[str, Any]] = []
     offset = 0
@@ -51,21 +50,17 @@ def _list_datasets(
     while True:
         params["offset"] = offset
         if verbose:
-            print(f"GET {url} with offset={offset} limit={limit}")
+            print(f"GET {url} offset={offset}")
         response = requests.get(url, params=params, timeout=60)
         response.raise_for_status()
         data = response.json()
 
         if verbose:
-            print(f"Raw response keys: {list(data.keys())}")
+            print(f"  response keys: {list(data.keys())}")
             if isinstance(data.get("data"), dict):
                 print(f"  data keys: {list(data['data'].keys())}")
-                print(f"  total: {data['data'].get('total')}")
-                print(f"  count: {data['data'].get('count')}")
-                print(f"  items count: {len(data['data'].get('items', []))}")
+                print(f"  total: {data['data'].get('total')} count: {data['data'].get('count')}")
 
-        # Apify returns {"data": {"items": [...], "total": N, ...}}
-        # Defensive: also handle {"items": [...]} or {"data": [...]} shapes.
         payload = data.get("data", data)
         if isinstance(payload, dict):
             page_items = payload.get("items", [])
@@ -81,10 +76,56 @@ def _list_datasets(
             break
         offset += limit
 
-    if actor_id:
-        items = [d for d in items if d.get("actId") == actor_id or d.get("actorId") == actor_id]
-
     return items
+
+
+def _list_datasets(
+    api_token: str,
+    actor_id: str | None = None,
+    limit: int = 1000,
+    verbose: bool = False,
+) -> list[dict[str, Any]]:
+    """Return all accessible Apify datasets, optionally filtered by actor id.
+
+    Direct dataset listing is tried first; if that returns nothing, we fall back
+    to scanning actor runs and collecting their defaultDatasetId values. This
+    catches datasets created via actor tasks, which sometimes do not appear in
+    the /datasets endpoint for the same token.
+    """
+    direct = _apify_paginated_get(f"{APIFY_BASE}/datasets", api_token, limit=limit, verbose=verbose)
+    if verbose:
+        print(f"Direct /datasets returned {len(direct)} items")
+
+    if actor_id:
+        direct = [d for d in direct if d.get("actId") == actor_id or d.get("actorId") == actor_id]
+
+    if direct:
+        return direct
+
+    print("Direct /datasets returned no items; scanning actor runs for defaultDatasetId...")
+    runs = _apify_paginated_get(f"{APIFY_BASE}/actor-runs", api_token, limit=limit, verbose=verbose)
+    if verbose:
+        print(f"/actor-runs returned {len(runs)} items")
+
+    dataset_ids: set[str] = set()
+    fallback: list[dict[str, Any]] = []
+    for run in runs:
+        ds_id = run.get("defaultDatasetId")
+        if not ds_id or ds_id in dataset_ids:
+            continue
+        if actor_id and run.get("actId") != actor_id and run.get("actorId") != actor_id:
+            continue
+        dataset_ids.add(ds_id)
+        fallback.append(
+            {
+                "id": ds_id,
+                "name": run.get("actorTaskName") or run.get("name") or "<from run>",
+                "actId": run.get("actId") or run.get("actorId"),
+                "createdAt": run.get("startedAt"),
+            }
+        )
+
+    return fallback
 
 
 def _fetch_all_dataset_items(
