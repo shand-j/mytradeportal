@@ -21,7 +21,7 @@ test.describe('production smoke test', () => {
   let adminEmail = '';
   const adminPassword = 'smoke-admin-pass-123';
 
-  test.beforeAll(async ({ page }) => {
+  test.beforeEach(async ({ page }) => {
     const id = `e2e-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
     tenantSlug = `prod-smoke-${id}`;
     tenantName = `Prod Smoke ${id}`;
