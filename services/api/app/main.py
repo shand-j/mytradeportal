@@ -1,5 +1,6 @@
 """FastAPI application entrypoint."""
 
+import logging
 from contextlib import asynccontextmanager
 from typing import TYPE_CHECKING
 
@@ -37,6 +38,8 @@ from app.routers import (
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator
 
+logger = logging.getLogger(__name__)
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> "AsyncIterator[None]":
@@ -51,6 +54,13 @@ async def lifespan(app: FastAPI) -> "AsyncIterator[None]":
             # rely on the dedicated migration (b7e1c0f4_enable_rls) instead.
             await conn.run_sync(apply_tenant_rls_sync)
     configure_logging(settings.log_level)
+    logger.info(
+        "api_startup",
+        extra={
+            "environment": settings.environment,
+            "allowed_origins": settings.allowed_origins,
+        },
+    )
     yield
     await engine.dispose()
 
