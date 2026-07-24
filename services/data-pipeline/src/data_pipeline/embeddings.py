@@ -35,15 +35,19 @@ def _embedding_kwargs(texts: list[str]) -> dict[str, Any]:
     return kwargs
 
 
-async def embed_texts(texts: list[str]) -> list[list[float]]:
-    """Return embedding vectors for the supplied texts."""
+async def embed_texts(texts: list[str], batch_size: int = 2048) -> list[list[float]]:
+    """Return embedding vectors for the supplied texts, batched for provider limits."""
     if not texts:
         return []
-    try:
-        response = await aembedding(**_embedding_kwargs(texts))
-    except APIError as exc:
-        raise RuntimeError(f"Embedding failed: {exc.message}") from exc
-    return [item.get("embedding") for item in response.data]
+    results: list[list[float]] = []
+    for i in range(0, len(texts), batch_size):
+        batch = texts[i : i + batch_size]
+        try:
+            response = await aembedding(**_embedding_kwargs(batch))
+        except APIError as exc:
+            raise RuntimeError(f"Embedding failed: {exc.message}") from exc
+        results.extend([item.get("embedding") for item in response.data])
+    return results
 
 
 async def embed_text(text: str) -> list[float]:
