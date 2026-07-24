@@ -12,6 +12,7 @@
     "supabase:init": "supabase init",
     "supabase:start": "supabase start",
     "supabase:stop": "supabase stop",
-    "supabase:status": "supabase status"
+    "supabase:status": "supabase status",
+    "user-docs:dev": "cd user-docs && npx @mintlify/cli dev"
   }
 }

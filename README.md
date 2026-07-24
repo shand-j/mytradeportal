@@ -99,6 +99,7 @@ including OpenAI configuration.
 - [`docs/ai-quote-engine.md`](docs/ai-quote-engine.md) — RAG flow and cost database
 - [`docs/development.md`](docs/development.md) — tests, linting, migrations
 - [`docs/deployment.md`](docs/deployment.md) — local Docker Compose, Railway IaC, and production deploy playbooks
+- [`user-docs/`](user-docs/) — Mintlify customer help centre (quotes, jobs, invoices, payments)
 
 ---
 
@@ -116,7 +117,8 @@ including OpenAI configuration.
 │   └── tests/                    # Pytest suite
 ├── services/admin/               # Django admin panel
 │   └── operations/admin.py       # Admin registrations
-└── docs/                         # This documentation
+├── docs/                         # Engineering documentation
+└── user-docs/                    # Mintlify customer help centre
 ```
 
 ---

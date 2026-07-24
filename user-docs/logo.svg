@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 40">
+  <rect x="0" y="4" width="32" height="32" rx="6" fill="#2563eb"/>
+  <path d="M8 22h16M8 17h12M8 12h8" stroke="white" stroke-width="2.5" stroke-linecap="round"/>
+  <text x="42" y="27" font-family="system-ui, sans-serif" font-size="18" font-weight="600" fill="#111827">My Trade Portal</text>
+</svg>
