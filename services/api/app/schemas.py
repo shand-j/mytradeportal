@@ -316,7 +316,7 @@ class QuoteGenerateRequest(BaseModel):
     description: str = Field(..., min_length=5)
     property_type: str | None = None
     site_survey: dict[str, Any] | None = None
-    use_ocerp: bool = True
+    use_ocerp: bool = False
 
 
 # ---------------------------------------------------------------------------

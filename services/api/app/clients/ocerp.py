@@ -18,7 +18,7 @@ from app.models import BillOfQuantities, BoQLineItem, Quote, QuoteLineItem
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_TIMEOUT = httpx.Timeout(180.0, connect=5.0)
+DEFAULT_TIMEOUT = httpx.Timeout(350.0, connect=10.0)
 
 
 class OCERPClient:

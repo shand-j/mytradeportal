@@ -1,12 +1,14 @@
 """Quote endpoints."""
 
 import asyncio
+import logging
 from datetime import datetime, timedelta
 from decimal import Decimal
 from io import BytesIO
 from typing import Annotated, Any
 from uuid import UUID
 
+import httpx
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.responses import StreamingResponse
 from fpdf import FPDF
@@ -41,6 +43,7 @@ from app.schemas import (
 router = APIRouter(prefix="/quotes", tags=["Quotes"])
 DbDep = Annotated[AsyncSession, Depends(get_db)]
 MONEY_QUANTIZE = Decimal("0.01")
+logger = logging.getLogger(__name__)
 
 
 def _snapshot_customer_pricing(quote: Quote) -> dict[str, Any]:
@@ -329,6 +332,27 @@ async def delete_quote(
     await db.commit()
 
 
+async def _generate_rag_quote(
+    quote: Quote,
+    data: QuoteGenerateRequest,
+    tenant: TenantDep,
+) -> None:
+    """Populate a quote using the faster RAG path (retrieval + LLM)."""
+    retrieved = await search_cost_items(data.description)
+    generated = await generate_quote_from_prompt(
+        job_description=data.description,
+        cost_items=retrieved,
+        tenant_settings=tenant.settings,
+        property_type=data.property_type,
+    )
+    validated = validate_generated_quote(
+        generated=generated,
+        retrieved_items=retrieved,
+        tenant_settings=tenant.settings,
+    )
+    build_quote_from_validation(quote, validated)
+
+
 async def _generate_quote_impl(
     data: QuoteGenerateRequest,
     tenant: TenantDep,
@@ -367,30 +391,26 @@ async def _generate_quote_impl(
 
     try:
         if data.use_ocerp:
-            async with OCERPClient() as client:
-                boq_response = await client.generate_boq(
-                    BoQGenerateRequestSchema(
-                        description=data.description,
-                        property_type=data.property_type,
-                        tenant_settings=tenant.settings,
-                        site_survey=data.site_survey,
+            try:
+                async with OCERPClient() as client:
+                    boq_response = await client.generate_boq(
+                        BoQGenerateRequestSchema(
+                            description=data.description,
+                            property_type=data.property_type,
+                            tenant_settings=tenant.settings,
+                            site_survey=data.site_survey,
+                        )
                     )
+                build_quote_from_ocerp_response(quote, boq_response)
+            except (httpx.TimeoutException, httpx.HTTPStatusError) as exc:
+                logger.warning(
+                    "OCERP generation failed for tenant %s, falling back to RAG: %s",
+                    tenant.id,
+                    exc,
                 )
-            build_quote_from_ocerp_response(quote, boq_response)
+                await _generate_rag_quote(quote, data, tenant)
         else:
-            retrieved = await search_cost_items(data.description)
-            generated = await generate_quote_from_prompt(
-                job_description=data.description,
-                cost_items=retrieved,
-                tenant_settings=tenant.settings,
-                property_type=data.property_type,
-            )
-            validated = validate_generated_quote(
-                generated=generated,
-                retrieved_items=retrieved,
-                tenant_settings=tenant.settings,
-            )
-            build_quote_from_validation(quote, validated)
+            await _generate_rag_quote(quote, data, tenant)
     except RuntimeError as exc:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,

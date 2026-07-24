@@ -14,11 +14,26 @@ The application enforces tenant isolation at two layers:
 and Celery workers that legitimately need cross-tenant access.
 """
 
+from contextvars import ContextVar
 from uuid import UUID
 
 from sqlalchemy import text
 from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import AsyncSession
+
+# Holds the current tenant id for the active request/task. SQLAlchemy's async
+# engine pool checkout listener reads this to restore the RLS session GUC on
+# every connection checkout, fixing the intermittent "Could not refresh"
+# errors that happen after commit() releases a connection back to the pool.
+_current_tenant_ctx: ContextVar[UUID | None] = ContextVar(
+    "_current_tenant_ctx", default=None
+)
+
+
+def get_current_tenant_id() -> UUID | None:
+    """Return the tenant id for the current request/task, or None."""
+    return _current_tenant_ctx.get()
+
 
 # Every table that carries a tenant_id column and therefore needs RLS.
 # The Tenant table itself and the shared cost_items table are intentionally
@@ -131,11 +146,14 @@ async def create_tenant_policy(
 async def set_tenant_in_session(session: AsyncSession, tenant_id: UUID) -> None:
     """Set the tenant id for the current database session.
 
-    The third argument ``false`` makes the setting persist for the lifetime
-    of the underlying connection; combined with the per-request session
-    pattern in :mod:`app.database` this means every statement issued for the
-    request is scoped to ``tenant_id``.
+    The setting is stored both as a PostgreSQL session GUC (using
+    ``is_local = false`` so it persists for the lifetime of the connection)
+    and as a Python :class:`contextvars.ContextVar`. A SQLAlchemy connection
+    checkout listener reads the context var on every pool checkout and restores
+    the GUC, so RLS policies keep working after ``commit()`` / ``refresh()``
+    returns a connection to the pool.
     """
+    _current_tenant_ctx.set(tenant_id)
     await session.execute(
         text("SELECT set_config('app.current_tenant', :tenant_id, false)"),
         {"tenant_id": str(tenant_id)},
@@ -155,5 +173,6 @@ async def bypass_rls_in_session(session: AsyncSession) -> None:
 
 async def clear_rls_session(session: AsyncSession) -> None:
     """Reset both RLS session variables. Useful for tests."""
+    _current_tenant_ctx.set(None)
     await session.execute(text("SELECT set_config('app.current_tenant', '', false)"))
     await session.execute(text("SELECT set_config('app.bypass_rls', '', false)"))
