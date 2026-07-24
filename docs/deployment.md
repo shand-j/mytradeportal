@@ -130,8 +130,8 @@ GitHub Actions on every push to `main` after tests pass.
 to run in production. The first tenant and admin are created through the Django
 admin UI or the gated `POST /tenants` endpoint.
 - **Schema init, not migrations.** Because the platform is pre-go-live with no
-consuming users, `scripts/init_db.py` creates the schema from the latest Alembic
-revision on first deploy. This is the one-time database initialisation step; it
+consuming users, `scripts/init_db.py` creates the schema from the SQLAlchemy
+models on first deploy. This is the one-time database initialisation step; it
 is safe to run on every deploy because it is idempotent.
 - **Django admin deploys with a superuser.** The admin service pre-deploy command
 creates a `superadmin` account from `DJANGO_SUPERUSER_PASSWORD` on first boot.
@@ -378,20 +378,28 @@ curl -X POST https://<api-domain>/tenants \
 
 Remove or rotate `SETUP_TOKEN` after the first tenant is created.
 
-### 10. Seed the cost database and knowledge base
+### 10. Populate cost data via the data-pipeline
 
-The data-pipeline pre-deploy command runs `scripts/init_data_pipeline.py` on
-every deploy, which in turn runs the curated seed loader and the knowledge
-loader. These create the `cost_items` and `quoting_knowledge` Qdrant
-collections and populate the Postgres `cost_items` table. They are idempotent
-and can be re-run if needed.
+The data-pipeline is **not** run during deploy. It runs on a Railway cron
+schedule (monthly by default) and can also be triggered ad-hoc. The default
+pipeline fetches Screwfix electrical product data through Apify and upserts it
+into the Postgres `cost_items` table and the Qdrant `cost_items` collection.
 
-To run them manually:
+To trigger an ad-hoc run:
 
 ```bash
-railway run --service data-pipeline python -m data_pipeline.load_curated_seed
-railway run --service data-pipeline python -m data_pipeline.knowledge_loader
+railway service redeploy --service data-pipeline --environment production
 ```
+
+Or run it interactively:
+
+```bash
+railway run --service data-pipeline python -m data_pipeline.loader
+```
+
+> **Note:** The Apify account currently has a monthly hard-limit. If the run
+> fails with `Monthly usage hard limit exceeded`, either wait for the limit to
+> reset or upgrade the Apify plan before populating cost data.
 
 ### 11. Verify the deployment
 

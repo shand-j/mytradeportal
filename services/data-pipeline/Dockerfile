@@ -12,8 +12,6 @@ COPY services/data-pipeline/pyproject.toml ./
 COPY services/data-pipeline/src ./src
 COPY services/data-pipeline/config ./config
 COPY packages/shared/py ./packages/shared/py
-COPY scripts/init_data_pipeline.py ./scripts/init_data_pipeline.py
-COPY docs ./docs
 
 # Install the pipeline package in editable mode
 RUN pip install --no-cache-dir -e ".[dev]"
