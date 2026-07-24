@@ -19,7 +19,7 @@ RUN pip install --no-cache-dir -e ".[dev]"
 ENV PYTHONPATH=/app/src:/app/packages/shared/py
 ENV PYTHONUNBUFFERED=1
 
-# Default command: run the pipeline once and exit.
-# For scheduling, use Railway's Cron Schedule service setting.
-# For ad-hoc runs, deploy/redeploy this service or trigger it manually.
-CMD ["python", "-m", "data_pipeline.loader"]
+# Default command: run the scheduler loop continuously. The scheduler fires the
+# pipeline daily (or monthly) and exposes a /health endpoint for Railway.
+# For a one-off manual run, use: python -m data_pipeline.loader
+CMD ["python", "-m", "data_pipeline.scheduler", "--run-on-start"]

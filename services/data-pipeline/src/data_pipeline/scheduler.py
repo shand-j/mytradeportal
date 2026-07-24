@@ -2,9 +2,12 @@
 
 import asyncio
 import logging
+import os
 import sys
+import threading
 import time
 from datetime import datetime
+from http.server import BaseHTTPRequestHandler, HTTPServer
 from typing import cast
 
 import schedule
@@ -14,6 +17,32 @@ from data_pipeline.config import settings
 from data_pipeline.loader import run_pipeline
 
 logger = structlog.get_logger(__name__)
+
+
+class _HealthHandler(BaseHTTPRequestHandler):
+    """Minimal health endpoint for Railway liveness/readiness probes."""
+
+    def log_message(self, format: str, *args) -> None:  # type: ignore[no-untyped-def]
+        # Suppress per-request logs; the scheduler logs are noisy enough.
+        pass
+
+    def do_GET(self) -> None:  # type: ignore[override]
+        if self.path == "/health":
+            self.send_response(200)
+            self.end_headers()
+            self.wfile.write(b"ok")
+        else:
+            self.send_response(404)
+            self.end_headers()
+
+
+def _start_health_server() -> None:
+    """Start a tiny HTTP server in a background thread for health checks."""
+    port = int(os.environ.get("PORT", "8000"))
+    server = HTTPServer(("0.0.0.0", port), _HealthHandler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    logger.info("health_server_started", port=port)
 
 
 def _parse_run_time(run_time: str) -> tuple[int, int]:
@@ -97,6 +126,8 @@ def run_scheduler(run_on_start: bool = False) -> None:
         wrapper_class=structlog.stdlib.BoundLogger,
         cache_logger_on_first_use=True,
     )
+
+    _start_health_server()
 
     if settings.scrape_frequency == "monthly":
         job = schedule_monthly_job()

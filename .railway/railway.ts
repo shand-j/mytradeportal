@@ -215,7 +215,8 @@ export default defineRailway(() => {
   const dataPipeline = service("data-pipeline", {
     source: github(GITHUB_REPO),
     build: { builder: "DOCKERFILE", dockerfilePath: "services/data-pipeline/Dockerfile" },
-    // No preDeploy: this service runs as a Railway cron job and ad-hoc deploys.
+    start: "python -m data_pipeline.scheduler --run-on-start",
+    healthcheck: "/health",
     regions: { [TARGET_REGION]: 1 },
     env: {
       DATABASE_URL: db.env.DATABASE_URL,
@@ -233,6 +234,7 @@ export default defineRailway(() => {
       SCREWFIX_TIMEOUT_SECONDS: "600",
       TOOLSTATION_ENABLED: "false",
       SCRAPE_FREQUENCY: "monthly",
+      PORT: "8000",
       APP_ROLE_NAME: "mtp_app",
       APP_ROLE_PASSWORD: preserve(),
     },

@@ -184,6 +184,15 @@ class ScrewfixScraper:
             else:
                 return []
 
+        except requests.exceptions.HTTPError as e:
+            body = ""
+            if e.response is not None:
+                try:
+                    body = e.response.text
+                except Exception:
+                    body = "<unreadable>"
+            print(f"Error starting scraper: {e} — response body: {body}")
+            return []
         except requests.exceptions.RequestException as e:
             print(f"Error starting scraper: {e}")
             return []
