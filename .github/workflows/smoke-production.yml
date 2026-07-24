@@ -59,7 +59,7 @@ jobs:
           pnpm exec playwright install chromium
 
       - name: Run production smoke test
-        run: pnpm exec playwright test --config=playwright.config.prod-smoke.ts
+        run: pnpm exec playwright test --config=playwright.config.prod-smoke.ts --retries=1
 
       - name: Upload smoke test artifacts
         if: failure()

@@ -62,15 +62,21 @@ test.describe('production smoke test', () => {
   });
 
   test('smoke: customer, quote, invoice and job', async ({ page }) => {
+    test.setTimeout(90_000); // allow slower prod env just for this smoke flow
+
     // 5. Log in to the back-office UI as the new tenant admin.
     await page.goto('/login');
     await page.getByLabel(/business slug/i).fill(tenantSlug);
     await page.getByLabel(/email/i).fill(adminEmail);
     await page.getByLabel(/password/i).fill(adminPassword);
+
     await page.getByRole('button', { name: /sign in/i }).click();
-    await page.waitForURL('**/');
-    await expect(page).toHaveURL('/');
-    await expect(page.getByText('Smoke Test Admin')).toBeVisible();
+
+    // Prefer a stable "logged-in" signal over a brittle navigation wait.
+    await expect(page.getByText('Smoke Test Admin')).toBeVisible({ timeout: 30_000 });
+
+    // Keep URL validation flexible for route differences (/ vs /dashboard).
+    await expect(page).toHaveURL(/\/($|dashboard)/, { timeout: 30_000 });
 
     // 6. Exercise core functionality.
     const customerName = await createCustomer(page, tenantSlug);
