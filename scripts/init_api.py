@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
-"""Wrapper that runs DB init followed by data-pipeline init in one preDeploy step.
+"""Wrapper that runs the one-time DB init as the API preDeploy step.
 
 Railway's preDeployCommand must be a single-element array, so this script lets us
-sequence the two idempotent init scripts without relying on shell `&&`.
+run the idempotent init script without relying on shell `&&`.
+Cost data is populated separately by the data-pipeline service (manual or scheduled).
 """
 
 from __future__ import annotations

@@ -37,15 +37,13 @@ from app.rls import TENANT_SCOPED_TABLES, apply_tenant_rls_sync  # noqa: E402
 APP_ROLE = "mtp_app"
 APP_ROLE_PASSWORD = "mtp_app"
 
-DATABASE_URL = os.environ.get("DATABASE_URL")
-if not DATABASE_URL:
-    raise RuntimeError("DATABASE_URL environment variable is not set")
+DATABASE_URL = os.environ["DATABASE_URL"]
 
 
 def _create_app_role(conn: Connection) -> None:
     """Create a non-superuser role that respects RLS policies."""
-    existing = conn.exec_driver_sql(
-        "SELECT 1 FROM pg_roles WHERE rolname = :role",
+    existing = conn.execute(
+        text("SELECT 1 FROM pg_roles WHERE rolname = :role"),
         {"role": APP_ROLE},
     ).first()
     if existing is None:
