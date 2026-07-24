@@ -77,9 +77,9 @@ export default defineRailway(() => {
     volumeMounts: { "/mnt/data": volume("minio-data", { sizeMB: 5000, region: TARGET_REGION }) },
     regions: { [TARGET_REGION]: 1 },
     env: {
-      // Set real credentials in the dashboard before first deploy.
-      MINIO_ROOT_USER: preserve(),
-      MINIO_ROOT_PASSWORD: preserve(),
+      // MinIO root credentials are required. Set them as environment-level
+      // variables in Railway; not managed by IaC so they survive teardowns.
+      // MINIO_ROOT_USER / MINIO_ROOT_PASSWORD: set via Railway dashboard
       // MinIO API listens on 9000; Railway uses $PORT to target healthchecks.
       PORT: "9000",
     },
@@ -132,16 +132,19 @@ export default defineRailway(() => {
       // reached via its PUBLIC domain over HTTPS (MINIO_USE_SSL=true).
       MINIO_ENDPOINT: minio.env.RAILWAY_PUBLIC_DOMAIN,
       MINIO_USE_SSL: "true",
-      MINIO_ACCESS_KEY: preserve(),
-      MINIO_SECRET_KEY: preserve(),
+      // These three secrets are required for production startup. They are
+      // intentionally omitted from IaC so they are not reset on apply/teardown.
+      // Set them as environment-level variables in the Railway dashboard before
+      // the first deploy (and never commit them).
       MINIO_BUCKET: "mtp-uploads",
       OPENAI_API_KEY: preserve(),
       EMBEDDING_MODEL: "text-embedding-3-small",
       LLM_MODEL: "gpt-4o-mini",
       LLM_TIMEOUT_SECONDS: "300",
       ALLOWED_ORIGINS: WEB_PUBLIC_URL,
-      // Mandatory in production (validate_production refuses dev defaults):
-      AUTH_SECRET_KEY: preserve(),
+      // Mandatory in production (validate_production refuses dev defaults).
+      // Set as an environment-level variable in Railway; not managed by IaC.
+      // AUTH_SECRET_KEY: set via Railway dashboard
       // Gates POST /tenants, which bootstraps the first tenant + admin user.
       SETUP_TOKEN: preserve(),
       // Lets GET /feature-flags read this project's Railway Signals registry
