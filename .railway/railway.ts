@@ -59,6 +59,10 @@ export default defineRailway(() => {
     healthcheck: "/healthz",
     volumeMounts: { "/qdrant/storage": volume("qdrant-storage", { sizeMB: 5000, region: TARGET_REGION }) },
     regions: { [TARGET_REGION]: 1 },
+    env: {
+      // Qdrant listens on 6333; Railway uses $PORT to target healthchecks.
+      PORT: "6333",
+    },
   });
 
   const minio = service("minio", {
@@ -76,6 +80,8 @@ export default defineRailway(() => {
       // Set real credentials in the dashboard before first deploy.
       MINIO_ROOT_USER: preserve(),
       MINIO_ROOT_PASSWORD: preserve(),
+      // MinIO API listens on 9000; Railway uses $PORT to target healthchecks.
+      PORT: "9000",
     },
   });
 
