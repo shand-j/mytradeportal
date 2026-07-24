@@ -93,7 +93,7 @@ pytest -m security -v --no-cov
 
 | Issue | Severity | Notes |
 |---|---|---|
-| `admin` service region is `sfo` | Medium | IaC targets `eu-west` (Dublin). Functionally OK but should be aligned for UK latency/data residency. |
+| `admin` service region is `sfo` | Medium | **Resolved.** All services now target `europe-west4-drams3a` (Amsterdam) in IaC. |
 | Full smoke test not run | Medium | Requires `DJANGO_SUPERUSER_PASSWORD` from GitHub Actions secrets. |
 | Security tests not run | Medium | Requires production admin credentials. |
 | Custom domains not configured | Low | System works on Railway service domains; custom domains require DNS setup. |
@@ -109,7 +109,7 @@ The platform is **ready to be deployed**:
 - The production smoke test workflow is configured.
 - Security tests, OWASP coverage, SOC2 controls, and agentic pen-test framework are in place.
 - Documentation is complete: deployment, maintenance, incident response, GDPR, custom domains, business owner onboarding, and go-live checklist.
-- The Railway IaC is in `eu-west` and ready to be re-applied.
+- The Railway IaC targets `europe-west4-drams3a` (Amsterdam) and is ready to be re-applied.
 
 The only remaining steps are to:
 

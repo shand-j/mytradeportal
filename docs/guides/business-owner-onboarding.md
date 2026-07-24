@@ -198,7 +198,7 @@ Supported uploads include site photos, EICR certificates, and customer-signed qu
 
 ## Known production notes and limitations
 
-- **Region discrepancy:** The `admin` service is currently deployed in the `sfo` region while the rest of the IaC targets `eu-west` (Dublin). Platform operations are aware; this does not affect functionality but may introduce a small latency difference for admin users. The IaC file is `.railway/railway.ts` and targets `TARGET_REGION = "eu-west"`.
+- **Region target:** All services are deployed in the `europe-west4-drams3a` (Amsterdam) region via `.railway/railway.ts`, the closest Railway region to the UK market.
 - **Paddle payments:** Payment code is wired, but if `PADDLE_API_KEY` and `PADDLE_WEBHOOK_SECRET` are not set, card payments will not be available.
 - **Customer PWA / chatbot / worker:** These are placeholders in the codebase (`services/pwa/`, `services/chatbot-widget/`, `services/worker/`). They are not part of the go-live release.
 - **OCERP takeoff:** PDF, CAD, and photo takeoff endpoints return HTTP 501. BoQ generation from text is fully functional.

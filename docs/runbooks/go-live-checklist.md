@@ -23,7 +23,7 @@ This runbook covers the final checks and actions required before My Trade Portal
 | `db` | Railway Postgres | Native plugin |
 | `redis` | Railway Redis | Native plugin |
 
-**Known issue:** the `admin` service currently shows region `sfo` in the Railway dashboard, while IaC targets `eu-west` (Dublin). Investigate and align this before go-live to avoid cross-region latency and compliance concerns.
+**Region alignment:** All services are deployed in the `europe-west4-drams3a` (Amsterdam) region as declared in IaC, the closest Railway region to the UK market.
 
 ---
 
@@ -57,7 +57,7 @@ npm ci
 railway config plan
 ```
 
-Expected: the plan shows no unexpected deletions and the `api`, `ocerp`, `web`, `admin`, and `data-pipeline` services all target `eu-west`.
+Expected: the plan shows no unexpected deletions and the `api`, `ocerp`, `web`, `admin`, and `data-pipeline` services all target `europe-west4-drams3a` (Amsterdam).
 
 If `admin` still shows `sfo` in the dashboard, reconcile it by updating the service region in the Railway UI or by re-applying the IaC and confirming the diff.
 
@@ -393,7 +393,7 @@ Before declaring go-live, confirm:
 |---|---|---|
 | CI/CD | Latest `main` commit green and deployed | Engineering Lead |
 | IaC | `railway config plan` shows no destructive drift | Platform Engineer |
-| Regions | All services deployed in `eu-west` (investigate `admin`/`sfo`) | Platform Engineer |
+| Regions | All services deployed in `europe-west4-drams3a` (Amsterdam) | Platform Engineer |
 | Secrets | All required `preserve()` variables set and non-default | Security Lead |
 | Database | `init_db.py` succeeded; RLS active on all tenant tables | Backend Engineer |
 | Object storage | `mtp-uploads` bucket exists and uploads work | Backend Engineer |
@@ -453,7 +453,7 @@ railway logs --service admin --tail 100
 - The `services/pwa`, `services/worker`, and `services/chatbot-widget` directories are empty placeholders; customer-facing PWA and chatbot are not live yet.
 - OCERP takeoff endpoints (`/ocerp/v1/takeoff/pdf|cad|photo`) return `501 Not Implemented`.
 - Advanced features (voice AI, WhatsApp/SMS, accounting sync, demand forecasting) are behind feature flags and disabled by default.
-- The `admin` service region discrepancy (`sfo` vs IaC `eu-west`) must be investigated and resolved.
+- All services are aligned to the IaC target region `europe-west4-drams3a` (Amsterdam).
 - Email currently uses Mailpit in local development; production email delivery (SendGrid, Postmark, etc.) should be configured for customer notifications.
 
 ---

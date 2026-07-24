@@ -12,7 +12,7 @@ Configure custom domains for the My Trade Portal V2 production stack on Railway.
   - API: `https://api-production-83b8.up.railway.app`
   - Web: `https://web-production-0919a.up.railway.app`
   - Admin: `https://admin-production-5c08.up.railway.app`
-- IaC target region: `eu-west` (Dublin). Note: the `admin` service currently reports region `sfo`; this is not a blocker for custom domains but should be aligned with IaC before go-live.
+- IaC target region: `europe-west4-drams3a` (Amsterdam). All services are deployed in this region.
 
 ---
 

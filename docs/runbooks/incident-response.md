@@ -8,8 +8,8 @@ This document provides the operational procedures for detecting, responding to, 
 |------|-------|
 | Railway project | `MyTradePortal` (`30feaeee-9464-41ac-9b17-d07ae4cfcd09`) |
 | Environment | `production` |
-| Region target | `eu-west` (Dublin) via [`.railway/railway.ts`](../../.railway/railway.ts) |
-| Known discrepancy | `admin` service currently shows region `sfo` in Railway dashboard despite IaC targeting `eu-west`; document any region-related incidents accordingly |
+| Region target | `europe-west4-drams3a` (Amsterdam) via [`.railway/railway.ts`](../../.railway/railway.ts) |
+| Known discrepancy | None — all services are aligned to the IaC target region. Document any future region-related incidents here. |
 | Public services | `https://api-production-83b8.up.railway.app`, `https://web-production-0919a.up.railway.app`, `https://admin-production-5c08.up.railway.app` |
 | Internal services | `ocerp`, `data-pipeline`, `minio`, `qdrant`, Postgres, Redis |
 

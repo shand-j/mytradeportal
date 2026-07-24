@@ -3,7 +3,7 @@
 > **Status:** pre-go-live, production target: tomorrow  
 > **Scope:** UK field-service management platform for electrical contractors  
 > **Primary jurisdiction:** United Kingdom (UK GDPR + Data Protection Act 2018)  
-> **Hosting region:** `eu-west` (Dublin) via Railway IaC (`.railway/railway.ts`)
+> **Hosting region:** `europe-west4-drams3a` (Amsterdam) via Railway IaC (`.railway/railway.ts`)
 
 This document is a practical, engineering-facing compliance guide. It maps the My Trade Portal V2 implementation to UK GDPR requirements and lists the exact tasks that must be completed before launch.
 
@@ -225,7 +225,7 @@ Provide the export described in 4.1 in a structured, commonly used, machine-read
 
 1. Enable Railway log drains to a SIEM or secure store for 72-hour breach detection.
 2. Run `pytest -m security` against production (see `security/README.md`).
-3. Verify the `admin` service region is `eu-west` as declared in IaC; currently it is reported as `sfo`. Reconcile this discrepancy before go-live to ensure data residency commitments are met.
+3. Verify all services are deployed in the `europe-west4-drams3a` region as declared in IaC.
 
 ---
 
@@ -233,17 +233,17 @@ Provide the export described in 4.1 in a structured, commonly used, machine-read
 
 | Subprocessor | Purpose | Location | GDPR mechanism |
 |---|---|---|---|
-| Railway | Hosting, Postgres, Redis, volumes | `eu-west` (Dublin) | EU GDPR / UK GDPR adequate; DPA required |
+| Railway | Hosting, Postgres, Redis, volumes | `europe-west4-drams3a` (Amsterdam) | EU GDPR / UK GDPR adequate; DPA required |
 | OpenAI | Embeddings and LLM quote generation | United States | Standard Contractual Clauses (SCCs) + UK Addendum; zero-retention API agreement required |
 | Paddle | Payment processing | Varies by service | DPA + SCCs |
-| Qdrant | Vector storage of cost-item/knowledge embeddings | Railway volume (`eu-west`) | Same as Railway |
-| MinIO | Object storage for file uploads | Railway volume (`eu-west`) | Same as Railway |
+| Qdrant | Vector storage of cost-item/knowledge embeddings | Railway volume (`europe-west4-drams3a`) | Same as Railway |
+| MinIO | Object storage for file uploads | Railway volume (`europe-west4-drams3a`) | Same as Railway |
 
 **Action before launch:**
 
 1. Confirm OpenAI zero-retention API access is enabled for the production account so prompt/embedding data is not used for model training.
 2. Keep a current subprocessor list on the public website.
-3. Verify the `admin` service region is `eu-west` as declared (see section 6.3).
+3. Verify all services are deployed in the `europe-west4-drams3a` region as declared in IaC.
 
 ---
 
@@ -335,7 +335,7 @@ pytest -m security -v --no-cov
 - [ ] Data-subject export endpoint implemented.
 - [ ] Contact/tenant erasure scripts implemented and tested.
 - [ ] Retention policy documented and nightly cleanup job scheduled.
-- [ ] Admin service region reconciled to `eu-west` (currently reported as `sfo`).
+- [ ] Admin service region reconciled to `europe-west4-drams3a` (Amsterdam).
 - [ ] Security tests (`pytest -m security`) run against production and passed.
 - [ ] Log drains / alerting configured for breach detection.
 - [ ] Staff trained on DSR handling and breach escalation.

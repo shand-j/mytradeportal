@@ -112,8 +112,7 @@ the service will start in `ENVIRONMENT=production`.
 
 ## Production overview
 
-Production is hosted on **Railway** in the **`eu-west` (Dublin)** region, the
-closest region to the UK market. The stack is declared as Infrastructure as Code
+Production is hosted on **Railway** in the **`europe-west4-drams3a` (Amsterdam)** region, the closest Railway region to the UK market. The stack is declared as Infrastructure as Code
 in [`.railway/railway.ts`](../.railway/railway.ts) and deployed automatically by
 GitHub Actions on every push to `main` after tests pass.
 

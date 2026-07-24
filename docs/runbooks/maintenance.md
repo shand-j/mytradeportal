@@ -16,7 +16,7 @@ This runbook covers the day-to-day care, feeding, and incident response for My T
 | Qdrant | Internal Docker service | Qdrant REST API |
 | MinIO | Public domain required | Console + S3 API |
 
-**Known infrastructure note:** the `admin` service currently reports region `sfo` even though the IaC target in `.railway/railway.ts` is `eu-west` (Dublin). If Railway ever shows a region drift after an apply, verify the deployment region in the dashboard before assuming it is intentional. The rest of the stack targets `eu-west`.
+**Known infrastructure note:** all services are deployed in the IaC target region `europe-west4-drams3a` (Amsterdam). If Railway ever shows a region drift after an apply, verify the deployment region in the dashboard before assuming it is intentional.
 
 ---
 
@@ -216,7 +216,7 @@ railway config apply --yes
 
 ### Scale or resize a service
 
-Currently the IaC pins each service to 1 replica in `eu-west`. If you need to change this temporarily (for example during a launch event), edit `.railway/railway.ts` and apply:
+Currently the IaC pins each service to 1 replica in `europe-west4-drams3a` (Amsterdam). If you need to change this temporarily (for example during a launch event), edit `.railway/railway.ts` and apply:
 
 ```bash
 cd .railway
@@ -419,9 +419,9 @@ The production smoke test creates tenants with slug prefix `prod-smoke-` or `fir
 
 ### Region drift
 
-If Railway shows the `admin` service (or another service) in a different region than `eu-west`, check:
+If Railway shows a service in a different region than `europe-west4-drams3a` (Amsterdam), check:
 
-1. The `.railway/railway.ts` file still sets `TARGET_REGION = "eu-west"` and `regions: { [TARGET_REGION]: 1 }` for that service.
+1. The `.railway/railway.ts` file still sets `TARGET_REGION = "europe-west4-drams3a"` and `regions: { [TARGET_REGION]: 1 }` for that service.
 2. A manual dashboard change or a redeploy from an older branch is not overriding the IaC.
 3. If you need to force reconciliation, run:
    ```bash

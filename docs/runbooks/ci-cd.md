@@ -19,7 +19,7 @@
 
 ## Overview
 
-Production is hosted on **Railway** in the **`eu-west` (Dublin)** region, deployed automatically from the `main` branch of the GitHub repository `shand-j/mytradeportal`. The stack is declared as **Infrastructure as Code** in [`.railway/railway.ts`](../../.railway/railway.ts) and applied by GitHub Actions.
+Production is hosted on **Railway** in the **`europe-west4-drams3a` (Amsterdam)** region, deployed automatically from the `main` branch of the GitHub repository `shand-j/mytradeportal`. The stack is declared as **Infrastructure as Code** in [`.railway/railway.ts`](../../.railway/railway.ts) and applied by GitHub Actions.
 
 Current production environment:
 
@@ -362,7 +362,7 @@ Two additional workflows exist but are manual dispatch only:
 
 ## Known issues and limitations
 
-1. **Admin service region discrepancy**: The IaC targets `eu-west` (Dublin), but the live `admin` service currently shows as `sfo`. This does not affect functionality but should be aligned with the IaC target region before go-live for latency and compliance consistency. Coordinate with Railway support or recreate the service from the IaC if necessary.
+1. **Admin service region discrepancy**: Resolved. All services are deployed in the IaC target region `europe-west4-drams3a` (Amsterdam). If Railway ever shows a region drift after an apply, verify the deployment region in the dashboard before assuming it is intentional.
 
 2. **Empty TypeScript workspaces in CI**: The root `package.json` only contains Supabase scripts. The CI `typescript` job correctly targets `web/app` with pnpm, but the old workflow comments about `services/pwa` and `services/chatbot-widget` are stale — those directories are placeholders.
 
