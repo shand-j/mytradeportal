@@ -123,9 +123,10 @@ The only remaining steps are to:
 
 ## Post-test action
 
-All compute services are being removed from the Railway project to avoid
-overnight cost. The project itself is retained, and the codebase, IaC, and
-documentation remain ready for immediate re-deployment.
+All compute services were removed from the Railway `MyTradePortal` project on
+2026-07-24 to avoid overnight cost. The project itself is retained. Detached
+volumes are pending deletion by Railway. The codebase, IaC, and documentation
+remain ready for immediate re-deployment.
 
-To restart the stack tomorrow, follow the playbook in
+To restart the stack, follow the playbook in
 [`docs/deployment.md`](deployment.md#playbook-1-clean-ground-up-production-deploy).
