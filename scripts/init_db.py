@@ -1,59 +1,101 @@
 #!/usr/bin/env python3
-"""One-time database initialisation for first production install.
+"""One-time database initialisation for a fresh production install.
 
-Runs Alembic to create the API schema and Django migrate to create the
-admin tables.  Both steps are idempotent, so the script is safe to run
-on every deploy, but it is intended for the empty database before the
-app goes live.
+This replaces Alembic migrations for pre-go-live deployments where the
+database is empty. It creates the SQLAlchemy-managed tables from the current
+models, creates the non-privileged application role used by the API, and
+applies the Row-Level Security policies that enforce tenant isolation.
 
-The script detects which toolchains are installed and only runs the
-steps that apply to the current container:
-
-- API container: has Alembic -> runs Alembic upgrade head
-- Admin container: has Django -> runs manage.py migrate
-- Local dev environment: has both -> runs both
+The script is idempotent and is intended to run as the API preDeploy command
+(and optionally as the admin preDeploy command for Django's own tables).
 """
 
 from __future__ import annotations
 
 import os
-import shutil
 import subprocess
 import sys
 from pathlib import Path
+from typing import TYPE_CHECKING
+
+from sqlalchemy import create_engine, text
+
+if TYPE_CHECKING:
+    from sqlalchemy.engine import Connection
 
 ROOT = Path(__file__).resolve().parent.parent
+API_DIR = ROOT / "services" / "api"
+
+# Ensure the API package is importable whether we run from the repo root or
+# from a container that has copied the API code elsewhere.
+if str(API_DIR) not in sys.path:
+    sys.path.insert(0, str(API_DIR))
+
+from app.models import Base  # noqa: E402
+from app.rls import TENANT_SCOPED_TABLES, apply_tenant_rls_sync  # noqa: E402
+
+APP_ROLE = "mtp_app"
+APP_ROLE_PASSWORD = "mtp_app"
+
+DATABASE_URL = os.environ.get("DATABASE_URL")
+if not DATABASE_URL:
+    raise RuntimeError("DATABASE_URL environment variable is not set")
 
 
-def _run(cmd: list[str], cwd: Path, extra_env: dict[str, str] | None = None) -> None:
-    env = {**os.environ, **(extra_env or {})}
-    subprocess.run(cmd, cwd=cwd, check=True, env=env)
+def _create_app_role(conn: Connection) -> None:
+    """Create a non-superuser role that respects RLS policies."""
+    existing = conn.exec_driver_sql(
+        "SELECT 1 FROM pg_roles WHERE rolname = :role",
+        {"role": APP_ROLE},
+    ).first()
+    if existing is None:
+        conn.exec_driver_sql(
+            f"CREATE ROLE {APP_ROLE} WITH LOGIN PASSWORD '{APP_ROLE_PASSWORD}' "
+            f"NOSUPERUSER NOBYPASSRLS NOCREATEDB NOCREATEROLE"
+        )
+    conn.exec_driver_sql(f"GRANT USAGE ON SCHEMA public TO {APP_ROLE}")
+    conn.exec_driver_sql(
+        f"GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO {APP_ROLE}"
+    )
+    conn.exec_driver_sql(f"GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO {APP_ROLE}")
+    conn.exec_driver_sql(
+        f"ALTER DEFAULT PRIVILEGES IN SCHEMA public "
+        f"GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO {APP_ROLE}"
+    )
+    conn.exec_driver_sql(
+        f"ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT USAGE, SELECT ON SEQUENCES TO {APP_ROLE}"
+    )
 
 
 def init_api_schema() -> None:
-    """Create/update the API schema via Alembic."""
-    if shutil.which("alembic") is None:
-        print("[init_db] alembic not available, skipping API schema")
-        return
+    """Create the API schema from the current SQLAlchemy models."""
+    print("[init_db] Creating SQLAlchemy tables from models")
+    engine = create_engine(DATABASE_URL.replace("+asyncpg", ""))
+    with engine.begin() as conn:
+        Base.metadata.create_all(conn)
+        _create_app_role(conn)
+        apply_tenant_rls_sync(conn)
 
-    alembic_ini = ROOT / "alembic.ini"
-    if not alembic_ini.exists():
-        print("[init_db] alembic.ini not found, skipping API schema")
-        return
-
-    api_dir = ROOT / "services" / "api"
-    if not api_dir.exists():
-        print("[init_db] API directory not found, skipping API schema")
-        return
-
-    print("[init_db] Running Alembic upgrade head")
-    _run(["alembic", "upgrade", "head"], cwd=ROOT, extra_env={"PYTHONPATH": str(api_dir)})
+    # Sanity check: every expected tenant-scoped table must have RLS + FORCE.
+    with engine.connect() as conn:
+        rows = conn.execute(
+            text(
+                "SELECT c.relname FROM pg_class c JOIN pg_namespace n ON c.relnamespace=n.oid "
+                "WHERE n.nspname='public' AND c.relrowsecurity AND c.relforcerowsecurity "
+                "ORDER BY c.relname"
+            )
+        ).all()
+        secured = {row[0] for row in rows}
+        missing = set(TENANT_SCOPED_TABLES) - secured
+        if missing:
+            raise RuntimeError(
+                f"RLS setup finished but the following tables are not secured: {sorted(missing)}"
+            )
+        print(f"[init_db] RLS applied to {len(secured)} tenant-scoped tables")
 
 
 def init_admin_schema() -> None:
     """Create/update Django admin tables."""
-    # The admin Dockerfile copies the service contents to /app, so manage.py may
-    # live at the container root. In the repo root it lives under services/admin.
     candidates = [
         ROOT / "services" / "admin" / "manage.py",
         ROOT / "manage.py",
@@ -65,10 +107,11 @@ def init_admin_schema() -> None:
 
     admin_dir = manage_py.parent
     print("[init_db] Running Django migrate")
-    _run(
+    subprocess.run(
         [sys.executable, "manage.py", "migrate", "--noinput"],
         cwd=admin_dir,
-        extra_env={"DJANGO_SETTINGS_MODULE": "admin_project.settings"},
+        check=True,
+        env={**os.environ, "DJANGO_SETTINGS_MODULE": "admin_project.settings"},
     )
 
 

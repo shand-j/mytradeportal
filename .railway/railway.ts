@@ -202,7 +202,7 @@ export default defineRailway(() => {
   const dataPipeline = service("data-pipeline", {
     source: github(GITHUB_REPO),
     build: { builder: "DOCKERFILE", dockerfilePath: "services/data-pipeline/Dockerfile" },
-    preDeployCommand: "python scripts/init_data_pipeline.py",
+    // No preDeploy: this service runs as a Railway cron job and ad-hoc deploys.
     regions: { [TARGET_REGION]: 1 },
     env: {
       DATABASE_URL: db.env.DATABASE_URL,

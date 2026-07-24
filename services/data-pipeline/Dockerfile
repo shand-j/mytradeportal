@@ -21,5 +21,7 @@ RUN pip install --no-cache-dir -e ".[dev]"
 ENV PYTHONPATH=/app/src:/app/packages/shared/py
 ENV PYTHONUNBUFFERED=1
 
-# Default command: run the scheduler and execute the pipeline on startup
-CMD ["python", "-m", "data_pipeline.scheduler", "--run-on-start"]
+# Default command: run the pipeline once and exit.
+# For scheduling, use Railway's Cron Schedule service setting.
+# For ad-hoc runs, deploy/redeploy this service or trigger it manually.
+CMD ["python", "-m", "data_pipeline.loader"]

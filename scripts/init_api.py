@@ -20,5 +20,5 @@ def run(script_name: str) -> None:
 
 if __name__ == "__main__":
     run("init_db.py")
-    run("init_data_pipeline.py")
     print("[init_api] Done")
+    print("[init_api] Note: cost data is populated by the data-pipeline service (manual or scheduled), not during API deploy.")
