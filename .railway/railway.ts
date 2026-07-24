@@ -116,7 +116,7 @@ export default defineRailway(() => {
     source: github(GITHUB_REPO),
     build: { builder: "DOCKERFILE", dockerfilePath: "services/api/Dockerfile" },
     healthcheck: "/health",
-    preDeployCommand: "python scripts/init_db.py",
+    preDeployCommand: "python scripts/init_db.py && python scripts/init_data_pipeline.py",
     regions: { [TARGET_REGION]: 1 },
     env: {
       ENVIRONMENT: "production",
