@@ -85,6 +85,8 @@ services:
       ENVIRONMENT: ${ENVIRONMENT:-development}
       AUTH_SECRET_KEY: ${AUTH_SECRET_KEY:-dev-auth-secret-key-change-in-production}
       AUTH_COOKIE_SECURE: ${AUTH_COOKIE_SECURE:-true}
+      APP_ROLE_NAME: ${APP_ROLE_NAME:-mtp_app}
+      APP_ROLE_PASSWORD: ${APP_ROLE_PASSWORD:-mtp_app}
       SETUP_TOKEN: ${SETUP_TOKEN:-}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       EMBEDDING_MODEL: ${EMBEDDING_MODEL:-text-embedding-3-small}

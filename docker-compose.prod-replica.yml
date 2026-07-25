@@ -1,0 +1,81 @@
+services:
+  # Production-equivalent compute limits for the local replica.
+  # Railway's hobby plan typically allocates ~1 vCPU / 512 MB per service;
+  # these limits make local behaviour match that of the hosted environment.
+
+  api:
+    command: >
+      sh -c "python scripts/init_api.py &&
+             uvicorn app.main:app --host 0.0.0.0 --port 8000 --proxy-headers"
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 512M
+
+  ocerp:
+    command: >
+      sh -c "python -c \"from ocerp.main import app; print('ready')\" &&
+             uvicorn ocerp.main:app --host 0.0.0.0 --port 8000"
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 512M
+
+  data-pipeline:
+    command: python -m data_pipeline.scheduler
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 512M
+
+  admin:
+    command: >
+      sh -c "python manage.py migrate --noinput &&
+             python scripts/ensure_superuser.py &&
+             gunicorn admin_project.wsgi:application --bind 0.0.0.0:8001 --workers 1"
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 512M
+
+  web:
+    command: >
+      sh -c "npm run build &&
+             npx serve -s dist -l 3000"
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 512M
+
+  postgres:
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 512M
+
+  redis:
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 256M
+
+  qdrant:
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 512M
+
+  minio:
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 512M

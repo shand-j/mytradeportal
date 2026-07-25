@@ -1,7 +1,10 @@
 import { test, expect } from './fixtures';
+import { ensureDefaultAdminSession } from './helpers';
 
 test('update and persist business settings', async ({ page, testId }) => {
   const newName = `E2E Electrical ${testId}`;
+
+  await ensureDefaultAdminSession(page);
 
   await page.goto('/settings');
   await page.getByLabel(/business name/i).fill(newName);

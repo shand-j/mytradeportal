@@ -160,6 +160,39 @@ def _parse_json_response(content: str) -> dict[str, Any]:
     }
 
 
+def _ensure_design_contract(payload: dict[str, Any], job_description: str) -> dict[str, Any]:
+    """Ensure LLM output always contains the required design contract fields.
+
+    The agent graph requires top-level ``analysis`` and ``requirements``.
+    When the model times out or returns malformed JSON, we degrade to a
+    deterministic-only design payload instead of surfacing a blank quote.
+    """
+    raw_analysis = payload.get("analysis") if isinstance(payload.get("analysis"), dict) else {}
+    room_count = raw_analysis.get("room_count")
+    if room_count is not None and not isinstance(room_count, int):
+        room_count = None
+
+    regulatory_flags = raw_analysis.get("regulatory_flags")
+    if not isinstance(regulatory_flags, list):
+        regulatory_flags = []
+
+    requirements = payload.get("requirements")
+    if not isinstance(requirements, list):
+        requirements = []
+
+    return {
+        **payload,
+        "analysis": {
+            "job_summary": str(raw_analysis.get("job_summary") or job_description[:160]),
+            "room_count": room_count,
+            "spec_level": str(raw_analysis.get("spec_level") or "mid_range"),
+            "regulatory_flags": regulatory_flags,
+        },
+        "requirements": requirements,
+        "notes": str(payload.get("notes") or ""),
+    }
+
+
 async def generate_boq_from_prompt(
     job_description: str,
     cost_items: list[dict[str, Any]] | None,
@@ -216,22 +249,28 @@ async def generate_boq_from_prompt(
         )
     except TimeoutError:
         logger.warning("LLM generation timed out after %ss", settings.llm_timeout_seconds)
-        return {
-            "requirements": [],
-            "notes": f"LLM generation timed out after {settings.llm_timeout_seconds}s",
-        }
+        return _ensure_design_contract(
+            {
+                "requirements": [],
+                "notes": f"LLM generation timed out after {settings.llm_timeout_seconds}s",
+            },
+            job_description,
+        )
     except APIError as exc:
         raise RuntimeError(f"LLM generation failed: {exc.message}") from exc
 
     content = response.choices[0].message.content
     if not content:
-        return {
-            "requirements": [],
-            "notes": "LLM returned empty content",
-            "_meta": {"prompt_hash": prompt_hash, "model": settings.llm_model},
-        }
+        return _ensure_design_contract(
+            {
+                "requirements": [],
+                "notes": "LLM returned empty content",
+                "_meta": {"prompt_hash": prompt_hash, "model": settings.llm_model},
+            },
+            job_description,
+        )
 
-    parsed = _parse_json_response(content)
+    parsed = _ensure_design_contract(_parse_json_response(content), job_description)
     # Attach generation metadata so callers can persist it on the quote for
     # reproducibility / audit purposes.
     parsed["_meta"] = {

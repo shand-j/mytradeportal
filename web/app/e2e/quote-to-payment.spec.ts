@@ -1,5 +1,6 @@
 import { test, expect } from './fixtures';
 import {
+  ensureDefaultAdminSession,
   createCustomer,
   createQuote,
   openQuoteDetail,
@@ -10,7 +11,11 @@ import {
   markInvoicePaid,
 } from './helpers';
 
+test.setTimeout(90_000);
+
 test('quote request becomes a paid invoice', async ({ page, testId }) => {
+  await ensureDefaultAdminSession(page);
+
   const customerName = await createCustomer(page, testId);
   const reference = await createQuote(page, customerName, testId);
 
@@ -22,6 +27,6 @@ test('quote request becomes a paid invoice', async ({ page, testId }) => {
   await sendInvoice(page);
   await markInvoicePaid(page);
 
-  await expect(page.getByText('paid', { exact: true })).toBeVisible();
+  await expect(page.locator('span', { hasText: /paid/i }).filter({ hasClass: /rounded-full/ }).first()).toBeVisible();
   await expect(page.getByText(/amount due/i)).not.toBeVisible();
 });

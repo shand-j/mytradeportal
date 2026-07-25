@@ -87,13 +87,15 @@ if [ "${ENVIRONMENT:-development}" = "production" ]; then
       \"admin_name\": \"${ADMIN_NAME}\"
     }" > /tmp/bootstrap-response.json
 
-  if ! grep -q '"admin_user"' /tmp/bootstrap-response.json; then
+  if grep -q '"admin_user"' /tmp/bootstrap-response.json; then
+    echo "Tenant '${BOOTSTRAP_SLUG}' bootstrapped with admin ${ADMIN_EMAIL}"
+  elif grep -q '"Tenant slug already exists"' /tmp/bootstrap-response.json; then
+    echo "Tenant '${BOOTSTRAP_SLUG}' already exists; continuing"
+  else
     echo "ERROR: tenant bootstrap failed. Response:" >&2
     cat /tmp/bootstrap-response.json >&2
     exit 1
   fi
-
-  echo "Tenant '${BOOTSTRAP_SLUG}' bootstrapped with admin ${ADMIN_EMAIL}"
 else
   echo "Running development seed script..."
   docker compose ${COMPOSE_FILES} run --rm api \

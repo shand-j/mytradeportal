@@ -18,6 +18,15 @@ fi
 
 docker compose ${COMPOSE_FILES} --env-file "${ENV_FILE}" up --build -d
 
+if [ "${ENVIRONMENT:-development}" = "production" ] && [ -n "${APP_ROLE_PASSWORD:-}" ]; then
+  echo "Syncing mtp_app role password for production-like startup..."
+  ESCAPED_APP_ROLE_PASSWORD=${APP_ROLE_PASSWORD//\'/\'\'}
+  docker compose ${COMPOSE_FILES} exec -T postgres \
+    psql -U "${POSTGRES_USER:-mtp}" -d "${POSTGRES_DB:-mtp}" \
+    -c "ALTER ROLE mtp_app WITH PASSWORD '${ESCAPED_APP_ROLE_PASSWORD}';" >/dev/null
+  docker compose ${COMPOSE_FILES} restart api >/dev/null
+fi
+
 echo "Waiting for API health check..."
 for i in {1..60}; do
   if curl -sS http://demo.localhost:8000/health >/dev/null 2>&1; then

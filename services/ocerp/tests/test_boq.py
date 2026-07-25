@@ -159,9 +159,10 @@ async def test_ddc_llm_backend_handles_empty_llm_output() -> None:
         )
         response = await backend.generate(request)
 
-    assert response.line_items == []
-    assert response.clarification_questions
+    assert response.line_items
+    assert not response.clarification_questions
     assert any("design contract validation failed" in w.lower() for w in response.warnings)
+    assert response.customer_summary_lines
 
 
 @pytest.mark.asyncio

@@ -186,18 +186,20 @@ async def generate_node(state: QuoteGraphState) -> bool:
         state.design = _validate_design_payload(raw_design)
     except ValidationError as exc:
         logger.warning("design.payload.invalid", extra={"errors": exc.errors()})
-        state.response = BoQGenerateResponse(
-            **build_clarification_response(
-                [
-                    "The quote design model response was incomplete. "
-                    "Please provide more scope detail and retry.",
-                ]
-            )
-        )
-        state.response.warnings = [
-            "Design contract validation failed: required fields analysis/requirements were missing or malformed."
+        state.warnings = [
+            "Design contract validation failed: required fields analysis/requirements were missing or malformed. Falling back to deterministic scope rules."
         ]
-        return False
+        state.design = {
+            "analysis": {
+                "job_summary": state.request.description[:160],
+                "room_count": None,
+                "spec_level": "mid_range",
+                "regulatory_flags": [],
+            },
+            "requirements": [],
+            "notes": "LLM design payload was invalid; deterministic scope fallback applied.",
+        }
+        return True
     return True
 
 

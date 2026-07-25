@@ -1,5 +1,49 @@
 # Production Test Report
 
+## Latest local prod-like validation (2026-07-25)
+
+**Result:** ✅ Passed (local prod-like)
+
+From [web/app](web/app), executed with production-like env wiring:
+
+```bash
+cd /Users/home/Projects/mytradeportal
+docker compose down
+cd web/app
+set -a && source ../../.env.prod-like && set +a
+CI=1 ENV_FILE=.env.prod-like pnpm test:e2e
+```
+
+Suite outcome:
+
+- **19 passed**
+- **2 skipped** (`e2e/quotes-ai.spec.ts`, `e2e/quotes-boq.spec.ts`)
+- **0 failed**
+- Runtime: **~2.2 minutes**
+
+AI-enabled follow-up validation:
+
+```bash
+cd /Users/home/Projects/mytradeportal
+docker compose down
+cd web/app
+set -a && source ../../.env.prod-like && set +a
+RUN_AI_E2E=1 CI=1 ENV_FILE=.env.prod-like pnpm test:e2e
+```
+
+Follow-up outcome:
+
+- **21 passed**
+- **0 skipped**
+- **0 failed**
+- Runtime: **~3.1 minutes**
+
+Stability notes from this run:
+
+- Production-validation flow completed end-to-end in serial mode.
+- Quote-to-payment and quotes lifecycle paths passed in full-suite context.
+- Authentication/session flake was addressed by hardening E2E session bootstrap and login retry behavior.
+
 **Date:** 2026-07-24
 **Status:** Pre-go-live
 **Railway project:** `MyTradePortal` (`30feaeee-9464-41ac-9b17-d07ae4cfcd09`)

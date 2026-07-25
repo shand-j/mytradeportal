@@ -351,6 +351,11 @@ async def _generate_rag_quote(
         tenant_settings=tenant.settings,
     )
     build_quote_from_validation(quote, validated)
+    if not quote.line_items:
+        raise RuntimeError(
+            "No priced line items were generated. "
+            "Cost catalogue items were not resolved for this job."
+        )
 
 
 async def _generate_quote_impl(
@@ -402,6 +407,14 @@ async def _generate_quote_impl(
                         )
                     )
                 build_quote_from_ocerp_response(quote, boq_response)
+                if not quote.line_items:
+                    logger.warning(
+                        "OCERP generated an empty quote for tenant %s; falling back to RAG",
+                        tenant.id,
+                    )
+                    quote.bill_of_quantities = None
+                    quote.line_items = []
+                    await _generate_rag_quote(quote, data, tenant)
             except (httpx.TimeoutException, httpx.HTTPStatusError) as exc:
                 logger.warning(
                     "OCERP generation failed for tenant %s, falling back to RAG: %s",
@@ -411,6 +424,12 @@ async def _generate_quote_impl(
                 await _generate_rag_quote(quote, data, tenant)
         else:
             await _generate_rag_quote(quote, data, tenant)
+
+        if not quote.line_items:
+            raise RuntimeError(
+                "No priced line items were generated. Ensure the cost catalogue is loaded "
+                "and tenant labour-rate settings are configured."
+            )
     except RuntimeError as exc:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,

@@ -21,6 +21,23 @@ The authoritative product vision is in [`mtp_v2_product_spec.md`](mtp_v2_product
 
 ---
 
+## Current delivery priority (pre-go-live)
+
+For now, the first priority is high-confidence, production-like validation from local runs, then fast iteration with minimal debt.
+
+- Treat `web/app/e2e/prod-validation.spec.ts` as the broad local release-confidence suite.
+- Treat `web/app/e2e/prod-smoke.spec.ts` + `.github/workflows/smoke-production.yml` as the hosted production sanity gate.
+- Prefer running E2E against near-production configuration (`ENVIRONMENT=production` + `docker-compose.prod-like.yml`) when touching user-critical flows.
+- Keep fixes incremental and low-risk; avoid introducing refactors that exceed ~0.5 dev day debt budget during pre-go-live iteration.
+- If a defect is found in a core flow, fix it and add/adjust an E2E assertion in the same change when practical.
+
+Reference docs:
+- [`docs/deployment.md`](docs/deployment.md)
+- [`docs/runbooks/ci-cd.md`](docs/runbooks/ci-cd.md)
+- [`docs/production-test-report.md`](docs/production-test-report.md)
+
+---
+
 ## Technology stack
 
 | Concern | Technology |
@@ -474,27 +491,49 @@ pnpm supabase:status
 ### TypeScript / React
 
 - **Unit/integration**: **Vitest** with jsdom. Setup file mocks `matchMedia`, `ResizeObserver`, `IntersectionObserver`, and `recharts`.
-- **E2E**: **Playwright** against the Docker Compose stack (`web/app/e2e/`, including auth, customers, quotes/BOQ lifecycles, jobs, invoices, quote-to-payment, and settings specs). `global-setup.ts` logs in and persists storage state. Base URL is `http://demo.localhost:3000`.
-- Run with `pnpm test` and `pnpm test:e2e` inside `web/app`.
+- **E2E**: **Playwright** against Docker Compose stack (`web/app/e2e/`).
+  - Default suite config: `web/app/playwright.config.ts` (starts stack via `web/app/e2e/start-stack.sh`, bootstraps tenant via `web/app/e2e/bootstrap-tenant.sh`, base URL `http://demo.localhost:3000`).
+  - Local production-like validation suite: `web/app/e2e/prod-validation.spec.ts`.
+  - Hosted production smoke suite: `web/app/playwright.config.prod-smoke.ts` + `web/app/e2e/prod-smoke.spec.ts`.
+- Recommended commands from `web/app`:
+
+```bash
+# Fast local full e2e run
+pnpm test:e2e
+
+# Production-like local run (loads docker-compose.prod-like.yml)
+ENVIRONMENT=production SETUP_TOKEN=<token> pnpm exec playwright test -g "production validation"
+
+# Hosted production smoke run (normally done by GitHub Actions)
+E2E_BASE_URL=<web-url> E2E_ADMIN_BASE_URL=<admin-url> \
+E2E_DJANGO_ADMIN_USERNAME=superadmin E2E_DJANGO_ADMIN_PASSWORD=<password> \
+pnpm exec playwright test --config=playwright.config.prod-smoke.ts
+```
 
 ### CI
 
 `.github/workflows/ci.yml` runs:
 
 1. Python job:
-   - Install with `pip install -e ".[dev]"` using Python 3.12.
-   - `ruff check .`
-   - `ruff format --check .`
-   - `mypy services/api packages/shared/py`
-   - `pytest`
+  - Install with `pip install -e ".[dev]"` using Python 3.12.
+  - `ruff check .`
+  - `ruff format --check .`
+  - `mypy services/api packages/shared/py`
+  - `mypy --config-file mypy-admin.ini services/admin`
+  - `pytest`
 
-2. TypeScript job:
-   - `npm ci`
-   - `npm run lint:ts`
-   - `npm run build --workspace=services/pwa`
-   - `npm run build --workspace=services/chatbot-widget`
+2. TypeScript job (in `web/app`):
+  - `pnpm install --frozen-lockfile`
+  - `pnpm lint`
+  - `pnpm test`
+  - `pnpm build`
 
-> **Note**: the TypeScript CI job references commands and workspaces that do not currently exist in the root `package.json` and refers to empty `services/pwa` / `services/chatbot-widget` directories. The back-office UI is under `web/app` and uses `pnpm`.
+3. Deploy job (on `main` push after tests):
+  - Installs Railway CLI.
+  - Runs `railway config apply` from `.railway/railway.ts`.
+  - Triggers production smoke workflow (`.github/workflows/smoke-production.yml`).
+
+Use [`docs/runbooks/ci-cd.md`](docs/runbooks/ci-cd.md) as the source of truth for pipeline operations and troubleshooting.
 
 ---
 
