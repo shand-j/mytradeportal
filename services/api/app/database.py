@@ -35,9 +35,7 @@ AsyncSessionLocal = async_sessionmaker(
 
 
 @event.listens_for(engine.sync_engine, "checkout")
-def _set_tenant_on_checkout(
-    dbapi_conn: Any, connection_record: Any, connection_proxy: Any
-) -> None:
+def _set_tenant_on_checkout(dbapi_conn: Any, connection_record: Any, connection_proxy: Any) -> None:
     """Restore the RLS tenant GUC every time a connection is checked out.
 
     Async SQLAlchemy returns connections to the pool after commit(), which

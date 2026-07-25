@@ -81,7 +81,9 @@ async def run() -> int:
             print(r.text)
             return 1
         quote = r.json()
-        print(f"Quote id: {quote['id']}, total: {quote['total']}, line_items: {len(quote['line_items'])}")
+        print(
+            f"Quote id: {quote['id']}, total: {quote['total']}, line_items: {len(quote['line_items'])}"
+        )
 
         # 5. Clean up: delete tenant
         r = await c.delete(

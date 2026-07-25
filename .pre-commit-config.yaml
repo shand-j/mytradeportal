@@ -21,3 +21,16 @@ repos:
       - id: mypy
         additional_dependencies: [types-passlib, types-python-jose]
         args: [services/api, packages/shared/py]
+
+  - repo: local
+    hooks:
+      - id: python-ci-checks
+        name: Python CI-equivalent checks
+        entry: bash -lc 'source .venv/bin/activate && ruff check . && ruff format --check . && mypy services/api packages/shared/py && mypy --config-file mypy-admin.ini services/admin && pytest'
+        language: system
+        pass_filenames: false
+      - id: typescript-ci-checks
+        name: TypeScript CI-equivalent checks
+        entry: bash -lc 'pnpm --dir web/app lint && pnpm --dir web/app test && pnpm --dir web/app build'
+        language: system
+        pass_filenames: false

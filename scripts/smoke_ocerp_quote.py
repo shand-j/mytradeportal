@@ -78,7 +78,9 @@ async def run() -> int:
         if r.status_code != 201:
             return 1
         quote = r.json()
-        print(f"Quote id: {quote['id']}, total: {quote['total']}, line_items: {len(quote['line_items'])}")
+        print(
+            f"Quote id: {quote['id']}, total: {quote['total']}, line_items: {len(quote['line_items'])}"
+        )
         if quote.get("bill_of_quantities"):
             print(f"BoQ confidence: {quote['bill_of_quantities']['confidence']}")
 

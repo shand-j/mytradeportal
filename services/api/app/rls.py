@@ -25,9 +25,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 # engine pool checkout listener reads this to restore the RLS session GUC on
 # every connection checkout, fixing the intermittent "Could not refresh"
 # errors that happen after commit() releases a connection back to the pool.
-_current_tenant_ctx: ContextVar[UUID | None] = ContextVar(
-    "_current_tenant_ctx", default=None
-)
+_current_tenant_ctx: ContextVar[UUID | None] = ContextVar("_current_tenant_ctx", default=None)
 
 
 def get_current_tenant_id() -> UUID | None:
