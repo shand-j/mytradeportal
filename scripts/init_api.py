@@ -1,9 +1,8 @@
 #!/usr/bin/env python3
-"""Wrapper that runs the one-time DB init as the API preDeploy step.
+"""Wrapper that runs production-safe bootstrap tasks as API preDeploy step.
 
 Railway's preDeployCommand must be a single-element array, so this script lets us
-run the idempotent init script without relying on shell `&&`.
-Cost data is populated separately by the data-pipeline service (manual or scheduled).
+run idempotent bootstrap scripts without relying on shell `&&`.
 """
 
 from __future__ import annotations
@@ -21,7 +20,8 @@ def run(script_name: str) -> None:
 
 if __name__ == "__main__":
     run("init_db.py")
+    run("seed_minimum_catalog.py")
     print("[init_api] Done")
     print(
-        "[init_api] Note: cost data is populated by the data-pipeline service (manual or scheduled), not during API deploy."
+        "[init_api] Note: minimum catalogue seed applied; data-pipeline still enriches full pricing."
     )
