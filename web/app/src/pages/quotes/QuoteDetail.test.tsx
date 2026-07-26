@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter, Routes, Route } from 'react-router-dom';
@@ -11,6 +11,87 @@ import { mockQuotes } from '@/lib/mock/data/quotes';
 
 const acceptedQuote = mockQuotes.find((q) => q.status === 'accepted')!;
 const draftQuote = mockQuotes.find((q) => q.status === 'draft')!;
+
+const deterministicQuote = {
+  ...acceptedQuote,
+  id: 'quote-deterministic-ui',
+  reference: 'Q-DETERMINISTIC-001',
+  status: 'draft' as const,
+  serviceType: 'BoQ render test',
+  propertyAddress: '42 Test Avenue, London',
+  lineItems: [
+    {
+      id: 'line-1',
+      description: 'Metal consumer unit 10-way',
+      quantity: 2,
+      unit: 'item',
+      unitPrice: 125,
+      total: 250,
+      isAiSuggested: false,
+    },
+    {
+      id: 'line-2',
+      description: 'Twin & earth cable 2.5mm',
+      quantity: 3,
+      unit: 'item',
+      unitPrice: 48,
+      total: 144,
+      isAiSuggested: false,
+    },
+  ],
+  subtotal: 394,
+  vatAmount: 78.8,
+  total: 472.8,
+};
+
+const deterministicBoq = {
+  id: 'boq-deterministic-ui',
+  quoteId: deterministicQuote.id,
+  status: 'draft',
+  notes: 'Deterministic BoQ for UI rendering test',
+  subtotal: 394,
+  vatRate: 0.2,
+  vatAmount: 78.8,
+  total: 472.8,
+  confidence: 0.92,
+  warnings: [],
+  regulatoryCitations: [],
+  complianceWarnings: [],
+  customerSummaryLines: [
+    { description: 'Consumer unit upgrade', total: 250 },
+    { description: 'Cabling works', total: 144 },
+  ],
+  marginIndicator: null,
+  standard: 'nrm1',
+  suppliers: ['Deterministic Supplier'],
+  createdAt: new Date().toISOString(),
+  updatedAt: new Date().toISOString(),
+  lineItems: [
+    {
+      id: 'boq-line-1',
+      code: 'DET-CU-10',
+      description: 'Metal consumer unit 10-way',
+      category: 'consumer_unit',
+      unit: 'each',
+      quantity: 2,
+      labourHours: 3,
+      labourRate: 60,
+      labourTotal: 180,
+      materialCost: 125,
+      materialTotal: 250,
+      plantCost: 0,
+      plantTotal: 0,
+      unitPrice: 125,
+      total: 430,
+      supplier: 'Deterministic Supplier',
+      brand: 'DetBrand',
+      sku: 'DET-CU-10',
+      productUrl: null,
+      retailPriceInclVat: 150,
+      notes: null,
+    },
+  ],
+};
 
 const defaultMutation = vi.hoisted(() => () => ({
   mutate: vi.fn(),
@@ -174,5 +255,36 @@ describe('QuoteDetail', () => {
       expect.objectContaining({ quoteId: acceptedQuote.id }),
       expect.any(Object),
     );
+  });
+
+  it('renders deterministic BoQ/line item values and edit/remove controls', async () => {
+    vi.mocked(hooks.useQuote).mockReturnValue({ data: deterministicQuote, isLoading: false, error: null });
+    vi.mocked(hooks.useQuoteBoq).mockReturnValue({ data: deterministicBoq, isLoading: false, error: null });
+
+    const user = userEvent.setup();
+    renderQuoteDetail(deterministicQuote.id);
+
+    expect(screen.getByRole('heading', { name: /quote items/i })).toBeInTheDocument();
+    const quoteItemsHeading = screen.getByRole('heading', { name: /quote items/i });
+    const quoteItemsTable = quoteItemsHeading.parentElement?.parentElement?.querySelector('table');
+    expect(quoteItemsTable).toBeTruthy();
+
+    const quoteTableQueries = within(quoteItemsTable as HTMLTableElement);
+    expect(quoteTableQueries.getByRole('columnheader', { name: /^item$/i })).toBeInTheDocument();
+    expect(quoteTableQueries.getByRole('columnheader', { name: /^qty$/i })).toBeInTheDocument();
+    expect(quoteTableQueries.getByRole('columnheader', { name: /unit price/i })).toBeInTheDocument();
+    expect(quoteTableQueries.getByRole('columnheader', { name: /^total$/i })).toBeInTheDocument();
+
+    expect(quoteTableQueries.getByText('Metal consumer unit 10-way')).toBeInTheDocument();
+    expect(quoteTableQueries.getByText('2 item')).toBeInTheDocument();
+    expect(quoteTableQueries.getByText('£125.00')).toBeInTheDocument();
+    expect(quoteTableQueries.getByText('£250.00')).toBeInTheDocument();
+
+    expect(screen.getByRole('heading', { name: /bill of quantities/i })).toBeInTheDocument();
+    expect(screen.getByRole('columnheader', { name: /^labour$/i })).toBeInTheDocument();
+    expect(screen.getByRole('columnheader', { name: /^materials$/i })).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: /edit quote/i }));
+    expect(screen.getAllByRole('button', { name: /remove/i }).length).toBeGreaterThan(0);
   });
 });

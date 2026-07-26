@@ -57,11 +57,24 @@ test('generate a BoQ-driven AI quote and save artifacts', async ({ page }) => {
 
   // The BoQ table should contain itemised components, not a generic "rewire" line.
   const boqTable = boqSection.locator('..').locator('..').locator('table');
+  await expect(boqTable.getByRole('columnheader', { name: /^qty$/i })).toBeVisible();
+  await expect(boqTable.getByRole('columnheader', { name: /^labour$/i })).toBeVisible();
+  await expect(boqTable.getByRole('columnheader', { name: /^materials$/i })).toBeVisible();
+  await expect(boqTable.getByRole('columnheader', { name: /^plant$/i })).toBeVisible();
+  await expect(boqTable.getByRole('columnheader', { name: /^total$/i })).toBeVisible();
+
   await expect(boqTable.getByText(/consumer unit/i).first()).toBeVisible();
   await expect(boqTable.getByText(/socket|tv point/i).first()).toBeVisible();
   await expect(boqTable.getByText(/downlight|light fitting/i).first()).toBeVisible();
   await expect(boqTable.getByText(/ev charge|cable/i).first()).toBeVisible();
   await expect(boqTable.getByText(/labour|electrician/i).first()).toBeVisible();
+
+  const firstBoqDataRow = boqTable.locator('tbody tr').first();
+  await expect(firstBoqDataRow.locator('td').nth(1)).toContainText(/\d/);
+  await expect(firstBoqDataRow.locator('td').nth(2)).toContainText(/£\d/);
+  await expect(firstBoqDataRow.locator('td').nth(3)).toContainText(/£\d/);
+  await expect(firstBoqDataRow.locator('td').nth(4)).toContainText(/£\d/);
+  await expect(firstBoqDataRow.locator('td').nth(5)).toContainText(/£\d/);
 
   // The customer-facing quote should reflect the BoQ total (non-zero).
   await expect(page.locator('div.text-2xl.font-bold').getByText(/£[0-9,]+/).first()).toBeVisible();

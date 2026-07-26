@@ -11,6 +11,19 @@ const quoteKeys = {
 
 import { toCustomer } from './contacts';
 
+function toNumber(value: unknown, fallback = 0): number {
+  if (typeof value === 'number') {
+    return Number.isFinite(value) ? value : fallback;
+  }
+  if (typeof value === 'string') {
+    const normalized = value.replaceAll(',', '').trim();
+    if (!normalized) return fallback;
+    const parsed = Number(normalized);
+    return Number.isFinite(parsed) ? parsed : fallback;
+  }
+  return fallback;
+}
+
 function toCustomerSummaryLine(raw: Record<string, unknown>) {
   return {
     description: String(raw.description ?? ''),
@@ -61,27 +74,34 @@ function toLineItem(raw: Record<string, unknown>): QuoteLineItem {
 }
 
 function toBoQLineItem(raw: Record<string, unknown>): BoQLineItem {
+  const quantity = toNumber(raw.quantity, 1);
+  const labourTotal = toNumber(raw.labourTotal ?? raw.labour, 0);
+  const materialTotal = toNumber(raw.materialTotal ?? raw.materials, 0);
+  const plantTotal = toNumber(raw.plantTotal ?? raw.plant, 0);
+  const unitPrice = toNumber(raw.unitPrice, 0);
+  const total = toNumber(raw.total, labourTotal + materialTotal + plantTotal || quantity * unitPrice);
+
   return {
     id: String(raw.id),
     code: String(raw.code ?? ''),
     description: String(raw.description ?? ''),
     category: (raw.category as string | null) ?? null,
     unit: String(raw.unit ?? 'item'),
-    quantity: Number(raw.quantity ?? 1),
-    labourHours: Number(raw.labourHours ?? 0),
-    labourRate: Number(raw.labourRate ?? 0),
-    labourTotal: Number(raw.labourTotal ?? 0),
-    materialCost: Number(raw.materialCost ?? 0),
-    materialTotal: Number(raw.materialTotal ?? 0),
-    plantCost: Number(raw.plantCost ?? 0),
-    plantTotal: Number(raw.plantTotal ?? 0),
-    unitPrice: Number(raw.unitPrice ?? 0),
-    total: Number(raw.total ?? 0),
+    quantity,
+    labourHours: toNumber(raw.labourHours, 0),
+    labourRate: toNumber(raw.labourRate, 0),
+    labourTotal,
+    materialCost: toNumber(raw.materialCost, 0),
+    materialTotal,
+    plantCost: toNumber(raw.plantCost, 0),
+    plantTotal,
+    unitPrice,
+    total,
     supplier: (raw.supplier as string | null) ?? null,
     brand: (raw.brand as string | null) ?? null,
     sku: (raw.sku as string | null) ?? null,
     productUrl: (raw.productUrl as string | null) ?? null,
-    retailPriceInclVat: raw.retailPriceInclVat != null ? Number(raw.retailPriceInclVat) : null,
+    retailPriceInclVat: raw.retailPriceInclVat != null ? toNumber(raw.retailPriceInclVat, 0) : null,
     notes: (raw.notes as string | null) ?? null,
   };
 }

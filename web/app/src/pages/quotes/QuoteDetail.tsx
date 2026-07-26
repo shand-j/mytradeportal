@@ -14,6 +14,11 @@ function formatCurrency(value: number, fractionDigits = 2): string {
   });
 }
 
+function formatCurrencySafe(value: number, fractionDigits = 2): string {
+  if (!Number.isFinite(value)) return formatCurrency(0, fractionDigits);
+  return formatCurrency(value, fractionDigits);
+}
+
 export function QuoteDetail() {
   const { id = '' } = useParams<{ id: string }>();
   const navigate = useNavigate();
@@ -622,6 +627,18 @@ export function QuoteDetail() {
                             />
                           </div>
                         ) : item.notes && <div className="text-[11px] text-[#78716C]">{item.notes}</div>}
+
+                        {!isBoqEditing && (
+                          <div className="mt-2 grid grid-cols-2 gap-1 text-[11px] text-[#57534E] md:hidden">
+                            <span>Qty: {item.quantity} {item.unit}</span>
+                            <span className="text-right">Labour: £{formatCurrencySafe(item.labourTotal)}</span>
+                            <span>Materials: £{formatCurrencySafe(item.materialTotal)}</span>
+                            <span className="text-right">Plant: £{formatCurrencySafe(item.plantTotal)}</span>
+                            <span className="col-span-2 text-right font-semibold text-[#1C1917]">
+                              Total: £{formatCurrencySafe(item.labourTotal + item.materialTotal + item.plantTotal)}
+                            </span>
+                          </div>
+                        )}
                       </td>
                       <td className="py-2.5 text-sm text-[#57534E] text-right whitespace-nowrap">
                         {isBoqEditing ? (
@@ -645,7 +662,7 @@ export function QuoteDetail() {
                             onChange={(e) => handleBoqDraftChange(item.id, 'labourTotal', e.target.value)}
                             className="w-24 rounded-md border border-[#E7E5E4] px-2 py-1 text-right text-sm"
                           />
-                        ) : <>£{formatCurrency(item.labourTotal)}</>}
+                        ) : <>£{formatCurrencySafe(item.labourTotal)}</>}
                       </td>
                       <td className="py-2.5 text-sm text-[#57534E] text-right whitespace-nowrap">
                         {isBoqEditing ? (
@@ -657,7 +674,7 @@ export function QuoteDetail() {
                             onChange={(e) => handleBoqDraftChange(item.id, 'materialTotal', e.target.value)}
                             className="w-24 rounded-md border border-[#E7E5E4] px-2 py-1 text-right text-sm"
                           />
-                        ) : <>£{formatCurrency(item.materialTotal)}</>}
+                        ) : <>£{formatCurrencySafe(item.materialTotal)}</>}
                       </td>
                       <td className="py-2.5 text-sm text-[#57534E] text-right whitespace-nowrap">
                         {isBoqEditing ? (
@@ -669,10 +686,10 @@ export function QuoteDetail() {
                             onChange={(e) => handleBoqDraftChange(item.id, 'plantTotal', e.target.value)}
                             className="w-24 rounded-md border border-[#E7E5E4] px-2 py-1 text-right text-sm"
                           />
-                        ) : <>£{formatCurrency(item.plantTotal)}</>}
+                        ) : <>£{formatCurrencySafe(item.plantTotal)}</>}
                       </td>
                       <td className="py-2.5 text-sm font-medium text-[#1C1917] text-right whitespace-nowrap">
-                        £{formatCurrency(item.labourTotal + item.materialTotal + item.plantTotal)}
+                        £{formatCurrencySafe(item.labourTotal + item.materialTotal + item.plantTotal)}
                       </td>
                     </tr>
                   ))}
