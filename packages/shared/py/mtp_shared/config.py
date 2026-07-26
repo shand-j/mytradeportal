@@ -66,6 +66,12 @@ class Settings(BaseSettings):
     # OpenConstructionERP microservice
     ocerp_url: str = Field(default="http://ocerp:8000")
 
+    # Address lookup providers
+    fetchify_api_key: str = Field(default="")
+    ideal_postcodes_api_key: str = Field(default="")
+    # Legacy field retained temporarily for migration fallback.
+    getaddress_io_api_key: str = Field(default="")
+
     # Email / SMTP
     smtp_host: str = Field(default="localhost")
     smtp_port: int = Field(default=1025)

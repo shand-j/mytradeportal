@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Plus, Search, Phone, Mail, Star, Wrench, X } from 'lucide-react';
 import { useContacts, useCreateContact, useDeleteContact } from '@/lib/api/hooks';
+import { api } from '@/lib/api/client';
 import { useUiStore } from '@/stores/uiStore';
 import { toast } from 'sonner';
 import type { SourceChannel } from '@/types';
@@ -18,12 +19,13 @@ interface AddressSuggestion {
   url?: string;
 }
 
-interface GetAddressAutocompleteResponse {
+interface AddressAutocompleteResponse {
   suggestions?: AddressSuggestion[];
+  status?: GetAddressLookupStatus;
 }
 
-interface GetAddressDetailResponse {
-  formatted_address?: string[];
+interface AddressDetailResponse {
+  formattedAddress?: string[];
   postcode?: string;
 }
 
@@ -36,7 +38,7 @@ interface GetAddressLookupResult {
 
 function normalizePostcode(value: string): string {
   const compact = value.trim().replace(/\s+/g, '').toUpperCase();
-  const ukPostcodeMatch = compact.match(/^([A-Z]{1,2}\d[A-Z\d]?)(\d[A-Z]{2})$/);
+  const ukPostcodeMatch = /^([A-Z]{1,2}\d[A-Z\d]?)(\d[A-Z]{2})$/.exec(compact);
   if (ukPostcodeMatch) {
     return `${ukPostcodeMatch[1]} ${ukPostcodeMatch[2]}`;
   }
@@ -63,73 +65,54 @@ function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
 }
 
 async function fetchGetAddressAutocomplete(postcode: string): Promise<GetAddressLookupResult> {
-  const apiKey = import.meta.env.VITE_GETADDRESS_IO_API_KEY as string | undefined;
-  if (!apiKey || !apiKey.trim()) {
+  try {
+    const data = await withTimeout(
+      api.get<AddressAutocompleteResponse>(
+        `/integrations/address/autocomplete?postcode=${encodeURIComponent(postcode)}`,
+      ),
+      4500,
+    );
+    const suggestions = (data.suggestions ?? [])
+      .filter((suggestion): suggestion is AddressSuggestion =>
+        Boolean(suggestion?.id?.trim()) && Boolean(suggestion?.address?.trim()),
+      )
+      .map((suggestion) => ({
+        id: suggestion.id.trim(),
+        address: suggestion.address.trim(),
+        url: suggestion.url,
+      }));
+
+    if (data.status === 'unavailable') {
+      return { suggestions: [], status: 'unavailable' };
+    }
+
+    if (suggestions.length === 0) {
+      return {
+        suggestions: [],
+        status: 'no_results',
+      };
+    }
+
+    return {
+      suggestions,
+      status: 'ok',
+    };
+  } catch {
     return { suggestions: [], status: 'unavailable' };
   }
-
-  const response = await withTimeout(
-    fetch(
-      `https://api.getAddress.io/autocomplete/${encodeURIComponent(postcode)}?api-key=${encodeURIComponent(apiKey.trim())}&all=true&top=6&show-postcode=true`,
-    ),
-    4500,
-  );
-
-  if (response.status === 404) {
-    return { suggestions: [], status: 'no_results' };
-  }
-
-  if (!response.ok) {
-    return { suggestions: [], status: 'unavailable' };
-  }
-
-  const data = (await response.json()) as GetAddressAutocompleteResponse;
-  const suggestions = (data.suggestions ?? [])
-    .filter((suggestion): suggestion is AddressSuggestion =>
-      Boolean(suggestion?.id?.trim()) && Boolean(suggestion?.address?.trim()),
-    )
-    .map((suggestion) => ({
-      id: suggestion.id.trim(),
-      address: suggestion.address.trim(),
-      url: suggestion.url,
-    }));
-
-  if (suggestions.length === 0) {
-    return { suggestions: [], status: 'no_results' };
-  }
-
-  return {
-    suggestions,
-    status: 'ok',
-  };
 }
 
-async function fetchGetAddressDetailsById(id: string): Promise<GetAddressDetailResponse | null> {
-  const apiKey = import.meta.env.VITE_GETADDRESS_IO_API_KEY as string | undefined;
-  if (!apiKey || !apiKey.trim()) {
+async function fetchGetAddressDetailsById(id: string): Promise<AddressDetailResponse | null> {
+  try {
+    return await withTimeout(
+      api.get<AddressDetailResponse>(
+        `/integrations/address/private-address/${encodeURIComponent(id)}`,
+      ),
+      4500,
+    );
+  } catch {
     return null;
   }
-
-  const privateAddressResponse = await withTimeout(
-    fetch(
-      `https://api.getAddress.io/v2/private-address/${encodeURIComponent(id)}?api-key=${encodeURIComponent(apiKey.trim())}`,
-    ),
-    4500,
-  );
-
-  if (privateAddressResponse.ok) {
-    return (await privateAddressResponse.json()) as GetAddressDetailResponse;
-  }
-
-  const response = await withTimeout(
-    fetch(`https://api.getAddress.io/get/${encodeURIComponent(id)}?api-key=${encodeURIComponent(apiKey.trim())}`),
-    4500,
-  );
-  if (!response.ok) {
-    return null;
-  }
-
-  return (await response.json()) as GetAddressDetailResponse;
 }
 
 export function CustomerDirectory() {
@@ -272,7 +255,7 @@ function CustomerDialog({
   onClose,
   onSubmit,
   isSubmitting,
-}: {
+}: Readonly<{
   onClose: () => void;
   onSubmit: (payload: {
     firstName: string;
@@ -285,7 +268,7 @@ function CustomerDialog({
     sourceChannel: SourceChannel;
   }) => void;
   isSubmitting: boolean;
-}) {
+}>) {
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');
   const [email, setEmail] = useState('');
@@ -386,7 +369,7 @@ function CustomerDialog({
       return;
     }
 
-    const formattedAddress = (details.formatted_address ?? [])
+    const formattedAddress = (details.formattedAddress ?? [])
       .map((part) => part.trim())
       .filter(Boolean)
       .join(', ');

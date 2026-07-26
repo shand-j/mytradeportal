@@ -17,6 +17,7 @@ from app.logging import configure_logging
 from app.models import Base
 from app.rls import apply_tenant_rls_sync
 from app.routers import (
+    address_lookup,
     analytics,
     appointments,
     auth,
@@ -97,6 +98,7 @@ app.include_router(tenants.router)
 app.include_router(auth.router)
 app.include_router(users.router)
 app.include_router(contacts.router)
+app.include_router(address_lookup.router)
 app.include_router(quotes.router)
 app.include_router(jobs.router)
 app.include_router(appointments.router)

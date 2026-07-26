@@ -92,6 +92,9 @@ services:
       EMBEDDING_MODEL: ${EMBEDDING_MODEL:-text-embedding-3-small}
       LLM_MODEL: ${LLM_MODEL:-gpt-4o-mini}
       LLM_TIMEOUT_SECONDS: ${LLM_TIMEOUT_SECONDS:-45}
+      FETCHIFY_API_KEY: ${FETCHIFY_API_KEY:-${IDEAL_POSTCODES_API_KEY:-${GETADDRESS_IO_API_KEY:-${VITE_GETADDRESS_IO_API_KEY:-}}}}
+      IDEAL_POSTCODES_API_KEY: ${IDEAL_POSTCODES_API_KEY:-${GETADDRESS_IO_API_KEY:-${VITE_GETADDRESS_IO_API_KEY:-}}}
+      GETADDRESS_IO_API_KEY: ${GETADDRESS_IO_API_KEY:-${VITE_GETADDRESS_IO_API_KEY:-}}
       SMTP_HOST: ${SMTP_HOST:-mailpit}
       SMTP_PORT: ${SMTP_PORT:-1025}
       SUPABASE_URL: ${SUPABASE_URL:-http://host.docker.internal:54321}
@@ -123,7 +126,6 @@ services:
       # Leave empty to let the browser derive the API URL from the current
       # hostname (e.g. demo.localhost:3000 -> demo.localhost:8000).
       VITE_API_BASE_URL: ${VITE_API_BASE_URL:-}
-      VITE_GETADDRESS_IO_API_KEY: ${VITE_GETADDRESS_IO_API_KEY:-}
     volumes:
       - ./web/app:/app
       - /app/node_modules
