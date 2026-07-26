@@ -123,6 +123,7 @@ services:
       # Leave empty to let the browser derive the API URL from the current
       # hostname (e.g. demo.localhost:3000 -> demo.localhost:8000).
       VITE_API_BASE_URL: ${VITE_API_BASE_URL:-}
+      VITE_GETADDRESS_IO_API_KEY: ${VITE_GETADDRESS_IO_API_KEY:-}
     volumes:
       - ./web/app:/app
       - /app/node_modules

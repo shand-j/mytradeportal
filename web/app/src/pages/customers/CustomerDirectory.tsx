@@ -8,6 +8,130 @@ import type { SourceChannel } from '@/types';
 
 const sourceChannels: SourceChannel[] = ['pwa', 'chatbot', 'voice', 'whatsapp', 'referral', 'manual'];
 
+interface AddressLookupResult {
+  display_name?: string;
+}
+
+interface AddressSuggestion {
+  id: string;
+  address: string;
+  url?: string;
+}
+
+interface GetAddressAutocompleteResponse {
+  suggestions?: AddressSuggestion[];
+}
+
+interface GetAddressDetailResponse {
+  formatted_address?: string[];
+  postcode?: string;
+}
+
+type GetAddressLookupStatus = 'ok' | 'no_results' | 'unavailable';
+
+interface GetAddressLookupResult {
+  suggestions: AddressSuggestion[];
+  status: GetAddressLookupStatus;
+}
+
+function normalizePostcode(value: string): string {
+  const compact = value.trim().replace(/\s+/g, '').toUpperCase();
+  const ukPostcodeMatch = compact.match(/^([A-Z]{1,2}\d[A-Z\d]?)(\d[A-Z]{2})$/);
+  if (ukPostcodeMatch) {
+    return `${ukPostcodeMatch[1]} ${ukPostcodeMatch[2]}`;
+  }
+  return compact;
+}
+
+function sortAddressOptions(options: string[]): string[] {
+  return options.slice().sort((a, b) => a.localeCompare(b, 'en-GB', { numeric: true }));
+}
+
+function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timeout = setTimeout(() => reject(new Error('Address lookup timed out')), ms);
+    promise
+      .then((value) => {
+        clearTimeout(timeout);
+        resolve(value);
+      })
+      .catch((error) => {
+        clearTimeout(timeout);
+        reject(error);
+      });
+  });
+}
+
+async function fetchGetAddressAutocomplete(postcode: string): Promise<GetAddressLookupResult> {
+  const apiKey = import.meta.env.VITE_GETADDRESS_IO_API_KEY as string | undefined;
+  if (!apiKey || !apiKey.trim()) {
+    return { suggestions: [], status: 'unavailable' };
+  }
+
+  const response = await withTimeout(
+    fetch(
+      `https://api.getAddress.io/autocomplete/${encodeURIComponent(postcode)}?api-key=${encodeURIComponent(apiKey.trim())}&all=true&top=6&show-postcode=true`,
+    ),
+    4500,
+  );
+
+  if (response.status === 404) {
+    return { suggestions: [], status: 'no_results' };
+  }
+
+  if (!response.ok) {
+    return { suggestions: [], status: 'unavailable' };
+  }
+
+  const data = (await response.json()) as GetAddressAutocompleteResponse;
+  const suggestions = (data.suggestions ?? [])
+    .filter((suggestion): suggestion is AddressSuggestion =>
+      Boolean(suggestion?.id?.trim()) && Boolean(suggestion?.address?.trim()),
+    )
+    .map((suggestion) => ({
+      id: suggestion.id.trim(),
+      address: suggestion.address.trim(),
+      url: suggestion.url,
+    }));
+
+  if (suggestions.length === 0) {
+    return { suggestions: [], status: 'no_results' };
+  }
+
+  return {
+    suggestions,
+    status: 'ok',
+  };
+}
+
+async function fetchGetAddressDetailsById(id: string): Promise<GetAddressDetailResponse | null> {
+  const apiKey = import.meta.env.VITE_GETADDRESS_IO_API_KEY as string | undefined;
+  if (!apiKey || !apiKey.trim()) {
+    return null;
+  }
+
+  const privateAddressResponse = await withTimeout(
+    fetch(
+      `https://api.getAddress.io/v2/private-address/${encodeURIComponent(id)}?api-key=${encodeURIComponent(apiKey.trim())}`,
+    ),
+    4500,
+  );
+
+  if (privateAddressResponse.ok) {
+    return (await privateAddressResponse.json()) as GetAddressDetailResponse;
+  }
+
+  const response = await withTimeout(
+    fetch(`https://api.getAddress.io/get/${encodeURIComponent(id)}?api-key=${encodeURIComponent(apiKey.trim())}`),
+    4500,
+  );
+  if (!response.ok) {
+    return null;
+  }
+
+  return (await response.json()) as GetAddressDetailResponse;
+}
+
 export function CustomerDirectory() {
   const setPageTitle = useUiStore(s => s.setPageTitle);
   const { data: customers, isLoading, error } = useContacts();
@@ -168,8 +292,119 @@ function CustomerDialog({
   const [phone, setPhone] = useState('');
   const [address, setAddress] = useState('');
   const [postcode, setPostcode] = useState('');
+  const [selectedAddressId, setSelectedAddressId] = useState('');
+  const [addressSuggestions, setAddressSuggestions] = useState<AddressSuggestion[]>([]);
+  const [addressOptions, setAddressOptions] = useState<string[]>([]);
+  const [isLookupLoading, setIsLookupLoading] = useState(false);
+  const [lookupError, setLookupError] = useState<string | null>(null);
   const [propertyType, setPropertyType] = useState<'house' | 'apartment' | 'commercial' | ''>('house');
   const [sourceChannel, setSourceChannel] = useState<SourceChannel>('manual');
+
+  const handleLookupAddress = async () => {
+    const normalizedPostcode = normalizePostcode(postcode);
+    if (!normalizedPostcode) {
+      setLookupError('Enter a postcode to find addresses');
+      return;
+    }
+
+    setIsLookupLoading(true);
+    setLookupError(null);
+    try {
+      const providerResult = await fetchGetAddressAutocomplete(normalizedPostcode);
+      if (providerResult.suggestions.length > 0) {
+        setAddressSuggestions(providerResult.suggestions);
+        setAddressOptions(sortAddressOptions(providerResult.suggestions.map((suggestion) => suggestion.address)));
+        setPostcode(normalizedPostcode);
+        setSelectedAddressId('');
+        return;
+      }
+
+      if (providerResult.status === 'no_results') {
+        setLookupError('No matching addresses found for this postcode');
+        setAddressSuggestions([]);
+        setAddressOptions([]);
+        setPostcode(normalizedPostcode);
+        return;
+      }
+
+      const fallbackResponse = await withTimeout(
+        fetch(
+          `https://nominatim.openstreetmap.org/search?format=jsonv2&countrycodes=gb&q=${encodeURIComponent(normalizedPostcode)}&addressdetails=1&limit=12`,
+          {
+            headers: {
+              Accept: 'application/json',
+            },
+          },
+        ),
+        3500,
+      );
+
+      if (!fallbackResponse.ok) {
+        throw new Error(`Address lookup failed (${fallbackResponse.status})`);
+      }
+
+      const fallbackData = (await fallbackResponse.json()) as AddressLookupResult[];
+      const fallbackOptions = Array.from(
+        new Set(
+          fallbackData
+            .map((entry) => entry.display_name?.trim())
+            .filter((entry): entry is string => Boolean(entry)),
+        ),
+      );
+
+      if (fallbackOptions.length === 0) {
+        setLookupError('No matching addresses found for this postcode');
+        setAddressSuggestions([]);
+        setAddressOptions([]);
+        return;
+      }
+
+      setAddressSuggestions([]);
+      setAddressOptions(sortAddressOptions(fallbackOptions));
+      setPostcode(normalizedPostcode);
+    } catch {
+      setLookupError('Address lookup is unavailable. Enter address manually.');
+      setAddressSuggestions([]);
+      setAddressOptions([]);
+    } finally {
+      setIsLookupLoading(false);
+    }
+  };
+
+  const handleAddressSelection = async (selectedValue: string) => {
+    setAddress(selectedValue);
+
+    const matchedSuggestion = addressSuggestions.find((suggestion) => suggestion.address === selectedValue);
+    if (!matchedSuggestion) {
+      setSelectedAddressId('');
+      return;
+    }
+
+    setSelectedAddressId(matchedSuggestion.id);
+    const details = await fetchGetAddressDetailsById(matchedSuggestion.id);
+    if (!details) {
+      return;
+    }
+
+    const formattedAddress = (details.formatted_address ?? [])
+      .map((part) => part.trim())
+      .filter(Boolean)
+      .join(', ');
+    if (formattedAddress) {
+      setAddress(formattedAddress);
+    }
+    if (details.postcode) {
+      setPostcode(normalizePostcode(details.postcode));
+    }
+  };
+
+  const handlePostcodeChange = (value: string) => {
+    setPostcode(value);
+    setLookupError(null);
+    setSelectedAddressId('');
+    setAddressSuggestions([]);
+    setAddressOptions([]);
+  };
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
@@ -186,7 +421,37 @@ function CustomerDialog({
           <input placeholder="Email" value={email} onChange={e => setEmail(e.target.value)} className="w-full h-10 px-3 text-sm border border-[#E7E5E4] rounded-lg focus:outline-none focus:border-[#D4650A]" />
           <input placeholder="Phone" value={phone} onChange={e => setPhone(e.target.value)} className="w-full h-10 px-3 text-sm border border-[#E7E5E4] rounded-lg focus:outline-none focus:border-[#D4650A]" />
           <input placeholder="Address" value={address} onChange={e => setAddress(e.target.value)} className="w-full h-10 px-3 text-sm border border-[#E7E5E4] rounded-lg focus:outline-none focus:border-[#D4650A]" />
-          <input placeholder="Postcode" value={postcode} onChange={e => setPostcode(e.target.value)} className="w-full h-10 px-3 text-sm border border-[#E7E5E4] rounded-lg focus:outline-none focus:border-[#D4650A]" />
+          <div className="grid grid-cols-[1fr_auto] gap-2">
+            <input
+              placeholder="Postcode"
+              value={postcode}
+              onChange={e => handlePostcodeChange(e.target.value)}
+              className="w-full h-10 px-3 text-sm border border-[#E7E5E4] rounded-lg focus:outline-none focus:border-[#D4650A]"
+            />
+            <button
+              type="button"
+              onClick={handleLookupAddress}
+              disabled={isLookupLoading}
+              className="h-10 px-3 text-xs font-semibold rounded-lg border border-[#E7E5E4] bg-[#F5F4F0] text-[#57534E] hover:bg-[#EFEEE9] disabled:opacity-50"
+              aria-label="Find address by postcode"
+            >
+              {isLookupLoading ? 'Looking up...' : 'Find Address'}
+            </button>
+          </div>
+          {addressOptions.length > 0 && (
+            <select
+              aria-label="Address search results"
+              value={selectedAddressId ? addressSuggestions.find((suggestion) => suggestion.id === selectedAddressId)?.address ?? '' : ''}
+              onChange={(e) => void handleAddressSelection(e.target.value)}
+              className="w-full h-10 px-3 text-sm border border-[#E7E5E4] rounded-lg focus:outline-none focus:border-[#D4650A]"
+            >
+              <option value="" disabled>Select an address</option>
+              {addressOptions.map((option) => (
+                <option key={option} value={option}>{option}</option>
+              ))}
+            </select>
+          )}
+          {lookupError && <p className="text-xs text-[#DC2626]">{lookupError}</p>}
           <div className="grid grid-cols-2 gap-3">
             <select value={propertyType} onChange={e => setPropertyType(e.target.value as 'house' | 'apartment' | 'commercial')} className="h-10 px-3 text-sm border border-[#E7E5E4] rounded-lg focus:outline-none focus:border-[#D4650A]">
               <option value="house">House</option>
