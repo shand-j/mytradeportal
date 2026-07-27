@@ -13,6 +13,8 @@ from abc import ABC, abstractmethod
 from decimal import Decimal
 from typing import Any
 
+# Sentinel default for connector search calls: lets the resolver distinguish
+# between "use the requirement's category" and an explicit category-less retry.
 from ocerp.retrieval import search_cost_items
 from ocerp.services.boq_models import BoQRequirement, ResolvedCostItem
 

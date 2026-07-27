@@ -92,8 +92,8 @@ def _preferred_accessory_brand(
 ) -> str | None:
     """Return the strongest explicit accessory-brand preference.
 
-    Priority is intentional: retain the most specific plate/accessory ask first
-    (MK, then Scolmore Click), then fall back to broader commodity brands.
+    The deterministic priority order is MK > Scolmore Click > British General
+    > Hager so the most specific accessory ask wins before broader fallbacks.
     """
     if prefers_mk:
         return "mk"

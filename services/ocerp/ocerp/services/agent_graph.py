@@ -65,6 +65,8 @@ from ocerp.services.resolver import CatalogueResolver
 
 logger = logging.getLogger(__name__)
 
+# Phrases below are filtered because the LLM can suggest compliance, warranty,
+# or certification claims that this deterministic pipeline cannot verify.
 _UNSUPPORTED_DESIGN_NOTE_PHRASES = (
     "fully compliant",
     "bs 7671 compliant",
@@ -592,6 +594,8 @@ def _sanitized_design_notes(state: QuoteGraphState) -> str:
         return design_notes
     kept_parts: list[str] = []
     suppressed_phrases: list[str] = []
+    # The phrase list is intentionally tiny and ordered for substring matching,
+    # so a simple scan keeps the suppression logic explicit and easy to audit.
     for raw_part in [part.strip() for part in design_notes.split(".") if part.strip()]:
         part = raw_part.lower()
         matched_phrase = next(

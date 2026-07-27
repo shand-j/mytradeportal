@@ -86,7 +86,7 @@ def test_three_bed_mid_range_rewire_uses_uplifted_socket_target() -> None:
     assert sockets.attributes["brand"] == "scolmore click"
 
 
-def test_aico_brand_preference_applies_to_fire_detection_requirements() -> None:
+def test_aico_brand_preference_applies_to_all_fire_detection_types() -> None:
     reqs = RequirementEngine(
         "Full rewire of a 3 bed premium house with Aico smoke alarms, Aico heat detection, and Aico carbon monoxide alarm."
     ).generate()
@@ -340,11 +340,12 @@ async def test_resolver_falls_back_to_cross_category_search_for_edge_mapping() -
             self.calls: list[str | None] = []
 
         async def search(self, requirement, trade, region, category=None):
-            self.calls.append(
+            recorded_category = (
                 category
                 if isinstance(category, str) or category is None
                 else "requirement_category"
             )
+            self.calls.append(recorded_category)
             if category == "Switches & Sockets":
                 return []
             return [
