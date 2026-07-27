@@ -151,12 +151,16 @@ def _parse_suggestions(payload: dict) -> list[AddressSuggestion]:
 
 
 def _status_from_provider_response(response: httpx.Response) -> str:
-    if response.status_code in {
-        status.HTTP_401_UNAUTHORIZED,
-        status.HTTP_402_PAYMENT_REQUIRED,
-        status.HTTP_403_FORBIDDEN,
-        status.HTTP_429_TOO_MANY_REQUESTS,
-    } or response.status_code >= 500:
+    if (
+        response.status_code
+        in {
+            status.HTTP_401_UNAUTHORIZED,
+            status.HTTP_402_PAYMENT_REQUIRED,
+            status.HTTP_403_FORBIDDEN,
+            status.HTTP_429_TOO_MANY_REQUESTS,
+        }
+        or response.status_code >= 500
+    ):
         return STATUS_UNAVAILABLE
     if response.status_code == status.HTTP_404_NOT_FOUND:
         return STATUS_NO_RESULTS

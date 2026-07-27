@@ -1,3 +1,5 @@
+default_stages: [pre-commit]
+
 repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v4.6.0
@@ -29,8 +31,10 @@ repos:
         entry: bash -lc 'source .venv/bin/activate && ruff check . && ruff format --check . && mypy services/api packages/shared/py && mypy --config-file mypy-admin.ini services/admin && pytest'
         language: system
         pass_filenames: false
+        stages: [pre-commit]
       - id: typescript-ci-checks
         name: TypeScript CI-equivalent checks
         entry: bash -lc 'pnpm --dir web/app lint && pnpm --dir web/app test && pnpm --dir web/app build'
         language: system
         pass_filenames: false
+        stages: [pre-commit]

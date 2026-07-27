@@ -30,6 +30,7 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError
 if TYPE_CHECKING:
     from ocerp.services.knowledge_store import KnowledgeStore
 
+from ocerp.config import settings
 from ocerp.generation import generate_boq_from_prompt
 from ocerp.retrieval import (
     search_cost_items,  # noqa: F401 - kept for test monkeypatch compatibility
@@ -61,7 +62,6 @@ from ocerp.services.pricing import (
 )
 from ocerp.services.requirements import generate_requirements
 from ocerp.services.resolver import CatalogueResolver
-from ocerp.config import settings
 
 logger = logging.getLogger(__name__)
 
