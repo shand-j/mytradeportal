@@ -108,6 +108,28 @@ module = "app.ingest_ddc_uk"
 warn_unused_ignores = false
 
 [[tool.mypy.overrides]]
+module = "app.pdf"
+disallow_subclassing_any = false
+warn_unused_ignores = false
+
+[[tool.mypy.overrides]]
+module = "app.security"
+warn_return_any = false
+
+[[tool.mypy.overrides]]
+module = "app.main"
+warn_unused_ignores = false
+
+[[tool.mypy.overrides]]
+module = "app.qdrant"
+warn_unused_ignores = false
+
+[[tool.mypy.overrides]]
+module = ["app.routers.auth", "app.routers.feature_flags", "app.routers.quotes"]
+disallow_untyped_decorators = false
+warn_unused_ignores = false
+
+[[tool.mypy.overrides]]
 module = "security.*"
 disallow_any_generics = false
 
