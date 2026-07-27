@@ -238,3 +238,67 @@ Mandatory verification after each change batch:
 2. Python and TypeScript CI-equivalent local checks.
 3. Production-like validation run (`web/app/e2e/prod-validation.spec.ts`).
 4. Append evidence and pass/fail notes to this runbook before moving to next batch.
+
+## 16) Slice 3 Execution Evidence (2026-07-27 23:05 UTC)
+
+Baseline confirmed before edits:
+- Runbook baseline remained Slice 2 complete and Slice 3 ready to start.
+- Eval summary baseline in `evals/results/summary.json`: 16/17 passed (94.12%); failing case remained `STD-003` under the current floor by £20.89.
+- Eval regression floor used for local interpretation: `GOLDEN_PASS_RATE_THRESHOLD=0.9412`.
+
+Slice 3A.1 — requirement extraction uplift:
+- Added deterministic accessory-brand recognition for `Scolmore Click`.
+- Preserved Hager preference for consumer units while allowing MK/Scolmore/BG accessory preference selection.
+- Uplifted 3-bed mid-range/premium rewires from 24 to 26 deterministic double sockets to close the `STD-003` under-quote gap without changing broader quote-total semantics.
+- Applied explicit `Aico` brand attributes to deterministic fire-detection requirements when the customer asks for Aico-branded alarms/detectors.
+
+Slice 3A.2 — resolver hardening:
+- Added hard rejection of garage consumer-unit collisions when resolving a whole-house `consumer_unit`.
+- Added a low-risk resolver retry without category filtering when the category-scoped search cannot resolve an edge mapping, preserving the existing generic fallback behavior.
+- Kept brand-critical hard rejects and retrieval evidence response shape unchanged.
+
+Slice 3B — generation handoff hardening:
+- Added suppression for unsupported generation-note claims (for example fixed-compliance/certification guarantees and unsupported wireless-interlink assertions) before response assembly.
+- Preserved retrieval quality-gate metadata, fallback signaling, and API persistence contract.
+
+Focused regression coverage added:
+- `services/ocerp/tests/test_quote_accuracy.py`
+  - 3-bed mid-range socket uplift
+  - `Aico` fire-detection brand propagation
+  - garage-board collision reject
+  - cross-category resolver fallback for `main_switch`
+- `services/ocerp/tests/test_boq.py`
+  - unsupported-claim suppression in final response notes
+- `services/api/tests/test_ocerp_client.py`
+  - retrieval quality-gate field persistence through API mapping
+
+Validation outcomes:
+- Targeted OCERP tests: `python3 -m pytest services/ocerp/tests/test_quote_accuracy.py services/ocerp/tests/test_boq.py -q` → 30 passed.
+- Broader OCERP regression suite: `python3 -m pytest services/ocerp/tests -q` → 77 passed.
+- API OCERP mapping tests: `python3 -m pytest services/api/tests/test_ocerp_client.py -q` → 5 passed.
+- CI-equivalent Python checks:
+  - `python3 -m ruff check .` → passed
+  - `python3 -m ruff format --check <touched files>` → passed
+  - `python3 -m mypy services/api packages/shared/py` → passed
+
+Production-like stack / Playwright evidence:
+- Initial `start-stack.sh` production-like run failed its password-sync step because `mtp_app` did not yet exist when `ALTER ROLE` ran.
+- Stack containers still built and started successfully; status confirmed via `docker compose ... ps`.
+- Initial `pre-prod-validation.sh` run failed because Django admin tables (`auth_user`) were not yet migrated in the admin container.
+- Recovery path:
+  - Ran `docker compose ... exec -T admin python manage.py migrate`
+  - Re-ran `pre-prod-validation.sh` successfully (Redis flush, tenant bootstrap, Django superuser creation).
+- Production-like Playwright gate:
+  - `pnpm exec playwright test -g "production validation" --config=playwright.config.prod.ts`
+  - Result: 9 passed, 1 flaky-pass on retry (`customer, quote, job and invoice lifecycle` timed out once waiting for the Create Invoice button, then passed on retry).
+
+Eval summary outcome:
+- `python3 -m pytest -m eval evals/test_golden_dataset.py::test_golden_dataset_summary -q`
+- Result: failed with `503 Service Unavailable` from `http://localhost:8002/ocerp/v1/boq/generate`.
+- Interpretation: local prod-like eval could not be completed in this sandbox because OCERP generation was running without a usable live LLM credential; no pass-rate comparison against the 94.12% baseline was obtainable from this run.
+
+Decision notes / follow-up deltas:
+1. Keep Slice 3 code changes: unit/regression coverage is green and the production-like gate recovered to green-with-retry.
+2. Track the prod-like startup ordering issue separately: `start-stack.sh` should not attempt `ALTER ROLE mtp_app` before the role exists.
+3. Track admin bootstrap readiness separately: production-like validation currently requires an explicit Django migrate before first admin-based bootstrap on a fresh stack.
+4. Re-run the eval summary with valid AI provider credentials to confirm whether `STD-003` improves from baseline and to re-check the 94.12% floor.
