@@ -22,6 +22,8 @@ from app.calculations import build_invoice_from_quote, calculate_quote_totals
 from app.clients.ocerp import OCERPClient, build_quote_from_ocerp_response
 from app.database import get_db
 from app.dependencies import CurrentUserDep, TenantDep
+from app.email import send_email
+from app.email_templates import render_quote_sent_email
 from app.limiter import limiter, tenant_key
 from app.models import BillOfQuantities, BoQLineItem, Contact, Quote, QuoteLineItem
 from app.rag import generate_quote_from_prompt, search_cost_items, validate_generated_quote
@@ -228,7 +230,7 @@ async def send_quote(
     current_user: CurrentUserDep,
     db: DbDep,
 ) -> QuoteRead:
-    """Mark a quote as sent."""
+    """Mark a quote as sent and email the customer a copy."""
     quote = await _get_quote(db, tenant.id, quote_id)
     quote.status = "sent"
     quote.sent_at = datetime.utcnow()
@@ -242,6 +244,38 @@ async def send_quote(
         entity_id=quote.id,
     )
     await db.commit()
+
+    # Send email notification to the customer (best-effort; never fail the request).
+    contact_email = quote.contact.email if quote.contact else None
+    if contact_email:
+        try:
+            snapshot = _quote_pdf_snapshot(quote, tenant.name)
+            pdf_bytes = await asyncio.to_thread(_render_quote_pdf, snapshot)
+            subject, html_body = render_quote_sent_email(
+                quote_ref=str(quote.id),
+                tenant_name=tenant.name,
+                quote_title=quote.title,
+                subtotal=quote.subtotal,
+                vat_amount=quote.vat_amount,
+                total=quote.total,
+                vat_rate=quote.vat_rate,
+                valid_until=quote.valid_until,
+                customer_name=quote.contact.name,
+            )
+            filename = f"quote-{quote.id}.pdf"
+            await send_email(
+                to_email=contact_email,
+                subject=subject,
+                html_body=html_body,
+                attachments=[(filename, "application/pdf", pdf_bytes)],
+            )
+        except Exception:
+            logger.warning(
+                "Failed to send quote email",
+                exc_info=True,
+                extra={"quote_id": str(quote.id), "tenant_id": str(tenant.id)},
+            )
+
     return QuoteRead.model_validate(await _get_quote(db, tenant.id, quote.id))
 
 
