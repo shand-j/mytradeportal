@@ -10,7 +10,7 @@ on:
         type: string
 
 concurrency:
-  group: pr-preview-smoke-${{ github.event.deployment.environment || inputs.preview_environment || github.ref }}
+  group: pr-preview-smoke-${{ github.event.deployment.environment || github.event.deployment_status.environment || inputs.preview_environment || github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -18,7 +18,12 @@ jobs:
     if: >
       (github.event_name == 'deployment_status' &&
       github.event.deployment_status.state == 'success' &&
-      startsWith(github.event.deployment.environment, 'pr-')) ||
+      (
+        startsWith(github.event.deployment.environment, 'pr-') ||
+        startsWith(github.event.deployment.environment, 'mytradeportal-pr-') ||
+        startsWith(github.event.deployment_status.environment, 'pr-') ||
+        startsWith(github.event.deployment_status.environment, 'mytradeportal-pr-')
+      )) ||
       (github.event_name == 'workflow_dispatch' && inputs.preview_environment != '')
     runs-on: ubuntu-latest
     timeout-minutes: 45
@@ -26,7 +31,7 @@ jobs:
       run:
         working-directory: web/app
     env:
-      PREVIEW_ENV: ${{ github.event.deployment.environment || inputs.preview_environment }}
+      PREVIEW_ENV: ${{ github.event.deployment.environment || github.event.deployment_status.environment || inputs.preview_environment }}
       RAILWAY_PROJECT_ID: 30feaeee-9464-41ac-9b17-d07ae4cfcd09
       RAILWAY_TOKEN: ${{ secrets.RAILWAY_PREVIEW_TOKEN || secrets.RAILWAY_TOKEN }}
       RAILWAY_API_TOKEN: ${{ secrets.RAILWAY_PREVIEW_TOKEN || secrets.RAILWAY_TOKEN }}
