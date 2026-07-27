@@ -90,6 +90,11 @@ def _extract_count_near(
 def _preferred_accessory_brand(
     prefers_bg: bool, prefers_mk: bool, prefers_hager: bool, prefers_scolmore: bool
 ) -> str | None:
+    """Return the strongest explicit accessory-brand preference.
+
+    Priority is intentional: retain the most specific plate/accessory ask first
+    (MK, then Scolmore Click), then fall back to broader commodity brands.
+    """
     if prefers_mk:
         return "mk"
     if prefers_scolmore:

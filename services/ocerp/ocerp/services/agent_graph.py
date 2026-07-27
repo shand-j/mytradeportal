@@ -70,9 +70,9 @@ _UNSUPPORTED_DESIGN_NOTE_PHRASES = (
     "bs 7671 compliant",
     "part p compliant",
     "part p certified",
-    "certified",
     "certificate included",
-    "guaranteed",
+    "guaranteed compliant",
+    "compliance guaranteed",
     "fixed quote",
     "wireless interlink confirmed",
 )
@@ -590,12 +590,26 @@ def _sanitized_design_notes(state: QuoteGraphState) -> str:
     lowered = design_notes.lower()
     if lowered.startswith("llm design payload was invalid;"):
         return design_notes
-    if any(phrase in lowered for phrase in _UNSUPPORTED_DESIGN_NOTE_PHRASES):
-        state.warnings.append(
-            "Suppressed unsupported claim from generation handoff notes; deterministic output is preserved."
+    kept_parts: list[str] = []
+    suppressed_phrases: list[str] = []
+    for raw_part in [part.strip() for part in design_notes.split(".") if part.strip()]:
+        part = raw_part.lower()
+        matched_phrase = next(
+            (phrase for phrase in _UNSUPPORTED_DESIGN_NOTE_PHRASES if phrase in part),
+            None,
         )
+        if matched_phrase is not None:
+            suppressed_phrases.append(matched_phrase)
+            continue
+        kept_parts.append(raw_part)
+    if suppressed_phrases:
+        state.warnings.append(
+            "Suppressed unsupported claim from generation handoff notes; deterministic output is preserved. "
+            f"Removed: {', '.join(sorted(set(suppressed_phrases)))}."
+        )
+    if not kept_parts:
         return ""
-    return design_notes
+    return ". ".join(kept_parts) + "."
 
 
 def review_node(state: QuoteGraphState) -> None:

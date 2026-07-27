@@ -341,7 +341,9 @@ async def test_resolver_falls_back_to_cross_category_search_for_edge_mapping() -
 
         async def search(self, requirement, trade, region, category=None):
             self.calls.append(
-                category if isinstance(category, str) or category is None else "default"
+                category
+                if isinstance(category, str) or category is None
+                else "requirement_category"
             )
             if category == "Switches & Sockets":
                 return []
