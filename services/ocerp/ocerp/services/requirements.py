@@ -88,12 +88,14 @@ def _extract_count_near(
 
 
 def _preferred_accessory_brand(
-    prefers_bg: bool, prefers_mk: bool, prefers_hager: bool
+    prefers_bg: bool, prefers_mk: bool, prefers_hager: bool, prefers_scolmore: bool
 ) -> str | None:
-    if prefers_bg:
-        return "british general"
     if prefers_mk:
         return "mk"
+    if prefers_scolmore:
+        return "scolmore click"
+    if prefers_bg:
+        return "british general"
     if prefers_hager:
         return "hager"
     return None
@@ -197,6 +199,12 @@ class RequirementEngine:
         self.prefers_bg = "british general" in self.desc
         self.prefers_mk = " mk" in self.desc or "mk " in self.desc or self.desc.startswith("mk ")
         self.prefers_hager = "hager" in self.desc
+        self.prefers_scolmore = (
+            "scolmore click" in self.desc
+            or "scolmore" in self.desc
+            or "click accessories" in self.desc
+        )
+        self.prefers_aico = "aico" in self.desc
         self.prefers_chrome = (
             "brushed chrome" in self.desc
             or "brushed steel" in self.desc
@@ -639,13 +647,18 @@ class RequirementEngine:
         # Consumer unit upgrades are not full rewires, so we add a small amount
         # of accessories (not cable) to reflect the likely final material cost.
         if self.is_cu_upgrade and not self.is_rewire:
+            smoke_attrs: dict[str, Any] = {"type": "smoke", "mains": True}
+            heat_attrs: dict[str, Any] = {"type": "heat"}
+            if self.prefers_aico:
+                smoke_attrs["brand"] = "aico"
+                heat_attrs["brand"] = "aico"
             if not _has_concept(reqs, "smoke_alarm"):
                 reqs.append(
                     _req(
                         "smoke_alarm",
                         "Security & Fire",
                         Decimal("1"),
-                        {"type": "smoke", "mains": True},
+                        smoke_attrs,
                         scope_tag="cu_upgrade",
                         notes="Smoke alarm check with consumer unit upgrade",
                     )
@@ -656,7 +669,7 @@ class RequirementEngine:
                         "heat_detector",
                         "Security & Fire",
                         Decimal("1"),
-                        {"type": "heat"},
+                        heat_attrs,
                         scope_tag="cu_upgrade",
                         notes="Heat detector with consumer unit upgrade",
                     )
@@ -793,7 +806,9 @@ class RequirementEngine:
         return reqs
 
     def _sockets_and_lights(self, reqs: list[BoQRequirement]) -> list[BoQRequirement]:
-        brand = _preferred_accessory_brand(self.prefers_bg, self.prefers_mk, self.prefers_hager)
+        brand = _preferred_accessory_brand(
+            self.prefers_bg, self.prefers_mk, self.prefers_hager, self.prefers_scolmore
+        )
 
         if self.is_rewire:
             if self.is_partial_rewire:
@@ -803,7 +818,11 @@ class RequirementEngine:
             elif self.bedrooms <= 2:
                 target_sockets = Decimal("16")
             elif self.bedrooms <= 3:
-                target_sockets = Decimal("24")
+                target_sockets = (
+                    Decimal("26")
+                    if self.is_mid_range or self.is_premium or self.prefers_scolmore
+                    else Decimal("24")
+                )
             else:
                 target_sockets = Decimal("32")
 
@@ -1199,12 +1218,15 @@ class RequirementEngine:
             predicate=lambda r: r.concept == "smoke_alarm",
         )
         if current_smoke < target_smoke:
+            smoke_attrs: dict[str, Any] = {"type": "smoke", "mains": True}
+            if self.prefers_aico:
+                smoke_attrs["brand"] = "aico"
             reqs.append(
                 _req(
                     "smoke_alarm",
                     "Security & Fire",
                     target_smoke - current_smoke,
-                    {"type": "smoke", "mains": True},
+                    smoke_attrs,
                     scope_tag="rewire",
                     notes="Mandatory smoke alarm",
                 )
@@ -1217,12 +1239,15 @@ class RequirementEngine:
             predicate=lambda r: r.concept == "heat_detector",
         )
         if current_heat < target_heat:
+            heat_attrs: dict[str, Any] = {"type": "heat"}
+            if self.prefers_aico:
+                heat_attrs["brand"] = "aico"
             reqs.append(
                 _req(
                     "heat_detector",
                     "Security & Fire",
                     target_heat - current_heat,
-                    {"type": "heat"},
+                    heat_attrs,
                     scope_tag="rewire",
                     notes="Mandatory heat detector",
                 )
@@ -1246,12 +1271,15 @@ class RequirementEngine:
                 predicate=lambda r: r.concept == "carbon_monoxide_alarm",
             )
             if current_co < co_target:
+                co_attrs: dict[str, Any] = {"type": "co"}
+                if self.prefers_aico:
+                    co_attrs["brand"] = "aico"
                 reqs.append(
                     _req(
                         "carbon_monoxide_alarm",
                         "Security & Fire",
                         co_target - current_co,
-                        {"type": "co"},
+                        co_attrs,
                         scope_tag="rewire",
                         notes="Mandatory CO alarm",
                     )

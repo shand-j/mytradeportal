@@ -65,6 +65,18 @@ from ocerp.services.resolver import CatalogueResolver
 
 logger = logging.getLogger(__name__)
 
+_UNSUPPORTED_DESIGN_NOTE_PHRASES = (
+    "fully compliant",
+    "bs 7671 compliant",
+    "part p compliant",
+    "part p certified",
+    "certified",
+    "certificate included",
+    "guaranteed",
+    "fixed quote",
+    "wireless interlink confirmed",
+)
+
 
 class _DesignAnalysis(BaseModel):
     model_config = ConfigDict(extra="forbid")
@@ -570,6 +582,22 @@ def validation_node(state: QuoteGraphState) -> None:
         state.warnings.extend(quality_warnings)
 
 
+def _sanitized_design_notes(state: QuoteGraphState) -> str:
+    """Return only design notes that are safe to surface to API consumers."""
+    design_notes = str(state.design.get("notes", "")).strip()
+    if not design_notes:
+        return ""
+    lowered = design_notes.lower()
+    if lowered.startswith("llm design payload was invalid;"):
+        return design_notes
+    if any(phrase in lowered for phrase in _UNSUPPORTED_DESIGN_NOTE_PHRASES):
+        state.warnings.append(
+            "Suppressed unsupported claim from generation handoff notes; deterministic output is preserved."
+        )
+        return ""
+    return design_notes
+
+
 def review_node(state: QuoteGraphState) -> None:
     """Assemble the final response with citations, warnings and confidence."""
     indicative_caveat = (
@@ -580,7 +608,7 @@ def review_node(state: QuoteGraphState) -> None:
     )
 
     notes_parts = [indicative_caveat]
-    design_notes = state.design.get("notes", "")
+    design_notes = _sanitized_design_notes(state)
     if design_notes:
         notes_parts.append(design_notes)
     if state.resolve_warnings:
