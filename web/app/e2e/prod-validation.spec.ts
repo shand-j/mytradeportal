@@ -16,6 +16,7 @@ import {
 const djangoUsername = process.env.E2E_DJANGO_ADMIN_USERNAME ?? 'superadmin';
 const djangoPassword = process.env.E2E_DJANGO_ADMIN_PASSWORD ?? '';
 const adminBaseUrl = process.env.E2E_ADMIN_BASE_URL ?? 'http://localhost:8001';
+const apiBaseUrl = process.env.E2E_API_BASE_URL ?? 'http://demo.localhost:8000';
 const setupToken = process.env.SETUP_TOKEN ?? '';
 
 // Require at least one bootstrap path: setup-token API (preferred) or Django admin.
@@ -54,7 +55,7 @@ test.describe('production validation', () => {
   };
 
   test('health endpoints are reachable', async ({ request }) => {
-    const api = await request.get('http://demo.localhost:8000/health');
+    const api = await request.get(`${apiBaseUrl}/health`);
     expect(api.ok()).toBeTruthy();
 
     const web = await request.get('http://demo.localhost:3000');
@@ -71,7 +72,7 @@ test.describe('production validation', () => {
     adminEmail = `admin-${id}@example.com`;
 
     if (setupToken) {
-      const response = await request.post('http://demo.localhost:8000/tenants', {
+      const response = await request.post(`${apiBaseUrl}/tenants`, {
         headers: {
           'Content-Type': 'application/json',
           'X-Setup-Token': setupToken,
@@ -110,7 +111,7 @@ test.describe('production validation', () => {
 
     let cookie: string | null = null;
     for (let attempt = 0; attempt < 10; attempt++) {
-      const loginResponse = await request.post('http://demo.localhost:8000/auth/login', {
+      const loginResponse = await request.post(`${apiBaseUrl}/auth/login`, {
         data: {
           tenant_slug: tenantSlug,
           email: adminEmail,
@@ -265,7 +266,7 @@ test.describe('production validation', () => {
   });
 
   test('feature flags are served', async ({ page }) => {
-    const response = await page.request.get('http://demo.localhost:8000/feature-flags');
+    const response = await page.request.get(`${apiBaseUrl}/feature-flags`);
     expect(response.ok()).toBeTruthy();
     const body = await response.json();
     expect(body).toHaveProperty('voice_ai_insights');
