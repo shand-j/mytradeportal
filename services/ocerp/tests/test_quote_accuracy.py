@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 from decimal import Decimal
+from typing import Any
 
 import pytest
 from mtp_shared import BoQGenerateRequest
 from ocerp.services.boq_models import BoQRequirement
 from ocerp.services.requirements import RequirementEngine
 from ocerp.services.resolver import (
+    CategoryOverride,
     CatalogueResolver,
     SupplierConnector,
     _brand_score,
@@ -339,7 +341,13 @@ async def test_resolver_falls_back_to_cross_category_search_for_edge_mapping() -
         def __init__(self) -> None:
             self.calls: list[str | None] = []
 
-        async def search(self, requirement, trade, region, category=None):
+        async def search(
+            self,
+            requirement: BoQRequirement,
+            trade: str,
+            region: str,
+            category: CategoryOverride = None,
+        ) -> list[dict[str, Any]]:
             recorded_category = (
                 category
                 if isinstance(category, str) or category is None

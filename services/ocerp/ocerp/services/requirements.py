@@ -94,6 +94,8 @@ def _preferred_accessory_brand(
 
     The deterministic priority order is MK > Scolmore Click > British General
     > Hager so the most specific accessory ask wins before broader fallbacks.
+    The boolean inputs intentionally mirror the parser flags derived from the
+    free-text description so the precedence stays local to one helper.
     """
     if prefers_mk:
         return "mk"

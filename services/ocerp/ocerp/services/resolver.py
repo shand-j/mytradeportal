@@ -13,12 +13,16 @@ from abc import ABC, abstractmethod
 from decimal import Decimal
 from typing import Any
 
-# Sentinel default for connector search calls: lets the resolver distinguish
-# between "use the requirement's category" and an explicit category-less retry.
 from ocerp.retrieval import search_cost_items
 from ocerp.services.boq_models import BoQRequirement, ResolvedCostItem
 
-_USE_REQUIREMENT_CATEGORY = object()
+
+class _UseRequirementCategory:
+    """Typed sentinel for connector searches that should use the requirement category."""
+
+
+CategoryOverride = str | None | _UseRequirementCategory
+_USE_REQUIREMENT_CATEGORY = _UseRequirementCategory()
 
 
 def _norm(text: str | None) -> str:
@@ -421,7 +425,7 @@ class SupplierConnector(ABC):
         requirement: BoQRequirement,
         trade: str,
         region: str,
-        category: str | object | None = _USE_REQUIREMENT_CATEGORY,
+        category: CategoryOverride = _USE_REQUIREMENT_CATEGORY,
     ) -> list[dict[str, Any]]:
         """Return candidate cost items for the requirement."""
         ...
@@ -440,7 +444,7 @@ class SourceConnector(SupplierConnector):
         requirement: BoQRequirement,
         trade: str,
         region: str,
-        category: str | object | None = _USE_REQUIREMENT_CATEGORY,
+        category: CategoryOverride = _USE_REQUIREMENT_CATEGORY,
     ) -> list[dict[str, Any]]:
         query = _build_query(requirement)
         resolved_category = (
