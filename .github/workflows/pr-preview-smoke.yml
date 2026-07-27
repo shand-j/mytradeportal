@@ -31,7 +31,7 @@ jobs:
       run:
         working-directory: web/app
     env:
-      PREVIEW_ENV: ${{ github.event.deployment.environment.payload.environmentId }}
+      PREVIEW_ENV: ${{ github.event.deployment.payload.environmentId }}
       RAILWAY_PROJECT_ID: 30feaeee-9464-41ac-9b17-d07ae4cfcd09
       RAILWAY_TOKEN: ${{ secrets.RAILWAY_PREVIEW_TOKEN || secrets.RAILWAY_TOKEN }}
       RAILWAY_API_TOKEN: ${{ secrets.RAILWAY_PREVIEW_TOKEN || secrets.RAILWAY_TOKEN }}
