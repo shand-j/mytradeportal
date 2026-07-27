@@ -131,11 +131,12 @@ jobs:
         run: npm install -g @railway/cli
 
       - name: Install test dependencies
+        working-directory: .
         run: |
           python -m pip install --upgrade pip
-          pip install -e ".[dev]"
-          pnpm install --frozen-lockfile
-          pnpm exec playwright install chromium
+          pip install -e "./[dev]"
+          pnpm --dir web/app install --frozen-lockfile
+          pnpm --dir web/app exec playwright install chromium
 
       - name: Resolve Railway PR environment and preview URLs
         working-directory: .
