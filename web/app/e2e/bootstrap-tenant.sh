@@ -14,6 +14,7 @@ SETUP_TOKEN="${SETUP_TOKEN:-}"
 DJANGO_USERNAME="${E2E_DJANGO_ADMIN_USERNAME:-superadmin}"
 DJANGO_PASSWORD="${E2E_DJANGO_ADMIN_PASSWORD:-super-password-123}"
 API_BASE_URL="${E2E_API_BASE_URL:-http://demo.localhost:8000}"
+ADMIN_BASE_URL="${E2E_ADMIN_BASE_URL:-http://localhost:8001}"
 
 cd "$(dirname "$0")/../../.."
 
@@ -41,7 +42,7 @@ wait_for_api() {
 wait_for_admin() {
   echo "Waiting for admin health check..."
   for i in {1..60}; do
-    if curl -sS -o /dev/null -w "%{http_code}" http://localhost:8001/admin/login/ | grep -q "200\|302"; then
+    if curl -sS -o /dev/null -w "%{http_code}" "${ADMIN_BASE_URL}/admin/login/" | grep -q "200\|302"; then
       echo "Admin is reachable"
       return 0
     fi

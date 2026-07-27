@@ -17,6 +17,7 @@ import { renderHookWithProviders, createTestQueryClient } from '@/test/test-util
 import type { Quote, BillOfQuantities } from '@/types';
 
 const mockFetch = vi.fn();
+const API_BASE_URL = 'http://demo.localhost:8000';
 
 function buildResponse(body: unknown, status = 200) {
   return {
@@ -64,7 +65,7 @@ function renderHookNoAuth<TProps, TResult>(hook: (props: TProps) => TResult) {
 describe('quote hooks', () => {
   beforeEach(() => {
     globalThis.fetch = mockFetch as unknown as typeof fetch;
-    vi.stubEnv('VITE_API_BASE_URL', 'http://demo.localhost:8000');
+    vi.stubEnv('VITE_API_BASE_URL', API_BASE_URL);
   });
 
   afterEach(() => {
@@ -104,7 +105,7 @@ describe('quote hooks', () => {
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
 
     expect(mockFetch).toHaveBeenCalledWith(
-      'http://demo.localhost:8000/quotes',
+      `${API_BASE_URL}/quotes`,
       expect.objectContaining({ method: 'GET', credentials: 'include' }),
     );
 
@@ -122,7 +123,7 @@ describe('quote hooks', () => {
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
 
     expect(mockFetch).toHaveBeenCalledWith(
-      'http://demo.localhost:8000/quotes/q1',
+      `${API_BASE_URL}/quotes/q1`,
       expect.objectContaining({ method: 'GET' }),
     );
     expect((result.current.data as Quote).status).toBe('sent');
@@ -169,7 +170,7 @@ describe('quote hooks', () => {
     });
 
     expect(mockFetch).toHaveBeenCalledWith(
-      'http://demo.localhost:8000/quotes',
+      `${API_BASE_URL}/quotes`,
       expect.objectContaining({ method: 'POST' }),
     );
 
@@ -193,7 +194,7 @@ describe('quote hooks', () => {
     await result.current.mutateAsync('q1');
 
     expect(mockFetch).toHaveBeenCalledWith(
-      'http://demo.localhost:8000/quotes/q1/send',
+      `${API_BASE_URL}/quotes/q1/send`,
       expect.objectContaining({ method: 'POST' }),
     );
 
@@ -213,7 +214,7 @@ describe('quote hooks', () => {
     await result.current.mutateAsync({ id: 'q1', data: { status: 'sent' } as Partial<Quote> });
 
     expect(mockFetch).toHaveBeenCalledWith(
-      'http://demo.localhost:8000/quotes/q1',
+      `${API_BASE_URL}/quotes/q1`,
       expect.objectContaining({ method: 'PATCH' }),
     );
 
@@ -234,7 +235,7 @@ describe('quote hooks', () => {
     await result.current.mutateAsync('q1');
 
     expect(mockFetch).toHaveBeenCalledWith(
-      'http://demo.localhost:8000/quotes/q1',
+      `${API_BASE_URL}/quotes/q1`,
       expect.objectContaining({ method: 'DELETE' }),
     );
 
@@ -258,7 +259,7 @@ describe('quote hooks', () => {
     });
 
     expect(mockFetch).toHaveBeenCalledWith(
-      'http://demo.localhost:8000/quotes/generate',
+      `${API_BASE_URL}/quotes/generate`,
       expect.objectContaining({ method: 'POST' }),
     );
 
@@ -281,7 +282,7 @@ describe('quote hooks', () => {
     await result.current.mutateAsync({ id: 'q1', instructions: 'Add more sockets' });
 
     expect(mockFetch).toHaveBeenCalledWith(
-      'http://demo.localhost:8000/quotes/q1/refine',
+      `${API_BASE_URL}/quotes/q1/refine`,
       expect.objectContaining({ method: 'POST' }),
     );
 
@@ -307,7 +308,7 @@ describe('quote hooks', () => {
     await result.current.mutateAsync('q1');
 
     expect(mockFetch).toHaveBeenCalledWith(
-      'http://demo.localhost:8000/quotes/q1/convert-to-invoice',
+      `${API_BASE_URL}/quotes/q1/convert-to-invoice`,
       expect.objectContaining({ method: 'POST' }),
     );
 
@@ -340,7 +341,7 @@ describe('quote hooks', () => {
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
 
     expect(mockFetch).toHaveBeenCalledWith(
-      'http://demo.localhost:8000/quotes/q1/boq',
+      `${API_BASE_URL}/quotes/q1/boq`,
       expect.objectContaining({ method: 'GET' }),
     );
 

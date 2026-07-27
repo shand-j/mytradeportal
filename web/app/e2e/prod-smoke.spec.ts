@@ -25,7 +25,7 @@ function resolveSmokeApiBaseUrl(): string {
     }
     return `http://${parsed.hostname}:8000`;
   } catch {
-    return 'http://demo.localhost:8000';
+    return 'http://127.0.0.1:8000';
   }
 }
 

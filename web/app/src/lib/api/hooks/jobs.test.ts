@@ -6,6 +6,7 @@ import { renderHookWithProviders, createTestQueryClient } from '@/test/test-util
 import type { Job } from '@/types';
 
 const mockFetch = vi.fn();
+const API_BASE_URL = 'http://demo.localhost:8000';
 
 function buildResponse(body: unknown, status = 200) {
   return {
@@ -52,7 +53,7 @@ function renderHookNoAuth<TProps, TResult>(hook: (props: TProps) => TResult) {
 describe('job hooks', () => {
   beforeEach(() => {
     globalThis.fetch = mockFetch as unknown as typeof fetch;
-    vi.stubEnv('VITE_API_BASE_URL', 'http://demo.localhost:8000');
+    vi.stubEnv('VITE_API_BASE_URL', API_BASE_URL);
   });
 
   afterEach(() => {
@@ -68,7 +69,7 @@ describe('job hooks', () => {
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
 
     expect(mockFetch).toHaveBeenCalledWith(
-      'http://demo.localhost:8000/jobs',
+      `${API_BASE_URL}/jobs`,
       expect.objectContaining({ method: 'GET' }),
     );
 
@@ -87,7 +88,7 @@ describe('job hooks', () => {
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
 
     expect(mockFetch).toHaveBeenCalledWith(
-      'http://demo.localhost:8000/jobs/j1',
+      `${API_BASE_URL}/jobs/j1`,
       expect.objectContaining({ method: 'GET' }),
     );
     expect((result.current.data as Job).status).toBe('in_progress');
@@ -125,7 +126,7 @@ describe('job hooks', () => {
     });
 
     expect(mockFetch).toHaveBeenCalledWith(
-      'http://demo.localhost:8000/jobs',
+      `${API_BASE_URL}/jobs`,
       expect.objectContaining({ method: 'POST' }),
     );
 
@@ -149,7 +150,7 @@ describe('job hooks', () => {
     await result.current.mutateAsync({ id: 'j1', data: { serviceType: 'Upgrade', propertyAddress: '2 Lane', scheduledDate: '2025-02-02' } as Partial<Job> });
 
     expect(mockFetch).toHaveBeenCalledWith(
-      'http://demo.localhost:8000/jobs/j1',
+      `${API_BASE_URL}/jobs/j1`,
       expect.objectContaining({ method: 'PATCH' }),
     );
 
@@ -176,7 +177,7 @@ describe('job hooks', () => {
     await result.current.mutateAsync('j1');
 
     expect(mockFetch).toHaveBeenCalledWith(
-      `http://demo.localhost:8000/jobs/j1/${action}`,
+      `${API_BASE_URL}/jobs/j1/${action}`,
       expect.objectContaining({ method: 'POST' }),
     );
 
@@ -199,7 +200,7 @@ describe('job hooks', () => {
     await result.current.mutateAsync('j1');
 
     expect(mockFetch).toHaveBeenCalledWith(
-      'http://demo.localhost:8000/jobs/j1',
+      `${API_BASE_URL}/jobs/j1`,
       expect.objectContaining({ method: 'DELETE' }),
     );
     expect(queryClient.getQueryCache().find({ queryKey: ['jobs'] })?.state.isInvalidated).toBe(true);

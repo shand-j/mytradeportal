@@ -6,6 +6,7 @@ set -e
 
 ENV_FILE="${ENV_FILE:-.env}"
 COMPOSE_FILES="-f docker-compose.yml"
+API_BASE_URL="${E2E_API_BASE_URL:-http://demo.localhost:8000}"
 
 cd "$(dirname "$0")/../../.."
 
@@ -29,7 +30,7 @@ fi
 
 echo "Waiting for API health check..."
 for i in {1..60}; do
-  if curl -sS http://demo.localhost:8000/health >/dev/null 2>&1; then
+  if curl -sS "${API_BASE_URL}/health" >/dev/null 2>&1; then
     echo "API is healthy"
     break
   fi

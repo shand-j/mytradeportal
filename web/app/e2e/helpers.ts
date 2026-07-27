@@ -1,5 +1,19 @@
 import type { Page } from '@playwright/test';
 
+const e2eBaseUrl = process.env.E2E_BASE_URL ?? 'http://demo.localhost:3000';
+
+function resolveE2eApiBaseUrl(): string {
+  const explicit = process.env.E2E_API_BASE_URL;
+  if (explicit && explicit !== '') {
+    return explicit;
+  }
+  const parsed = new URL(e2eBaseUrl);
+  if (parsed.hostname.startsWith('web-') && parsed.hostname.endsWith('.up.railway.app')) {
+    return `${parsed.protocol}//${parsed.hostname.replace(/^web-/, 'api-')}`;
+  }
+  return `http://${parsed.hostname}:8000`;
+}
+
 function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
@@ -69,7 +83,9 @@ export async function ensureDefaultAdminSession(page: Page): Promise<void> {
   const tenantSlug = process.env.E2E_TENANT_SLUG ?? 'demo';
   const adminEmail = process.env.E2E_ADMIN_EMAIL ?? 'admin@demo.example.com';
   const adminPassword = process.env.E2E_ADMIN_PASSWORD ?? 'e2e-password-123';
-  const apiBaseUrl = process.env.E2E_API_BASE_URL ?? 'http://127.0.0.1:8000';
+  const apiBaseUrl = resolveE2eApiBaseUrl();
+  const appHost = new URL(e2eBaseUrl).hostname;
+  const isSecureContext = new URL(e2eBaseUrl).protocol === 'https:';
 
   let sessionCookie: string | null = null;
   for (let attempt = 0; attempt < 10; attempt++) {
@@ -103,10 +119,10 @@ export async function ensureDefaultAdminSession(page: Page): Promise<void> {
     {
       name: 'session',
       value: sessionCookie,
-      domain: 'demo.localhost',
+      domain: appHost,
       path: '/',
       httpOnly: true,
-      secure: false,
+      secure: isSecureContext,
       sameSite: 'Lax',
     },
   ]);

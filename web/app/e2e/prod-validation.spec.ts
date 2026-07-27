@@ -15,9 +15,24 @@ import {
 
 const djangoUsername = process.env.E2E_DJANGO_ADMIN_USERNAME ?? 'superadmin';
 const djangoPassword = process.env.E2E_DJANGO_ADMIN_PASSWORD ?? '';
+const webBaseUrl = process.env.E2E_BASE_URL ?? 'http://demo.localhost:3000';
 const adminBaseUrl = process.env.E2E_ADMIN_BASE_URL ?? 'http://localhost:8001';
-const apiBaseUrl = process.env.E2E_API_BASE_URL ?? 'http://demo.localhost:8000';
 const setupToken = process.env.SETUP_TOKEN ?? '';
+const webBase = new URL(webBaseUrl);
+const adminBase = new URL(adminBaseUrl);
+
+function resolveApiBaseUrl(): string {
+  const explicit = process.env.E2E_API_BASE_URL;
+  if (explicit && explicit !== '') {
+    return explicit;
+  }
+  if (webBase.hostname.startsWith('web-') && webBase.hostname.endsWith('.up.railway.app')) {
+    return `${webBase.protocol}//${webBase.hostname.replace(/^web-/, 'api-')}`;
+  }
+  return `http://${webBase.hostname}:8000`;
+}
+
+const apiBaseUrl = resolveApiBaseUrl();
 
 // Require at least one bootstrap path: setup-token API (preferred) or Django admin.
 test.skip(!setupToken && !djangoPassword, 'SETUP_TOKEN or E2E_DJANGO_ADMIN_PASSWORD is required');
@@ -45,10 +60,10 @@ test.describe('production validation', () => {
       {
         name: 'session',
         value: tenantSessionCookie,
-        domain: 'demo.localhost',
+        domain: webBase.hostname,
         path: '/',
         httpOnly: true,
-        secure: false,
+        secure: webBase.protocol === 'https:',
         sameSite: 'Lax',
       },
     ]);
@@ -58,10 +73,10 @@ test.describe('production validation', () => {
     const api = await request.get(`${apiBaseUrl}/health`);
     expect(api.ok()).toBeTruthy();
 
-    const web = await request.get('http://demo.localhost:3000');
+    const web = await request.get(webBaseUrl);
     expect(web.ok()).toBeTruthy();
 
-    const admin = await request.get('http://localhost:8001/admin/login/');
+    const admin = await request.get(`${adminBase.origin}/admin/login/`);
     expect([200, 302]).toContain(admin.status());
   });
 
