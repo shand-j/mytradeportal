@@ -304,6 +304,8 @@ class BillOfQuantities(Base, TimestampMixin):
     )
     # Back-office only profitability indicator snapshot from OCERP.
     margin_indicator: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict, nullable=False)
+    # Retrieval provenance and quality-gate metadata emitted by OCERP.
+    retrieval_evidence: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict, nullable=False)
     standard: Mapped[str | None] = mapped_column(String(50), nullable=True)
 
     quote: Mapped[Quote] = relationship("Quote", back_populates="bill_of_quantities")

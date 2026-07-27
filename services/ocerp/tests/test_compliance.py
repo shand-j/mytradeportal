@@ -8,6 +8,7 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 from mtp_shared import BoQGenerateRequest, BoQLineItem
+from ocerp.config import settings
 from ocerp.services.boq_engine import DdcLlmBackend
 from ocerp.services.compliance import (
     ComplianceContext,
@@ -328,6 +329,14 @@ async def test_backend_attaches_citations_and_compliance_warnings_to_response() 
     assert "isolator" in joined
     assert "swa" in joined or "armoured" in joined
 
+    assert response.retrieval_evidence is not None
+    assert "ev_charger" in response.retrieval_evidence.job_types
+    assert response.retrieval_evidence.citations_used >= 1
+    assert response.retrieval_evidence.knowledge_available is True
+    assert any(
+        "knowledge" in source.lower() for source in response.retrieval_evidence.source_documents
+    )
+
 
 def test_compliance_context_dataclass_is_serialisable_for_logging() -> None:
     """Smoke check: the dataclass is plain enough to be safely logged."""
@@ -339,3 +348,64 @@ def test_compliance_context_dataclass_is_serialisable_for_logging() -> None:
     )
     assert ctx.job_types == ["rewire"]
     assert ctx.knowledge_available
+
+
+@pytest.mark.asyncio
+async def test_retrieval_quality_gate_applies_deterministic_fallback(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Low retrieval quality should trigger configured fallback policy metadata."""
+    store = _RecordingKnowledgeStore(
+        {
+            ("ev_charger", "mandatory"): [
+                _chunk(
+                    "ev-low-score",
+                    text="General EV guidance.",
+                    section=["BS 7671", "Section 722"],
+                    rule_tier="mandatory",
+                    job_types=["ev_charger"],
+                    score=0.22,
+                ),
+            ],
+        }
+    )
+
+    monkeypatch.setattr(settings, "retrieval_quality_min_citations", 2)
+    monkeypatch.setattr(settings, "retrieval_quality_min_top_relevance", 0.8)
+    monkeypatch.setattr(settings, "retrieval_quality_require_knowledge_available", True)
+    monkeypatch.setattr(settings, "retrieval_quality_fallback_policy", "deterministic_only")
+    monkeypatch.setattr(settings, "retrieval_quality_confidence_cap", 0.6)
+
+    with (
+        patch("ocerp.services.agent_graph.search_cost_items", new=AsyncMock(return_value=[])),
+        patch(
+            "ocerp.services.agent_graph.generate_boq_from_prompt",
+            new=AsyncMock(
+                return_value={
+                    "analysis": {
+                        "job_summary": "Install EV charger",
+                        "room_count": None,
+                        "spec_level": "mid_range",
+                        "regulatory_flags": [],
+                    },
+                    "requirements": [],
+                    "notes": "",
+                }
+            ),
+        ),
+        patch("ocerp.services.agent_graph.CatalogueResolver", _ResolverYieldingSocket),
+    ):
+        backend = DdcLlmBackend(knowledge_store=store)
+        response = await backend.generate(
+            BoQGenerateRequest(
+                description="Install an EV charger on the driveway",
+                trade="electrical",
+                region="UK",
+            )
+        )
+
+    assert response.retrieval_evidence is not None
+    assert response.retrieval_evidence.quality_gate_passed is False
+    assert response.retrieval_evidence.fallback_policy_applied == "deterministic_only"
+    assert response.retrieval_evidence.quality_gate_reasons
+    assert any("retrieval quality gate failed" in warning.lower() for warning in response.warnings)

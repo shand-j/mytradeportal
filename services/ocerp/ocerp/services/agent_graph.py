@@ -23,6 +23,7 @@ from mtp_shared import (
     CustomerSummaryLine,
     MarginIndicator,
     QuoteAnalysis,
+    RetrievalEvidence,
 )
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
@@ -60,6 +61,7 @@ from ocerp.services.pricing import (
 )
 from ocerp.services.requirements import generate_requirements
 from ocerp.services.resolver import CatalogueResolver
+from ocerp.config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -427,6 +429,101 @@ def _build_margin_indicator(
     )
 
 
+def _build_retrieval_evidence(state: QuoteGraphState) -> RetrievalEvidence | None:
+    """Build deterministic retrieval metadata for observability and evals."""
+    if state.compliance is None:
+        return None
+
+    citations = state.compliance.citations
+    source_documents = sorted({c.source for c in citations if c.source})
+    top_relevance_score = max((float(c.relevance_score) for c in citations), default=0.0)
+
+    resolved_sources = sorted(
+        {
+            str(item.cost_item.get("source"))
+            for item in state.resolved
+            if item.cost_item.get("source")
+        }
+    )
+
+    return RetrievalEvidence(
+        knowledge_available=state.compliance.knowledge_available,
+        job_types=list(state.compliance.job_types),
+        citations_used=len(citations),
+        source_documents=source_documents,
+        retrieval_warnings=list(state.compliance.retrieval_warnings),
+        top_relevance_score=top_relevance_score,
+        resolved_catalogue_items=len(state.resolved),
+        resolved_catalogue_sources=resolved_sources,
+    )
+
+
+def _apply_retrieval_quality_gate(
+    state: QuoteGraphState,
+    evidence: RetrievalEvidence,
+) -> RetrievalEvidence:
+    """Evaluate retrieval quality thresholds and apply fallback policy."""
+    checks_run = 0
+    checks_passed = 0
+    reasons: list[str] = []
+
+    if settings.retrieval_quality_require_knowledge_available:
+        checks_run += 1
+        if evidence.knowledge_available:
+            checks_passed += 1
+        else:
+            reasons.append("knowledge store unavailable")
+
+    if settings.retrieval_quality_min_citations > 0:
+        checks_run += 1
+        if evidence.citations_used >= settings.retrieval_quality_min_citations:
+            checks_passed += 1
+        else:
+            reasons.append(
+                "insufficient citations "
+                f"({evidence.citations_used} < {settings.retrieval_quality_min_citations})"
+            )
+
+    if settings.retrieval_quality_min_top_relevance > 0:
+        checks_run += 1
+        if evidence.top_relevance_score >= settings.retrieval_quality_min_top_relevance:
+            checks_passed += 1
+        else:
+            reasons.append(
+                "top relevance below threshold "
+                f"({evidence.top_relevance_score:.3f} < {settings.retrieval_quality_min_top_relevance:.3f})"
+            )
+
+    quality_score = 1.0
+    if checks_run > 0:
+        quality_score = round(checks_passed / checks_run, 3)
+
+    gate_passed = not reasons
+    fallback_policy_applied = "none"
+    confidence_capped = False
+
+    if not gate_passed:
+        fallback_policy_applied = settings.retrieval_quality_fallback_policy
+        state.warnings.append(
+            "Retrieval quality gate failed: "
+            + "; ".join(reasons)
+            + ". Fallback policy: "
+            + settings.retrieval_quality_fallback_policy
+        )
+        if settings.retrieval_quality_fallback_policy == "deterministic_only":
+            cap = Decimal(str(settings.retrieval_quality_confidence_cap)).quantize(Decimal("0.1"))
+            if state.confidence > cap:
+                state.confidence = cap
+                confidence_capped = True
+
+    evidence.quality_score = quality_score
+    evidence.quality_gate_passed = gate_passed
+    evidence.quality_gate_reasons = reasons
+    evidence.fallback_policy_applied = fallback_policy_applied
+    evidence.confidence_capped = confidence_capped
+    return evidence
+
+
 def validation_node(state: QuoteGraphState) -> None:
     """Run deterministic quality checks inspired by Section 14.4 pitfalls."""
     quality_warnings: list[str] = []
@@ -506,6 +603,9 @@ def review_node(state: QuoteGraphState) -> None:
         )
 
     state.confidence = _confidence(state.resolved, state.warnings, state.design)
+    retrieval_evidence = _build_retrieval_evidence(state)
+    if retrieval_evidence is not None:
+        retrieval_evidence = _apply_retrieval_quality_gate(state, retrieval_evidence)
 
     state.response = BoQGenerateResponse(
         line_items=state.line_items,
@@ -529,6 +629,7 @@ def review_node(state: QuoteGraphState) -> None:
             state.subtotal,
             state.pricing_config,
         ),
+        retrieval_evidence=retrieval_evidence,
     )
 
 

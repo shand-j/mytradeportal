@@ -118,6 +118,8 @@ Production is hosted on **Railway** in the **`europe-west4-drams3a` (Amsterdam)*
 in [`.railway/railway.ts`](../.railway/railway.ts) and deployed automatically by
 GitHub Actions on every push to `main` after tests pass.
 
+For pull requests, CI validates the PR branch against a Railway **PR Environment** (ephemeral copy of the base environment) and runs targeted smoke tests there. Production deploy remains a **main-branch-only** operation.
+
 > **Region drift note:** the native Railway Postgres and Redis plugins are
 > currently deployed in `sfo` while the rest of the stack is in Amsterdam. For
 > the UK market this adds cross-continent latency. Because the platform is
@@ -252,6 +254,15 @@ environment:
 | `E2E_BASE_URL` | Yes | Public URL of the `web` service for smoke tests |
 | `E2E_ADMIN_BASE_URL` | Yes | Public URL of the `admin` service for smoke tests |
 | `DATABASE_URL` | Yes | Used by the smoke-test teardown step to clean up |
+
+For PR preview validation in CI, configure:
+
+| Secret | Required | Purpose |
+|---|---|---|
+| `RAILWAY_TOKEN` | Yes | Railway project token for PR environment discovery |
+| `RAILWAY_PROJECT_ID` (in workflow, currently `30feaeee-9464-41ac-9b17-d07ae4cfcd09`) | Yes | Railway project id for CLI project linking in CI |
+| `DJANGO_SUPERUSER_PASSWORD` | Yes | Admin login for smoke setup fallback path |
+| `E2E_DJANGO_ADMIN_USERNAME` | No | Defaults to `superadmin` |
 
 Optional:
 

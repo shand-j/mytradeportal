@@ -12,6 +12,7 @@ from .ocerp import (
     PriceLookupResponse,
     QuoteAnalysis,
     RegulatoryCitation,
+    RetrievalEvidence,
     StandardInfo,
     StandardsListResponse,
 )
@@ -28,6 +29,7 @@ __all__ = [
     "PriceLookupResponse",
     "QuoteAnalysis",
     "RegulatoryCitation",
+    "RetrievalEvidence",
     "Settings",
     "StandardInfo",
     "StandardsListResponse",

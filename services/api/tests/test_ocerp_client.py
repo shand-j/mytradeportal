@@ -12,6 +12,7 @@ from mtp_shared import (
     BoQLineItem,
     PriceLookupRequest,
     PriceLookupResponse,
+    RetrievalEvidence,
     StandardInfo,
     StandardsListResponse,
 )
@@ -116,6 +117,15 @@ def test_build_quote_from_ocerp_response() -> None:
         confidence=Decimal("1.0"),
         notes="Test",
         standard="nrm1",
+        retrieval_evidence=RetrievalEvidence(
+            knowledge_available=True,
+            job_types=["consumer_unit"],
+            citations_used=2,
+            source_documents=["UK Domestic Electrical Quoting Knowledge Base"],
+            top_relevance_score=0.87,
+            quality_score=1.0,
+            quality_gate_passed=True,
+        ),
     )
 
     build_quote_from_ocerp_response(quote, response)
@@ -126,6 +136,7 @@ def test_build_quote_from_ocerp_response() -> None:
     assert quote.bill_of_quantities.total == Decimal("204.00")
     assert quote.bill_of_quantities.confidence == Decimal("1.0")
     assert quote.bill_of_quantities.standard == "nrm1"
+    assert quote.bill_of_quantities.retrieval_evidence.get("citations_used") == 2
 
     assert len(quote.line_items) == 1
     assert quote.line_items[0].total == Decimal("170.00")
