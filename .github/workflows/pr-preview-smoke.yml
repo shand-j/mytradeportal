@@ -2,36 +2,36 @@ name: PR Preview Smoke Test
 
 on:
   deployment_status:
-  workflow_dispatch:
-    inputs:
-      preview_environment:
-        description: "Preview environment name (for example: pr-2)"
-        required: false
-        type: string
 
 concurrency:
-  group: pr-preview-smoke-${{ github.event.deployment.environment || github.event.deployment_status.environment || inputs.preview_environment || github.ref }}
+  group: pr-preview-smoke-${{ github.event.deployment.environment || github.event.deployment_status.environment || github.run_id }}
   cancel-in-progress: true
 
 jobs:
+  log-deployment-status-event:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Log deployment_status event payload
+        run: |
+          echo "Triggered by: ${{ github.event_name }}"
+          echo "Event action: ${{ github.event.action }}"
+          echo "Deployment environment: ${{ github.event.deployment.environment || github.event.deployment_status.environment || 'unknown' }}"
+          echo "Deployment status state: ${{ github.event.deployment_status.state || 'unknown' }}"
+          echo "Full github.event payload follows"
+          cat <<'JSON'
+          ${{ toJson(github.event) }}
+          JSON
+
   smoke-pr-preview:
-    if: >
-      (github.event_name == 'deployment_status' &&
-      github.event.deployment_status.state == 'success' &&
-      (
-        startsWith(github.event.deployment.environment, 'pr-') ||
-        startsWith(github.event.deployment.environment, 'mytradeportal-pr-') ||
-        startsWith(github.event.deployment_status.environment, 'pr-') ||
-        startsWith(github.event.deployment_status.environment, 'mytradeportal-pr-')
-      )) ||
-      (github.event_name == 'workflow_dispatch' && inputs.preview_environment != '')
+    needs: [log-deployment-status-event]
+    if: ${{ github.event.deployment_status.state == 'success' }}
     runs-on: ubuntu-latest
     timeout-minutes: 45
     defaults:
       run:
         working-directory: web/app
     env:
-      PREVIEW_ENV: ${{ github.event.deployment.environment || github.event.deployment_status.environment || inputs.preview_environment }}
+      PREVIEW_ENV: ${{ github.event.deployment.environment || github.event.deployment_status.environment }}
       RAILWAY_PROJECT_ID: 30feaeee-9464-41ac-9b17-d07ae4cfcd09
       RAILWAY_TOKEN: ${{ secrets.RAILWAY_PREVIEW_TOKEN || secrets.RAILWAY_TOKEN }}
       RAILWAY_API_TOKEN: ${{ secrets.RAILWAY_PREVIEW_TOKEN || secrets.RAILWAY_TOKEN }}
