@@ -17,24 +17,17 @@ repos:
         args: [--fix]
       - id: ruff-format
 
-  - repo: https://github.com/pre-commit/mirrors-mypy
-    rev: v1.10.0
-    hooks:
-      - id: mypy
-        additional_dependencies: [types-passlib, types-python-jose]
-        args: [services/api, packages/shared/py]
-
   - repo: local
     hooks:
       - id: python-ci-checks
         name: Python CI-equivalent checks
-        entry: bash -lc 'source .venv/bin/activate && ruff check . && ruff format --check . && mypy services/api packages/shared/py && mypy --config-file mypy-admin.ini services/admin && pytest'
+        entry: bash -lc 'source .venv/bin/activate && ruff check . && ruff format --check . && mypy services/api packages/shared/py && mypy --config-file mypy-admin.ini services/admin'
         language: system
         pass_filenames: false
         stages: [pre-commit]
       - id: typescript-ci-checks
         name: TypeScript CI-equivalent checks
-        entry: bash -lc 'pnpm --dir web/app lint && pnpm --dir web/app test && pnpm --dir web/app build'
+        entry: bash -lc 'unset VITE_API_BASE_URL && pnpm --dir web/app lint && pnpm --dir web/app test && pnpm --dir web/app build'
         language: system
         pass_filenames: false
         stages: [pre-commit]

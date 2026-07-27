@@ -67,7 +67,7 @@ def _get_address_token() -> str:
     ).strip()
 
 
-def _formatted_address_from_payload(payload: dict) -> list[str]:
+def _formatted_address_from_payload(payload: dict[str, Any]) -> list[str]:
     formatted = payload.get("formatted_address")
     if isinstance(formatted, list):
         return [str(part).strip() for part in formatted if str(part).strip()]
@@ -128,14 +128,14 @@ def _format_postcode_compact(compact_postcode: str) -> str:
     return compact_postcode
 
 
-def _extract_delivery_points(payload: dict) -> list[dict[str, Any]]:
+def _extract_delivery_points(payload: dict[str, Any]) -> list[dict[str, Any]]:
     delivery_points = payload.get("delivery_points") if isinstance(payload, dict) else None
     if not isinstance(delivery_points, list):
         return []
     return [point for point in delivery_points if isinstance(point, dict)]
 
 
-def _parse_suggestions(payload: dict) -> list[AddressSuggestion]:
+def _parse_suggestions(payload: dict[str, Any]) -> list[AddressSuggestion]:
     delivery_points = _extract_delivery_points(payload)
     postcode = str(payload.get("postcode", "")).strip()
     town = str(payload.get("town", "")).strip()
