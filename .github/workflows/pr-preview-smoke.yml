@@ -107,7 +107,7 @@ jobs:
 
           RAW_PREVIEW_ENV_ID="$PREVIEW_ENV_ID"
 
-          echo "+ railway api 'query getProject($id: String!) { project(id: $id) { environments { edges { node { id name } } } } }' --variables '{\"id\":\"$RAILWAY_PROJECT_ID\"}'"
+          echo "+ railway api 'query getProject(\$id: String!) { project(id: \$id) { environments { edges { node { id name } } } } }' --variables '{\"id\":\"$RAILWAY_PROJECT_ID\"}'"
           railway api 'query getProject($id: String!) { project(id: $id) { environments { edges { node { id name } } } } }' \
             --variables "{\"id\":\"$RAILWAY_PROJECT_ID\"}" | tee /tmp/railway-environments.json
 
