@@ -16,7 +16,7 @@ jobs:
       run:
         working-directory: web/app
     env:
-      PREVIEW_ENV: ${{ github.event.deployment.payload.environmentId }}
+      PREVIEW_ENV: ${{ github.event.deployment.environment || github.event.deployment_status.environment || github.event.deployment.payload.environmentId }}
       RAILWAY_PROJECT_ID: 30feaeee-9464-41ac-9b17-d07ae4cfcd09
       RAILWAY_TOKEN: ${{ secrets.RAILWAY_PREVIEW_TOKEN || secrets.RAILWAY_TOKEN }}
       RAILWAY_API_TOKEN: ${{ secrets.RAILWAY_PREVIEW_TOKEN || secrets.RAILWAY_TOKEN }}
@@ -103,6 +103,48 @@ jobs:
           if [ -z "${PREVIEW_ENV:-}" ]; then
             echo "ERROR: Preview environment is missing." >&2
             exit 1
+          fi
+
+          RAW_PREVIEW_ENV="$PREVIEW_ENV"
+
+          # Railway deployment payloads may provide environmentId UUIDs; Railway CLI status expects env name/slug.
+          if printf '%s' "$RAW_PREVIEW_ENV" | grep -Eq '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$'; then
+            echo "+ railway environment list --project $RAILWAY_PROJECT_ID --json"
+            railway environment list --project "$RAILWAY_PROJECT_ID" --json | tee /tmp/railway-environments.json
+
+            PREVIEW_ENV=$(python - <<'PY'
+          import json
+          import os
+          import sys
+
+          target_id = os.environ.get("RAW_PREVIEW_ENV", "").strip().lower()
+          with open('/tmp/railway-environments.json', 'r', encoding='utf-8') as f:
+              data = json.load(f)
+
+          def walk(node):
+              if isinstance(node, dict):
+                  yield node
+                  for value in node.values():
+                      yield from walk(value)
+              elif isinstance(node, list):
+                  for value in node:
+                      yield from walk(value)
+
+          for obj in walk(data):
+              env_id = obj.get('id') if isinstance(obj, dict) else None
+              env_name = obj.get('name') if isinstance(obj, dict) else None
+              if isinstance(env_id, str) and isinstance(env_name, str) and env_id.lower() == target_id:
+                  print(env_name)
+                  sys.exit(0)
+
+          sys.exit(1)
+          PY
+            ) || {
+              echo "ERROR: Could not map environment ID '$RAW_PREVIEW_ENV' to an environment name." >&2
+              exit 1
+            }
+
+            echo "Resolved environment ID '$RAW_PREVIEW_ENV' to name '$PREVIEW_ENV'"
           fi
 
           echo "+ railway status --project $RAILWAY_PROJECT_ID --environment $PREVIEW_ENV --json"
