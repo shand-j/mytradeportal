@@ -165,6 +165,8 @@ export default defineRailway(() => {
       PADDLE_API_KEY: preserve(),
       PADDLE_WEBHOOK_SECRET: preserve(),
       PADDLE_SANDBOX: "true",
+      // Transactional email is delivered via the Resend API when configured.
+      RESEND_API_KEY: preserve(),
       // New Relic observability (free tier). Set NEW_RELIC_LICENSE_KEY to enable APM.
       NEW_RELIC_LICENSE_KEY: preserve(),
       NEW_RELIC_APP_NAME: "mytradeportal-api",

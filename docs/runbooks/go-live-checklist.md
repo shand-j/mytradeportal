@@ -473,7 +473,7 @@ railway logs --service admin --tail 100
 - OCERP takeoff endpoints (`/ocerp/v1/takeoff/pdf|cad|photo`) return `501 Not Implemented`.
 - Advanced features (voice AI, WhatsApp/SMS, accounting sync, demand forecasting) are behind feature flags and disabled by default.
 - All services are aligned to the IaC target region `europe-west4-drams3a` (Amsterdam).
-- Email currently uses Mailpit in local development; production email delivery (SendGrid, Postmark, etc.) should be configured for customer notifications.
+- Email uses Mailpit in local development; set `RESEND_API_KEY` in Railway for production customer notifications.
 
 ---
 

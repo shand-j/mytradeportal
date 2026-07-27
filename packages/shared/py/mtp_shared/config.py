@@ -79,7 +79,9 @@ class Settings(BaseSettings):
     # Legacy field retained temporarily for migration fallback.
     getaddress_io_api_key: str = Field(default="")
 
-    # Email / SMTP
+    # Email delivery
+    resend_api_key: str = Field(default="")
+    resend_api_base_url: str = Field(default="https://api.resend.com")
     smtp_host: str = Field(default="localhost")
     smtp_port: int = Field(default=1025)
     smtp_use_tls: bool = Field(default=False)
