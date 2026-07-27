@@ -204,3 +204,37 @@ Mitigation for next iteration:
 1. Update AI E2E assertion path to tolerate delayed or absent download events while still asserting quote generation success markers.
 2. Keep Redis limiter reset + deterministic tenant bootstrap in pre-run checklist to prevent auth throttle false failures.
 3. Continue running production-validation in serial after each material quote-flow change.
+
+## 14) Progress Checkpoint: Pipeline Green and Plan Validation (2026-07-27)
+
+Current status:
+- CI and preview validation are stable enough to resume accuracy work on the OCERP track.
+- Implementation Slices 1 and 2 are complete and verified in production-like local runs.
+- Local developer quality gates have been hardened so CI-equivalent Python checks run pre-push.
+
+Validated outcomes:
+- Retrieval evidence contract is live end-to-end (OCERP response -> API persistence -> API read surface).
+- Retrieval quality gates and fallback metadata are implemented and test-covered.
+- Production-like validation baseline remains green for critical quote flows.
+
+Scope position versus plan:
+- Completed: baseline, retrieval contract scaffold, persistence + retrieval quality gates.
+- Ready to start: deterministic quote-accuracy uplift and expanded evaluation scoring.
+- Deferred: broad graph-store/SPARQL foundation work and alpha/beta learning-loop ingestion.
+
+## 15) Next Implementation Slice (Start Now)
+
+Slice 3A — Deterministic accuracy uplift (low-risk, high-impact):
+1. Tighten requirement extraction and quantity mapping for common misquote patterns in `services/ocerp/ocerp/services/requirements.py`.
+2. Improve resolver behavior for edge-category mappings and hard-reject collisions in `services/ocerp/ocerp/services/resolver.py`.
+3. Preserve existing customer quote totals behavior and deterministic safety rails.
+
+Slice 3B — Generation handoff hardening:
+1. Strengthen unsupported-claim suppression and evidence-bound output checks in `services/ocerp/ocerp/services/agent_graph.py`.
+2. Keep provenance and fallback signaling explicit in response metadata.
+
+Mandatory verification after each change batch:
+1. Targeted OCERP/API tests for touched modules.
+2. Python and TypeScript CI-equivalent local checks.
+3. Production-like validation run (`web/app/e2e/prod-validation.spec.ts`).
+4. Append evidence and pass/fail notes to this runbook before moving to next batch.
