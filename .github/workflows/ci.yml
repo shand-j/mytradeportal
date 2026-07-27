@@ -141,7 +141,7 @@ jobs:
       - name: Resolve Railway PR environment and preview URLs
         working-directory: .
         env:
-          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_PREVIEW_TOKEN || secrets.RAILWAY_TOKEN }}
           # Project ID for MyTradePortal in Railway; update if the project is recreated.
           RAILWAY_PROJECT_ID: 30feaeee-9464-41ac-9b17-d07ae4cfcd09
           PR_NUMBER: ${{ github.event.pull_request.number }}
@@ -149,8 +149,31 @@ jobs:
         run: |
           set -euo pipefail
 
-          railway link --project "$RAILWAY_PROJECT_ID" --json >/tmp/railway-link.json
-          railway environment list --json > /tmp/railway-envs.json
+          if [ -z "${RAILWAY_TOKEN:-}" ]; then
+            echo "ERROR: Railway token missing. Set RAILWAY_PREVIEW_TOKEN (preferred) or RAILWAY_TOKEN in GitHub secrets." >&2
+            exit 1
+          fi
+
+          if ! railway whoami --json >/tmp/railway-whoami.json 2>/tmp/railway-auth.err; then
+            echo "ERROR: Railway authentication failed." >&2
+            echo "Ensure the token is valid and belongs to a user/service account with access to project $RAILWAY_PROJECT_ID." >&2
+            cat /tmp/railway-auth.err >&2
+            exit 1
+          fi
+
+          if ! railway link --project "$RAILWAY_PROJECT_ID" --json >/tmp/railway-link.json 2>/tmp/railway-link.err; then
+            echo "ERROR: Railway project access failed for project $RAILWAY_PROJECT_ID." >&2
+            echo "Grant the token project access (viewer or higher) and retry." >&2
+            cat /tmp/railway-link.err >&2
+            exit 1
+          fi
+
+          if ! railway environment list --json > /tmp/railway-envs.json 2>/tmp/railway-envs.err; then
+            echo "ERROR: Unable to list Railway environments for project $RAILWAY_PROJECT_ID." >&2
+            echo "Verify the token can read project environments and PR Environments are enabled." >&2
+            cat /tmp/railway-envs.err >&2
+            exit 1
+          fi
 
             PREVIEW_ENV=$(python - <<'PY'
             import json, os, re
