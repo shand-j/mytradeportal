@@ -94,6 +94,7 @@ class Settings(BaseSettings):
     # Tenancy
     default_tenant_slug: str = Field(default="demo")
     allowed_origins: str = Field(default="http://localhost:3000,http://demo.localhost:3000")
+    allowed_origin_regex: str = Field(default=r"^https://web-[a-z0-9-]+\.up\.railway\.app$")
 
     # Supabase Auth (optional — when set, email/password login is handled by Supabase)
     supabase_url: str = Field(default="")

@@ -50,6 +50,7 @@ jobs:
       PROD_E2E_ADMIN_BASE_URL: ${{ secrets.E2E_ADMIN_BASE_URL || '' }}
       E2E_DJANGO_ADMIN_USERNAME: ${{ secrets.E2E_DJANGO_ADMIN_USERNAME || 'superadmin' }}
       E2E_DJANGO_ADMIN_PASSWORD: ${{ secrets.DJANGO_SUPERUSER_PASSWORD }}
+      SETUP_TOKEN: ${{ secrets.SETUP_TOKEN || '' }}
       E2E_ARTIFACT_DIR: playwright/.tmp
     steps:
       - uses: actions/checkout@v4
