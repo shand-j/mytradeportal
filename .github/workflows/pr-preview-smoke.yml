@@ -107,41 +107,29 @@ jobs:
 
           RAW_PREVIEW_ENV_ID="$PREVIEW_ENV_ID"
 
-          echo "+ railway api 'query getProject(\$id: String!) { project(id: \$id) { environments { edges { node { id name } } } } }' --variables '{\"id\":\"$RAILWAY_PROJECT_ID\"}'"
-          railway api 'query getProject($id: String!) { project(id: $id) { environments { edges { node { id name } } } } }' \
-            --variables "{\"id\":\"$RAILWAY_PROJECT_ID\"}" | tee /tmp/railway-environments.json
+            echo "+ railway environment $RAW_PREVIEW_ENV_ID --json"
+            railway environment "$RAW_PREVIEW_ENV_ID" --json | tee /tmp/railway-environment.json
 
-          PREVIEW_ENV=$(python - <<'PY'
-          import json
-          import os
-          import sys
+            PREVIEW_ENV=$(python - <<'PY'
+            import json
+            import sys
 
-          target_id = os.environ.get("RAW_PREVIEW_ENV_ID", "").strip().lower()
-          with open('/tmp/railway-environments.json', 'r', encoding='utf-8') as f:
+            with open('/tmp/railway-environment.json', 'r', encoding='utf-8') as f:
               data = json.load(f)
 
-          def walk(node):
-              if isinstance(node, dict):
-                  yield node
-                  for value in node.values():
-                      yield from walk(value)
-              elif isinstance(node, list):
-                  for value in node:
-                      yield from walk(value)
+            env = data.get('environment') if isinstance(data, dict) else None
+            name = env.get('name') if isinstance(env, dict) else None
 
-          for obj in walk(data):
-              env_id = obj.get('id') if isinstance(obj, dict) else None
-              env_name = obj.get('name') if isinstance(obj, dict) else None
-              if isinstance(env_id, str) and isinstance(env_name, str) and env_id.lower() == target_id:
-                  print(env_name)
-                  sys.exit(0)
+            if isinstance(name, str) and name:
+              print(name)
+              sys.exit(0)
 
-          sys.exit(1)
-          PY
-          ) || {
-            echo "ERROR: Could not map environment ID '$RAW_PREVIEW_ENV_ID' to an environment name." >&2
+            sys.exit(1)
+            PY
+            ) || {
+            echo "ERROR: Could not resolve environment name from environment ID '$RAW_PREVIEW_ENV_ID'." >&2
             exit 1
-          }
+            }
 
           echo "Resolved environment ID '$RAW_PREVIEW_ENV_ID' to name '$PREVIEW_ENV'"
 
