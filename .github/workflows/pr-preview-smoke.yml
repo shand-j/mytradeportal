@@ -102,54 +102,54 @@ jobs:
               continue
             fi
 
-            URLS=$(python - <<'PY'
-            import json
+          URLS=$(python - <<'PY'
+          import json
 
-            with open('/tmp/railway-status.json', 'r', encoding='utf-8') as f:
-                data = json.load(f)
+          with open('/tmp/railway-status.json', 'r', encoding='utf-8') as f:
+            data = json.load(f)
 
-            web = ""
-            admin = ""
+          web = ""
+          admin = ""
 
-            def domain_from(node):
-                domains = node.get('domains') if isinstance(node, dict) else None
-                if not isinstance(domains, dict):
-                    return ""
-                for key in ('serviceDomains', 'customDomains'):
-                    values = domains.get(key) or []
-                    if not isinstance(values, list):
-                        continue
-                    for item in values:
-                        if isinstance(item, dict):
-                            for field in ('domain', 'hostname', 'name'):
-                                val = item.get(field)
-                                if isinstance(val, str) and val:
-                                    return val
-                        elif isinstance(item, str) and item:
-                            return item
-                return ""
+          def domain_from(node):
+            domains = node.get('domains') if isinstance(node, dict) else None
+            if not isinstance(domains, dict):
+              return ""
+            for key in ('serviceDomains', 'customDomains'):
+              values = domains.get(key) or []
+              if not isinstance(values, list):
+                continue
+              for item in values:
+                if isinstance(item, dict):
+                  for field in ('domain', 'hostname', 'name'):
+                    val = item.get(field)
+                    if isinstance(val, str) and val:
+                      return val
+                elif isinstance(item, str) and item:
+                  return item
+            return ""
 
-            def walk(node):
-                if isinstance(node, dict):
-                    yield node
-                    for value in node.values():
-                        yield from walk(value)
-                elif isinstance(node, list):
-                    for value in node:
-                        yield from walk(value)
+          def walk(node):
+            if isinstance(node, dict):
+              yield node
+              for value in node.values():
+                yield from walk(value)
+            elif isinstance(node, list):
+              for value in node:
+                yield from walk(value)
 
-            for obj in walk(data):
-                if not isinstance(obj, dict):
-                    continue
-                name = obj.get('serviceName')
-                if name == 'web' and not web:
-                    web = domain_from(obj)
-                if name == 'admin' and not admin:
-                    admin = domain_from(obj)
+          for obj in walk(data):
+            if not isinstance(obj, dict):
+              continue
+            name = obj.get('serviceName')
+            if name == 'web' and not web:
+              web = domain_from(obj)
+            if name == 'admin' and not admin:
+              admin = domain_from(obj)
 
-            print(f"{web}|{admin}")
-            PY
-            )
+          print(f"{web}|{admin}")
+          PY
+          )
 
             WEB_DOMAIN="${URLS%%|*}"
             ADMIN_DOMAIN="${URLS##*|}"
