@@ -16,11 +16,7 @@ jobs:
       run:
         working-directory: web/app
     env:
-      PREVIEW_ENV_ID: ${{ github.event.deployment.payload.environmentId || github.event.deployment.payload.environmentid }}
       PREVIEW_ENV_LABEL: ${{ github.event.deployment.environment || github.event.deployment_status.environment || '' }}
-      RAILWAY_PROJECT_ID: 30feaeee-9464-41ac-9b17-d07ae4cfcd09
-      RAILWAY_TOKEN: ${{ secrets.RAILWAY_PREVIEW_TOKEN || secrets.RAILWAY_TOKEN }}
-      RAILWAY_API_TOKEN: ${{ secrets.RAILWAY_PREVIEW_TOKEN || secrets.RAILWAY_TOKEN }}
       DEPLOYMENT_ENVIRONMENT_URL: ${{ github.event.deployment_status.environment_url || '' }}
       DEPLOYMENT_TARGET_URL: ${{ github.event.deployment_status.target_url || '' }}
       DEPLOYMENT_SHA: ${{ github.event.deployment.sha || '' }}
@@ -33,7 +29,6 @@ jobs:
       - name: Log deployment trigger
         run: |
           echo "Triggered by: ${{ github.event_name }}"
-          echo "Preview environment ID: ${PREVIEW_ENV_ID:-unknown}"
           echo "Preview environment label: ${PREVIEW_ENV_LABEL:-unknown}"
           echo "Deployment SHA: ${DEPLOYMENT_SHA:-unknown}"
           echo "Deployment target URL: ${DEPLOYMENT_TARGET_URL:-unknown}"
@@ -60,14 +55,6 @@ jobs:
           cache: "pnpm"
           cache-dependency-path: web/app/pnpm-lock.yaml
 
-      - name: Cache Railway CLI
-        uses: actions/cache@v4
-        with:
-          path: ~/.npm
-          key: railway-cli-${{ runner.os }}-${{ hashFiles('**/package.json') }}
-          restore-keys: |
-            railway-cli-${{ runner.os }}-
-
       - name: Cache Playwright browsers
         uses: actions/cache@v4
         with:
@@ -75,14 +62,6 @@ jobs:
           key: playwright-${{ runner.os }}-${{ hashFiles('web/app/pnpm-lock.yaml') }}
           restore-keys: |
             playwright-${{ runner.os }}-
-
-      - name: Install Railway CLI
-        run: |
-          set -euxo pipefail
-          echo "+ npm install -g @railway/cli"
-          npm install -g @railway/cli
-          echo "+ railway --version"
-          railway --version
 
       - name: Install smoke dependencies
         working-directory: .
@@ -97,92 +76,24 @@ jobs:
         run: |
           set -euxo pipefail
 
-          if [ -z "${RAILWAY_TOKEN:-}" ]; then
-            echo "ERROR: Missing Railway token. Set RAILWAY_PREVIEW_TOKEN or RAILWAY_TOKEN." >&2
-            exit 1
-          fi
-
           if [ -z "${PREVIEW_ENV_LABEL:-}" ]; then
             echo "ERROR: Preview environment label is missing from deployment event." >&2
             exit 1
           fi
 
-          RAW_PREVIEW_ENV_LABEL="$PREVIEW_ENV_LABEL"
-          PREVIEW_ENV="$(printf '%s' "$RAW_PREVIEW_ENV_LABEL" | sed -E 's|^.*/||; s/^[[:space:]]+//; s/[[:space:]]+$//')"
-
-          if [ -z "$PREVIEW_ENV" ]; then
-            echo "ERROR: Could not normalize preview environment from label '$RAW_PREVIEW_ENV_LABEL'." >&2
+          PR_NUMBER="$(printf '%s' "$PREVIEW_ENV_LABEL" | sed -nE 's|.*pr-([0-9]+).*|\1|p' | head -n1)"
+          if [ -z "$PR_NUMBER" ]; then
+          echo "ERROR: Could not extract PR number from preview environment label '$PREVIEW_ENV_LABEL'." >&2
             exit 1
           fi
 
-          echo "Resolved environment label '$RAW_PREVIEW_ENV_LABEL' to slug '$PREVIEW_ENV'"
-
-          echo "+ railway status --project $RAILWAY_PROJECT_ID --environment $PREVIEW_ENV --json"
-          railway status --project "$RAILWAY_PROJECT_ID" --environment "$PREVIEW_ENV" --json | tee /tmp/railway-status.json
-
-          URLS=$(python - <<'PY'
-          import json
-
-          with open('/tmp/railway-status.json', 'r', encoding='utf-8') as f:
-              data = json.load(f)
-
-          web = ""
-          admin = ""
-
-          def domain_from(node):
-              domains = node.get('domains') if isinstance(node, dict) else None
-              if not isinstance(domains, dict):
-                  return ""
-              for key in ('serviceDomains', 'customDomains'):
-                  values = domains.get(key) or []
-                  if not isinstance(values, list):
-                      continue
-                  for item in values:
-                      if isinstance(item, dict):
-                          for field in ('domain', 'hostname', 'name'):
-                              val = item.get(field)
-                              if isinstance(val, str) and val:
-                                  return val
-                      elif isinstance(item, str) and item:
-                          return item
-              return ""
-
-          def walk(node):
-              if isinstance(node, dict):
-                  yield node
-                  for value in node.values():
-                      yield from walk(value)
-              elif isinstance(node, list):
-                  for value in node:
-                      yield from walk(value)
-
-          for obj in walk(data):
-              if not isinstance(obj, dict):
-                  continue
-              name = obj.get('serviceName')
-              if name == 'web' and not web:
-                  web = domain_from(obj)
-              if name == 'admin' and not admin:
-                  admin = domain_from(obj)
-
-          print(f"{web}|{admin}")
-          PY
-          )
-
-          WEB_DOMAIN="${URLS%%|*}"
-          ADMIN_DOMAIN="${URLS##*|}"
-
-          if [ -z "$WEB_DOMAIN" ] || [ -z "$ADMIN_DOMAIN" ]; then
-            echo "ERROR: Could not resolve web/admin domains for '$PREVIEW_ENV'." >&2
-            exit 1
-          fi
-
-          WEB_URL="https://$WEB_DOMAIN"
-          ADMIN_URL="https://$ADMIN_DOMAIN"
+          PREVIEW_SUFFIX="mytradeportal-pr-$PR_NUMBER"
+          WEB_URL="https://web-$PREVIEW_SUFFIX.up.railway.app"
+          ADMIN_URL="https://admin-$PREVIEW_SUFFIX.up.railway.app"
 
           echo "E2E_BASE_URL=$WEB_URL" >> "$GITHUB_ENV"
           echo "E2E_ADMIN_BASE_URL=$ADMIN_URL" >> "$GITHUB_ENV"
-          echo "Resolved preview URLs: $WEB_URL and $ADMIN_URL"
+          echo "Resolved preview URLs from pattern: $WEB_URL and $ADMIN_URL"
 
       - name: Run PR preview smoke test
         run: pnpm exec playwright test --config=playwright.config.prod-smoke.ts --retries=1
