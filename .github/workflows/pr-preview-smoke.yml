@@ -41,6 +41,10 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
+          cache: "pip"
+          cache-dependency-path: |
+            pyproject.toml
+            services/**/requirements.txt
 
       - name: Set up pnpm
         uses: pnpm/action-setup@v4
@@ -62,8 +66,21 @@ jobs:
           restore-keys: |
             railway-cli-${{ runner.os }}-
 
+      - name: Cache Playwright browsers
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('web/app/pnpm-lock.yaml') }}
+          restore-keys: |
+            playwright-${{ runner.os }}-
+
       - name: Install Railway CLI
-        run: npm install -g @railway/cli
+        run: |
+          set -euxo pipefail
+          echo "+ npm install -g @railway/cli"
+          npm install -g @railway/cli
+          echo "+ railway --version"
+          railway --version
 
       - name: Install smoke dependencies
         working-directory: .
@@ -76,7 +93,7 @@ jobs:
       - name: Resolve preview URLs
         working-directory: .
         run: |
-          set -euo pipefail
+          set -euxo pipefail
 
           if [ -z "${RAILWAY_TOKEN:-}" ]; then
             echo "ERROR: Missing Railway token. Set RAILWAY_PREVIEW_TOKEN or RAILWAY_TOKEN." >&2
@@ -88,7 +105,8 @@ jobs:
             exit 1
           fi
 
-          railway status --project "$RAILWAY_PROJECT_ID" --environment "$PREVIEW_ENV" --json > /tmp/railway-status.json
+          echo "+ railway status --project $RAILWAY_PROJECT_ID --environment $PREVIEW_ENV --json"
+          railway status --project "$RAILWAY_PROJECT_ID" --environment "$PREVIEW_ENV" --json | tee /tmp/railway-status.json
 
           URLS=$(python - <<'PY'
           import json
