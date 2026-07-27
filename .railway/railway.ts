@@ -150,9 +150,9 @@ export default defineRailway(() => {
       LLM_MODEL: "gpt-4o-mini",
       LLM_TIMEOUT_SECONDS: "300",
       ALLOWED_ORIGINS: WEB_PUBLIC_URL,
-      // Keep preview and production Railway web domains CORS-allowed even if
-      // ALLOWED_ORIGINS was inherited from another environment.
-      ALLOWED_ORIGIN_REGEX: "^https://web-[a-z0-9-]+\\.up\\.railway\\.app$",
+      // Keep production strict: exact allowed origins are defined explicitly
+      // by ALLOWED_ORIGINS (set per environment).
+      ALLOWED_ORIGIN_REGEX: "",
       // Mandatory in production (validate_production refuses dev defaults).
       AUTH_SECRET_KEY: preserve(),
       // Gates POST /tenants, which bootstraps the first tenant + admin user.
