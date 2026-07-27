@@ -22,7 +22,7 @@ async def _create_contact(
     response = await client.post(
         "/contacts",
         headers={"X-Tenant-ID": tenant_id},
-        json={"name": name, "email": email or f"{name.lower().replace(' ', '.')}@example.com"},
+        json={"name": name, "email": email or f"test-{uuid4().hex[:8]}@example.com"},
     )
     assert response.status_code == 201
     return response.json()
