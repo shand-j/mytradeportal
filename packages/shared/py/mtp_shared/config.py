@@ -65,7 +65,9 @@ class Settings(BaseSettings):
     retrieval_quality_min_citations: int = Field(default=0)
     retrieval_quality_min_top_relevance: float = Field(default=0.0)
     retrieval_quality_require_knowledge_available: bool = Field(default=False)
-    retrieval_quality_fallback_policy: str = Field(default="warn_only", pattern="^(warn_only|deterministic_only)$")
+    retrieval_quality_fallback_policy: str = Field(
+        default="warn_only", pattern="^(warn_only|deterministic_only)$"
+    )
     retrieval_quality_confidence_cap: float = Field(default=0.6)
 
     # OpenConstructionERP microservice
