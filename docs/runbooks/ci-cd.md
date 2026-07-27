@@ -40,7 +40,9 @@ The CI/CD pipeline enforces three gates before production deploy:
 
 1. **Python quality and tests**: lint, format, type check, and unit tests for the FastAPI backend, OCERP microservice, Django admin, data pipeline, shared packages, and evals.
 2. **TypeScript quality and tests**: lint, unit tests, and production build for the React back-office UI in `web/app`.
-3. **Infrastructure apply**: apply the Railway IaC to the `production` environment, then run a production smoke test.
+3. **Environment-specific deployment and smoke**:
+   - Pull requests: run smoke tests against an ephemeral Railway PR Environment.
+   - Main pushes: apply Railway IaC to `production`, then run production smoke tests.
 
 No code reaches production unless both test jobs pass and the event is a push to `main`.
 
@@ -51,6 +53,26 @@ No code reaches production unless both test jobs pass and the event is a push to
 ### `CI` — `.github/workflows/ci.yml`
 
 Triggered on every push to `main` and every pull request targeting `main`.
+
+#### PR preview environments (Railway-managed)
+
+Railway provisions PR Environments automatically via the Railway GitHub integration when a PR is opened.
+
+CI currently does not run a `preview-e2e` job in GitHub Actions; preview validation is performed via Railway’s own automation and/or manual smoke checks as needed.
+### `PR Preview Cleanup` — `.github/workflows/pr-preview-cleanup.yml`
+
+Triggered on `pull_request` close events targeting `main` and runs only when `merged == true`.
+
+What it does:
+
+1. Authenticates Railway CLI using `RAILWAY_TOKEN`.
+2. Resolves the PR Environment name for the merged PR number.
+3. Deletes the matching preview environment with `railway environment delete --yes`.
+
+Notes:
+
+- Railway normally de-provisions PR Environments automatically after close/merge; this workflow acts as an explicit cleanup guard.
+- If no matching PR environment exists, the job exits successfully.
 
 #### `python` job
 
@@ -101,6 +123,8 @@ Environment variables used in the deploy job:
 RAILWAY_ENVIRONMENT=production
 RAILWAY_IAC_TS_BIN=.railway/node_modules/.bin/railway-iac-ts
 ```
+
+Production deploy is explicitly a main-branch activity.
 
 ### `Production Smoke Test` — `.github/workflows/smoke-production.yml`
 
@@ -190,6 +214,14 @@ These secrets are required by the `deploy` and `smoke-production` workflows:
 | `E2E_BASE_URL` | `smoke-production` | Public URL of the `web` service |
 | `E2E_ADMIN_BASE_URL` | `smoke-production` | Public URL of the `admin` service |
 | `DATABASE_URL` | `smoke-production` | Used to tear down smoke-test data |
+
+### PR preview cleanup configuration
+
+`PR Preview Cleanup` (`.github/workflows/pr-preview-cleanup.yml`) requires:
+
+| Secret | Required by | Purpose |
+|--------|-------------|---------|
+| `RAILWAY_TOKEN` | `pr-preview-cleanup` | Authenticate Railway CLI to delete the merged PR environment |
 
 Optional:
 

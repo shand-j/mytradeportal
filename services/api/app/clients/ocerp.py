@@ -111,6 +111,9 @@ def build_quote_from_ocerp_response(
         margin_indicator=response.margin_indicator.model_dump(mode="json")
         if response.margin_indicator is not None
         else {},
+        retrieval_evidence=response.retrieval_evidence.model_dump(mode="json")
+        if response.retrieval_evidence is not None
+        else {},
         standard=response.standard,
     )
 

@@ -13,6 +13,8 @@ ADMIN_NAME="${E2E_ADMIN_NAME:-Demo Admin}"
 SETUP_TOKEN="${SETUP_TOKEN:-}"
 DJANGO_USERNAME="${E2E_DJANGO_ADMIN_USERNAME:-superadmin}"
 DJANGO_PASSWORD="${E2E_DJANGO_ADMIN_PASSWORD:-super-password-123}"
+API_BASE_URL="${E2E_API_BASE_URL:-http://demo.localhost:8000}"
+ADMIN_BASE_URL="${E2E_ADMIN_BASE_URL:-http://localhost:8001}"
 
 cd "$(dirname "$0")/../../.."
 
@@ -27,7 +29,7 @@ fi
 wait_for_api() {
   echo "Waiting for API health check..."
   for i in {1..60}; do
-    if curl -sS http://demo.localhost:8000/health >/dev/null 2>&1; then
+    if curl -sS "${API_BASE_URL}/health" >/dev/null 2>&1; then
       echo "API is healthy"
       return 0
     fi
@@ -40,7 +42,7 @@ wait_for_api() {
 wait_for_admin() {
   echo "Waiting for admin health check..."
   for i in {1..60}; do
-    if curl -sS -o /dev/null -w "%{http_code}" http://localhost:8001/admin/login/ | grep -q "200\|302"; then
+    if curl -sS -o /dev/null -w "%{http_code}" "${ADMIN_BASE_URL}/admin/login/" | grep -q "200\|302"; then
       echo "Admin is reachable"
       return 0
     fi
@@ -76,7 +78,7 @@ if [ "${ENVIRONMENT:-development}" = "production" ]; then
 
   echo "Bootstrapping tenant '${BOOTSTRAP_SLUG}' via production API..."
 
-  curl -sS -X POST "http://demo.localhost:8000/tenants" \
+  curl -sS -X POST "${API_BASE_URL}/tenants" \
     -H "Content-Type: application/json" \
     -H "X-Setup-Token: ${SETUP_TOKEN}" \
     -d "{

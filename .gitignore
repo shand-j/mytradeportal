@@ -91,3 +91,7 @@ secrets/
 # OCERP default labour/pricing schedules are source, not local data volumes
 !services/ocerp/ocerp/data/
 !services/ocerp/ocerp/data/**
+
+# misc
+docs/example quotes/**
+docs/Eano\ Estimate\ Template\ -\ Electrical\ v1.1.xlsx

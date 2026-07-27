@@ -91,6 +91,31 @@ class RegulatoryCitation(BaseModel):
     relevance_score: float = 0.0
 
 
+class RetrievalEvidence(BaseModel):
+    """Deterministic provenance and retrieval metadata for a generated BoQ.
+
+    This contract is intended for observability and evaluation workflows. It
+    reports what retrieval context was available and used, without changing
+    quote totals or deterministic pricing/compliance behavior.
+    """
+
+    model_config = ConfigDict(from_attributes=True)
+
+    knowledge_available: bool = True
+    job_types: list[str] = Field(default_factory=list)
+    citations_used: int = 0
+    source_documents: list[str] = Field(default_factory=list)
+    retrieval_warnings: list[str] = Field(default_factory=list)
+    top_relevance_score: float = 0.0
+    resolved_catalogue_items: int = 0
+    resolved_catalogue_sources: list[str] = Field(default_factory=list)
+    quality_score: float = 1.0
+    quality_gate_passed: bool = True
+    quality_gate_reasons: list[str] = Field(default_factory=list)
+    fallback_policy_applied: str = "none"
+    confidence_capped: bool = False
+
+
 class CustomerSummaryLine(BaseModel):
     """Customer-facing summary line without internal cost breakdown."""
 
@@ -139,6 +164,8 @@ class BoQGenerateResponse(BaseModel):
     customer_summary_lines: list[CustomerSummaryLine] = Field(default_factory=list)
     # Internal-only financial hint for the back-office bill-of-quantities view.
     margin_indicator: MarginIndicator | None = None
+    # Retrieval provenance and context metadata for KG-RAG observability.
+    retrieval_evidence: RetrievalEvidence | None = None
     # When the missing-data gate blocks estimation, this lists the questions
     # the user must answer before a BoQ can be produced.
     clarification_questions: list[str] = Field(default_factory=list)

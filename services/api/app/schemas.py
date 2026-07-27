@@ -236,6 +236,22 @@ class MarginIndicatorRead(BaseModel):
     estimated_margin_amount: Decimal = Decimal("0.00")
 
 
+class RetrievalEvidenceRead(BaseModel):
+    knowledge_available: bool = True
+    job_types: list[str] = Field(default_factory=list)
+    citations_used: int = 0
+    source_documents: list[str] = Field(default_factory=list)
+    retrieval_warnings: list[str] = Field(default_factory=list)
+    top_relevance_score: float = 0.0
+    resolved_catalogue_items: int = 0
+    resolved_catalogue_sources: list[str] = Field(default_factory=list)
+    quality_score: float = 1.0
+    quality_gate_passed: bool = True
+    quality_gate_reasons: list[str] = Field(default_factory=list)
+    fallback_policy_applied: str = "none"
+    confidence_capped: bool = False
+
+
 class BillOfQuantitiesRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -253,6 +269,7 @@ class BillOfQuantitiesRead(BaseModel):
     compliance_warnings: list[str] = Field(default_factory=list)
     customer_summary_lines: list[CustomerSummaryLineRead] = Field(default_factory=list)
     margin_indicator: MarginIndicatorRead | None = None
+    retrieval_evidence: RetrievalEvidenceRead | None = None
     standard: str | None
     line_items: list[BoQLineItemRead]
     created_at: datetime

@@ -87,6 +87,7 @@ app.add_middleware(
     allow_origins=[
         origin.strip() for origin in settings.allowed_origins.split(",") if origin.strip()
     ],
+    allow_origin_regex=settings.allowed_origin_regex or None,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

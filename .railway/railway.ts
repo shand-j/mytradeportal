@@ -149,7 +149,10 @@ export default defineRailway(() => {
       EMBEDDING_MODEL: "text-embedding-3-small",
       LLM_MODEL: "gpt-4o-mini",
       LLM_TIMEOUT_SECONDS: "300",
-      ALLOWED_ORIGINS: WEB_PUBLIC_URL,
+      ALLOWED_ORIGINS: "https://${{web.RAILWAY_PUBLIC_DOMAIN}}",
+      // Keep production strict: exact allowed origins are defined explicitly
+      // by ALLOWED_ORIGINS (set per environment).
+      ALLOWED_ORIGIN_REGEX: "",
       // Mandatory in production (validate_production refuses dev defaults).
       AUTH_SECRET_KEY: preserve(),
       // Gates POST /tenants, which bootstraps the first tenant + admin user.

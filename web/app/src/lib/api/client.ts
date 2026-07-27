@@ -8,9 +8,17 @@ function resolveApiBaseUrl(): string {
     return envUrl;
   }
   if (typeof window !== 'undefined') {
-    // Use the page's hostname so subdomain-based tenant resolution works
-    // when the UI is served from demo.localhost:3000.
-    return `http://${window.location.hostname}:8000`;
+    const { hostname, protocol } = window.location;
+
+    // Railway previews expose separate web/admin/api services on
+    // {service}-mytradeportal-pr-{n}.up.railway.app. When the UI runs on
+    // web-*, derive api-* directly to avoid mixed-content and bad :8000 calls.
+    if (hostname.endsWith('.up.railway.app') && hostname.startsWith('web-')) {
+      return `${protocol}//${hostname.replace(/^web-/, 'api-')}`;
+    }
+
+    // Local development keeps API on port 8000 for the same hostname.
+    return `${protocol}//${hostname}:8000`;
   }
   return 'http://localhost:8000';
 }

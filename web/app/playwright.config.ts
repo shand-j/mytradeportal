@@ -1,5 +1,7 @@
 import { defineConfig, devices } from '@playwright/test';
 
+const baseURL = process.env.E2E_BASE_URL ?? 'http://demo.localhost:3000';
+
 export default defineConfig({
   testDir: './e2e',
   fullyParallel: true,
@@ -9,7 +11,7 @@ export default defineConfig({
   reporter: 'list',
   globalSetup: './e2e/global-setup',
   use: {
-    baseURL: 'http://demo.localhost:3000',
+    baseURL,
     storageState: 'playwright/.auth/admin.json',
     trace: 'on-first-retry',
   },
@@ -21,7 +23,7 @@ export default defineConfig({
   ],
   webServer: {
     command: './e2e/start-stack.sh',
-    url: 'http://demo.localhost:3000',
+    url: baseURL,
     reuseExistingServer: !process.env.CI,
     timeout: 180 * 1000,
   },

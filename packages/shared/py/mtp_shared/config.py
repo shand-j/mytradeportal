@@ -62,6 +62,13 @@ class Settings(BaseSettings):
     qdrant_collection_name: str = Field(default="cost_items")
     qdrant_knowledge_collection_name: str = Field(default="quoting_knowledge")
     rag_top_k: int = Field(default=10)
+    retrieval_quality_min_citations: int = Field(default=0)
+    retrieval_quality_min_top_relevance: float = Field(default=0.0)
+    retrieval_quality_require_knowledge_available: bool = Field(default=False)
+    retrieval_quality_fallback_policy: str = Field(
+        default="warn_only", pattern="^(warn_only|deterministic_only)$"
+    )
+    retrieval_quality_confidence_cap: float = Field(default=0.6)
 
     # OpenConstructionERP microservice
     ocerp_url: str = Field(default="http://ocerp:8000")
@@ -89,6 +96,7 @@ class Settings(BaseSettings):
     # Tenancy
     default_tenant_slug: str = Field(default="demo")
     allowed_origins: str = Field(default="http://localhost:3000,http://demo.localhost:3000")
+    allowed_origin_regex: str = Field(default="")
 
     # Supabase Auth (optional — when set, email/password login is handled by Supabase)
     supabase_url: str = Field(default="")

@@ -1,8 +1,12 @@
 import { chromium, type FullConfig } from '@playwright/test';
 
 async function globalSetup(config: FullConfig) {
-  const baseURL = config.projects[0].use.baseURL ?? 'http://demo.localhost:3000';
-  const apiBaseURL = process.env.E2E_API_BASE_URL ?? 'http://127.0.0.1:8000';
+  const baseURL = config.projects[0].use.baseURL ?? process.env.E2E_BASE_URL ?? 'http://demo.localhost:3000';
+  const parsedBase = new URL(baseURL);
+  const apiBaseURL = process.env.E2E_API_BASE_URL
+    ?? (parsedBase.hostname.startsWith('web-') && parsedBase.hostname.endsWith('.up.railway.app')
+      ? `${parsedBase.protocol}//${parsedBase.hostname.replace(/^web-/, 'api-')}`
+      : `http://${parsedBase.hostname}:8000`);
   const appHost = new URL(baseURL).hostname;
   const email = process.env.E2E_ADMIN_EMAIL ?? 'admin@demo.example.com';
   const password = process.env.E2E_ADMIN_PASSWORD ?? 'e2e-password-123';

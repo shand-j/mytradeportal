@@ -89,7 +89,7 @@ jobs:
       - name: Build
         run: pnpm build
 
-  deploy:
+  deploy-production:
     # Deploy the production stack from the IaC in .railway/railway.ts.
     # Requires the RAILWAY_TOKEN (project-scoped) GitHub secret and an
     # existing Railway project wired to this repo. Runs only after both test

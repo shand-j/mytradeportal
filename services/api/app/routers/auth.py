@@ -52,7 +52,8 @@ async def login(
     user = user_result.scalar_one_or_none()
 
     authenticated = False
-    if is_supabase_configured():
+    supabase_enabled = is_supabase_configured()
+    if supabase_enabled:
         sb_response = await sign_in_with_password(data.email, data.password)
         if sb_response is not None:
             sb_user = sb_response.get("user", {})
@@ -64,7 +65,14 @@ async def login(
                 )
                 user = user_result.scalar_one_or_none()
             authenticated = True
-    elif user is not None and user.password_hash is not None:
+
+    # Local bcrypt auth is only used when Supabase auth is disabled.
+    if (
+        not supabase_enabled
+        and not authenticated
+        and user is not None
+        and user.password_hash is not None
+    ):
         authenticated = verify_password(data.password, user.password_hash)
 
     if not authenticated or user is None or not user.is_active:

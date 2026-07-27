@@ -1,0 +1,77 @@
+name: PR Preview Cleanup
+
+on:
+  pull_request:
+    types: [closed]
+    branches: [main]
+
+jobs:
+  teardown-pr-preview:
+    # Run only when PR is merged; skip simple close-without-merge.
+    if: github.event.pull_request.merged == true
+    runs-on: ubuntu-latest
+    steps:
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Cache Railway CLI
+        uses: actions/cache@v4
+        with:
+          path: ~/.npm
+          key: railway-cli-${{ runner.os }}-node22
+          restore-keys: |
+            railway-cli-${{ runner.os }}-
+
+      - name: Install Railway CLI
+        run: npm install -g @railway/cli
+
+      - name: Resolve and delete Railway PR environment
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+          # Project ID for MyTradePortal in Railway; update if the project is recreated.
+          RAILWAY_PROJECT_ID: 30feaeee-9464-41ac-9b17-d07ae4cfcd09
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          set -euo pipefail
+
+          railway link --project "$RAILWAY_PROJECT_ID" --json >/tmp/railway-link.json
+          railway environment list --json > /tmp/railway-envs.json
+
+          PREVIEW_ENV=$(python3 - <<'PY'
+          import json, os, re
+
+          pr_number = os.environ["PR_NUMBER"]
+
+          with open('/tmp/railway-envs.json', 'r', encoding='utf-8') as f:
+              data = json.load(f)
+
+          items = data if isinstance(data, list) else data.get('environments', []) if isinstance(data, dict) else []
+
+          def get_name(item):
+              if isinstance(item, dict):
+                  return item.get('name') or item.get('environmentName') or ''
+              return ''
+
+          names = [get_name(i) for i in items if get_name(i)]
+          pat = re.compile(rf"\bpr[-_ ]*#?{re.escape(pr_number)}\b", re.IGNORECASE)
+          matches = [n for n in names if pat.search(n)]
+
+          if len(matches) == 1:
+              print(matches[0])
+          elif len(matches) > 1:
+              print(sorted(matches)[0])
+          else:
+              print("")
+          PY
+          )
+
+          if [ -z "$PREVIEW_ENV" ]; then
+            echo "No PR environment found for PR #$PR_NUMBER. Nothing to delete."
+            exit 0
+          fi
+
+          echo "Deleting Railway PR environment: $PREVIEW_ENV"
+          railway environment delete "$PREVIEW_ENV" --yes --json
+          echo "Preview environment teardown complete for PR #$PR_NUMBER"
