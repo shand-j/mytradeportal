@@ -39,7 +39,7 @@ jobs:
       run:
         working-directory: web/app
     env:
-      SMOKE_TARGET: ${{ github.event_name == 'deployment_status' && 'preview' || (github.event_name == 'workflow_dispatch' && github.event.inputs.target == 'preview' && 'preview' || 'production') }}
+      SMOKE_TARGET: ${{ (github.event_name == 'deployment_status' && (contains(github.event.deployment.environment || github.event.deployment_status.environment || '', 'pr-') && 'preview' || 'production')) || (github.event_name == 'workflow_dispatch' && github.event.inputs.target == 'preview' && 'preview' || 'production') }}
       PREVIEW_ENV_LABEL: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.preview_env_label || github.event.deployment.environment || github.event.deployment_status.environment || '' }}
       DEPLOYMENT_ENVIRONMENT_URL: ${{ github.event.deployment_status.environment_url || '' }}
       DEPLOYMENT_TARGET_URL: ${{ github.event.deployment_status.target_url || '' }}
