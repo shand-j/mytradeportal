@@ -9,7 +9,27 @@ import {
 const djangoUsername = process.env.E2E_DJANGO_ADMIN_USERNAME ?? 'superadmin';
 const djangoPassword = process.env.E2E_DJANGO_ADMIN_PASSWORD ?? '';
 const adminBaseUrl = process.env.E2E_ADMIN_BASE_URL ?? 'http://localhost:8001';
+const webBaseUrl = process.env.E2E_BASE_URL ?? 'http://demo.localhost:3000';
 const setupToken = process.env.SETUP_TOKEN ?? '';
+
+function resolveSmokeApiBaseUrl(): string {
+  const explicit = process.env.E2E_API_BASE_URL;
+  if (explicit && explicit !== '') {
+    return explicit;
+  }
+
+  try {
+    const parsed = new URL(webBaseUrl);
+    if (parsed.hostname.startsWith('web-') && parsed.hostname.endsWith('.up.railway.app')) {
+      return `${parsed.protocol}//${parsed.hostname.replace(/^web-/, 'api-')}`;
+    }
+    return `http://${parsed.hostname}:8000`;
+  } catch {
+    return 'http://demo.localhost:8000';
+  }
+}
+
+const smokeApiBaseUrl = resolveSmokeApiBaseUrl();
 
 // Require at least one bootstrap path: setup-token API (preferred) or Django admin.
 test.skip(!setupToken && !djangoPassword, 'SETUP_TOKEN or E2E_DJANGO_ADMIN_PASSWORD is required');
@@ -29,7 +49,7 @@ test.describe('production smoke test', () => {
     adminEmail = `admin-${id}@example.com`;
 
     if (setupToken) {
-      const response = await request.post('http://demo.localhost:8000/tenants', {
+      const response = await request.post(`${smokeApiBaseUrl}/tenants`, {
         headers: {
           'Content-Type': 'application/json',
           'X-Setup-Token': setupToken,
