@@ -4,7 +4,6 @@ import base64
 from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
-
 from app import email as email_module
 
 pytestmark = pytest.mark.asyncio
