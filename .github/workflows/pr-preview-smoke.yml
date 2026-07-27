@@ -4,26 +4,11 @@ on:
   deployment_status:
 
 concurrency:
-  group: pr-preview-smoke-${{ github.event.deployment.environment || github.event.deployment_status.environment || github.run_id }}
+  group: pr-preview-smoke-${{ github.event.deployment.environment || github.event.deployment_status.environment }}
   cancel-in-progress: true
 
 jobs:
-  log-deployment-status-event:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Log deployment_status event payload
-        run: |
-          echo "Triggered by: ${{ github.event_name }}"
-          echo "Event action: ${{ github.event.action }}"
-          echo "Deployment environment: ${{ github.event.deployment.environment || github.event.deployment_status.environment || 'unknown' }}"
-          echo "Deployment status state: ${{ github.event.deployment_status.state || 'unknown' }}"
-          echo "Full github.event payload follows"
-          cat <<'JSON'
-          ${{ toJson(github.event) }}
-          JSON
-
   smoke-pr-preview:
-    needs: [log-deployment-status-event]
     if: ${{ github.event.deployment_status.state == 'success' }}
     runs-on: ubuntu-latest
     timeout-minutes: 45
