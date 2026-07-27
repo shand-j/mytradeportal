@@ -31,7 +31,7 @@ jobs:
       run:
         working-directory: web/app
     env:
-      PREVIEW_ENV: ${{ github.event.deployment.environment || github.event.deployment_status.environment }}
+      PREVIEW_ENV: ${{ github.event.deployment.environment.payload.environmentId }}
       RAILWAY_PROJECT_ID: 30feaeee-9464-41ac-9b17-d07ae4cfcd09
       RAILWAY_TOKEN: ${{ secrets.RAILWAY_PREVIEW_TOKEN || secrets.RAILWAY_TOKEN }}
       RAILWAY_API_TOKEN: ${{ secrets.RAILWAY_PREVIEW_TOKEN || secrets.RAILWAY_TOKEN }}
@@ -47,7 +47,7 @@ jobs:
       - name: Log deployment trigger
         run: |
           echo "Triggered by: ${{ github.event_name }}"
-          echo "Preview environment: ${PREVIEW_ENV:-unknown}"
+          echo "Preview environment ID: ${PREVIEW_ENV:-unknown}"
           echo "Deployment SHA: ${DEPLOYMENT_SHA:-unknown}"
           echo "Deployment target URL: ${DEPLOYMENT_TARGET_URL:-unknown}"
           echo "Deployment environment URL: ${DEPLOYMENT_ENVIRONMENT_URL:-unknown}"
@@ -103,15 +103,6 @@ jobs:
             exit 1
           fi
 
-          RAW_PREVIEW_ENV="$PREVIEW_ENV"
-          PREVIEW_ENV="$(printf '%s' "$RAW_PREVIEW_ENV" | sed -E 's|^.*/||; s/^[[:space:]]+//; s/[[:space:]]+$//')"
-
-          if [ -z "$PREVIEW_ENV" ]; then
-            echo "ERROR: Could not normalize preview environment from '$RAW_PREVIEW_ENV'." >&2
-            exit 1
-          fi
-
-          echo "Resolved Railway environment slug: '$PREVIEW_ENV' (from '$RAW_PREVIEW_ENV')"
           railway status --project "$RAILWAY_PROJECT_ID" --environment "$PREVIEW_ENV" --json > /tmp/railway-status.json
 
           URLS=$(python - <<'PY'
