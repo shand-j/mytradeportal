@@ -511,7 +511,7 @@ def _apply_retrieval_quality_gate(
             + settings.retrieval_quality_fallback_policy
         )
         if settings.retrieval_quality_fallback_policy == "deterministic_only":
-            cap = Decimal(str(settings.retrieval_quality_confidence_cap)).quantize(Decimal("0.1"))
+            cap = Decimal(str(settings.retrieval_quality_confidence_cap))
             if state.confidence > cap:
                 state.confidence = cap
                 confidence_capped = True

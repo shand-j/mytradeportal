@@ -20,7 +20,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/.npm
-          key: railway-cli-${{ runner.os }}-${{ hashFiles('**/package.json') }}
+          key: railway-cli-${{ runner.os }}-node22
           restore-keys: |
             railway-cli-${{ runner.os }}-
 
@@ -39,7 +39,7 @@ jobs:
           railway link --project "$RAILWAY_PROJECT_ID" --json >/tmp/railway-link.json
           railway environment list --json > /tmp/railway-envs.json
 
-          PREVIEW_ENV=$(python - <<'PY'
+          PREVIEW_ENV=$(python3 - <<'PY'
           import json, os, re
 
           pr_number = os.environ["PR_NUMBER"]

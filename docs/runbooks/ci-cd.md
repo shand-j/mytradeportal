@@ -54,20 +54,11 @@ No code reaches production unless both test jobs pass and the event is a push to
 
 Triggered on every push to `main` and every pull request targeting `main`.
 
-#### `preview-e2e` job (PR only)
+#### PR preview environments (Railway-managed)
 
-Runs only for pull requests from branches in this repository (not forks) after Python and TypeScript jobs pass.
+Railway provisions PR Environments automatically via the Railway GitHub integration when a PR is opened.
 
-What it does:
-
-1. Links the Railway CLI context to the project using `RAILWAY_PROJECT_ID`.
-2. Resolves the PR Environment name for the current PR number.
-3. Polls Railway status until `web` and `admin` preview domains are available.
-4. Runs targeted Playwright smoke tests against those preview URLs (`playwright.config.prod-smoke.ts`).
-5. Uploads Playwright artifacts on failure.
-
-This validates the PR branch in isolated, ephemeral infrastructure that is deleted by Railway when the PR closes/merges.
-
+CI currently does not run a `preview-e2e` job in GitHub Actions; preview validation is performed via Railway’s own automation and/or manual smoke checks as needed.
 ### `PR Preview Cleanup` — `.github/workflows/pr-preview-cleanup.yml`
 
 Triggered on `pull_request` close events targeting `main` and runs only when `merged == true`.
@@ -224,16 +215,13 @@ These secrets are required by the `deploy` and `smoke-production` workflows:
 | `E2E_ADMIN_BASE_URL` | `smoke-production` | Public URL of the `admin` service |
 | `DATABASE_URL` | `smoke-production` | Used to tear down smoke-test data |
 
-### PR preview CI configuration
+### PR preview cleanup configuration
 
-These values are required by the PR preview smoke job in `CI`:
+`PR Preview Cleanup` (`.github/workflows/pr-preview-cleanup.yml`) requires:
 
-| Value | Required by | Purpose |
-|-------|-------------|---------|
-| `RAILWAY_TOKEN` | `preview-e2e` | Railway project token for preview environment inspection |
-| `RAILWAY_PROJECT_ID` (in workflow, currently `30feaeee-9464-41ac-9b17-d07ae4cfcd09`) | `preview-e2e` | Railway project id used to resolve PR environments |
-| `DJANGO_SUPERUSER_PASSWORD` | `preview-e2e` | Admin login for smoke setup fallback path |
-| `E2E_DJANGO_ADMIN_USERNAME` | `preview-e2e` | Optional; defaults to `superadmin` |
+| Secret | Required by | Purpose |
+|--------|-------------|---------|
+| `RAILWAY_TOKEN` | `pr-preview-cleanup` | Authenticate Railway CLI to delete the merged PR environment |
 
 Optional:
 

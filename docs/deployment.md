@@ -118,7 +118,7 @@ Production is hosted on **Railway** in the **`europe-west4-drams3a` (Amsterdam)*
 in [`.railway/railway.ts`](../.railway/railway.ts) and deployed automatically by
 GitHub Actions on every push to `main` after tests pass.
 
-For pull requests, CI validates the PR branch against a Railway **PR Environment** (ephemeral copy of the base environment) and runs targeted smoke tests there. Production deploy remains a **main-branch-only** operation.
+For pull requests, Railway provisions a PR Environment automatically for preview. CI still runs the Python and TypeScript gates, but does not currently run preview smoke tests in GitHub Actions. Production deploy remains a **main-branch-only** operation.
 
 > **Region drift note:** the native Railway Postgres and Redis plugins are
 > currently deployed in `sfo` while the rest of the stack is in Amsterdam. For
