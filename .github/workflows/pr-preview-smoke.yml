@@ -17,6 +17,7 @@ jobs:
         working-directory: web/app
     env:
       PREVIEW_ENV_ID: ${{ github.event.deployment.payload.environmentId || github.event.deployment.payload.environmentid }}
+      PREVIEW_ENV_LABEL: ${{ github.event.deployment.environment || github.event.deployment_status.environment || '' }}
       RAILWAY_PROJECT_ID: 30feaeee-9464-41ac-9b17-d07ae4cfcd09
       RAILWAY_TOKEN: ${{ secrets.RAILWAY_PREVIEW_TOKEN || secrets.RAILWAY_TOKEN }}
       RAILWAY_API_TOKEN: ${{ secrets.RAILWAY_PREVIEW_TOKEN || secrets.RAILWAY_TOKEN }}
@@ -33,6 +34,7 @@ jobs:
         run: |
           echo "Triggered by: ${{ github.event_name }}"
           echo "Preview environment ID: ${PREVIEW_ENV_ID:-unknown}"
+          echo "Preview environment label: ${PREVIEW_ENV_LABEL:-unknown}"
           echo "Deployment SHA: ${DEPLOYMENT_SHA:-unknown}"
           echo "Deployment target URL: ${DEPLOYMENT_TARGET_URL:-unknown}"
           echo "Deployment environment URL: ${DEPLOYMENT_ENVIRONMENT_URL:-unknown}"
@@ -100,38 +102,20 @@ jobs:
             exit 1
           fi
 
-          if [ -z "${PREVIEW_ENV_ID:-}" ]; then
-            echo "ERROR: Preview environment ID is missing from deployment payload." >&2
+          if [ -z "${PREVIEW_ENV_LABEL:-}" ]; then
+            echo "ERROR: Preview environment label is missing from deployment event." >&2
             exit 1
           fi
 
-          RAW_PREVIEW_ENV_ID="$PREVIEW_ENV_ID"
+          RAW_PREVIEW_ENV_LABEL="$PREVIEW_ENV_LABEL"
+          PREVIEW_ENV="$(printf '%s' "$RAW_PREVIEW_ENV_LABEL" | sed -E 's|^.*/||; s/^[[:space:]]+//; s/[[:space:]]+$//')"
 
-            echo "+ railway environment $RAW_PREVIEW_ENV_ID --json"
-            railway environment "$RAW_PREVIEW_ENV_ID" --json | tee /tmp/railway-environment.json
-
-            PREVIEW_ENV=$(python - <<'PY'
-            import json
-            import sys
-
-            with open('/tmp/railway-environment.json', 'r', encoding='utf-8') as f:
-              data = json.load(f)
-
-            env = data.get('environment') if isinstance(data, dict) else None
-            name = env.get('name') if isinstance(env, dict) else None
-
-            if isinstance(name, str) and name:
-              print(name)
-              sys.exit(0)
-
-            sys.exit(1)
-            PY
-            ) || {
-            echo "ERROR: Could not resolve environment name from environment ID '$RAW_PREVIEW_ENV_ID'." >&2
+          if [ -z "$PREVIEW_ENV" ]; then
+            echo "ERROR: Could not normalize preview environment from label '$RAW_PREVIEW_ENV_LABEL'." >&2
             exit 1
-            }
+          fi
 
-          echo "Resolved environment ID '$RAW_PREVIEW_ENV_ID' to name '$PREVIEW_ENV'"
+          echo "Resolved environment label '$RAW_PREVIEW_ENV_LABEL' to slug '$PREVIEW_ENV'"
 
           echo "+ railway status --project $RAILWAY_PROJECT_ID --environment $PREVIEW_ENV --json"
           railway status --project "$RAILWAY_PROJECT_ID" --environment "$PREVIEW_ENV" --json | tee /tmp/railway-status.json
