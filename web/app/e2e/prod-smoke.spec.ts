@@ -31,10 +31,15 @@ function resolveSmokeApiBaseUrl(): string {
 
 const smokeApiBaseUrl = resolveSmokeApiBaseUrl();
 
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 // Require at least one bootstrap path: setup-token API (preferred) or Django admin.
 test.skip(!setupToken && !djangoPassword, 'SETUP_TOKEN or E2E_DJANGO_ADMIN_PASSWORD is required');
 
 test.describe('production smoke test', () => {
+  test.setTimeout(180_000);
   test.use({ storageState: undefined });
 
   let tenantSlug = '';
@@ -82,7 +87,7 @@ test.describe('production smoke test', () => {
       await page.getByLabel('Email:').fill(adminEmail);
       await page.getByLabel('Full name:').fill('Smoke Test Admin');
       await page.getByLabel('Role:').fill('admin');
-      await page.getByLabel('Password:', { exact: true }).fill(adminPassword);
+      await page.locator('input[name="password"]').fill(adminPassword);
       await page.getByRole('button', { name: 'Save', exact: true }).click();
       await expect(page.getByText('was added successfully')).toBeVisible();
     }
@@ -102,11 +107,24 @@ test.describe('production smoke test', () => {
 
     // 5. Log in to the back-office UI as the new tenant admin.
     await page.goto('/login');
-    await page.getByLabel(/business slug/i).fill(tenantSlug);
-    await page.getByLabel(/email/i).fill(adminEmail);
-    await page.getByLabel(/password/i).fill(adminPassword);
+    for (let attempt = 0; attempt < 4; attempt++) {
+      await page.getByLabel(/business slug/i).fill(tenantSlug);
+      await page.getByLabel(/email/i).fill(adminEmail);
+      await page.getByLabel(/password/i).fill(adminPassword);
+      await page.getByRole('button', { name: /sign in/i }).click();
 
-    await page.getByRole('button', { name: /sign in/i }).click();
+      try {
+        await expect(page).toHaveURL(/\/($|dashboard)/, { timeout: 10_000 });
+        break;
+      } catch {
+        const throttled = await page.getByText(/too many requests/i).isVisible().catch(() => false);
+        if (throttled && attempt < 3) {
+          await sleep(10_000);
+          continue;
+        }
+        throw new Error(`Login did not reach dashboard; current URL: ${page.url()}`);
+      }
+    }
 
     // Use route + shell controls as stable logged-in signals.
     await expect(page).toHaveURL(/\/($|dashboard)/, { timeout: 30_000 });

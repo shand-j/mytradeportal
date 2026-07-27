@@ -64,7 +64,12 @@ async def login(
                 )
                 user = user_result.scalar_one_or_none()
             authenticated = True
-    elif user is not None and user.password_hash is not None:
+
+    # Support local bcrypt-auth users even when Supabase is configured.
+    # This keeps admin-created tenant users and setup-token users able to
+    # log in in preview/local environments where Supabase accounts may not
+    # exist for those synthetic test identities.
+    if not authenticated and user is not None and user.password_hash is not None:
         authenticated = verify_password(data.password, user.password_hash)
 
     if not authenticated or user is None or not user.is_active:

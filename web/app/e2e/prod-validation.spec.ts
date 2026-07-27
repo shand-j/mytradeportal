@@ -119,7 +119,7 @@ test.describe('production validation', () => {
       await page.getByLabel('Email:').fill(adminEmail);
       await page.getByLabel('Full name:').fill('Prod Validation Admin');
       await page.getByLabel('Role:').fill('admin');
-      await page.getByLabel('Password:', { exact: true }).fill(adminPassword);
+      await page.locator('input[name="password"]').fill(adminPassword);
       await page.getByRole('button', { name: 'Save', exact: true }).click();
       await expect(page.getByText('was added successfully')).toBeVisible();
     }
