@@ -103,6 +103,15 @@ jobs:
             exit 1
           fi
 
+          RAW_PREVIEW_ENV="$PREVIEW_ENV"
+          PREVIEW_ENV="$(printf '%s' "$RAW_PREVIEW_ENV" | sed -E 's|^.*/||; s/^[[:space:]]+//; s/[[:space:]]+$//')"
+
+          if [ -z "$PREVIEW_ENV" ]; then
+            echo "ERROR: Could not normalize preview environment from '$RAW_PREVIEW_ENV'." >&2
+            exit 1
+          fi
+
+          echo "Resolved Railway environment slug: '$PREVIEW_ENV' (from '$RAW_PREVIEW_ENV')"
           railway status --project "$RAILWAY_PROJECT_ID" --environment "$PREVIEW_ENV" --json > /tmp/railway-status.json
 
           URLS=$(python - <<'PY'
