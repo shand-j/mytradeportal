@@ -1,0 +1,207 @@
+name: PR Preview Smoke Test
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, reopened, synchronize, ready_for_review]
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: "PR number to smoke test"
+        required: false
+        type: string
+
+concurrency:
+  group: pr-preview-smoke-${{ github.event.pull_request.number || inputs.pr_number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  smoke-pr-preview:
+    if: github.event_name == 'workflow_dispatch' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    defaults:
+      run:
+        working-directory: web/app
+    env:
+      RAILWAY_PROJECT_ID: 30feaeee-9464-41ac-9b17-d07ae4cfcd09
+      RAILWAY_TOKEN: ${{ secrets.RAILWAY_PREVIEW_TOKEN || secrets.RAILWAY_TOKEN }}
+      RAILWAY_API_TOKEN: ${{ secrets.RAILWAY_PREVIEW_TOKEN || secrets.RAILWAY_TOKEN }}
+      E2E_DJANGO_ADMIN_USERNAME: ${{ secrets.E2E_DJANGO_ADMIN_USERNAME || 'superadmin' }}
+      E2E_DJANGO_ADMIN_PASSWORD: ${{ secrets.DJANGO_SUPERUSER_PASSWORD }}
+      E2E_ARTIFACT_DIR: playwright/.tmp
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "pnpm"
+          cache-dependency-path: web/app/pnpm-lock.yaml
+
+      - name: Cache Railway CLI
+        uses: actions/cache@v4
+        with:
+          path: ~/.npm
+          key: railway-cli-${{ runner.os }}-${{ hashFiles('**/package.json') }}
+          restore-keys: |
+            railway-cli-${{ runner.os }}-
+
+      - name: Install Railway CLI
+        run: npm install -g @railway/cli
+
+      - name: Install smoke dependencies
+        working-directory: .
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e "./[dev]"
+          pnpm --dir web/app install --frozen-lockfile
+          pnpm --dir web/app exec playwright install chromium
+
+      - name: Resolve preview URLs and wait for healthy deploy
+        working-directory: .
+        env:
+          PR_NUMBER: ${{ github.event.pull_request.number || inputs.pr_number }}
+        run: |
+          set -euo pipefail
+
+          if [ -z "${RAILWAY_TOKEN:-}" ]; then
+            echo "ERROR: Missing Railway token. Set RAILWAY_PREVIEW_TOKEN or RAILWAY_TOKEN." >&2
+            exit 1
+          fi
+
+          if [ -z "${PR_NUMBER:-}" ]; then
+            echo "ERROR: PR number is missing." >&2
+            exit 1
+          fi
+
+          PREVIEW_ENV="pr-${PR_NUMBER}"
+          echo "Waiting for Railway preview environment: $PREVIEW_ENV"
+
+          ATTEMPTS=40
+          for i in $(seq 1 "$ATTEMPTS"); do
+            if ! railway status --project "$RAILWAY_PROJECT_ID" --environment "$PREVIEW_ENV" --json > /tmp/railway-status.json 2>/tmp/railway-status.err; then
+              if [ "$i" -eq "$ATTEMPTS" ]; then
+                echo "ERROR: Unable to read Railway status for environment '$PREVIEW_ENV'." >&2
+                cat /tmp/railway-status.err >&2
+                exit 1
+              fi
+              echo "Railway environment not ready yet (attempt $i/$ATTEMPTS)."
+              sleep 15
+              continue
+            fi
+
+            URLS=$(python - <<'PY'
+            import json
+
+            with open('/tmp/railway-status.json', 'r', encoding='utf-8') as f:
+                data = json.load(f)
+
+            web = ""
+            admin = ""
+
+            def domain_from(node):
+                domains = node.get('domains') if isinstance(node, dict) else None
+                if not isinstance(domains, dict):
+                    return ""
+                for key in ('serviceDomains', 'customDomains'):
+                    values = domains.get(key) or []
+                    if not isinstance(values, list):
+                        continue
+                    for item in values:
+                        if isinstance(item, dict):
+                            for field in ('domain', 'hostname', 'name'):
+                                val = item.get(field)
+                                if isinstance(val, str) and val:
+                                    return val
+                        elif isinstance(item, str) and item:
+                            return item
+                return ""
+
+            def walk(node):
+                if isinstance(node, dict):
+                    yield node
+                    for value in node.values():
+                        yield from walk(value)
+                elif isinstance(node, list):
+                    for value in node:
+                        yield from walk(value)
+
+            for obj in walk(data):
+                if not isinstance(obj, dict):
+                    continue
+                name = obj.get('serviceName')
+                if name == 'web' and not web:
+                    web = domain_from(obj)
+                if name == 'admin' and not admin:
+                    admin = domain_from(obj)
+
+            print(f"{web}|{admin}")
+            PY
+            )
+
+            WEB_DOMAIN="${URLS%%|*}"
+            ADMIN_DOMAIN="${URLS##*|}"
+
+            if [ -z "$WEB_DOMAIN" ] || [ -z "$ADMIN_DOMAIN" ]; then
+              if [ "$i" -eq "$ATTEMPTS" ]; then
+                echo "ERROR: Could not resolve web/admin domains for '$PREVIEW_ENV'." >&2
+                exit 1
+              fi
+              echo "Domains not ready yet (attempt $i/$ATTEMPTS)."
+              sleep 15
+              continue
+            fi
+
+            WEB_URL="https://$WEB_DOMAIN"
+            ADMIN_URL="https://$ADMIN_DOMAIN"
+
+            if ! curl -fsSIL --max-time 10 "$WEB_URL" >/dev/null; then
+              if [ "$i" -eq "$ATTEMPTS" ]; then
+                echo "ERROR: Web preview URL not healthy: $WEB_URL" >&2
+                exit 1
+              fi
+              echo "Web URL not healthy yet (attempt $i/$ATTEMPTS): $WEB_URL"
+              sleep 15
+              continue
+            fi
+
+            if ! curl -fsSIL --max-time 10 "$ADMIN_URL/admin/login/" >/dev/null; then
+              if [ "$i" -eq "$ATTEMPTS" ]; then
+                echo "ERROR: Admin preview URL not healthy: $ADMIN_URL/admin/login/" >&2
+                exit 1
+              fi
+              echo "Admin URL not healthy yet (attempt $i/$ATTEMPTS): $ADMIN_URL"
+              sleep 15
+              continue
+            fi
+
+            echo "E2E_BASE_URL=$WEB_URL" >> "$GITHUB_ENV"
+            echo "E2E_ADMIN_BASE_URL=$ADMIN_URL" >> "$GITHUB_ENV"
+            echo "Resolved preview URLs: $WEB_URL and $ADMIN_URL"
+            break
+          done
+
+      - name: Run PR preview smoke test
+        run: pnpm exec playwright test --config=playwright.config.prod-smoke.ts --retries=1
+
+      - name: Upload preview smoke artifacts
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pr-preview-smoke-artifacts
+          path: |
+            web/app/playwright/.tmp
+            web/app/test-results
+          if-no-files-found: ignore
