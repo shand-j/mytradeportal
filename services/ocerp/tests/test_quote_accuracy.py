@@ -10,8 +10,8 @@ from mtp_shared import BoQGenerateRequest
 from ocerp.services.boq_models import BoQRequirement
 from ocerp.services.requirements import RequirementEngine
 from ocerp.services.resolver import (
-    CategoryOverride,
     CatalogueResolver,
+    CategoryOverride,
     SupplierConnector,
     _brand_score,
     _finish_score,
