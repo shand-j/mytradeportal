@@ -1,6 +1,6 @@
 # BoQ Engine Deterministic Rules Audit
 
-> Date: 2026-06-23  
+> Date: 2026-06-23
 > Scope: `services/ocerp/ocerp/services/requirements.py`, `resolver.py`, `labour.py`, `pricing.py`, and the default labour schedule.
 
 ## 1. Why this matters
@@ -425,19 +425,19 @@ No hard-coded money values. The only deterministic quirk is that the description
 
 ### 9.1 Immediate (low effort, high value)
 
-1. **Add rule provenance to every line item**  
+1. **Add rule provenance to every line item**
    Expose the `scope_tag`/`notes` in the UI so users can see whether an item came from the LLM, a mandatory safety rule, or a heuristic default.
-2. **Stop downgrading RCBOs to MCBs automatically**  
+2. **Stop downgrading RCBOs to MCBs automatically**
    Make the downgrade a warning or a tenant option, not a default.
-3. **Tighten the socket essential group**  
+3. **Tighten the socket essential group**
    Require `socket` AND a gang indicator; reject data/ethernet terms (already done — keep it).
-4. **Fix the most obvious over-adds**  
-   - Back boxes for CU upgrades should not be a flat 10/5.  
+4. **Fix the most obvious over-adds**
+   - Back boxes for CU upgrades should not be a flat 10/5.
    - Rewire cable quantities should scale with socket/light counts or floor area.
 
 ### 9.2 Structural (medium effort)
 
-5. **Move rules to a declarative config file**  
+5. **Move rules to a declarative config file**
    Replace inline `if is_rewire:` blocks with a YAML/JSON rule set, e.g.:
    ```yaml
    - concept: double_socket
@@ -450,19 +450,19 @@ No hard-coded money values. The only deterministic quirk is that the description
    - `mandatory` — safety/regulatory, cannot be overridden (e.g. smoke alarms where required).
    - `default` — sensible starting point, LLM/user can override.
    - `suggestion` — only added if the LLM also mentions it or catalogue match is strong.
-7. **Make quantities parametric and configurable**  
+7. **Make quantities parametric and configurable**
    Replace flat numbers with formulas driven by bedrooms, rooms, socket counts, and configurable multipliers stored in tenant settings or a rule file.
 8. **Price-aware resolver**
    - Add a price penalty to the score, or pick the cheapest item among the top-N candidates.
    - Respect a `max_unit_price` per spec level (budget/mid/premium).
-9. **Allow LLM overrides for controlled concepts**  
+9. **Allow LLM overrides for controlled concepts**
    If the LLM output includes a concept in `_DETERMINISTIC_CONCEPTS` but with a different quantity/attribute, treat it as a user override rather than dropping it.
 
 ### 9.3 Strategic (high effort)
 
-10. **Retire the “LLM produces a draft, then we ignore it” pattern**  
+10. **Retire the “LLM produces a draft, then we ignore it” pattern**
     Use the LLM to extract explicit user intent (counts, brands, special items, regulatory context) and let the deterministic layer fill only the gaps (safety items, standard accessories, cable). This is the opposite of the current design, where the deterministic layer drives and the LLM is suppressed.
-11. **Calibrate against real quotes, not just the golden dataset**  
+11. **Calibrate against real quotes, not just the golden dataset**
     Build a regression suite from actual quotes (including the recent “add 5 double sockets” case) and use it to validate rule changes.
 
 ---

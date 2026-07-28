@@ -1,6 +1,6 @@
 # Agent Knowledge Foundation: AI-Powered Electrical Quoting
 
-> Status: knowledge foundation — implementation of the conversational capture engine is planned for a later phase.  
+> Status: knowledge foundation — implementation of the conversational capture engine is planned for a later phase.
 > Companion files:
 > - `docs/ai_electrician_quoting_platform_research/ai_electrician_quoting_platform_research.md`
 > - `docs/ai_electrician_quoting_platform_research/job_capture_data_model.json`

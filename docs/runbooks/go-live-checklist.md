@@ -1,9 +1,9 @@
 # Go-Live Checklist — My Trade Portal V2
 
-**Status:** pre-go-live  
-**Target:** production-ready by tomorrow  
-**Railway project:** `MyTradePortal` — `30feaeee-9464-41ac-9b17-d07ae4cfcd09`  
-**Environment:** `production`  
+**Status:** pre-go-live
+**Target:** production-ready by tomorrow
+**Railway project:** `MyTradePortal` — `30feaeee-9464-41ac-9b17-d07ae4cfcd09`
+**Environment:** `production`
 
 This runbook covers the final checks and actions required before My Trade Portal V2 serves live UK electrician customers. It assumes the reader is technical but not already familiar with every component.
 

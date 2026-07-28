@@ -95,11 +95,11 @@ Adding a socket is the bread and butter of domestic electrical work, representin
 
 The LLM's question sequence for sockets follows this dependency chain:
 
-**Question 1 — Socket Type:** Single, double, USB-A, USB-C, smart, or floor socket. USB and smart sockets cost £25-60 each versus £5-15 for standard, but customers increasingly expect them.  [(Fix-a-Trader)](https://fixatrader.com/blog/electricians/electrician-hourly-rates-uk) 
+**Question 1 — Socket Type:** Single, double, USB-A, USB-C, smart, or floor socket. USB and smart sockets cost £25-60 each versus £5-15 for standard, but customers increasingly expect them.  [(Fix-a-Trader)](https://fixatrader.com/blog/electricians/electrician-hourly-rates-uk)
 
 **Question 2 — Room Location:** Bedroom sockets are typically non-notifiable spurs. Kitchen and bathroom sockets are notifiable and may need dedicated circuits. The LLM must immediately flag if the room is a "special location."
 
-**Question 3 — Appliance Load:** This is the hidden complexity. A customer saying "I want to plug in a washing machine" is actually requesting a high-load appliance (2kW+) that should have a **dedicated circuit**, not just an additional socket. The LLM must detect this and escalate the job type accordingly.  [(Professional Electrician)](https://professional-electrician.com/technical/the-practice-of-unfused-spurs-off-a-ring-final-circuit/) 
+**Question 3 — Appliance Load:** This is the hidden complexity. A customer saying "I want to plug in a washing machine" is actually requesting a high-load appliance (2kW+) that should have a **dedicated circuit**, not just an additional socket. The LLM must detect this and escalate the job type accordingly.  [(Professional Electrician)](https://professional-electrician.com/technical/the-practice-of-unfused-spurs-off-a-ring-final-circuit/)
 
 **Question 4 — Distance from Consumer Unit:** Cable length determines voltage drop and labour time. Under 10 metres is straightforward; over 30 metres may need thicker cable and significantly more labour.
 
@@ -140,15 +140,15 @@ The LLM must capture the **kW rating** because this single number determines eve
 | 10.5kW | ~46A | 10mm² or 16mm² | 45A or 50A MCB | £300-£460  [(Elec-Mate)](https://www.elec-mate.com/guides/electric-shower-installation)  |
 | 10.8kW+ | ~47-52A | 16mm² minimum | 50A MCB | £350-£570  [(Elec-Mate)](https://www.elec-mate.com/guides/electric-shower-installation)  |
 
-The LLM should also ask about **water pressure** because low-pressure systems (gravity-fed) may need a pumped shower or a lower kW rating. And it must confirm whether this is a **like-for-like replacement** (potentially non-notifiable if same or lower kW) or an **upgrade/new install** (always notifiable).  [(Elec-Mate)](https://www.elec-mate.com/guides/electric-shower-installation) 
+The LLM should also ask about **water pressure** because low-pressure systems (gravity-fed) may need a pumped shower or a lower kW rating. And it must confirm whether this is a **like-for-like replacement** (potentially non-notifiable if same or lower kW) or an **upgrade/new install** (always notifiable).  [(Elec-Mate)](https://www.elec-mate.com/guides/electric-shower-installation)
 
 ### 4.4 EV Charger Installation — The Fastest-Growing Category
 
-EV charger installations have grown exponentially since the 2030 petrol/diesel sales ban was announced. All domestic EV charger installations are **notifiable under Part P** and since July 2022 must comply with the **Smart Charge Point Regulations** (internet-connected, capable of demand response).  [(North West Contractors)](https://northwest-contractors.co.uk/news/ev-charger-installation-preparing-for-an-electric-vehicle/) 
+EV charger installations have grown exponentially since the 2030 petrol/diesel sales ban was announced. All domestic EV charger installations are **notifiable under Part P** and since July 2022 must comply with the **Smart Charge Point Regulations** (internet-connected, capable of demand response).  [(North West Contractors)](https://northwest-contractors.co.uk/news/ev-charger-installation-preparing-for-an-electric-vehicle/)
 
 The LLM needs to assess five dimensions that many customers won't have considered:
 
-**Supply Capacity:** Standard UK homes have a **100A single-phase supply** (23kW at 230V).  [(Sleepless Tradesman)](https://sleeplesstradesman.com/tools/electrical-load-calculator)  A 7kW charger draws ~30A continuously. If the home already has an electric shower (40A), oven (13A), and other loads, the total may approach the supply limit. The LLM should flag when a **DNO (Distribution Network Operator) supply upgrade** might be needed — this adds £500-£2,000 and 4-8 weeks to the process.  [(UK Power Networks)](https://www.ukpowernetworks.co.uk/low-carbon-technology-domestic/electric-vehicles-cost-time-and-whats-involved) 
+**Supply Capacity:** Standard UK homes have a **100A single-phase supply** (23kW at 230V).  [(Sleepless Tradesman)](https://sleeplesstradesman.com/tools/electrical-load-calculator)  A 7kW charger draws ~30A continuously. If the home already has an electric shower (40A), oven (13A), and other loads, the total may approach the supply limit. The LLM should flag when a **DNO (Distribution Network Operator) supply upgrade** might be needed — this adds £500-£2,000 and 4-8 weeks to the process.  [(UK Power Networks)](https://www.ukpowernetworks.co.uk/low-carbon-technology-domestic/electric-vehicles-cost-time-and-whats-involved)
 
 **Parking Location:** On-street parking makes installation "very difficult or impossible" in many cases because the charger must be on the customer's property.  [(North West Contractors)](https://northwest-contractors.co.uk/news/ev-charger-installation-preparing-for-an-electric-vehicle/)  The LLM should ask about off-street parking before proceeding.
 
@@ -183,11 +183,11 @@ Accurate quoting requires understanding both baseline pricing and the factors th
 
 The pricing data reveals three clear tiers of work:
 
-**Small Jobs (£40-£300):** Single socket additions (£40-£120), light fitting replacements (£45-£140), smoke alarm installations (£80-£200), and EICR inspections (£100-£350) form the high-volume, low-margin work that keeps electricians busy between larger projects.  [(Fix-a-Trader)](https://fixatrader.com/blog/electricians/electrician-hourly-rates-uk) 
+**Small Jobs (£40-£300):** Single socket additions (£40-£120), light fitting replacements (£45-£140), smoke alarm installations (£80-£200), and EICR inspections (£100-£350) form the high-volume, low-margin work that keeps electricians busy between larger projects.  [(Fix-a-Trader)](https://fixatrader.com/blog/electricians/electrician-hourly-rates-uk)
 
-**Medium Jobs (£300-£1,000):** Consumer unit upgrades (£350-£900), electric shower installations (£180-£500), outdoor socket installs (£120-£400), and oven/hob circuits (£150-£450) require more time, materials, and certification but are completed in a single day.  [(Electrical Testing London)](https://www.electricaltestinglondon.co.uk/blog/consumer-unit-upgrade-cost--uk-prices--factors--timescales) 
+**Medium Jobs (£300-£1,000):** Consumer unit upgrades (£350-£900), electric shower installations (£180-£500), outdoor socket installs (£120-£400), and oven/hob circuits (£150-£450) require more time, materials, and certification but are completed in a single day.  [(Electrical Testing London)](https://www.electricaltestinglondon.co.uk/blog/consumer-unit-upgrade-cost--uk-prices--factors--timescales)
 
-**Major Works (£1,000+):** EV charger installations (£750-£1,500) and full house rewires (£3,000-£8,000, with larger properties up to £10,000) represent significant projects requiring multiple days, detailed design, and full certification.  [(TradeCalcs)](https://tradecalcs.co.uk/house-rewire-cost-uk) 
+**Major Works (£1,000+):** EV charger installations (£750-£1,500) and full house rewires (£3,000-£8,000, with larger properties up to £10,000) represent significant projects requiring multiple days, detailed design, and full certification.  [(TradeCalcs)](https://tradecalcs.co.uk/house-rewire-cost-uk)
 
 ### 5.2 Regional Labour Rate Variations
 
@@ -212,11 +212,11 @@ Beyond regional rates, six factors consistently move quotes up or down:
 
 **Property Age (+15-25% for pre-1970):** Older properties may have legacy wiring (rubber insulation, aluminium conductors, no earth bonding), obsolete colour coding, and asbestos-containing materials.  [(Electrical Testing London)](https://www.electricaltestinglondon.co.uk/blog/what-does-a-homebuyers-electrical-survey-cost-in-the-uk-)  Electricians charge more because every assumption must be verified.
 
-**Floor and Wall Construction (+10-25% for solid):** Suspended timber floors allow cables to be run underneath with minimal disruption. Solid concrete floors or dot-and-dab plasterboard walls require chasing — cutting channels into masonry — which is slow, dusty, and requires making good afterwards.  [(TradeCalcs)](https://tradecalcs.co.uk/house-rewire-cost-uk) 
+**Floor and Wall Construction (+10-25% for solid):** Suspended timber floors allow cables to be run underneath with minimal disruption. Solid concrete floors or dot-and-dab plasterboard walls require chasing — cutting channels into masonry — which is slow, dusty, and requires making good afterwards.  [(TradeCalcs)](https://tradecalcs.co.uk/house-rewire-cost-uk)
 
-**Access Difficulty (+10-25%):** Consumer units in locked communal cupboards, lofts with no ladder access, or properties with no parking all add time and frustration.  [(Fix-a-Trader)](https://fixatrader.com/blog/electricians/electrician-hourly-rates-uk) 
+**Access Difficulty (+10-25%):** Consumer units in locked communal cupboards, lofts with no ladder access, or properties with no parking all add time and frustration.  [(Fix-a-Trader)](https://fixatrader.com/blog/electricians/electrician-hourly-rates-uk)
 
-**Urgency Premium (+100-200% emergency):** Out-of-hours work (evenings, weekends, holidays) commands significant premiums. Emergency call-outs for dangerous situations (burning smell, complete power loss) are typically double standard rates.  [(Fix-a-Trader)](https://fixatrader.com/blog/electricians/electrician-hourly-rates-uk) 
+**Urgency Premium (+100-200% emergency):** Out-of-hours work (evenings, weekends, holidays) commands significant premiums. Emergency call-outs for dangerous situations (burning smell, complete power loss) are typically double standard rates.  [(Fix-a-Trader)](https://fixatrader.com/blog/electricians/electrician-hourly-rates-uk)
 
 **Combining Multiple Jobs (-10-20% per job):** A customer adding two sockets and changing three light fittings on the same visit gets economies of scale — single mobilisation, tools already out, testing done once. The LLM should actively recommend bundling.
 
@@ -249,7 +249,7 @@ The LLM doesn't need to perform full BS 7671 cable calculations, but it needs en
 
 The LLM should flag when a customer's existing or planned loads may exceed their supply capacity:
 
-A typical 3-bedroom semi has a **100A single-phase supply** (23kW at 230V).  [(Sleepless Tradesman)](https://sleeplesstradesman.com/tools/electrical-load-calculator)  Common loads include: electric shower (8.5kW = 37A), oven (3kW = 13A), EV charger (7kW = 30A), and other circuits. If the LLM detects that a customer is adding an EV charger to a home that already has an electric shower, it should warn: *"Your home's electrical supply may need a capacity check before adding an EV charger. The electrician will assess this and contact your electricity network operator if needed."*  [(Sleepless Tradesman)](https://sleeplesstradesman.com/tools/electrical-load-calculator) 
+A typical 3-bedroom semi has a **100A single-phase supply** (23kW at 230V).  [(Sleepless Tradesman)](https://sleeplesstradesman.com/tools/electrical-load-calculator)  Common loads include: electric shower (8.5kW = 37A), oven (3kW = 13A), EV charger (7kW = 30A), and other circuits. If the LLM detects that a customer is adding an EV charger to a home that already has an electric shower, it should warn: *"Your home's electrical supply may need a capacity check before adding an EV charger. The electrician will assess this and contact your electricity network operator if needed."*  [(Sleepless Tradesman)](https://sleeplesstradesman.com/tools/electrical-load-calculator)
 
 ---
 
@@ -401,9 +401,9 @@ Add **full/partial rewires**, **outbuilding supplies**, **storage heaters**, **s
 The JSON schema is designed for direct ingestion into an LLM prompt pipeline:
 
 ```
-Customer Input → Intent Classification (job type) → 
-Universal Questions → Job-Specific Questions → 
-Decision Logic Evaluation (Part P, cable sizing, pricing) → 
+Customer Input → Intent Classification (job type) →
+Universal Questions → Job-Specific Questions →
+Decision Logic Evaluation (Part P, cable sizing, pricing) →
 Compliance Flags → Quote Preview → Trader Dispatch
 ```
 

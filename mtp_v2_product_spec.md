@@ -2,10 +2,10 @@
 
 ## AI-Native Field Service Platform for Tradespeople
 
-**Version:** 2.0-draft  
-**Date:** June 2026  
-**Status:** Product Planning  
-**MVP Focus:** UK electricians  
+**Version:** 2.0-draft
+**Date:** June 2026
+**Status:** Product Planning
+**MVP Focus:** UK electricians
 
 ---
 
@@ -281,24 +281,24 @@ The engine maintains **conversation state** across the multi-turn interaction us
 
 **Example Conversation:**
 ```
-Agent: "Hi, this is the AI assistant for Mike's Electrical. I see you're calling about the 
-       quote for the consumer unit upgrade and kitchen rewiring. The total is £4,200 plus 
+Agent: "Hi, this is the AI assistant for Mike's Electrical. I see you're calling about the
+       quote for the consumer unit upgrade and kitchen rewiring. The total is £4,200 plus
        VAT. How can I help?"
 
 Customer: "That seems high. Can we use a standard consumer unit instead of the smart one?"
 
-Agent: "I can adjust that. The current quote includes a smart distribution board at £680. 
-       I could switch to a standard dual RCD consumer unit at £420, which would save you 
+Agent: "I can adjust that. The current quote includes a smart distribution board at £680.
+       I could switch to a standard dual RCD consumer unit at £420, which would save you
        about £260. Would you like me to update the quote?"
 
 Customer: "Yes, and can we also drop the extra outdoor socket?"
 
-Agent: "Removing the outdoor socket would save another £180. With both changes, your new 
+Agent: "Removing the outdoor socket would save another £180. With both changes, your new
        total would be £3,760 plus VAT. Shall I send you the updated quote?"
 
 Customer: "Yes, that's better."
 
-Agent: "Perfect. The updated quote has been sent to your email. Would you like to book 
+Agent: "Perfect. The updated quote has been sent to your email. Would you like to book
        the work? We have availability next Tuesday or Thursday."
 ```
 
@@ -654,22 +654,22 @@ class VoiceSessionContext:
     contact_id: UUID
     quote_id: UUID
     call_sid: str
-    
+
     # Quote state
     original_quote: Quote
     current_quote: Quote          # May differ after adjustments
     adjustment_history: list      # Log of all changes made
-    
+
     # Conversation state
     current_state: RefinementState
     conversation_transcript: list # Full text transcript
     customer_intent: str          # Classified intent
-    
+
     # Agent configuration
     max_adjustment_rounds: int = 5
     current_round: int = 0
     requires_human_approval: bool = False
-    
+
     # Timing
     session_start: datetime
     last_activity: datetime
@@ -678,7 +678,7 @@ class VoiceSessionContext:
 ### 8.3 LLM Prompt for Quote Refinement
 
 ```
-You are the AI voice assistant for {business_name}, a {trade_type} business. 
+You are the AI voice assistant for {business_name}, a {trade_type} business.
 You are on a phone call with {customer_name} discussing their pending quote.
 
 BUSINESS RULES:
@@ -697,10 +697,10 @@ ADJUSTMENT HISTORY:
 INSTRUCTIONS:
 1. Be conversational, friendly, and professional. Keep responses concise (2-3 sentences spoken).
 2. When presenting prices, always mention both ex-VAT and inc-VAT amounts.
-3. For adjustment requests: look up alternative items in the cost database, recalculate, 
+3. For adjustment requests: look up alternative items in the cost database, recalculate,
    and present the impact clearly ("That change would save you £X" or "That adds £Y").
 4. VALIDATE all prices against the cost database. Never quote below cost + minimum margin.
-5. If the customer asks something you cannot answer or requests a change that requires 
+5. If the customer asks something you cannot answer or requests a change that requires
    manual estimation, offer to have {business_owner_name} call them back.
 6. After confirmation, summarize the final quote and offer to book an appointment.
 

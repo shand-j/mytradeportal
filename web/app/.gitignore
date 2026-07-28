@@ -27,4 +27,3 @@ dist-ssr
 playwright/.auth/
 test-results/
 playwright-report/
-

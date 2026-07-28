@@ -111,7 +111,7 @@ test_cases:
       - "spec_level must be 'budget' or 'mid_range' (standard white = budget)"
       - "total material cost must be between GBP 500 and GBP 800"
     notes: >
-      1-bed flat: living room, bedroom, kitchen, bathroom, hall. 
+      1-bed flat: living room, bedroom, kitchen, bathroom, hall.
       Standard provision: 12 sockets, 4-5 light points, 1 CU, 3 MCBs.
       Per BS 5839-6: 2 smoke alarms (hall + living) + 1 heat (kitchen) minimum.
       SPD mandatory on all new CUs since 18th Ed (BS 7671 443.4).
@@ -317,7 +317,7 @@ test_cases:
       - "spec_level must be 'mid_range' or 'premium'"
       - "total material cost must be between GBP 1300 and GBP 2200"
     notes: >
-      3-bed semi: 3 bedrooms, living room, kitchen, bathroom, hall, landing, 
+      3-bed semi: 3 bedrooms, living room, kitchen, bathroom, hall, landing,
       possibly utility. Standard: 26-30 sockets, 12-16 light points.
       Scolmore Click is a mid-range modular system requiring faceplates + modules.
       RCBO per circuit (not shared RCD) is premium protection - each circuit has

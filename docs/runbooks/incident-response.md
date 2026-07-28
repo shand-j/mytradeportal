@@ -284,7 +284,7 @@ Next update: [time]
 ### Customer-facing status update (P1/P2 only)
 
 ```text
-My Trade Portal is currently experiencing [brief description]. 
+My Trade Portal is currently experiencing [brief description].
 Some users may be unable to [log in / generate quotes / upload files / etc.].
 We are actively working on a fix and will update this page in 30 minutes.
 ```

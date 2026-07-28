@@ -3,7 +3,7 @@
 
 suppliers:
   # --- TIER 1: Official APIs (Requires trade account / partnership) ---
-  
+
   edata:
     name: "EDATA (Electrical Distributors' Association)"
     description: "Industry-managed product data pool with 300,000+ electrotechnical products — INDUSTRIAL/INFRASTRUCTURE FOCUS"
@@ -322,28 +322,28 @@ implementation_phases:
     suppliers: ["screwfix", "toolstation", "cef", "tlc_direct"]
     timeframe: "1-2 weeks"
     cost: "Low (Apify credits ~$50-100/month)"
-    
+
   phase_2:
     name: "Industry Standard - EDATA Integration"
     description: "Access manufacturer-approved product data"
     suppliers: ["edata"]
     timeframe: "2-4 weeks"
     cost: "FREE if EDA member, or subscription fee"
-    
+
   phase_3:
     name: "Direct Supplier APIs"
     description: "Real-time pricing and stock from major manufacturers"
     suppliers: ["schneider_electric", "netxl"]
     timeframe: "4-8 weeks"
     cost: "Free APIs (account setup required)"
-    
+
   phase_4:
     name: "Commercial Pricing Databases"
     description: "Comprehensive trade pricing databases"
     suppliers: ["pricelynx", "ensign", "sec_cypher1"]
     timeframe: "2-4 weeks"
     cost: "£35-100/month per service"
-    
+
   phase_5:
     name: "Universal Product Coverage"
     description: "Fill gaps with universal APIs"

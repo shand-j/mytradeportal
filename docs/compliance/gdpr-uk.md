@@ -1,8 +1,8 @@
 # GDPR Compliance Guide — My Trade Portal V2 (UK)
 
-> **Status:** pre-go-live, production target: tomorrow  
-> **Scope:** UK field-service management platform for electrical contractors  
-> **Primary jurisdiction:** United Kingdom (UK GDPR + Data Protection Act 2018)  
+> **Status:** pre-go-live, production target: tomorrow
+> **Scope:** UK field-service management platform for electrical contractors
+> **Primary jurisdiction:** United Kingdom (UK GDPR + Data Protection Act 2018)
 > **Hosting region:** `europe-west4-drams3a` (Amsterdam) via Railway IaC (`.railway/railway.ts`)
 
 This document is a practical, engineering-facing compliance guide. It maps the My Trade Portal V2 implementation to UK GDPR requirements and lists the exact tasks that must be completed before launch.
