@@ -284,7 +284,7 @@ class ScrewfixScraper:
         raw_price = raw_item.get("price", raw_item.get("currentPrice", "0"))
         if isinstance(raw_price, str):
             price = float(raw_price.replace("£", "").replace(",", ""))
-        elif isinstance(raw_price, (int, float)):
+        elif isinstance(raw_price, int | float):
             price = float(raw_price)
 
         # Extract original price (rrp / wasPrice / originalPrice)
@@ -292,7 +292,7 @@ class ScrewfixScraper:
         raw_orig = raw_item.get("rrp", raw_item.get("originalPrice", raw_item.get("wasPrice", "0")))
         if isinstance(raw_orig, str):
             original_price = float(raw_orig.replace("£", "").replace(",", "")) if raw_orig else 0.0
-        elif isinstance(raw_orig, (int, float)):
+        elif isinstance(raw_orig, int | float):
             original_price = float(raw_orig)
 
         # Calculate discount

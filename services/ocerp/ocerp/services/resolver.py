@@ -52,7 +52,7 @@ def _requirement_tokens(requirement: BoQRequirement) -> set[str]:
     for value in requirement.attributes.values():
         if isinstance(value, str):
             tokens.update(_tokenize(value))
-        elif isinstance(value, (int, float, Decimal)):
+        elif isinstance(value, int | float | Decimal):
             tokens.add(str(value))
     return tokens
 

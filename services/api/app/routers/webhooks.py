@@ -32,7 +32,7 @@ async def _record_payment(invoice_id: str, event_data: dict[str, Any]) -> None:
         payment = Payment(
             tenant_id=invoice.tenant_id,
             invoice_id=invoice.id,
-            amount=Decimal(total) / 100 if isinstance(total, (int, str)) else Decimal("0.00"),
+            amount=Decimal(total) / 100 if isinstance(total, int | str) else Decimal("0.00"),
             currency_code=currency,
             status="completed",
             provider_transaction_id=transaction_id,
