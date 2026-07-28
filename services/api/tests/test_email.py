@@ -5,6 +5,7 @@ from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
 from app import email as email_module
+from app.config import settings as app_settings
 
 pytestmark = pytest.mark.asyncio
 
@@ -27,8 +28,8 @@ async def test_send_email_uses_resend_when_api_key_configured() -> None:
     fake_client = _FakeAsyncClient(response)
 
     with (
-        patch.object(email_module.settings, "resend_api_key", "re_test_key"),
-        patch.object(email_module.settings, "resend_api_base_url", "https://api.resend.com"),
+        patch.object(app_settings, "resend_api_key", "re_test_key"),
+        patch.object(app_settings, "resend_api_base_url", "https://api.resend.com"),
         patch("app.email.httpx.AsyncClient", return_value=fake_client) as mock_client,
     ):
         result = await email_module.send_email(
@@ -63,12 +64,12 @@ async def test_send_email_uses_resend_when_api_key_configured() -> None:
 
 async def test_send_email_falls_back_to_smtp_without_resend_key() -> None:
     with (
-        patch.object(email_module.settings, "resend_api_key", ""),
-        patch.object(email_module.settings, "smtp_host", "mailpit"),
-        patch.object(email_module.settings, "smtp_port", 1025),
-        patch.object(email_module.settings, "smtp_use_tls", False),
-        patch.object(email_module.settings, "smtp_username", ""),
-        patch.object(email_module.settings, "smtp_password", ""),
+        patch.object(app_settings, "resend_api_key", ""),
+        patch.object(app_settings, "smtp_host", "mailpit"),
+        patch.object(app_settings, "smtp_port", 1025),
+        patch.object(app_settings, "smtp_use_tls", False),
+        patch.object(app_settings, "smtp_username", ""),
+        patch.object(app_settings, "smtp_password", ""),
         patch("app.email.aiosmtplib.send", new_callable=AsyncMock) as mock_send,
     ):
         result = await email_module.send_email(
