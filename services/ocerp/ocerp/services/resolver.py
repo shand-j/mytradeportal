@@ -17,6 +17,14 @@ from ocerp.retrieval import search_cost_items
 from ocerp.services.boq_models import BoQRequirement, ResolvedCostItem
 
 
+class _UseRequirementCategory:
+    """Typed sentinel for connector searches that should use the requirement category."""
+
+
+CategoryOverride = str | None | _UseRequirementCategory
+_USE_REQUIREMENT_CATEGORY = _UseRequirementCategory()
+
+
 def _norm(text: str | None) -> str:
     """Normalise text for matching: lowercase, collapse whitespace, drop superscripts."""
     text = (text or "").lower().strip().replace("²", "").replace("³", "")
@@ -242,6 +250,10 @@ def _hard_reject(requirement: BoQRequirement, item: dict[str, Any]) -> bool:
 
     if concept == "consumer_unit" and any(bad in desc for bad in ("blank", "blank plate")):
         return True
+    if concept == "consumer_unit" and "garage" in desc:
+        return True
+    if concept == "garage_consumer_unit" and "garage" not in desc:
+        return True
 
     if concept == "swa_cable" and any(
         bad in desc
@@ -413,6 +425,7 @@ class SupplierConnector(ABC):
         requirement: BoQRequirement,
         trade: str,
         region: str,
+        category: CategoryOverride = _USE_REQUIREMENT_CATEGORY,
     ) -> list[dict[str, Any]]:
         """Return candidate cost items for the requirement."""
         ...
@@ -431,14 +444,18 @@ class SourceConnector(SupplierConnector):
         requirement: BoQRequirement,
         trade: str,
         region: str,
+        category: CategoryOverride = _USE_REQUIREMENT_CATEGORY,
     ) -> list[dict[str, Any]]:
         query = _build_query(requirement)
+        resolved_category = (
+            requirement.category if category is _USE_REQUIREMENT_CATEGORY else category
+        )
         return await search_cost_items(
             query=query,
             trade=trade,
             region=region,
             sources=[self.source],
-            category=requirement.category,
+            category=resolved_category,
             top_k=self.top_k,
         )
 
@@ -488,7 +505,9 @@ class CatalogueResolver:
     async def _resolve(self, requirement: BoQRequirement) -> ResolvedCostItem | None:
         requested_brand = requirement.attributes.get("brand")
         if requested_brand:
-            primary_candidates = await self.primary.search(requirement, self.trade, self.region)
+            primary_candidates = await self.primary.search(
+                requirement, self.trade, self.region, category=requirement.category
+            )
             if not self._any_brand_match(requirement, primary_candidates):
                 self._warnings.append(
                     f"Brand {requested_brand!r} unavailable for {requirement.concept}; "
@@ -507,7 +526,9 @@ class CatalogueResolver:
                     }
                 )
 
-        primary_candidates = await self.primary.search(requirement, self.trade, self.region)
+        primary_candidates = await self.primary.search(
+            requirement, self.trade, self.region, category=requirement.category
+        )
         primary_choice = self._pick_best(requirement, primary_candidates)
         if primary_choice is not None:
             item, updated_requirement = primary_choice
@@ -517,6 +538,20 @@ class CatalogueResolver:
                 resolution_source=self.primary.name,
                 score=_score_candidate(updated_requirement, item),
             )
+
+        if requirement.category:
+            fallback_candidates = await self.primary.search(
+                requirement, self.trade, self.region, category=None
+            )
+            fallback_choice = self._pick_best(requirement, fallback_candidates)
+            if fallback_choice is not None:
+                item, updated_requirement = fallback_choice
+                return ResolvedCostItem(
+                    requirement=updated_requirement,
+                    cost_item=item,
+                    resolution_source=self.primary.name,
+                    score=_score_candidate(updated_requirement, item),
+                )
 
         return None
 

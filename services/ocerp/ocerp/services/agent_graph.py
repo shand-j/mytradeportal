@@ -65,6 +65,20 @@ from ocerp.services.resolver import CatalogueResolver
 
 logger = logging.getLogger(__name__)
 
+# Phrases below are filtered because the LLM can suggest compliance, warranty,
+# or certification claims that this deterministic pipeline cannot verify.
+_UNSUPPORTED_DESIGN_NOTE_PHRASES = (
+    "fully compliant",
+    "bs 7671 compliant",
+    "part p compliant",
+    "part p certified",
+    "certificate included",
+    "guaranteed compliant",
+    "compliance guaranteed",
+    "fixed quote",
+    "wireless interlink confirmed",
+)
+
 
 class _DesignAnalysis(BaseModel):
     model_config = ConfigDict(extra="forbid")
@@ -570,6 +584,38 @@ def validation_node(state: QuoteGraphState) -> None:
         state.warnings.extend(quality_warnings)
 
 
+def _sanitized_design_notes(state: QuoteGraphState) -> str:
+    """Return only design notes that are safe to surface to API consumers."""
+    design_notes = str(state.design.get("notes", "")).strip()
+    if not design_notes:
+        return ""
+    lowered = design_notes.lower()
+    if lowered.startswith("llm design payload was invalid;"):
+        return design_notes
+    kept_parts: list[str] = []
+    suppressed_phrases: list[str] = []
+    # The phrase list is intentionally tiny and ordered for substring matching,
+    # so a simple scan keeps the suppression logic explicit and easy to audit.
+    for raw_part in [part.strip() for part in design_notes.split(".") if part.strip()]:
+        part = raw_part.lower()
+        matched_phrase = next(
+            (phrase for phrase in _UNSUPPORTED_DESIGN_NOTE_PHRASES if phrase in part),
+            None,
+        )
+        if matched_phrase is not None:
+            suppressed_phrases.append(matched_phrase)
+            continue
+        kept_parts.append(raw_part)
+    if suppressed_phrases:
+        state.warnings.append(
+            "Suppressed unsupported claim from generation handoff notes; deterministic output is preserved. "
+            f"Removed: {', '.join(sorted(set(suppressed_phrases)))}."
+        )
+    if not kept_parts:
+        return ""
+    return ". ".join(kept_parts) + "."
+
+
 def review_node(state: QuoteGraphState) -> None:
     """Assemble the final response with citations, warnings and confidence."""
     indicative_caveat = (
@@ -580,7 +626,7 @@ def review_node(state: QuoteGraphState) -> None:
     )
 
     notes_parts = [indicative_caveat]
-    design_notes = state.design.get("notes", "")
+    design_notes = _sanitized_design_notes(state)
     if design_notes:
         notes_parts.append(design_notes)
     if state.resolve_warnings:

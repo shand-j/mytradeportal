@@ -142,3 +142,38 @@ def test_build_quote_from_ocerp_response() -> None:
     assert quote.line_items[0].total == Decimal("170.00")
     assert quote.subtotal == Decimal("170.00")
     assert quote.total == Decimal("204.00")
+
+
+def test_build_quote_from_ocerp_response_preserves_retrieval_quality_gate_fields() -> None:
+    quote = Quote(
+        tenant_id="00000000-0000-0000-0000-000000000001",
+        contact_id="00000000-0000-0000-0000-000000000002",
+    )
+    response = BoQGenerateResponse(
+        line_items=[],
+        subtotal=Decimal("0.00"),
+        vat_amount=Decimal("0.00"),
+        total=Decimal("0.00"),
+        confidence=Decimal("0.7"),
+        retrieval_evidence=RetrievalEvidence(
+            knowledge_available=True,
+            job_types=["rewire"],
+            citations_used=1,
+            source_documents=["UK Domestic Electrical Quoting Knowledge Base"],
+            top_relevance_score=0.91,
+            quality_score=0.5,
+            quality_gate_passed=False,
+            quality_gate_reasons=["insufficient citations"],
+            fallback_policy_applied="warn_only",
+            confidence_capped=False,
+        ),
+    )
+
+    build_quote_from_ocerp_response(quote, response)
+
+    assert quote.bill_of_quantities is not None
+    assert quote.bill_of_quantities.retrieval_evidence.get("quality_gate_passed") is False
+    assert quote.bill_of_quantities.retrieval_evidence.get("quality_gate_reasons") == [
+        "insufficient citations"
+    ]
+    assert quote.bill_of_quantities.retrieval_evidence.get("fallback_policy_applied") == "warn_only"

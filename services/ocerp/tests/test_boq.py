@@ -195,3 +195,37 @@ async def test_ddc_llm_backend_adds_quality_gate_warnings_for_missing_sundries()
         response = await backend.generate(request)
 
     assert any("quality gate" in warning.lower() for warning in response.warnings)
+
+
+@pytest.mark.asyncio
+async def test_ddc_llm_backend_suppresses_unsupported_design_notes() -> None:
+    with (
+        patch("ocerp.services.agent_graph.search_cost_items", new=AsyncMock(return_value=[])),
+        patch(
+            "ocerp.services.agent_graph.generate_boq_from_prompt",
+            new=AsyncMock(
+                return_value={
+                    "analysis": {
+                        "job_summary": "Premium rewire",
+                        "room_count": 4,
+                        "spec_level": "premium",
+                        "regulatory_flags": ["metal_cu_required"],
+                    },
+                    "requirements": [],
+                    "notes": "Fully compliant with BS 7671 and wireless interlink confirmed.",
+                }
+            ),
+        ),
+        patch("ocerp.services.agent_graph.CatalogueResolver", _FakeResolver),
+    ):
+        backend = _backend()
+        request = BoQGenerateRequest(
+            description="Full rewire of a 4 bed detached house with Aico alarms",
+            trade="electrical",
+            region="UK",
+        )
+        response = await backend.generate(request)
+
+    assert "Fully compliant" not in response.notes
+    assert "wireless interlink confirmed" not in response.notes
+    assert any("suppressed unsupported claim" in warning.lower() for warning in response.warnings)

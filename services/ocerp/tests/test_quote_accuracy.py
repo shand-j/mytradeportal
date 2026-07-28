@@ -3,11 +3,21 @@
 from __future__ import annotations
 
 from decimal import Decimal
+from typing import Any
 
+import pytest
 from mtp_shared import BoQGenerateRequest
 from ocerp.services.boq_models import BoQRequirement
 from ocerp.services.requirements import RequirementEngine
-from ocerp.services.resolver import _brand_score, _finish_score, _score_candidate
+from ocerp.services.resolver import (
+    CategoryOverride,
+    CatalogueResolver,
+    SupplierConnector,
+    _brand_score,
+    _finish_score,
+    _hard_reject,
+    _score_candidate,
+)
 
 # ---------------------------------------------------------------------------
 # Cable scaling
@@ -66,6 +76,26 @@ def test_cable_caps_accommodate_largest_domestic() -> None:
     assert cables.get("lighting_cable_1_5mm") == Decimal("120")
     assert cables.get("socket_cable_2_5mm") == Decimal("220")
     assert cables.get("cooker_cable_6mm") == Decimal("28")
+
+
+def test_three_bed_mid_range_rewire_uses_uplifted_socket_target() -> None:
+    """STD-003 regression: 3-bed mid-range rewires should not stop at 24 sockets."""
+    reqs = RequirementEngine(
+        "Full rewire of 3 bedroom semi-detached house. Mid-range Scolmore Click accessories."
+    ).generate()
+    sockets = next(r for r in reqs if r.concept == "double_socket")
+    assert sockets.quantity == Decimal("26")
+    assert sockets.attributes["brand"] == "scolmore click"
+
+
+def test_aico_brand_preference_applies_to_all_fire_detection_types() -> None:
+    reqs = RequirementEngine(
+        "Full rewire of a 3 bed premium house with Aico smoke alarms, Aico heat detection, and Aico carbon monoxide alarm."
+    ).generate()
+    fire_items = {r.concept: r for r in reqs if r.category == "Security & Fire"}
+    assert fire_items["smoke_alarm"].attributes["brand"] == "aico"
+    assert fire_items["heat_detector"].attributes["brand"] == "aico"
+    assert fire_items["carbon_monoxide_alarm"].attributes["brand"] == "aico"
 
 
 # ---------------------------------------------------------------------------
@@ -286,6 +316,73 @@ def test_indoor_double_socket_hard_rejects_weatherproof_outdoor_skus() -> None:
     assert _hard_reject(indoor_req, logic_plus) is False
     # Outdoor requirement must NOT reject the weatherproof variant.
     assert _hard_reject(outdoor_req, masterseal) is False
+
+
+def test_consumer_unit_hard_rejects_garage_board_collision() -> None:
+    req = BoQRequirement(
+        id="cu-1",
+        concept="consumer_unit",
+        category="Consumer Units",
+        attributes={"metal": True, "spd": True},
+        quantity=Decimal("1"),
+    )
+    garage_board = {
+        "description": "BG Garage Consumer Unit 2 Way 63A RCD",
+        "brand": "BG",
+    }
+    assert _hard_reject(req, garage_board) is True
+
+
+@pytest.mark.asyncio
+async def test_resolver_falls_back_to_cross_category_search_for_edge_mapping() -> None:
+    class FakeConnector(SupplierConnector):
+        name = "fake"
+
+        def __init__(self) -> None:
+            self.calls: list[str | None] = []
+
+        async def search(
+            self,
+            requirement: BoQRequirement,
+            trade: str,
+            region: str,
+            category: CategoryOverride = None,
+        ) -> list[dict[str, Any]]:
+            recorded_category = (
+                category
+                if isinstance(category, str) or category is None
+                else "requirement_category"
+            )
+            self.calls.append(recorded_category)
+            if category == "Switches & Sockets":
+                return []
+            return [
+                {
+                    "code": "DOM-main-switch",
+                    "description": "Wylex 100A Main Switch Isolator",
+                    "brand": "Wylex",
+                    "category": "Consumer Units",
+                    "score": 0.9,
+                    "unit": "each",
+                    "unit_price": "20.00",
+                }
+            ]
+
+    connector = FakeConnector()
+    resolver = CatalogueResolver(primary=connector)
+    req = BoQRequirement(
+        id="main-switch-1",
+        concept="main_switch",
+        category="Switches & Sockets",
+        attributes={"amperage": "100"},
+        quantity=Decimal("1"),
+    )
+
+    resolved = await resolver.resolve_one(req)
+
+    assert resolved is not None
+    assert resolved.cost_item["code"] == "DOM-main-switch"
+    assert connector.calls == ["Switches & Sockets", None]
 
 
 # ---------------------------------------------------------------------------
