@@ -13,7 +13,7 @@ pytestmark = pytest.mark.asyncio
 async def _create_tenant(client: AsyncClient, slug: str) -> dict[str, Any]:
     response = await client.post("/tenants", json={"slug": slug, "name": f"{slug} Ltd"})
     assert response.status_code == 201
-    return cast(dict[str, Any], response.json())
+    return cast("dict[str, Any]", response.json())
 
 
 async def _create_contact(
@@ -25,7 +25,7 @@ async def _create_contact(
         json={"name": name, "email": email or f"test-{uuid4().hex[:8]}@example.com"},
     )
     assert response.status_code == 201
-    return cast(dict[str, Any], response.json())
+    return cast("dict[str, Any]", response.json())
 
 
 async def _create_quote(client: AsyncClient, tenant_id: str, contact_id: str) -> dict[str, Any]:
@@ -39,7 +39,7 @@ async def _create_quote(client: AsyncClient, tenant_id: str, contact_id: str) ->
         },
     )
     assert response.status_code == 201
-    return cast(dict[str, Any], response.json())
+    return cast("dict[str, Any]", response.json())
 
 
 async def _create_invoice(client: AsyncClient, tenant_id: str, contact_id: str) -> dict[str, Any]:
@@ -52,7 +52,7 @@ async def _create_invoice(client: AsyncClient, tenant_id: str, contact_id: str) 
         },
     )
     assert response.status_code == 201
-    return cast(dict[str, Any], response.json())
+    return cast("dict[str, Any]", response.json())
 
 
 async def test_send_quote_triggers_email(client: AsyncClient) -> None:
