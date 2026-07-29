@@ -9,8 +9,8 @@ os.environ.setdefault("DJANGO_SETTINGS_MODULE", "admin_project.settings")
 # Django admin project is one directory up from this script.
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-import django  # noqa: E402
-from django.contrib.auth import get_user_model  # noqa: E402
+import django
+from django.contrib.auth import get_user_model
 
 django.setup()
 

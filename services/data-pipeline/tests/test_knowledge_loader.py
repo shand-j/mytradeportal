@@ -6,6 +6,7 @@ import json
 from pathlib import Path
 
 import pytest
+
 from data_pipeline.knowledge_loader import (
     KnowledgeChunk,
     chunk_job_capture_data_model,

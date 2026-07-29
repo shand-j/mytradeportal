@@ -26,7 +26,7 @@ class _HealthHandler(BaseHTTPRequestHandler):
         # Suppress per-request logs; the scheduler logs are noisy enough.
         pass
 
-    def do_GET(self) -> None:  # type: ignore[override]  # noqa: N802
+    def do_GET(self) -> None:  # type: ignore[override]
         if self.path == "/health":
             self.send_response(200)
             self.end_headers()
