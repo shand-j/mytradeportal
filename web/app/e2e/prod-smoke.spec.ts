@@ -20,8 +20,8 @@ function resolveSmokeApiBaseUrl(): string {
 
   try {
     const parsed = new URL(webBaseUrl);
-    if (parsed.hostname.startsWith('web-') && parsed.hostname.endsWith('.up.railway.app')) {
-      return `${parsed.protocol}//${parsed.hostname.replace(/^web-/, 'api-')}`;
+    if (parsed.protocol === 'https:') {
+      return `${parsed.origin}/api`;
     }
     return `http://${parsed.hostname}:8000`;
   } catch {

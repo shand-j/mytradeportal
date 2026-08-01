@@ -5,7 +5,15 @@ from decimal import Decimal, InvalidOperation
 from typing import Any
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, EmailStr, Field, computed_field, field_validator, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    EmailStr,
+    Field,
+    computed_field,
+    field_validator,
+    model_validator,
+)
 
 # ---------------------------------------------------------------------------
 # Tenant
@@ -320,19 +328,15 @@ class BillOfQuantitiesRead(BaseModel):
 
         customer_summary_lines = getattr(value, "customer_summary_lines", None)
         if isinstance(customer_summary_lines, list):
-            setattr(
-                value,
-                "customer_summary_lines",
-                [
-                    item
-                    for item in customer_summary_lines
-                    if isinstance(item, dict)
-                    and item.get("description") not in (None, "")
-                    and item.get("total") is not None
-                ],
-            )
+            value.customer_summary_lines = [
+                item
+                for item in customer_summary_lines
+                if isinstance(item, dict)
+                and item.get("description") not in (None, "")
+                and item.get("total") is not None
+            ]
         elif customer_summary_lines is None:
-            setattr(value, "customer_summary_lines", [])
+            value.customer_summary_lines = []
 
         for key in ("margin_indicator", "retrieval_evidence"):
             if getattr(value, key, None) == {}:

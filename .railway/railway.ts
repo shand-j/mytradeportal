@@ -38,8 +38,6 @@ const GITHUB_REPO = process.env.MTP_GITHUB_REPO ?? "shand-j/mytradeportal";
 
 const QDRANT_URL = "http://${{qdrant.RAILWAY_PRIVATE_DOMAIN}}:6333";
 const OCERP_URL = "http://${{ocerp.RAILWAY_PRIVATE_DOMAIN}}:8000";
-const API_PUBLIC_URL = "https://${{api.RAILWAY_PUBLIC_DOMAIN}}";
-const WEB_PUBLIC_URL = "https://${{web.RAILWAY_PUBLIC_DOMAIN}}";
 const ADMIN_PUBLIC_URL = "https://${{admin.RAILWAY_PUBLIC_DOMAIN}}";
 
 const TARGET_REGION = "europe-west4-drams3a"; // EU West Metal (Amsterdam) — closest Railway region to the UK market.
@@ -180,8 +178,10 @@ export default defineRailway(() => {
     healthcheck: "/",
     regions: { [TARGET_REGION]: 1 },
     env: {
-      // Baked into the Vite bundle at build time (Docker build ARG).
-      VITE_API_BASE_URL: API_PUBLIC_URL,
+      // Route browser API calls through web's /api reverse proxy, which then
+      // uses Railway private networking to reach the API service.
+      VITE_API_BASE_URL: "/api",
+      API_UPSTREAM_URL: "http://${{api.RAILWAY_PRIVATE_DOMAIN}}:8000",
       // Match nginx template ${PORT}; Railway overrides $PORT otherwise.
       PORT: "80",
     },
