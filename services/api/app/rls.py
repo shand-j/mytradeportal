@@ -10,7 +10,7 @@ The application enforces tenant isolation at two layers:
 
 ``set_tenant_in_session`` is called on every authenticated request via the
 ``get_current_tenant`` FastAPI dependency. The policy also honours an explicit
-``app.bypass_rls = 'on'`` setting which is used by migrations, seed scripts,
+``app.bypass_rls = 'on'`` setting which is used by schema init, seed scripts,
 and Celery workers that legitimately need cross-tenant access.
 """
 
@@ -88,8 +88,9 @@ def apply_tenant_rls_sync(connection: Connection) -> None:
     """Enable RLS + tenant isolation policy on every tenant-scoped table.
 
     Safe to call multiple times; the policy is dropped and recreated each
-    time. Used by the Alembic migration and the dev-mode lifespan hook so the
-    behaviour is identical in tests and in `docker compose up`.
+    time. Used by the schema init (`scripts/init_db.py`) and the dev-mode
+    lifespan hook so the behaviour is identical in tests and in
+    `docker compose up`.
 
     Each ALTER/CREATE statement is issued individually because the asyncpg
     driver rejects multi-statement strings sent through a prepared statement.
@@ -100,7 +101,7 @@ def apply_tenant_rls_sync(connection: Connection) -> None:
 
 
 def drop_tenant_rls_sync(connection: Connection) -> None:
-    """Reverse of :func:`apply_tenant_rls_sync` for migration downgrades."""
+    """Reverse of :func:`apply_tenant_rls_sync`."""
     for table in TENANT_SCOPED_TABLES:
         for stmt in _drop_policy_statements(table):
             connection.exec_driver_sql(stmt)
@@ -118,7 +119,7 @@ async def create_tenant_policy(
 ) -> None:
     """Create a policy that restricts rows to the current tenant.
 
-    Prefer :func:`apply_tenant_rls_sync` from a migration; this helper is
+    Prefer :func:`apply_tenant_rls_sync` from schema init; this helper is
     only used by legacy callers.
     """
     policy_name = f"{table_name}_tenant_isolation"

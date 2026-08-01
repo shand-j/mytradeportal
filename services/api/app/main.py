@@ -50,9 +50,9 @@ async def lifespan(app: FastAPI) -> "AsyncIterator[None]":
     if settings.environment == "development":
         async with engine.begin() as conn:
             await conn.run_sync(Base.metadata.create_all)
-            # `create_all` does not run Alembic migrations, so apply the
-            # tenant-isolation RLS policies here too. Production deployments
-            # rely on the dedicated migration (b7e1c0f4_enable_rls) instead.
+            # `create_all` sets up the schema in dev; apply the tenant-isolation
+            # RLS policies here too. Production deployments run the same schema
+            # init via `scripts/init_db.py` (the single source of truth).
             await conn.run_sync(apply_tenant_rls_sync)
     configure_logging(settings.log_level)
     logger.info(

@@ -143,9 +143,25 @@ async def _upsert_seed_items() -> list[CostItem]:
     return rows
 
 
-async def _index_rows(rows: list[CostItem]) -> None:
+async def _index_rows(rows: list[CostItem]) -> bool:
+    """Best-effort vector indexing of the seed rows into Qdrant.
+
+    The database rows are the source of truth for deterministic BoQ generation
+    and are committed before this runs. Vector indexing is an optional
+    enrichment for RAG retrieval, so a missing embedding provider or an
+    unavailable Qdrant must never fail the deploy — the data-pipeline reindexes
+    the full catalogue later regardless. Returns ``True`` when indexing
+    succeeded and ``False`` when it was skipped.
+    """
     if not rows:
-        return
+        return False
+
+    if not settings.openai_api_key:
+        print(
+            "[seed_minimum_catalog] OPENAI_API_KEY not set; skipping Qdrant vector "
+            "indexing (database seed still applied)."
+        )
+        return False
 
     qdrant = get_qdrant_client()
     await ensure_collection(
@@ -182,12 +198,21 @@ async def _index_rows(rows: list[CostItem]) -> None:
     ]
 
     await qdrant.upsert(collection_name=settings.qdrant_collection_name, points=points)
+    return True
 
 
 async def main() -> None:
     rows = await _upsert_seed_items()
-    await _index_rows(rows)
-    print(f"[seed_minimum_catalog] Upserted/indexed {len(rows)} minimum domestic items")
+    try:
+        indexed = await _index_rows(rows)
+    except Exception as exc:
+        indexed = False
+        print(
+            "[seed_minimum_catalog] WARNING: vector indexing failed and was skipped "
+            f"({type(exc).__name__}: {exc}). Database seed is still applied."
+        )
+    suffix = "and indexed " if indexed else "(vector indexing skipped) "
+    print(f"[seed_minimum_catalog] Upserted {suffix}{len(rows)} minimum domestic items")
 
 
 if __name__ == "__main__":

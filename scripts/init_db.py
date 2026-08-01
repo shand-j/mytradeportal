@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-"""One-time database initialisation for a fresh production install.
+"""One-time database initialisation for a fresh install.
 
-This replaces Alembic migrations for pre-go-live deployments where the
-database is empty. It creates the SQLAlchemy-managed tables from the current
-models, creates the non-privileged application role used by the API, and
-applies the Row-Level Security policies that enforce tenant isolation.
+This is the single source of truth for the API schema (there are no Alembic
+migrations). It creates the SQLAlchemy-managed tables from the current models,
+creates the non-privileged application role used by the API, and applies the
+Row-Level Security policies that enforce tenant isolation.
 
 The script is idempotent and is intended to run as the API preDeploy command
 (and optionally as the admin preDeploy command for Django's own tables).
