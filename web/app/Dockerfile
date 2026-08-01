@@ -48,6 +48,7 @@ COPY --from=production-build /app/dist /usr/share/nginx/html
 COPY nginx.conf /etc/nginx/templates/default.conf.template
 
 ENV PORT=80
+ENV API_UPSTREAM_URL=http://api:8000
 EXPOSE 80
 
 CMD ["nginx", "-g", "daemon off;"]

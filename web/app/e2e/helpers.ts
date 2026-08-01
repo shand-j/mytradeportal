@@ -8,8 +8,8 @@ function resolveE2eApiBaseUrl(): string {
     return explicit;
   }
   const parsed = new URL(e2eBaseUrl);
-  if (parsed.hostname.startsWith('web-') && parsed.hostname.endsWith('.up.railway.app')) {
-    return `${parsed.protocol}//${parsed.hostname.replace(/^web-/, 'api-')}`;
+  if (parsed.protocol === 'https:') {
+    return `${parsed.origin}/api`;
   }
   return `http://${parsed.hostname}:8000`;
 }

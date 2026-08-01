@@ -1,11 +1,19 @@
 """Pydantic schemas for API requests and responses."""
 
 from datetime import datetime
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 from typing import Any
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, EmailStr, Field, computed_field, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    EmailStr,
+    Field,
+    computed_field,
+    field_validator,
+    model_validator,
+)
 
 # ---------------------------------------------------------------------------
 # Tenant
@@ -199,6 +207,28 @@ class BoQLineItemRead(BaseModel):
     retail_price_incl_vat: Decimal | None
     notes: str | None
 
+    @field_validator(
+        "quantity",
+        "labour_hours",
+        "labour_rate",
+        "labour_total",
+        "material_cost",
+        "material_total",
+        "plant_cost",
+        "plant_total",
+        "unit_price",
+        "total",
+        mode="before",
+    )
+    @classmethod
+    def _coerce_decimal(cls, value: Any) -> Decimal:
+        if value is None:
+            return Decimal("0.00")
+        try:
+            return Decimal(str(value))
+        except (InvalidOperation, ValueError, TypeError):
+            return Decimal("0.00")
+
 
 class BoQLineItemUpdate(BaseModel):
     id: UUID | None = None
@@ -274,6 +304,45 @@ class BillOfQuantitiesRead(BaseModel):
     line_items: list[BoQLineItemRead]
     created_at: datetime
     updated_at: datetime
+
+    @model_validator(mode="before")
+    @classmethod
+    def _sanitize_jsonb_fields(cls, value: Any) -> Any:
+        if isinstance(value, dict):
+            customer_summary_lines = value.get("customer_summary_lines")
+            if isinstance(customer_summary_lines, list):
+                value["customer_summary_lines"] = [
+                    item
+                    for item in customer_summary_lines
+                    if isinstance(item, dict)
+                    and item.get("description") not in (None, "")
+                    and item.get("total") is not None
+                ]
+            elif customer_summary_lines is None:
+                value["customer_summary_lines"] = []
+
+            for key in ("margin_indicator", "retrieval_evidence"):
+                if value.get(key) == {}:
+                    value[key] = None
+            return value
+
+        customer_summary_lines = getattr(value, "customer_summary_lines", None)
+        if isinstance(customer_summary_lines, list):
+            value.customer_summary_lines = [
+                item
+                for item in customer_summary_lines
+                if isinstance(item, dict)
+                and item.get("description") not in (None, "")
+                and item.get("total") is not None
+            ]
+        elif customer_summary_lines is None:
+            value.customer_summary_lines = []
+
+        for key in ("margin_indicator", "retrieval_evidence"):
+            if getattr(value, key, None) == {}:
+                setattr(value, key, None)
+
+        return value
 
 
 class BillOfQuantitiesUpdate(BaseModel):
