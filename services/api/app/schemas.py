@@ -300,24 +300,43 @@ class BillOfQuantitiesRead(BaseModel):
     @model_validator(mode="before")
     @classmethod
     def _sanitize_jsonb_fields(cls, value: Any) -> Any:
-        if not isinstance(value, dict):
+        if isinstance(value, dict):
+            customer_summary_lines = value.get("customer_summary_lines")
+            if isinstance(customer_summary_lines, list):
+                value["customer_summary_lines"] = [
+                    item
+                    for item in customer_summary_lines
+                    if isinstance(item, dict)
+                    and item.get("description") not in (None, "")
+                    and item.get("total") is not None
+                ]
+            elif customer_summary_lines is None:
+                value["customer_summary_lines"] = []
+
+            for key in ("margin_indicator", "retrieval_evidence"):
+                if value.get(key) == {}:
+                    value[key] = None
             return value
 
-        customer_summary_lines = value.get("customer_summary_lines")
+        customer_summary_lines = getattr(value, "customer_summary_lines", None)
         if isinstance(customer_summary_lines, list):
-            value["customer_summary_lines"] = [
-                item
-                for item in customer_summary_lines
-                if isinstance(item, dict)
-                and item.get("description") not in (None, "")
-                and item.get("total") is not None
-            ]
+            setattr(
+                value,
+                "customer_summary_lines",
+                [
+                    item
+                    for item in customer_summary_lines
+                    if isinstance(item, dict)
+                    and item.get("description") not in (None, "")
+                    and item.get("total") is not None
+                ],
+            )
         elif customer_summary_lines is None:
-            value["customer_summary_lines"] = []
+            setattr(value, "customer_summary_lines", [])
 
         for key in ("margin_indicator", "retrieval_evidence"):
-            if value.get(key) == {}:
-                value[key] = None
+            if getattr(value, key, None) == {}:
+                setattr(value, key, None)
 
         return value
 

@@ -141,7 +141,9 @@ async def test_list_quotes_handles_malformed_boq_json(
     quote_data = await _create_quote(client, tenant["id"], contact["id"])
 
     quote = (
-        await db.execute(select(Quote).where(Quote.id == quote_data["id"], Quote.tenant_id == tenant["id"]))
+        await db.execute(
+            select(Quote).where(Quote.id == quote_data["id"], Quote.tenant_id == tenant["id"])
+        )
     ).scalar_one()
     quote.bill_of_quantities = BillOfQuantities(
         tenant_id=quote.tenant_id,
