@@ -415,7 +415,7 @@ async def _generate_quote_impl(
                     quote.bill_of_quantities = None
                     quote.line_items = []
                     await _generate_rag_quote(quote, data, tenant)
-            except (httpx.TimeoutException, httpx.HTTPStatusError) as exc:
+            except (httpx.HTTPError, OSError) as exc:
                 logger.warning(
                     "OCERP generation failed for tenant %s, falling back to RAG: %s",
                     tenant.id,
