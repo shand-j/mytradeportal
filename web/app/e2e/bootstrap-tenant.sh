@@ -52,6 +52,11 @@ wait_for_admin() {
   return 1
 }
 
+run_admin_migrations() {
+  echo "Running Django admin migrations..."
+  docker compose ${COMPOSE_FILES} exec -T admin python manage.py migrate --noinput
+}
+
 create_django_superuser() {
   echo "Ensuring Django superuser exists..."
   docker compose ${COMPOSE_FILES} exec -T admin python -c "
@@ -105,4 +110,5 @@ else
 fi
 
 wait_for_admin
+run_admin_migrations
 create_django_superuser
