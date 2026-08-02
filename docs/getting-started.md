@@ -24,12 +24,13 @@ This starts:
 | MinIO | `mtp_minio` | `9000/9001` | Object storage |
 | Mailpit | `mtp_mailpit` | `1025/8025` | Email capture |
 
-## Run migrations
+## Initialise the database
 
-In development the API creates tables on startup. For explicit control:
+In development the API creates tables on startup. For explicit control (and for
+a fresh production-like install), run the single schema-init script:
 
 ```bash
-PYTHONPATH=services/api alembic upgrade head
+python scripts/init_db.py
 ```
 
 ## Configure AI (OpenAI)
@@ -116,7 +117,8 @@ curl -X POST http://localhost:8000/tenants \
 Django admin runs at http://localhost:8001/admin.
 
 The admin models are unmanaged (`managed = False`) and mirror the FastAPI schema,
-so migrations remain owned by Alembic. By default no superuser is created; create
+which is owned by the SQLAlchemy models and `scripts/init_db.py`. By default no
+superuser is created; create
 one inside the `mtp_admin` container if you need it:
 
 ```bash

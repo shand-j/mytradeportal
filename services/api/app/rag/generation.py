@@ -4,6 +4,7 @@ import json
 import re
 from typing import Any
 
+import httpx
 from litellm import acompletion
 from openai import APIError
 
@@ -115,6 +116,8 @@ async def generate_quote_from_prompt(
         response = await acompletion(**completion_kwargs)
     except APIError as exc:
         raise RuntimeError(f"LLM generation failed: {exc.message}") from exc
+    except (httpx.HTTPError, ConnectionError, OSError) as exc:
+        raise RuntimeError(f"LLM service unavailable: {exc}") from exc
 
     content = response.choices[0].message.content
     if not content:

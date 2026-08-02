@@ -39,20 +39,26 @@ Auto-format:
 ruff format services/api/app packages/shared/py
 ```
 
-## Database migrations
+## Database schema
 
-Migrations live in `services/api/alembic` and are driven by Alembic. The FastAPI
-app also creates tables on startup in development, but Alembic is the source of
-truth.
+The API schema is defined solely by the SQLAlchemy models in
+`services/api/app/models.py`. There are no Alembic migrations: the schema is
+created (idempotently) from the models by `scripts/init_db.py`, which also
+creates the non-privileged `mtp_app` role and applies the tenant-isolation RLS
+policies. In development the API also creates tables on startup.
 
 ```bash
-PYTHONPATH=services/api alembic revision --autogenerate -m "description"
-PYTHONPATH=services/api alembic upgrade head
+# Create/refresh the schema, app role and RLS policies for a fresh install
+python scripts/init_db.py
 ```
+
+To change the schema, edit the models and re-run the init script (or redeploy,
+which runs it as the preDeploy step). For a clean first-time install, start
+from an empty database.
 
 ## Adding a new endpoint
 
-1. Add SQLAlchemy models to `services/api/app/models.py` (and a migration).
+1. Add SQLAlchemy models to `services/api/app/models.py`.
 2. Add Pydantic schemas to `services/api/app/schemas.py`.
 3. Create a router in `services/api/app/routers/`.
 4. Register the router in `services/api/app/main.py`.

@@ -2,6 +2,7 @@
 
 from typing import Any
 
+import httpx
 from litellm import aembedding
 from openai import APIError
 from qdrant_client.models import FieldCondition, Filter, MatchValue
@@ -37,10 +38,14 @@ async def embed_texts(texts: list[str]) -> list[list[float]]:
     """Return embedding vectors for the supplied texts."""
     if not texts:
         return []
+    if not settings.openai_api_key:
+        raise RuntimeError("OPENAI_API_KEY is not configured")
     try:
         response = await aembedding(**_embedding_kwargs(texts))
     except APIError as exc:
         raise RuntimeError(f"Embedding failed: {exc.message}") from exc
+    except (httpx.HTTPError, ConnectionError, OSError) as exc:
+        raise RuntimeError(f"Embedding service unavailable: {exc}") from exc
     return [item.get("embedding") for item in response.data]
 
 

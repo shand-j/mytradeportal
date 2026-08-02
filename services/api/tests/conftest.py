@@ -2,23 +2,25 @@
 
 import asyncio
 from collections.abc import AsyncIterator, Iterator
-from pathlib import Path
+from typing import TYPE_CHECKING
 from urllib.parse import urlparse
 from uuid import uuid4
 
 import pytest
 import pytest_asyncio
-from alembic import command
-from alembic.config import Config
 from app.config import settings
 from app.database import get_db
 from app.main import app
-from app.models import Tenant, User
-from app.rls import set_tenant_in_session
+from app.models import Base, Tenant, User
+from app.rls import TENANT_SCOPED_TABLES, apply_tenant_rls_sync, set_tenant_in_session
 from app.security import get_password_hash
 from httpx import ASGITransport, AsyncClient
+from sqlalchemy import create_engine, text
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.pool import NullPool
+
+if TYPE_CHECKING:
+    from sqlalchemy.engine import Connection
 
 
 async def _ensure_test_database(database_url: str) -> str:
@@ -33,8 +35,8 @@ async def _ensure_test_database(database_url: str) -> str:
     asyncpg_admin_url = admin_url.replace("postgresql+asyncpg://", "postgresql://")
     conn = await asyncpg.connect(asyncpg_admin_url)
     try:
-        # Start each test run with a fresh database so migrations are applied
-        # from scratch and schema always matches the migration history.
+        # Start each test run with a fresh database so the schema is created
+        # from scratch and always matches the current SQLAlchemy models.
         await conn.execute(f"DROP DATABASE IF EXISTS {test_db_name} WITH (FORCE)")
         await conn.execute(f"CREATE DATABASE {test_db_name}")
     finally:
@@ -42,23 +44,62 @@ async def _ensure_test_database(database_url: str) -> str:
     return test_url
 
 
-def _run_alembic_migrations(database_url: str) -> None:
-    """Apply all Alembic migrations to the given database."""
-    # env.py prefers the ``DATABASE_URL`` environment variable, so make sure it
-    # points at the freshly created test database instead of the default app DB.
-    import os
+def _init_test_schema(database_url: str) -> None:
+    """Create the schema from models, the app role, and RLS policies.
 
-    previous_database_url = os.environ.get("DATABASE_URL")
-    os.environ["DATABASE_URL"] = database_url
+    This mirrors ``scripts/init_db.py`` (the single source of truth used in
+    production) so tests exercise exactly the schema the app boots against,
+    without a separate Alembic migration history.
+    """
+    sync_url = database_url.replace("+asyncpg", "")
+    engine = create_engine(sync_url)
     try:
-        root_dir = Path(__file__).resolve().parents[3]
-        cfg = Config(str(root_dir / "alembic.ini"))
-        command.upgrade(cfg, "head")
+        with engine.begin() as conn:
+            Base.metadata.create_all(conn)
+            _create_app_role(conn)
+            apply_tenant_rls_sync(conn)
+
+        # Sanity check: every expected tenant-scoped table must have RLS forced.
+        with engine.connect() as conn:
+            rows = conn.execute(
+                text(
+                    "SELECT c.relname FROM pg_class c "
+                    "JOIN pg_namespace n ON c.relnamespace = n.oid "
+                    "WHERE n.nspname = 'public' AND c.relrowsecurity "
+                    "AND c.relforcerowsecurity"
+                )
+            ).all()
+            secured = {row[0] for row in rows}
+            missing = set(TENANT_SCOPED_TABLES) - secured
+            if missing:
+                raise RuntimeError(f"RLS not applied to: {sorted(missing)}")
     finally:
-        if previous_database_url is None:
-            os.environ.pop("DATABASE_URL", None)
-        else:
-            os.environ["DATABASE_URL"] = previous_database_url
+        engine.dispose()
+
+
+def _create_app_role(conn: "Connection") -> None:
+    """Create the non-superuser ``mtp_app`` role that respects RLS policies."""
+    # The role name is an SQL identifier and the password is a string literal;
+    # both come from configuration/environment, so quote them safely rather than
+    # interpolating raw values (which breaks on quotes and risks SQL injection).
+    role = conn.dialect.identifier_preparer.quote(settings.app_role_name)
+    password = "'" + settings.app_role_password.replace("'", "''") + "'"
+    existing = conn.execute(
+        text("SELECT 1 FROM pg_roles WHERE rolname = :role"),
+        {"role": settings.app_role_name},
+    ).first()
+    if existing is None:
+        conn.exec_driver_sql(
+            f"CREATE ROLE {role} WITH LOGIN PASSWORD {password} "
+            f"NOSUPERUSER NOBYPASSRLS NOCREATEDB NOCREATEROLE"
+        )
+    else:
+        conn.exec_driver_sql(f"ALTER ROLE {role} WITH PASSWORD {password}")
+    conn.exec_driver_sql(f"GRANT USAGE ON SCHEMA public TO {role}")
+    conn.exec_driver_sql(
+        f"GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO {role}"
+    )
+    conn.exec_driver_sql(f"GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO {role}")
 
 
 def _app_role_database_url(admin_url: str) -> str:
@@ -80,8 +121,8 @@ def _app_role_database_url(admin_url: str) -> str:
 @pytest_asyncio.fixture(loop_scope="session", scope="session", autouse=True)
 async def test_database_url() -> str:
     url = await _ensure_test_database(settings.database_url)
-    await asyncio.to_thread(_run_alembic_migrations, url)
-    # Migrations create the ``mtp_app`` role; tests connect through it so RLS
+    await asyncio.to_thread(_init_test_schema, url)
+    # Schema init creates the ``mtp_app`` role; tests connect through it so RLS
     # policies are actually enforced.
     app_role_url = _app_role_database_url(url)
     # Patch the module-level engine so tests that don't use the ``client``
@@ -117,9 +158,10 @@ async def db(client: AsyncClient) -> AsyncIterator[AsyncSession]:
 async def client(test_database_url: str) -> AsyncIterator[AsyncClient]:
     """Yield an HTTP test client with an isolated per-test transaction.
 
-    ``Base.metadata.create_all`` is a no-op once migrations have run, but we
-    cannot execute it as ``mtp_app`` because that role does not own the
-    schema. Skip it entirely — the migration is the source of truth.
+    ``Base.metadata.create_all`` is a no-op once the schema has been created,
+    but we cannot execute it as ``mtp_app`` because that role does not own the
+    schema. Skip it entirely — the model-based schema init is the source of
+    truth.
     """
     engine = create_async_engine(test_database_url, echo=False, poolclass=NullPool)
 

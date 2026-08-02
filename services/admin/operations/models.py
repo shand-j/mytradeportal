@@ -1,7 +1,7 @@
 """Unmanaged Django models mirroring the FastAPI operations schema.
 
 These models are read-only for Django migrations (`managed = False`) so the
-FastAPI/Alembic migration pipeline remains the single source of truth for the
+FastAPI model-based schema init remains the single source of truth for the
 operational schema.
 """
 

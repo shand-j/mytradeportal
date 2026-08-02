@@ -49,6 +49,9 @@ COPY nginx.conf /etc/nginx/templates/default.conf.template
 
 ENV PORT=80
 ENV API_UPSTREAM_URL=http://api:8000
+# Populate ${NGINX_LOCAL_RESOLVERS} from /etc/resolv.conf so nginx.conf can
+# resolve the API upstream at request time (see the /api/ block in nginx.conf).
+ENV NGINX_ENTRYPOINT_LOCAL_RESOLVERS=1
 EXPOSE 80
 
 CMD ["nginx", "-g", "daemon off;"]

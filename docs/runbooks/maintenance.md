@@ -267,7 +267,9 @@ railway run --service api python scripts/init_db.py
 railway run --service admin python scripts/init_db.py
 ```
 
-If you later switch to Alembic-driven migrations, the same command would run `alembic upgrade head` instead. Until then, schema changes are applied by editing the models and re-running the init script after deploy.
+Schema changes are applied by editing the SQLAlchemy models and re-running the
+init script after deploy. There are no Alembic migrations — `scripts/init_db.py`
+is the single, idempotent source of truth for the API schema.
 
 ### Row-Level Security (RLS)
 
