@@ -178,3 +178,63 @@ async def test_list_quotes_handles_malformed_boq_json(
     ]
     assert fetched_quote["bill_of_quantities"]["margin_indicator"] is None
     assert fetched_quote["bill_of_quantities"]["retrieval_evidence"] is None
+
+
+async def test_list_quotes_handles_null_valued_boq_json(
+    client: AsyncClient,
+    db: AsyncSession,
+) -> None:
+    """Pre-existing BoQ rows may store partial JSONB with explicit ``null`` values.
+
+    Older code versions persisted ``margin_indicator`` / ``retrieval_evidence``
+    payloads where individual keys hold ``null``. Because the nested Read models
+    expose non-nullable fields with defaults, an explicit ``null`` (as opposed to
+    a missing key) must not break serialization of the quotes list.
+    """
+    tenant = await _create_tenant(client, f"quote-{uuid4().hex[:8]}")
+    contact = await _create_contact(client, tenant["id"], "Quote Null Data")
+    quote_data = await _create_quote(client, tenant["id"], contact["id"])
+
+    quote = (
+        await db.execute(
+            select(Quote).where(Quote.id == quote_data["id"], Quote.tenant_id == tenant["id"])
+        )
+    ).scalar_one()
+    quote.bill_of_quantities = BillOfQuantities(
+        tenant_id=quote.tenant_id,
+        quote_id=quote.id,
+        status="draft",
+        subtotal=Decimal("100.00"),
+        vat_rate=Decimal("0.20"),
+        vat_amount=Decimal("20.00"),
+        total=Decimal("120.00"),
+        confidence=0.85,
+        warnings=[],
+        regulatory_citations=[],
+        compliance_warnings=[],
+        customer_summary_lines=[],
+        # Partial payloads with explicit nulls, as written by older versions.
+        margin_indicator={"subtotal": None, "estimated_margin_percent": None},
+        retrieval_evidence={
+            "knowledge_available": None,
+            "top_relevance_score": None,
+            "quality_score": None,
+            "job_types": None,
+            "citations_used": 3,
+        },
+        line_items=[],
+    )
+    await db.commit()
+
+    response = await client.get("/quotes", headers={"X-Tenant-ID": tenant["id"]})
+    assert response.status_code == 200
+
+    boq = response.json()[0]["bill_of_quantities"]
+    # All-null margin payload collapses to absent.
+    assert boq["margin_indicator"] is None
+    # Null keys fall back to model defaults; non-null keys are preserved.
+    assert boq["retrieval_evidence"] is not None
+    assert boq["retrieval_evidence"]["knowledge_available"] is True
+    assert boq["retrieval_evidence"]["top_relevance_score"] == 0.0
+    assert boq["retrieval_evidence"]["job_types"] == []
+    assert boq["retrieval_evidence"]["citations_used"] == 3

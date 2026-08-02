@@ -305,42 +305,52 @@ class BillOfQuantitiesRead(BaseModel):
     created_at: datetime
     updated_at: datetime
 
+    @staticmethod
+    def _clean_summary_lines(customer_summary_lines: Any) -> list[Any]:
+        """Drop malformed customer summary lines persisted by older code."""
+        if not isinstance(customer_summary_lines, list):
+            return []
+        return [
+            item
+            for item in customer_summary_lines
+            if isinstance(item, dict)
+            and item.get("description") not in (None, "")
+            and item.get("total") is not None
+        ]
+
+    @staticmethod
+    def _clean_nested_object(data: Any) -> dict[str, Any] | None:
+        """Normalise a JSONB object field into a dict the nested model accepts.
+
+        Persisted ``margin_indicator`` / ``retrieval_evidence`` payloads written
+        by earlier code versions may be ``None``, an empty ``{}``, or a partial
+        object where some keys hold ``null``. The nested Read models expose
+        non-nullable fields with defaults, so an explicit ``null`` value fails
+        validation even though a *missing* key would fall back to the default.
+        Strip ``null`` values so the defaults apply, and collapse an empty
+        result to ``None`` so the field is reported as absent.
+        """
+        if not isinstance(data, dict):
+            return None
+        cleaned = {key: val for key, val in data.items() if val is not None}
+        return cleaned or None
+
     @model_validator(mode="before")
     @classmethod
     def _sanitize_jsonb_fields(cls, value: Any) -> Any:
         if isinstance(value, dict):
-            customer_summary_lines = value.get("customer_summary_lines")
-            if isinstance(customer_summary_lines, list):
-                value["customer_summary_lines"] = [
-                    item
-                    for item in customer_summary_lines
-                    if isinstance(item, dict)
-                    and item.get("description") not in (None, "")
-                    and item.get("total") is not None
-                ]
-            elif customer_summary_lines is None:
-                value["customer_summary_lines"] = []
-
+            value["customer_summary_lines"] = cls._clean_summary_lines(
+                value.get("customer_summary_lines")
+            )
             for key in ("margin_indicator", "retrieval_evidence"):
-                if value.get(key) == {}:
-                    value[key] = None
+                value[key] = cls._clean_nested_object(value.get(key))
             return value
 
-        customer_summary_lines = getattr(value, "customer_summary_lines", None)
-        if isinstance(customer_summary_lines, list):
-            value.customer_summary_lines = [
-                item
-                for item in customer_summary_lines
-                if isinstance(item, dict)
-                and item.get("description") not in (None, "")
-                and item.get("total") is not None
-            ]
-        elif customer_summary_lines is None:
-            value.customer_summary_lines = []
-
+        value.customer_summary_lines = cls._clean_summary_lines(
+            getattr(value, "customer_summary_lines", None)
+        )
         for key in ("margin_indicator", "retrieval_evidence"):
-            if getattr(value, key, None) == {}:
-                setattr(value, key, None)
+            setattr(value, key, cls._clean_nested_object(getattr(value, key, None)))
 
         return value
 

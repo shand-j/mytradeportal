@@ -1,4 +1,5 @@
-import type { Page } from '@playwright/test';
+import type { Page, Response } from '@playwright/test';
+import { expect } from '@playwright/test';
 
 const e2eBaseUrl = process.env.E2E_BASE_URL ?? 'http://demo.localhost:3000';
 
@@ -402,4 +403,78 @@ export async function markInvoicePaid(page: Page) {
 
 async function expectStatusPill(page: Page, pattern: RegExp) {
   await page.locator('span', { hasText: pattern }).filter({ hasClass: /rounded-full/ }).first().waitFor();
+}
+
+/**
+ * Navigate to the quotes list and assert the backing `GET /quotes` request
+ * serializes successfully (HTTP 200).
+ *
+ * The production quote page previously 500'd for pre-existing tenants whose
+ * quotes carry Bill of Quantities JSONB, while a fresh manual-quote-only smoke
+ * run stayed green. Asserting the API status (not just that a link is visible)
+ * turns that serialization failure into a smoke failure.
+ */
+export async function gotoQuotesAndAssertListLoads(page: Page): Promise<void> {
+  const responsePromise = page.waitForResponse(
+    (res) => {
+      const request = res.request();
+      if (request.method() !== 'GET' || request.resourceType() === 'document') {
+        return false;
+      }
+      return new URL(res.url()).pathname.replace(/\/$/, '').endsWith('/quotes');
+    },
+    { timeout: 30_000 },
+  );
+  await page.goto('/quotes');
+  const response = await responsePromise;
+  expect(response.status(), 'GET /quotes must serialize successfully').toBe(200);
+}
+
+/**
+ * Best-effort AI/BoQ quote generation so smoke exercises the Bill of Quantities
+ * serialization path that manual quotes never touch.
+ *
+ * Upstream AI dependencies can be unavailable in some environments, so an
+ * explicit service-unavailable response is tolerated (returns `false`). When a
+ * BoQ-backed quote IS produced, returns `true` so callers can assert the quotes
+ * list and detail still render.
+ */
+export async function tryGenerateBoqQuote(page: Page, testId: string): Promise<boolean> {
+  await page.goto('/quotes');
+  const trigger = page.getByTestId('generate-ai-quote');
+  if (!(await trigger.isVisible({ timeout: 15_000 }).catch(() => false))) {
+    return false;
+  }
+  await trigger.click();
+  await expect(page.getByRole('heading', { name: /generate quote with ai/i })).toBeVisible();
+
+  const newLead = page.getByLabel(/new lead/i);
+  if (await newLead.isVisible().catch(() => false)) {
+    await newLead.check().catch(() => undefined);
+  }
+  await page.getByPlaceholder(/customer name/i).fill(`BoQ Smoke ${testId}`);
+  await page.getByPlaceholder(/email/i).fill(`boq-${testId}@example.com`);
+  await page
+    .getByLabel(/job description/i)
+    .fill('Replace a broken consumer unit and install 4 new double sockets in a 3 bedroom house');
+
+  const generateResponsePromise = page.waitForResponse(
+    (res: Response) =>
+      res.url().includes('/quotes/generate') && res.request().method() === 'POST',
+    { timeout: 90_000 },
+  );
+  await page.getByRole('button', { name: /generate draft/i }).click();
+  const generateResponse = await generateResponsePromise;
+
+  if (generateResponse.ok()) {
+    await expect(page).toHaveURL(/\/quotes\/[0-9a-f-]+$/, { timeout: 90_000 });
+    return true;
+  }
+
+  // Upstream AI/OCERP can be unavailable; that must not fail the smoke gate.
+  expect(
+    [500, 502, 503, 504],
+    `Unexpected AI generation failure status ${generateResponse.status()}`,
+  ).toContain(generateResponse.status());
+  return false;
 }
