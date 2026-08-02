@@ -75,6 +75,11 @@ else:
 
 wait_for_api
 
+# Run Django migrations before probing the admin site. The admin login page
+# returns 500 until auth/session tables exist, so waiting on it first would
+# deadlock a fresh install.
+run_admin_migrations
+
 if [ "${ENVIRONMENT:-development}" = "production" ]; then
   if [ -z "$SETUP_TOKEN" ]; then
     echo "ERROR: SETUP_TOKEN is required when ENVIRONMENT=production" >&2
@@ -110,5 +115,4 @@ else
 fi
 
 wait_for_admin
-run_admin_migrations
 create_django_superuser

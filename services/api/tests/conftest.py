@@ -79,19 +79,22 @@ def _init_test_schema(database_url: str) -> None:
 
 def _create_app_role(conn: "Connection") -> None:
     """Create the non-superuser ``mtp_app`` role that respects RLS policies."""
-    role = settings.app_role_name
-    password = settings.app_role_password
+    # The role name is an SQL identifier and the password is a string literal;
+    # both come from configuration/environment, so quote them safely rather than
+    # interpolating raw values (which breaks on quotes and risks SQL injection).
+    role = conn.dialect.identifier_preparer.quote(settings.app_role_name)
+    password = "'" + settings.app_role_password.replace("'", "''") + "'"
     existing = conn.execute(
         text("SELECT 1 FROM pg_roles WHERE rolname = :role"),
-        {"role": role},
+        {"role": settings.app_role_name},
     ).first()
     if existing is None:
         conn.exec_driver_sql(
-            f"CREATE ROLE {role} WITH LOGIN PASSWORD '{password}' "
+            f"CREATE ROLE {role} WITH LOGIN PASSWORD {password} "
             f"NOSUPERUSER NOBYPASSRLS NOCREATEDB NOCREATEROLE"
         )
     else:
-        conn.exec_driver_sql(f"ALTER ROLE {role} WITH PASSWORD '{password}'")
+        conn.exec_driver_sql(f"ALTER ROLE {role} WITH PASSWORD {password}")
     conn.exec_driver_sql(f"GRANT USAGE ON SCHEMA public TO {role}")
     conn.exec_driver_sql(
         f"GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO {role}"

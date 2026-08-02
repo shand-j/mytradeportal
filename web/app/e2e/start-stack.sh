@@ -22,7 +22,11 @@ docker compose ${COMPOSE_FILES} --env-file "${ENV_FILE}" up --build -d
 wait_for_api() {
   echo "Waiting for API health check..."
   for i in {1..60}; do
-    if curl -sS "${API_BASE_URL}/health" >/dev/null 2>&1; then
+    # Only treat a 2xx response as healthy; curl exits 0 for 4xx/5xx too, so
+    # inspect the status code to avoid proceeding while the API still errors
+    # (e.g. a 500 before init created the mtp_app role).
+    status=$(curl -sS -o /dev/null -w "%{http_code}" "${API_BASE_URL}/health" 2>/dev/null || echo "000")
+    if [ "${status}" -ge 200 ] && [ "${status}" -lt 300 ]; then
       echo "API is healthy"
       return 0
     fi
