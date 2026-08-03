@@ -15,13 +15,17 @@ from __future__ import annotations
 import os
 import subprocess
 import sys
+from decimal import Decimal
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from sqlalchemy import create_engine, text
+from sqlalchemy import create_engine, inspect, text
+from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.schema import CreateColumn
 
 if TYPE_CHECKING:
     from sqlalchemy.engine import Connection
+    from sqlalchemy.sql.schema import Column, MetaData
 
 ROOT = Path(__file__).resolve().parent.parent
 API_DIR = ROOT / "services" / "api"
@@ -74,12 +78,132 @@ def _create_app_role(conn: Connection) -> None:
     )
 
 
+def _postgres_default_literal(column: Column[object]) -> str | None:
+    """Best-effort SQL literal to use as a temporary DEFAULT for backfilling.
+
+    Recent models declare ``nullable=False`` with a Python-side ``default=``
+    but no ``server_default=``; the migration DDL supplies the server default
+    separately. When we're reconciling a live schema against ``Base.metadata``
+    we need to backfill existing rows before we can enforce ``NOT NULL``, so
+    map the common Python defaults to safe Postgres literals.
+
+    Returns ``None`` if we can't confidently synthesise a literal — the
+    caller then falls back to leaving the column nullable and logging a
+    warning.
+    """
+    default = column.default
+    if default is None:
+        return None
+    arg = getattr(default, "arg", None)
+    # SQLAlchemy wraps zero-arg callables (e.g. ``dict``, ``list``) so they
+    # accept a context; invoke with ``None`` to recover the raw value.
+    if getattr(default, "is_callable", False) and callable(arg):
+        try:
+            arg = arg(None)
+        except Exception:  # pragma: no cover - defensive
+            return None
+    if isinstance(column.type, JSONB):
+        if arg == {}:
+            return "'{}'::jsonb"
+        if arg == []:
+            return "'[]'::jsonb"
+        return None
+    if isinstance(arg, bool):
+        return "true" if arg else "false"
+    if isinstance(arg, int | float | Decimal):
+        return str(arg)
+    if isinstance(arg, str):
+        escaped = arg.replace("'", "''")
+        return f"'{escaped}'"
+    return None
+
+
+def _add_missing_column(
+    conn: Connection, table_name: str, column: Column[object], dialect: object
+) -> str:
+    """Issue DDL for a single missing column and return the identifier added.
+
+    Handles the ``NOT NULL`` + no ``server_default`` case in two steps so we
+    stay safe on tables that already contain rows.
+    """
+    column_ddl = str(CreateColumn(column).compile(dialect=dialect)).strip()  # type: ignore[arg-type]
+    needs_backfill = not column.nullable and column.server_default is None
+
+    if not needs_backfill:
+        statement = f'ALTER TABLE "{table_name}" ADD COLUMN IF NOT EXISTS {column_ddl}'
+        print(f"[init_db] Adding missing column {table_name}.{column.name} via: {statement}")
+        conn.exec_driver_sql(statement)
+        return f"{table_name}.{column.name}"
+
+    nullable_ddl = column_ddl.replace(" NOT NULL", "")
+    default_literal = _postgres_default_literal(column)
+    print(f"[init_db] Adding missing NOT NULL column {table_name}.{column.name} in two steps")
+    conn.exec_driver_sql(f'ALTER TABLE "{table_name}" ADD COLUMN IF NOT EXISTS {nullable_ddl}')
+    if default_literal is None:
+        print(
+            f"[init_db] WARNING: {table_name}.{column.name} is NOT NULL but no "
+            f"default could be synthesised; leaving nullable so the pre-deploy "
+            f"step does not fail. Please add a server_default or backfill migration."
+        )
+        return f"{table_name}.{column.name} (nullable)"
+
+    conn.exec_driver_sql(
+        f'UPDATE "{table_name}" SET "{column.name}" = {default_literal} '
+        f'WHERE "{column.name}" IS NULL'
+    )
+    conn.exec_driver_sql(
+        f'ALTER TABLE "{table_name}" ALTER COLUMN "{column.name}" SET DEFAULT {default_literal}'
+    )
+    conn.exec_driver_sql(f'ALTER TABLE "{table_name}" ALTER COLUMN "{column.name}" SET NOT NULL')
+    return f"{table_name}.{column.name}"
+
+
+def sync_missing_columns(conn: Connection, metadata: MetaData) -> list[str]:
+    """Add columns declared on ``metadata`` but missing from the live database.
+
+    ``Base.metadata.create_all`` only creates *tables* that do not yet exist;
+    it never issues ``ALTER TABLE`` for new columns on existing tables. During
+    pre-go-live iteration we add model columns without running Alembic on
+    Railway, which historically produced 500s such as
+    ``asyncpg.exceptions.UndefinedColumnError: column
+    bills_of_quantities.retrieval_evidence does not exist``.
+
+    Returns the list of ``"<table>.<column>"`` identifiers that were added,
+    for logging and tests.
+    """
+    inspector = inspect(conn)
+    existing_tables = set(inspector.get_table_names(schema="public"))
+    dialect = conn.dialect
+    added: list[str] = []
+
+    for table in metadata.sorted_tables:
+        if table.name not in existing_tables:
+            # create_all just created this whole table, so every column is
+            # already present.
+            continue
+        live_columns = {col["name"] for col in inspector.get_columns(table.name)}
+        for column in table.columns:
+            if column.name in live_columns:
+                continue
+            added.append(_add_missing_column(conn, table.name, column, dialect))
+
+    if added:
+        print(f"[init_db] Reconciled {len(added)} missing column(s): {added}")
+    else:
+        print("[init_db] No missing columns to reconcile")
+    return added
+
+
 def init_api_schema() -> None:
     """Create the API schema from the current SQLAlchemy models."""
     print("[init_db] Creating SQLAlchemy tables from models")
     engine = create_engine(DATABASE_URL.replace("+asyncpg", ""))
     with engine.begin() as conn:
         Base.metadata.create_all(conn)
+        # ``create_all`` never issues ``ALTER TABLE`` for new columns on
+        # existing tables, so bring the live schema forward for any columns
+        # added to the models since the last deploy.
+        sync_missing_columns(conn, Base.metadata)
         _create_app_role(conn)
         apply_tenant_rls_sync(conn)
 
