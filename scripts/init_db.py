@@ -30,6 +30,7 @@ if TYPE_CHECKING:
 ROOT = Path(__file__).resolve().parent.parent
 API_DIR = ROOT / "services" / "api"
 
+# NOTE: sync_missing_columns below is safe on non-empty tables (see PR #10).
 # Ensure the API package is importable whether we run from the repo root or
 # from a container that has copied the API code elsewhere.
 if str(API_DIR) not in sys.path:
