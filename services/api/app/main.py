@@ -82,12 +82,26 @@ app.add_middleware(SlowAPIMiddleware)
 
 # CORS is restricted to the back-office UI origin. In production this should be
 # the deployed web/app URL.
+#
+# Railway PR-preview environments inherit the production ``ALLOWED_ORIGINS``
+# value literally rather than re-resolving ``${{web.RAILWAY_PUBLIC_DOMAIN}}``
+# to the preview's own web domain, which breaks smoke tests running against
+# ``web-mytradeportal-pr-<n>.up.railway.app``. Always allow the deterministic
+# Railway preview pattern via a strict regex so preview smoke can authenticate
+# without depending on Railway variable re-templating.
+_RAILWAY_PREVIEW_ORIGIN_REGEX = r"^https://web-mytradeportal-pr-\d+\.up\.railway\.app$"
+_configured_regex = settings.allowed_origin_regex or None
+if _configured_regex:
+    _allow_origin_regex: str | None = f"({_configured_regex})|({_RAILWAY_PREVIEW_ORIGIN_REGEX})"
+else:
+    _allow_origin_regex = _RAILWAY_PREVIEW_ORIGIN_REGEX
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
         origin.strip() for origin in settings.allowed_origins.split(",") if origin.strip()
     ],
-    allow_origin_regex=settings.allowed_origin_regex or None,
+    allow_origin_regex=_allow_origin_regex,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
