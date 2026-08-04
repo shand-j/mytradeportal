@@ -133,6 +133,19 @@ For pull requests, Railway provisions a PR Environment automatically for preview
 - **No demo or test data is seeded.** The `app.seed_admin_user` script refuses
 to run in production. The first tenant and admin are created through the Django
 admin UI or the gated `POST /tenants` endpoint.
+- **No catalogue seed on deploy.** Earlier releases inserted eight `DOM-SEED-*`
+`cost_items` rows on every deploy as a resolver fallback. That fallback has
+been removed. `scripts/init_api.py` runs `scripts/cleanup_seed_data.py` on
+every deploy, which idempotently deletes any legacy `DOM-SEED-*` and
+`source='curated_seed'` rows in Postgres and matching Qdrant points. The
+`data-pipeline` service is now the single source of truth for the catalogue.
+- **Readiness gate blocks empty catalogues.** The API healthcheck is
+`/health/ready`. It returns 503 until Postgres holds at least
+`MIN_ACTIVE_COST_ITEMS` non-seed rows (default `100` in production Railway
+IaC). New environments will show as unhealthy on Railway until the
+`data-pipeline` service completes its first scrape and load. Set
+`MIN_ACTIVE_COST_ITEMS=0` per-environment to disable the gate (for example on
+short-lived PR previews).
 - **Schema init, not migrations.** Because the platform is pre-go-live with no
 consuming users, `scripts/init_db.py` creates the schema from the SQLAlchemy
 models on first deploy. This is the one-time database initialisation step; it

@@ -20,8 +20,12 @@ def run(script_name: str) -> None:
 
 if __name__ == "__main__":
     run("init_db.py")
-    run("seed_minimum_catalog.py")
+    # Purge any legacy seed/curated_seed rows left over from previous deploys.
+    # Idempotent: once removed this is a no-op on subsequent runs.
+    run("cleanup_seed_data.py")
     print("[init_api] Done")
     print(
-        "[init_api] Note: minimum catalogue seed applied; data-pipeline still enriches full pricing."
+        "[init_api] Note: no catalogue seed is applied on deploy; the data-pipeline "
+        "populates cost_items. The API healthcheck (/health/ready) gates traffic "
+        "until the catalogue is populated."
     )

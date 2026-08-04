@@ -70,6 +70,11 @@ class Settings(BaseSettings):
     )
     retrieval_quality_confidence_cap: float = Field(default=0.6)
 
+    # Readiness gate. ``/health/ready`` on the API returns 503 until the
+    # cost-item catalogue holds at least this many active rows. Set to 0 to
+    # disable the gate (useful for local dev / fresh CI databases).
+    min_active_cost_items: int = Field(default=0)
+
     # OpenConstructionERP microservice
     ocerp_url: str = Field(default="http://ocerp:8000")
 

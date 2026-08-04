@@ -1,9 +1,9 @@
 # Go-Live Checklist — My Trade Portal V2
 
-**Status:** pre-go-live  
-**Target:** production-ready by tomorrow  
-**Railway project:** `MyTradePortal` — `30feaeee-9464-41ac-9b17-d07ae4cfcd09`  
-**Environment:** `production`  
+**Status:** pre-go-live
+**Target:** production-ready by tomorrow
+**Railway project:** `MyTradePortal` — `30feaeee-9464-41ac-9b17-d07ae4cfcd09`
+**Environment:** `production`
 
 This runbook covers the final checks and actions required before My Trade Portal V2 serves live UK electrician customers. It assumes the reader is technical but not already familiar with every component.
 
@@ -146,10 +146,11 @@ railway variables --service api --environment production
 
 ## 4. Database and schema readiness
 
-- [ ] The API pre-deploy command `python scripts/init_api.py` has run successfully on the latest deploy.
+- [ ] The API pre-deploy command `python scripts/init_api.py` has run successfully on the latest deploy. This runs `scripts/init_db.py` (idempotent schema init + `mtp_app` role + RLS) followed by `scripts/cleanup_seed_data.py` (idempotent purge of legacy `DOM-SEED-*` and `curated_seed` rows). No demo catalogue is inserted on deploy.
 - [ ] The admin pre-deploy command `sh -c 'python manage.py migrate --noinput && python scripts/ensure_superuser.py'` has run successfully.
 - [ ] The `mtp_app` role exists and cannot bypass Row-Level Security (RLS).
 - [ ] All tenant-scoped tables (`users`, `contacts`, `quotes`, `quote_line_items`, `bill_of_quantities`, `boq_line_items`, `jobs`, `appointments`, `invoices`, `invoice_line_items`, `payments`, `communications`, `reviews`, `audit_logs`) have RLS enabled.
+- [ ] The API readiness endpoint `/health/ready` returns 200. It returns 503 when the catalogue holds fewer than `MIN_ACTIVE_COST_ITEMS` non-seed rows; complete section 6.1 before expecting this to pass.
 
 Check the latest deploy logs for the `api` and `admin` services. If the init step failed, re-run manually:
 
@@ -193,8 +194,12 @@ Test presigned upload generation by logging into the back office and uploading a
 
 ### 6.1 Populate cost data via the data-pipeline
 
-Cost data is sourced from the live Screwfix scrape only. The pre-seeded catalogue
-loader has been removed. Trigger the pipeline ad-hoc:
+Cost data is sourced from the live Screwfix scrape only. There is no seed
+catalogue: the removed `seed_minimum_catalog` bootstrap is now purged by every
+deploy via `scripts/cleanup_seed_data.py`, and the API healthcheck
+`/health/ready` will return 503 until the pipeline has populated at least
+`MIN_ACTIVE_COST_ITEMS` non-seed rows. Trigger the pipeline ad-hoc on any
+fresh environment:
 
 ```bash
 railway run --service data-pipeline python -m data_pipeline.loader

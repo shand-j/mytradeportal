@@ -118,7 +118,10 @@ export default defineRailway(() => {
   const api = service("api", {
     source: github(GITHUB_REPO),
     build: { builder: "DOCKERFILE", dockerfilePath: "services/api/Dockerfile" },
-    healthcheck: "/health",
+    // /health/ready returns 503 until the cost_items catalogue is populated
+    // by the data-pipeline (see MIN_ACTIVE_COST_ITEMS). This gates Railway
+    // from cutting traffic to a deploy whose catalogue is still empty.
+    healthcheck: "/health/ready",
     preDeployCommand: "python scripts/init_api.py",
     regions: { [TARGET_REGION]: 1 },
     env: {
@@ -133,6 +136,10 @@ export default defineRailway(() => {
       QDRANT_COLLECTION_NAME: "cost_items",
       QDRANT_KNOWLEDGE_COLLECTION_NAME: "quoting_knowledge",
       OCERP_URL,
+      // Minimum active cost_items required before the API is considered ready.
+      // Excludes DOM-SEED-* legacy bootstrap rows. Set explicitly per
+      // environment (0 disables the gate).
+      MIN_ACTIVE_COST_ITEMS: "100",
       // Presigned upload URLs are fetched by the browser, so MinIO must be
       // reached via its PUBLIC domain over HTTPS (MINIO_USE_SSL=true).
       MINIO_ENDPOINT: minio.env.RAILWAY_PUBLIC_DOMAIN,
