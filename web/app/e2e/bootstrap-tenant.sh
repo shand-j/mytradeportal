@@ -52,6 +52,11 @@ wait_for_admin() {
   return 1
 }
 
+run_admin_migrations() {
+  echo "Running Django admin migrations..."
+  docker compose ${COMPOSE_FILES} exec -T admin python manage.py migrate --noinput
+}
+
 create_django_superuser() {
   echo "Ensuring Django superuser exists..."
   docker compose ${COMPOSE_FILES} exec -T admin python -c "
@@ -69,6 +74,11 @@ else:
 }
 
 wait_for_api
+
+# Run Django migrations before probing the admin site. The admin login page
+# returns 500 until auth/session tables exist, so waiting on it first would
+# deadlock a fresh install.
+run_admin_migrations
 
 if [ "${ENVIRONMENT:-development}" = "production" ]; then
   if [ -z "$SETUP_TOKEN" ]; then

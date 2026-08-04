@@ -4,6 +4,8 @@ import {
   createQuote,
   createInvoice,
   createJob,
+  gotoQuotesAndAssertListLoads,
+  tryGenerateBoqQuote,
 } from './helpers';
 
 const djangoUsername = process.env.E2E_DJANGO_ADMIN_USERNAME ?? 'superadmin';
@@ -20,8 +22,8 @@ function resolveSmokeApiBaseUrl(): string {
 
   try {
     const parsed = new URL(webBaseUrl);
-    if (parsed.hostname.startsWith('web-') && parsed.hostname.endsWith('.up.railway.app')) {
-      return `${parsed.protocol}//${parsed.hostname.replace(/^web-/, 'api-')}`;
+    if (parsed.protocol === 'https:') {
+      return `${parsed.origin}/api`;
     }
     return `http://${parsed.hostname}:8000`;
   } catch {
@@ -135,8 +137,18 @@ test.describe('production smoke test', () => {
     const customerName = await createCustomer(page, tenantSlug);
 
     const quoteRef = await createQuote(page, customerName, tenantSlug);
-    await page.goto('/quotes');
+    await gotoQuotesAndAssertListLoads(page);
     await expect(page.getByRole('link', { name: new RegExp(quoteRef, 'i') }).first()).toBeVisible();
+
+    // Exercise the Bill of Quantities serialization path that manual quotes
+    // never touch. A pre-existing tenant's quote page 500'd on persisted BoQ
+    // JSONB while this manual-only smoke stayed green. When AI/OCERP is
+    // available, generating a BoQ-backed quote and re-listing guards that path;
+    // when unavailable, the smoke gate still passes.
+    const boqQuoteCreated = await tryGenerateBoqQuote(page, tenantSlug);
+    if (boqQuoteCreated) {
+      await gotoQuotesAndAssertListLoads(page);
+    }
 
     const invoiceRef = await createInvoice(page, customerName, tenantSlug);
     await page.goto('/invoices');

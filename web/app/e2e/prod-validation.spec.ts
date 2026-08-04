@@ -11,6 +11,7 @@ import {
   convertQuoteToInvoice,
   startJobFromBoard,
   completeJobFromBoard,
+  gotoQuotesAndAssertListLoads,
 } from './helpers';
 
 const djangoUsername = process.env.E2E_DJANGO_ADMIN_USERNAME ?? 'superadmin';
@@ -220,6 +221,12 @@ test.describe('production validation', () => {
       await expect(page).toHaveURL(/\/quotes\/[0-9a-f-]+$/, { timeout: 90_000 });
       await expect(page.getByText('AI Validation Customer')).toBeVisible();
       await expect(page.getByText(/£[0-9,]+/).first()).toBeVisible();
+
+      // Regression guard: once a BoQ-backed quote exists, the quotes list must
+      // still serialize (HTTP 200). This is the exact path that 500'd in prod
+      // for pre-existing tenants while manual-quote smoke stayed green.
+      await gotoQuotesAndAssertListLoads(page);
+
 
       // Download can be flaky in containerized prod-like runs. Try it with a
       // bounded timeout, but do not fail a successful generation flow solely

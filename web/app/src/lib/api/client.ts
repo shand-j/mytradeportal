@@ -10,11 +10,10 @@ function resolveApiBaseUrl(): string {
   if (typeof window !== 'undefined') {
     const { hostname, protocol } = window.location;
 
-    // Railway previews expose separate web/admin/api services on
-    // {service}-mytradeportal-pr-{n}.up.railway.app. When the UI runs on
-    // web-*, derive api-* directly to avoid mixed-content and bad :8000 calls.
+    // Railway deployments should route API traffic through the web service
+    // reverse proxy when no explicit build-time API URL is configured.
     if (hostname.endsWith('.up.railway.app') && hostname.startsWith('web-')) {
-      return `${protocol}//${hostname.replace(/^web-/, 'api-')}`;
+      return `${protocol}//${hostname}/api`;
     }
 
     // Local development keeps API on port 8000 for the same hostname.

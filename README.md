@@ -59,8 +59,8 @@ The platform is **multi-tenant** from day one: every request carries an
 # 1. Start the local stack
 docker compose up -d
 
-# 2. Apply database migrations (or let the API create tables in development)
-PYTHONPATH=services/api alembic upgrade head
+# 2. Initialise the database schema (or let the API create tables in development)
+python scripts/init_db.py
 
 # 3. Seed a demo tenant and admin user for the back-office UI (local dev only)
 cd services/api
@@ -118,8 +118,7 @@ including OpenAI configuration.
 ├── services/api/                 # FastAPI backend
 │   ├── app/routers/              # REST endpoints
 │   ├── app/rag/                  # RAG quote engine
-│   ├── app/models.py             # SQLAlchemy models
-│   ├── alembic/                  # Database migrations
+│   ├── app/models.py             # SQLAlchemy models (schema source of truth)
 │   └── tests/                    # Pytest suite
 ├── services/admin/               # Django admin panel
 │   └── operations/admin.py       # Admin registrations

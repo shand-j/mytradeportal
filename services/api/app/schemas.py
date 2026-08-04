@@ -1,11 +1,19 @@
 """Pydantic schemas for API requests and responses."""
 
 from datetime import datetime
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 from typing import Any
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, EmailStr, Field, computed_field, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    EmailStr,
+    Field,
+    computed_field,
+    field_validator,
+    model_validator,
+)
 
 # ---------------------------------------------------------------------------
 # Tenant
@@ -199,6 +207,28 @@ class BoQLineItemRead(BaseModel):
     retail_price_incl_vat: Decimal | None
     notes: str | None
 
+    @field_validator(
+        "quantity",
+        "labour_hours",
+        "labour_rate",
+        "labour_total",
+        "material_cost",
+        "material_total",
+        "plant_cost",
+        "plant_total",
+        "unit_price",
+        "total",
+        mode="before",
+    )
+    @classmethod
+    def _coerce_decimal(cls, value: Any) -> Decimal:
+        if value is None:
+            return Decimal("0.00")
+        try:
+            return Decimal(str(value))
+        except (InvalidOperation, ValueError, TypeError):
+            return Decimal("0.00")
+
 
 class BoQLineItemUpdate(BaseModel):
     id: UUID | None = None
@@ -274,6 +304,55 @@ class BillOfQuantitiesRead(BaseModel):
     line_items: list[BoQLineItemRead]
     created_at: datetime
     updated_at: datetime
+
+    @staticmethod
+    def _clean_summary_lines(customer_summary_lines: Any) -> list[Any]:
+        """Drop malformed customer summary lines persisted by older code."""
+        if not isinstance(customer_summary_lines, list):
+            return []
+        return [
+            item
+            for item in customer_summary_lines
+            if isinstance(item, dict)
+            and item.get("description") not in (None, "")
+            and item.get("total") is not None
+        ]
+
+    @staticmethod
+    def _clean_nested_object(data: Any) -> dict[str, Any] | None:
+        """Normalise a JSONB object field into a dict the nested model accepts.
+
+        Persisted ``margin_indicator`` / ``retrieval_evidence`` payloads written
+        by earlier code versions may be ``None``, an empty ``{}``, or a partial
+        object where some keys hold ``null``. The nested Read models expose
+        non-nullable fields with defaults, so an explicit ``null`` value fails
+        validation even though a *missing* key would fall back to the default.
+        Strip ``null`` values so the defaults apply, and collapse an empty
+        result to ``None`` so the field is reported as absent.
+        """
+        if not isinstance(data, dict):
+            return None
+        cleaned = {key: val for key, val in data.items() if val is not None}
+        return cleaned or None
+
+    @model_validator(mode="before")
+    @classmethod
+    def _sanitize_jsonb_fields(cls, value: Any) -> Any:
+        if isinstance(value, dict):
+            value["customer_summary_lines"] = cls._clean_summary_lines(
+                value.get("customer_summary_lines")
+            )
+            for key in ("margin_indicator", "retrieval_evidence"):
+                value[key] = cls._clean_nested_object(value.get(key))
+            return value
+
+        value.customer_summary_lines = cls._clean_summary_lines(
+            getattr(value, "customer_summary_lines", None)
+        )
+        for key in ("margin_indicator", "retrieval_evidence"):
+            setattr(value, key, cls._clean_nested_object(getattr(value, key, None)))
+
+        return value
 
 
 class BillOfQuantitiesUpdate(BaseModel):

@@ -1,7 +1,10 @@
 services:
   api:
-    # Use the production CMD from the Dockerfile so migrations run before the
-    # app starts. The dev reload command in docker-compose.yml is overridden.
+    # Match the real production bootstrap: a single idempotent init script
+    # (create schema from models + app role + RLS, then seed the minimum
+    # catalogue) runs before the app starts. This mirrors the Railway
+    # preDeployCommand so the prod-like stack exercises the same code path
+    # instead of a divergent Alembic migration history.
     command: >
-      sh -c "alembic upgrade head &&
+      sh -c "python scripts/init_api.py &&
              uvicorn app.main:app --host 0.0.0.0 --port 8000 --proxy-headers"

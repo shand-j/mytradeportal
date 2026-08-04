@@ -19,6 +19,28 @@ fi
 
 docker compose ${COMPOSE_FILES} --env-file "${ENV_FILE}" up --build -d
 
+wait_for_api() {
+  echo "Waiting for API health check..."
+  for i in {1..60}; do
+    # Only treat a 2xx response as healthy; curl exits 0 for 4xx/5xx too, so
+    # inspect the status code to avoid proceeding while the API still errors
+    # (e.g. a 500 before init created the mtp_app role).
+    status=$(curl -sS -o /dev/null -w "%{http_code}" "${API_BASE_URL}/health" 2>/dev/null || echo "000")
+    if [ "${status}" -ge 200 ] && [ "${status}" -lt 300 ]; then
+      echo "API is healthy"
+      return 0
+    fi
+    sleep 2
+  done
+  echo "ERROR: API did not become healthy" >&2
+  return 1
+}
+
+# Wait for the API to finish init (which creates the mtp_app role via
+# scripts/init_api.py) before touching that role. On a clean first-time
+# install the role does not exist until init has run.
+wait_for_api
+
 if [ "${ENVIRONMENT:-development}" = "production" ] && [ -n "${APP_ROLE_PASSWORD:-}" ]; then
   echo "Syncing mtp_app role password for production-like startup..."
   ESCAPED_APP_ROLE_PASSWORD=${APP_ROLE_PASSWORD//\'/\'\'}
@@ -26,15 +48,7 @@ if [ "${ENVIRONMENT:-development}" = "production" ] && [ -n "${APP_ROLE_PASSWORD
     psql -U "${POSTGRES_USER:-mtp}" -d "${POSTGRES_DB:-mtp}" \
     -c "ALTER ROLE mtp_app WITH PASSWORD '${ESCAPED_APP_ROLE_PASSWORD}';" >/dev/null
   docker compose ${COMPOSE_FILES} restart api >/dev/null
+  wait_for_api
 fi
-
-echo "Waiting for API health check..."
-for i in {1..60}; do
-  if curl -sS "${API_BASE_URL}/health" >/dev/null 2>&1; then
-    echo "API is healthy"
-    break
-  fi
-  sleep 2
-done
 
 ./web/app/e2e/bootstrap-tenant.sh

@@ -134,8 +134,9 @@ The engineering team maintains:
 
 ### CC8.1: Change Management
 
-- Database schema changes are managed via Alembic migrations during one-time
-  init scripts (`scripts/init_db.py`), not at container runtime.
+- Database schema changes are managed by editing the SQLAlchemy models and
+  applied via the idempotent init script (`scripts/init_db.py`) during one-time
+  deploy bootstrap, not at container runtime.
 - Infrastructure changes are applied through `railway config apply` after review.
 
 ## Risk Mitigation
@@ -160,5 +161,5 @@ The engineering team maintains:
 | Pen-test reports | `security/reports/` (generated on demand) |
 | Dependency audit | `pip-audit`, `pnpm audit` outputs in CI |
 | Audit logs | `services/api/app/audit.py` + DB table |
-| RLS policies | `services/api/app/rls.py` + Alembic migrations |
+| RLS policies | `services/api/app/rls.py` + `scripts/init_db.py` |
 | IaC security | `.railway/railway.ts` |
