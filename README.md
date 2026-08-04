@@ -78,10 +78,10 @@ cd services/api
 python -m app.ingest_ddc_uk
 ```
 
-API: http://localhost:8000  
-OpenAPI docs: http://localhost:8000/docs  
-Back-office UI: http://localhost:3000  
-Django admin: http://localhost:8001/admin  
+API: http://localhost:8000
+OpenAPI docs: http://localhost:8000/docs
+Back-office UI: http://localhost:3000
+Django admin: http://localhost:8001/admin
 
 Back-office login (as seeded in step 3):
 - Business slug: `demo` (or your `SEED_TENANT_SLUG`)

@@ -88,7 +88,7 @@ python -m app.ingest_ddc_uk
 
 ## Verify the API
 
-OpenAPI docs: http://localhost:8000/docs  
+OpenAPI docs: http://localhost:8000/docs
 Health check: http://localhost:8000/health
 
 Generate a quote from the command line:
