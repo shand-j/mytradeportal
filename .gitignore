@@ -37,6 +37,12 @@ env/
 *~
 .DS_Store
 
+# Agent tooling (machine-specific plugin/config state)
+.claude/
+
+# Third-party reference material — not distributed (potential copyright)
+docs/bs7671_all_forms_a4.pdf
+
 # Node
 node_modules/
 .pnpm-store/
