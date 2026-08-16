@@ -9,13 +9,13 @@
 **My Trade Portal V2** is an AI-native field service management platform. The current implementation is focused on **UK electricians** and provides:
 
 - A multi-tenant **FastAPI** backend with PostgreSQL Row-Level Security.
-- An **OpenConstructionERP (OCERP)** microservice that generates Bills of Quantities (BoQ) for domestic electrical work using a cost database, deterministic rules, and LLM grounding.
 - A **React + Vite + Tailwind** back-office web application (`web/app`) for tradespeople.
+- A **React Native + Expo iOS app** (`services/pwa`) that white-labels for each trade business and serves both tradesperson and customer profiles.
 - A **Django 5** admin panel (`services/admin`) that mirrors the operational schema read-only.
 - A **data pipeline** (`services/data-pipeline`) that scrapes electrical supplier pricing and loads it into Postgres/Qdrant.
-- A **golden-dataset evaluation harness** (`evals/`) that scores the BoQ engine against UK electrical quoting test cases.
+- An **OpenConstructionERP (OCERP)** BoQ microservice that is currently parked for the mobile-pivot MVP (BoQ endpoints return HTTP 501).
 
-Planned but not yet implemented: customer PWA, Celery worker service, embeddable chatbot widget, voice AI agent, accounting sync, WhatsApp integration.
+Planned but not yet implemented: customer PWA, Celery worker service, embeddable chatbot widget, voice AI agent, accounting sync, WhatsApp integration, Android app.
 
 The authoritative product vision is in [`mtp_v2_product_spec.md`](mtp_v2_product_spec.md) and the system diagram is in [`mtp_v2_architecture.png`](mtp_v2_architecture.png). Day-to-day engineering docs live in [`docs/`](docs/).
 
@@ -75,14 +75,15 @@ The local stack is defined in [`docker-compose.yml`](docker-compose.yml):
 | `mtp_api` | FastAPI API | `8000` | Main REST API |
 | `mtp_web` | React back-office UI | `3000` | Back-office SPA |
 | `mtp_admin` | Django admin | `8001` | Staff admin panel |
-| `mtp_ocerp` | OCERP microservice | `8002` (host) → `8000` (container) | BoQ / pricing engine |
 | `mtp_data_pipeline` | Data pipeline | — | Scheduled scraper/loader |
+| `mtp_ocerp` | OCERP microservice (parked) | `8002` (host) → `8000` (container) | BoQ / pricing engine (commented out in `docker-compose.yml`) |
 
 Additional directories:
 
 - `packages/shared/py/mtp_shared/` — shared Python settings, logging, tenancy, event schemas, and OCERP API contracts (`BoQGenerateRequest`/`BoQGenerateResponse` etc. in `ocerp.py`).
-- `packages/shared/ts/` — placeholder; no shared TypeScript types are committed yet.
-- `services/worker/`, `services/pwa/`, `services/chatbot-widget/` — empty placeholders.
+- `packages/shared/ts/` — shared TypeScript primitives (theme tokens, etc.).
+- `services/pwa/` — React Native + Expo iOS app for the pivot (trade + customer flows).
+- `services/worker/`, `services/chatbot-widget/` — empty placeholders.
 - `supabase/` — Supabase CLI local config; optional alternative to the Compose-managed Postgres.
 
 ---
@@ -182,7 +183,7 @@ mytradeportal/
 │   │   ├── pyproject.toml
 │   │   └── Dockerfile
 │   ├── worker/                     # Placeholder
-│   ├── pwa/                        # Placeholder
+│   ├── pwa/                        # React Native + Expo iOS app
 │   └── chatbot-widget/             # Placeholder
 ├── web/
 │   └── app/                        # React back-office SPA
@@ -353,10 +354,14 @@ pytest -m eval
 EVAL_PER_CASE=1 pytest -m eval
 ```
 
-### OCERP service
+### OCERP service (parked)
+
+The OCERP / BoQ service is commented out in `docker-compose.yml` and `.railway/railway.ts`
+for the mobile-pivot MVP. The corresponding API endpoints return HTTP 501. To re-enable,
+uncomment the service blocks and set `OCERP_ENABLED=true` in the API environment.
 
 ```bash
-# The service runs in Docker on host port 8002
+# If re-enabled, the service runs in Docker on host port 8002
 # Run tests locally:
 pytest services/ocerp/tests -v
 ```
@@ -397,6 +402,37 @@ pnpm test
 # E2E tests
 pnpm test:e2e
 ```
+
+### Mobile iOS app (Expo)
+
+```bash
+cd services/pwa
+
+# Install dependencies
+pnpm install
+
+# Start the Expo dev server (iOS simulator / Expo Go / web)
+pnpm start          # or: pnpm ios / pnpm web
+
+# Lint (type check)
+pnpm lint
+```
+
+#### Marketing demo videos
+
+The interactive mock doubles as the source for two marketing walkthrough videos
+(customer + electrician journeys). They are generated automatically from the
+live Expo web build via Playwright + ffmpeg:
+
+```bash
+# Records both journeys and composites framed, captioned MP4s
+# into services/pwa/demo-video/ (starts the Expo web server if needed).
+services/pwa/scripts/build-demo-videos.sh all
+```
+
+See [`services/pwa/demo-video/README.md`](services/pwa/demo-video/README.md) and
+the narration script in
+[`docs/demo-video-narration.md`](docs/demo-video-narration.md).
 
 ### Django admin
 
@@ -483,8 +519,8 @@ pnpm supabase:status
 - **API tests** (`services/api/tests/`):
   - Use a fresh test database per session.
   - Connect as the `mtp_app` role so RLS policies are enforced.
-  - Include tenancy/isolation, auth, quote lifecycles, invoice lifecycles, RAG, OCERP client, webhooks, calculations, rate limiting, and audit logging.
-- **OCERP tests** (`services/ocerp/tests/`): requirements, resolver, pricing engine, labour, compliance, standards, knowledge, quote accuracy, and end-to-end BoQ generation.
+  - Include tenancy/isolation, auth, quote lifecycles, invoice lifecycles, RAG, webhooks, calculations, rate limiting, and audit logging.
+- **OCERP tests** (`services/ocerp/tests/`): currently parked; run only if the OCERP service is re-enabled.
 - **Data-pipeline tests** (`services/data-pipeline/tests/`): loader normalisation and knowledge loader chunking.
 - **Evals** (`evals/`): golden-dataset regression harness. The committed `evals/results/summary.json` shows the latest run as **16/17 cases passing (94.12%)**.
 
@@ -601,9 +637,9 @@ Key variables (see `.env.example` for the full template):
 The following directories are empty placeholders:
 
 - `services/worker/` — Celery task workers.
-- `services/pwa/` — Customer Progressive Web App.
+- `services/pwa/` — React Native + Expo iOS app (trade back-office + customer quote request).
 - `services/chatbot-widget/` — Embeddable web chatbot widget.
-- `packages/shared/ts/src/` — Shared TypeScript types.
+- `packages/shared/ts/src/` — Shared TypeScript primitives (theme tokens, types).
 
 The OCERP takeoff endpoints (`/ocerp/v1/takeoff/pdf|cad|photo`) are stubs that return HTTP 501.
 

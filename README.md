@@ -1,13 +1,20 @@
 # My Trade Portal V2
 
 AI-native field service management platform for tradespeople. The current MVP is
-focused on **UK electricians**, with a RAG-powered quote engine, CRM, scheduling,
-invoicing and payments.
+focused on **UK electricians**, delivered as a **mobile-first, white-label iOS
+app** (Expo/React Native) backed by a multi-tenant FastAPI service, with a React
+web app as the desktop back-office companion.
 
-> **Status:** Backend API + Django admin are implemented and testable. The
-back-office UI (`web/app`) auth foundation is implemented. The customer PWA,
-voice agent, web chatbot and WhatsApp integrations are planned for later phases
-(see [`mtp_v2_product_spec.md`](mtp_v2_product_spec.md)).
+> **Status:** Mid-pivot to mobile-first (see
+> [`docs/pivot-migration-plan.md`](docs/pivot-migration-plan.md)). The FastAPI
+> backend + Django admin are implemented and testable. The Expo iOS app
+> (`services/pwa`) ships as an interactive, offline mock covering the business
+> onboarding, customer quote-capture, trade dashboard and customer-portal
+> journeys, and is the source for the marketing demo videos. For the MVP the
+> OCERP/BoQ engine is **parked** (endpoints return HTTP 501) and the AI quote
+> path is a lightweight line-item interpreter. Voice agent, web chatbot and
+> WhatsApp integrations remain planned (see
+> [`mtp_v2_product_spec.md`](mtp_v2_product_spec.md)).
 
 ---
 
@@ -46,7 +53,11 @@ The platform is **multi-tenant** from day one: every request carries an
 | Paddle payments | ✅ | Checkout creation + webhook recording |
 | Django admin | ✅ | Read-only mirror of operational schema |
 | Back-office UI | ✅ | React SPA, all core pages implemented |
-| Customer PWA | 🚧 | Planned |
+| Mobile iOS app (Expo) | ✅ | Interactive offline mock: onboarding, quote capture, dashboard, customer portal |
+| Marketing demo videos | ✅ | Automated customer + electrician journey walkthroughs |
+| Business onboarding / quote-request API | ✅ | Routers for onboarding, businesses, customers, pricing, quote requests |
+| AI quote interpreter | 🚧 | MVP stub; structured-output model wiring planned |
+| OCERP / BoQ engine | ⏸️ | Parked for the mobile pivot (endpoints return 501) |
 | Voice AI agent | 🚧 | Planned (behind feature flag) |
 | Web chatbot | 🚧 | Planned |
 | Accounting sync | 🚧 | Planned |
@@ -78,10 +89,10 @@ cd services/api
 python -m app.ingest_ddc_uk
 ```
 
-API: http://localhost:8000  
-OpenAPI docs: http://localhost:8000/docs  
-Back-office UI: http://localhost:3000  
-Django admin: http://localhost:8001/admin  
+API: http://localhost:8000
+OpenAPI docs: http://localhost:8000/docs
+Back-office UI: http://localhost:3000
+Django admin: http://localhost:8001/admin
 
 Back-office login (as seeded in step 3):
 - Business slug: `demo` (or your `SEED_TENANT_SLUG`)
@@ -95,10 +106,13 @@ including OpenAI configuration.
 
 ## Documentation
 
+- [`docs/pivot-migration-plan.md`](docs/pivot-migration-plan.md) — mobile-first pivot plan and milestones
+- [`docs/prd-business-onboarding.md`](docs/prd-business-onboarding.md), [`docs/prd-customer-quote-capture.md`](docs/prd-customer-quote-capture.md), [`docs/prd-trade-dashboard-operations.md`](docs/prd-trade-dashboard-operations.md), [`docs/prd-customer-portal.md`](docs/prd-customer-portal.md), [`docs/prd-automated-demo-video.md`](docs/prd-automated-demo-video.md) — PRDs for the pivot
+- [`docs/demo-video-narration.md`](docs/demo-video-narration.md) — narration script for the marketing videos
 - [`docs/getting-started.md`](docs/getting-started.md) — install, run, seed data
 - [`docs/architecture.md`](docs/architecture.md) — layers, services, multi-tenancy
 - [`docs/api.md`](docs/api.md) — endpoints, auth and examples
-- [`docs/ai-quote-engine.md`](docs/ai-quote-engine.md) — RAG flow and cost database
+- [`docs/ai-quote-engine.md`](docs/ai-quote-engine.md) — RAG flow and cost database (OCERP path, parked)
 - [`docs/development.md`](docs/development.md) — tests, linting, migrations
 - [`docs/deployment.md`](docs/deployment.md) — local Docker Compose, Railway IaC, and production deploy playbooks
 - [`docs/runbooks/`](docs/runbooks/) — operational runbooks (maintenance, incident response, custom domains, CI/CD, go-live)
