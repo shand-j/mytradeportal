@@ -23,6 +23,9 @@ export default function TradeLayout() {
         <Stack.Screen name="branding" />
         <Stack.Screen name="follow-ups" />
         <Stack.Screen name="manual-lead" />
+        <Stack.Screen name="voice-quote" />
+        <Stack.Screen name="certificates" />
+        <Stack.Screen name="certificate/[id]" />
         <Stack.Screen name="settings" />
       </Stack>
       {showTabBar && <BottomTabBar variant="trade" />}

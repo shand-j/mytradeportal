@@ -32,6 +32,13 @@ export type IconName =
   | "warning"
   | "help"
   | "sparkles"
+  | "mic"
+  | "cloud-offline"
+  | "cloud-done"
+  | "sync"
+  | "shield"
+  | "clipboard"
+  | "circle-check"
   | "whatsapp";
 
 const ICONS: Record<IconName, keyof typeof Ionicons.glyphMap> = {
@@ -66,6 +73,13 @@ const ICONS: Record<IconName, keyof typeof Ionicons.glyphMap> = {
   warning: "warning",
   help: "help-circle",
   sparkles: "sparkles",
+  mic: "mic",
+  "cloud-offline": "cloud-offline",
+  "cloud-done": "cloud-done",
+  sync: "sync",
+  shield: "shield-checkmark",
+  clipboard: "clipboard",
+  "circle-check": "checkmark-circle",
   whatsapp: "logo-whatsapp",
 };
 

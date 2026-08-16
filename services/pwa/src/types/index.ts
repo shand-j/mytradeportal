@@ -132,3 +132,43 @@ export type FollowUpSettings = {
   invoiceReminderDelayDays: number;
   channel: FollowUpChannel;
 };
+
+export type CircuitTestRow = {
+  id: string;
+  circuit: string;
+  protection: string;
+  /** Measured earth-fault loop impedance (Ω). */
+  zsMeasured: number;
+  /** Max permitted Zs for the protective device (Ω), from BS 7671 tables. */
+  zsMax: number;
+  /** RCD disconnection time at 5× rated current (ms); ≤40ms passes. */
+  rcdTripMs: number;
+  /** Insulation resistance (MΩ). */
+  ir: number;
+};
+
+export type ObservationCode = "C1" | "C2" | "C3" | "FI";
+
+export type CertObservation = {
+  id: string;
+  code: ObservationCode;
+  text: string;
+};
+
+export type CertificateType = "EICR" | "EIC" | "MinorWorks";
+export type CertificateStatus = "draft" | "issued";
+
+export type Certificate = {
+  id: string;
+  type: CertificateType;
+  customerName: string;
+  address: string;
+  postcode: string;
+  status: CertificateStatus;
+  overall: "satisfactory" | "unsatisfactory" | null;
+  circuits: CircuitTestRow[];
+  observations: CertObservation[];
+  createdAt: string;
+  signedBy?: string;
+  signedAt?: string;
+};

@@ -7,6 +7,7 @@ import { Screen } from "../../components/ui/Screen";
 import { Text } from "../../components/ui/Text";
 import { MOCK_LEADS } from "../../data/mockLeads";
 import { MOCK_QUOTES } from "../../data/mockQuotes";
+import { useOfflineStore } from "../../stores/offlineStore";
 import { Lead, Quote, QuoteLineItem } from "../../types";
 import { RequestInfoScreen } from "./RequestInfoScreen";
 
@@ -62,6 +63,7 @@ export function QuoteEditScreen({ lead, seed, onClose }: QuoteEditScreenProps) {
   );
 
   const [pricingModel, setPricingModel] = useState<"time_materials" | "per_point">("time_materials");
+  const enqueue = useOfflineStore((s) => s.enqueue);
   const [timeItems, setTimeItems] = useState<QuoteLineItem[]>(() => buildTimeItems(seedQuote));
   const [pointItems, setPointItems] = useState<QuoteLineItem[]>(() => buildPointItems(seedQuote, resolvedLead));
   const [showRequestInfo, setShowRequestInfo] = useState(false);
@@ -227,8 +229,12 @@ export function QuoteEditScreen({ lead, seed, onClose }: QuoteEditScreenProps) {
         </View>
 
         <Button
+          testID="quote-approve-send"
           title={seedQuote?.status === "sent" ? "Update quote" : isFromLead ? "Approve & send" : "Save changes"}
-          onPress={onClose}
+          onPress={() => {
+            enqueue("quote", `${title} — ${customerName}`);
+            onClose();
+          }}
         />
         <Button
           testID="quote-request-info"

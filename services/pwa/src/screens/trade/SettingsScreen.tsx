@@ -22,6 +22,11 @@ export function SettingsScreen() {
 
   const sections = [
     {
+      title: "Certificates",
+      subtitle: "EICR, EIC & Minor Works — voice-enabled",
+      onPress: () => router.push("/(trade)/certificates"),
+    },
+    {
       title: "Revenue & costs",
       subtitle: "Paid revenue, outstanding, profit",
       onPress: () => router.push("/(trade)/analytics"),

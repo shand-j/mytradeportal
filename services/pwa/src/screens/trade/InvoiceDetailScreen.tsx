@@ -6,6 +6,7 @@ import { Icon } from "../../components/ui/Icon";
 import { Screen } from "../../components/ui/Screen";
 import { Text } from "../../components/ui/Text";
 import { MOCK_INVOICES } from "../../data/mockInvoices";
+import { useOfflineStore } from "../../stores/offlineStore";
 import { Invoice, InvoiceStatus } from "../../types";
 
 export type InvoiceDetailScreenProps = {
@@ -17,6 +18,7 @@ export type InvoiceDetailScreenProps = {
 export function InvoiceDetailScreen({ invoice, onClose, onViewRevenue }: InvoiceDetailScreenProps) {
   const [status, setStatus] = useState<InvoiceStatus>(invoice.status);
   const [paidAt, setPaidAt] = useState<string | undefined>(invoice.paidAt);
+  const enqueue = useOfflineStore((s) => s.enqueue);
 
   const isPaid = status === "paid";
   const isSent = status === "sent";
@@ -26,6 +28,7 @@ export function InvoiceDetailScreen({ invoice, onClose, onViewRevenue }: Invoice
     const now = new Date().toISOString();
     setStatus("paid");
     setPaidAt(now);
+    enqueue("invoice", `${invoice.title} — payment received`);
     // Reflect the payment in the shared mock so the revenue dashboard updates.
     const record = MOCK_INVOICES.find((i) => i.id === invoice.id);
     if (record) {

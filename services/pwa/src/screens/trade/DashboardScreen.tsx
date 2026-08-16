@@ -13,6 +13,7 @@ import { MOCK_JOBS } from "../../data/mockJobs";
 import { MOCK_LEADS } from "../../data/mockLeads";
 import { MOCK_QUOTES, getQuoteTotal } from "../../data/mockQuotes";
 import { useBusiness } from "../../theme/ThemeProvider";
+import { useOfflineStore } from "../../stores/offlineStore";
 
 const URGENCY_ORDER: Record<string, number> = {
   emergency_today: 0,
@@ -35,6 +36,8 @@ export function DashboardScreen(_props: DashboardScreenProps) {
   const router = useRouter();
   const { user } = useAuth();
   const { business } = useBusiness();
+  const isOnline = useOfflineStore((s) => s.isOnline);
+  const toggleOnline = useOfflineStore((s) => s.toggleOnline);
   const [selectedDateIndex, setSelectedDateIndex] = useState(0);
 
   const today = new Date();
@@ -81,14 +84,24 @@ export function DashboardScreen(_props: DashboardScreenProps) {
       <Header
         title="Dashboard"
         rightAction={
-          <IconButton
-            testID="dashboard-more"
-            icon="more"
-            size={24}
-            color="#374151"
-            onPress={() => router.push("/(trade)/settings")}
-            accessibilityLabel="Settings"
-          />
+          <View className="flex-row items-center gap-1">
+            <IconButton
+              testID="offline-toggle"
+              icon={isOnline ? "cloud-done" : "cloud-offline"}
+              size={22}
+              color={isOnline ? "#16A34A" : "#B45309"}
+              onPress={toggleOnline}
+              accessibilityLabel="Toggle connectivity"
+            />
+            <IconButton
+              testID="dashboard-more"
+              icon="more"
+              size={24}
+              color="#374151"
+              onPress={() => router.push("/(trade)/settings")}
+              accessibilityLabel="Settings"
+            />
+          </View>
         }
       />
       <ScrollView className="flex-1" contentContainerStyle={{ paddingBottom: 24, gap: 16 }}>
@@ -119,6 +132,37 @@ export function DashboardScreen(_props: DashboardScreenProps) {
           <Text variant="body" weight="semibold">
             Hi {user?.fullName ?? "there"}
           </Text>
+        </View>
+
+        <View className="flex-row gap-3">
+          <Pressable
+            testID="dashboard-voice-quote"
+            className="flex-1"
+            onPress={() => router.push("/(trade)/voice-quote")}
+          >
+            <View className="items-center gap-2 rounded-2xl border border-indigo-200 bg-indigo-50 p-4">
+              <View className="h-10 w-10 items-center justify-center rounded-full bg-indigo-600">
+                <Icon name="mic" size={20} color="#FFFFFF" />
+              </View>
+              <Text variant="caption" weight="semibold" align="center">
+                Dictate a quote
+              </Text>
+            </View>
+          </Pressable>
+          <Pressable
+            testID="dashboard-new-cert"
+            className="flex-1"
+            onPress={() => router.push("/(trade)/certificates")}
+          >
+            <View className="items-center gap-2 rounded-2xl border border-emerald-200 bg-emerald-50 p-4">
+              <View className="h-10 w-10 items-center justify-center rounded-full bg-emerald-600">
+                <Icon name="shield" size={20} color="#FFFFFF" />
+              </View>
+              <Text variant="caption" weight="semibold" align="center">
+                New EICR
+              </Text>
+            </View>
+          </Pressable>
         </View>
 
         <View className="flex-row gap-3">
