@@ -37,7 +37,8 @@ import {
 const GITHUB_REPO = process.env.MTP_GITHUB_REPO ?? "shand-j/mytradeportal";
 
 const QDRANT_URL = "http://${{qdrant.RAILWAY_PRIVATE_DOMAIN}}:6333";
-const OCERP_URL = "http://${{ocerp.RAILWAY_PRIVATE_DOMAIN}}:8000";
+// OCERP / BoQ engine is parked for the mobile-pivot MVP.
+// const OCERP_URL = "http://${{ocerp.RAILWAY_PRIVATE_DOMAIN}}:8000";
 const ADMIN_PUBLIC_URL = "https://${{admin.RAILWAY_PUBLIC_DOMAIN}}";
 
 const TARGET_REGION = "europe-west4-drams3a"; // EU West Metal (Amsterdam) — closest Railway region to the UK market.
@@ -91,29 +92,28 @@ export default defineRailway(() => {
   // ---------------------------------------------------------------------
   // Application services (built from this repo via the GitHub App)
   // ---------------------------------------------------------------------
-  const ocerp = service("ocerp", {
-    source: github(GITHUB_REPO),
-    build: { builder: "DOCKERFILE", dockerfilePath: "services/ocerp/Dockerfile" },
-    healthcheck: "/health",
-    regions: { [TARGET_REGION]: 1 },
-    env: {
-      ENVIRONMENT: "production",
-      // No public domain → Railway doesn't inject PORT; pin it so the
-      // healthcheck targets the port uvicorn actually listens on.
-      PORT: "8000",
-      DATABASE_URL: db.env.DATABASE_URL,
-      QDRANT_URL,
-      QDRANT_COLLECTION_NAME: "cost_items",
-      QDRANT_KNOWLEDGE_COLLECTION_NAME: "quoting_knowledge",
-      OPENAI_API_KEY: preserve(),
-      EMBEDDING_MODEL: "text-embedding-3-small",
-      LLM_MODEL: "gpt-4o-mini",
-      LLM_TIMEOUT_SECONDS: "300",
-      LOG_LEVEL: "INFO",
-      APP_ROLE_NAME: "mtp_app",
-      APP_ROLE_PASSWORD: preserve(),
-    },
-  });
+  // OCERP / BoQ engine is parked for the mobile-pivot MVP.
+  // const ocerp = service("ocerp", {
+  //   source: github(GITHUB_REPO),
+  //   build: { builder: "DOCKERFILE", dockerfilePath: "services/ocerp/Dockerfile" },
+  //   healthcheck: "/health",
+  //   regions: { [TARGET_REGION]: 1 },
+  //   env: {
+  //     ENVIRONMENT: "production",
+  //     PORT: "8000",
+  //     DATABASE_URL: db.env.DATABASE_URL,
+  //     QDRANT_URL,
+  //     QDRANT_COLLECTION_NAME: "cost_items",
+  //     QDRANT_KNOWLEDGE_COLLECTION_NAME: "quoting_knowledge",
+  //     OPENAI_API_KEY: preserve(),
+  //     EMBEDDING_MODEL: "text-embedding-3-small",
+  //     LLM_MODEL: "gpt-4o-mini",
+  //     LLM_TIMEOUT_SECONDS: "300",
+  //     LOG_LEVEL: "INFO",
+  //     APP_ROLE_NAME: "mtp_app",
+  //     APP_ROLE_PASSWORD: preserve(),
+  //   },
+  // });
 
   const api = service("api", {
     source: github(GITHUB_REPO),
@@ -132,7 +132,7 @@ export default defineRailway(() => {
       QDRANT_URL,
       QDRANT_COLLECTION_NAME: "cost_items",
       QDRANT_KNOWLEDGE_COLLECTION_NAME: "quoting_knowledge",
-      OCERP_URL,
+      // OCERP_URL,
       // Presigned upload URLs are fetched by the browser, so MinIO must be
       // reached via its PUBLIC domain over HTTPS (MINIO_USE_SSL=true).
       MINIO_ENDPOINT: minio.env.RAILWAY_PUBLIC_DOMAIN,
@@ -244,6 +244,6 @@ export default defineRailway(() => {
   });
 
   return project("mytradeportal", {
-    resources: [db, cache, qdrant, minio, api, ocerp, web, admin, dataPipeline, qdrantStorage, minioData],
+    resources: [db, cache, qdrant, minio, api, web, admin, dataPipeline, qdrantStorage, minioData],
   });
 });

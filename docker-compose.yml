@@ -186,33 +186,36 @@ services:
       qdrant:
         condition: service_healthy
 
-  ocerp:
-    build:
-      context: .
-      dockerfile: services/ocerp/Dockerfile
-    container_name: mtp_ocerp
-    environment:
-      DATABASE_URL: postgresql+asyncpg://mtp:mtp@postgres:5432/mtp
-      QDRANT_URL: http://qdrant:6333
-      QDRANT_COLLECTION_NAME: ${QDRANT_COLLECTION_NAME:-cost_items}
-      QDRANT_KNOWLEDGE_COLLECTION_NAME: ${QDRANT_KNOWLEDGE_COLLECTION_NAME:-quoting_knowledge}
-      ENVIRONMENT: ${ENVIRONMENT:-development}
-      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
-      EMBEDDING_MODEL: ${EMBEDDING_MODEL:-text-embedding-3-small}
-      LLM_MODEL: ${LLM_MODEL:-gpt-4o-mini}
-      LLM_TIMEOUT_SECONDS: ${LLM_TIMEOUT_SECONDS:-45}
-      LOG_LEVEL: ${LOG_LEVEL:-INFO}
-    volumes:
-      - ./services/ocerp:/app/services/ocerp
-      - ./packages/shared/py:/app/packages/shared/py
-    ports:
-      - "8002:8000"
-    depends_on:
-      postgres:
-        condition: service_healthy
-      qdrant:
-        condition: service_healthy
-    command: uvicorn ocerp.main:app --host 0.0.0.0 --port 8000 --reload --reload-dir /app/services/ocerp --reload-dir /app/packages/shared/py
+  # OCERP / BoQ engine is parked for the mobile-pivot MVP.
+  # It can be re-enabled later by uncommenting the block below and setting
+  # OCERP_ENABLED=true in the API environment.
+  # ocerp:
+  #   build:
+  #     context: .
+  #     dockerfile: services/ocerp/Dockerfile
+  #   container_name: mtp_ocerp
+  #   environment:
+  #     DATABASE_URL: postgresql+asyncpg://mtp:mtp@postgres:5432/mtp
+  #     QDRANT_URL: http://qdrant:6333
+  #     QDRANT_COLLECTION_NAME: ${QDRANT_COLLECTION_NAME:-cost_items}
+  #     QDRANT_KNOWLEDGE_COLLECTION_NAME: ${QDRANT_KNOWLEDGE_COLLECTION_NAME:-quoting_knowledge}
+  #     ENVIRONMENT: ${ENVIRONMENT:-development}
+  #     OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+  #     EMBEDDING_MODEL: ${EMBEDDING_MODEL:-text-embedding-3-small}
+  #     LLM_MODEL: ${LLM_MODEL:-gpt-4o-mini}
+  #     LLM_TIMEOUT_SECONDS: ${LLM_TIMEOUT_SECONDS:-45}
+  #     LOG_LEVEL: ${LOG_LEVEL:-INFO}
+  #   volumes:
+  #     - ./services/ocerp:/app/services/ocerp
+  #     - ./packages/shared/py:/app/packages/shared/py
+  #   ports:
+  #     - "8002:8000"
+  #   depends_on:
+  #     postgres:
+  #       condition: service_healthy
+  #     qdrant:
+  #       condition: service_healthy
+  #   command: uvicorn ocerp.main:app --host 0.0.0.0 --port 8000 --reload --reload-dir /app/services/ocerp --reload-dir /app/packages/shared/py
 
 volumes:
   postgres_data:
