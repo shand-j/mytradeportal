@@ -3,7 +3,10 @@
   "version": "1.0.0",
   "private": true,
   "pnpm": {
-    "onlyBuiltDependencies": ["supabase"]
+    "onlyBuiltDependencies": ["supabase"],
+    "overrides": {
+      "react-dom": "19.2.3"
+    }
   },
   "devDependencies": {
     "supabase": "^1.226.4"
