@@ -1,9 +1,10 @@
-import { useState } from "react";
-import { Alert, Linking, ScrollView, View } from "react-native";
+import { useMemo, useState } from "react";
+import { Alert, Linking, ScrollView, TextInput, View } from "react-native";
 import { Button } from "../../components/ui/Button";
 import { Header } from "../../components/ui/Header";
-import { Screen } from "../../components/ui/Screen";
+import { IconButton } from "../../components/ui/IconButton";
 import { Text } from "../../components/ui/Text";
+import { Screen } from "../../components/ui/Screen";
 import { Job, JobStatus } from "../../types";
 
 const TEAM = [
@@ -25,15 +26,36 @@ const STATUS_COLORS: Record<JobStatus, string> = {
   cancelled: "#FEE2E2",
 };
 
+type InvoiceItem = { id: string; description: string; amount: number };
+
+const BASE_ITEMS: InvoiceItem[] = [
+  { id: "i1", description: "Consumer unit replacement (labour)", amount: 520 },
+  { id: "i2", description: "Metal 12-way RCBO board + materials", amount: 180 },
+  { id: "i3", description: "Call-out fee", amount: 45 },
+];
+
+const DEFAULT_NOTES =
+  "Replaced consumer unit with a 12-way RCBO board and tested all circuits. " +
+  "Fitted an extra double socket in the garage at the customer's request.";
+
 type JobDetailScreenProps = {
   job: Job;
   onClose: () => void;
-  onCreateInvoice?: () => void;
+  onSubmitInvoice?: (total: number) => void;
 };
 
-export function JobDetailScreen({ job, onClose, onCreateInvoice }: JobDetailScreenProps) {
+export function JobDetailScreen({ job, onClose, onSubmitInvoice }: JobDetailScreenProps) {
   const [assignedTo, setAssignedTo] = useState(job.assignedTo);
   const [status, setStatus] = useState<JobStatus>(job.status);
+  const [notes, setNotes] = useState(DEFAULT_NOTES);
+  const [items, setItems] = useState<InvoiceItem[]>(BASE_ITEMS);
+  const [variationAdded, setVariationAdded] = useState(false);
+
+  const totals = useMemo(() => {
+    const subtotal = items.reduce((sum, i) => sum + i.amount, 0);
+    const vat = subtotal * 0.2;
+    return { subtotal, vat, total: subtotal + vat };
+  }, [items]);
 
   const navigateToAddress = async () => {
     const address = encodeURIComponent(job.address);
@@ -48,22 +70,19 @@ export function JobDetailScreen({ job, onClose, onCreateInvoice }: JobDetailScre
     Alert.alert("Cannot open maps", "No maps application is available on this device.");
   };
 
-  const callCustomer = () => {
-    Linking.openURL(`tel:${job.phone.replace(/\s/g, "")}`);
-  };
+  const callCustomer = () => Linking.openURL(`tel:${job.phone.replace(/\s/g, "")}`);
+  const messageCustomer = () => Linking.openURL(`sms:${job.phone.replace(/\s/g, "")}`);
 
-  const messageCustomer = () => {
-    Linking.openURL(`sms:${job.phone.replace(/\s/g, "")}`);
+  const addVariation = () => {
+    if (variationAdded) return;
+    setItems((prev) => [
+      ...prev,
+      { id: "var-1", description: "Additional double socket (fitted on site)", amount: 90 },
+    ]);
+    setVariationAdded(true);
   };
 
   const assignedMember = TEAM.find((member) => member.name === assignedTo) ?? TEAM[0];
-
-  const handleCreateInvoice = () => {
-    Alert.alert("Create invoice?", "This will create a draft invoice for the job.", [
-      { text: "Cancel", style: "cancel" },
-      { text: "Create", onPress: onCreateInvoice },
-    ]);
-  };
 
   return (
     <Screen>
@@ -109,7 +128,7 @@ export function JobDetailScreen({ job, onClose, onCreateInvoice }: JobDetailScre
             Address
           </Text>
           <Text variant="body">{job.address}</Text>
-          <Button title="Navigate" onPress={navigateToAddress} />
+          <Button testID="job-navigate" title="Navigate" onPress={navigateToAddress} />
         </View>
 
         <View className="rounded-2xl bg-slate-100 p-4 gap-3">
@@ -132,26 +151,115 @@ export function JobDetailScreen({ job, onClose, onCreateInvoice }: JobDetailScre
           </View>
         </View>
 
-        <View className="rounded-2xl bg-slate-100 p-4 gap-2">
-          <Text variant="body" weight="semibold">
-            Notes
-          </Text>
-          <Text variant="body" color="secondary">
-            Customer has a dog; board is in the garage. Access via side gate.
-          </Text>
-        </View>
+        {status === "completed" ? (
+          <>
+            <View className="rounded-2xl bg-slate-100 p-4 gap-2">
+              <Text variant="body" weight="semibold">
+                Completion notes
+              </Text>
+              <TextInput
+                testID="job-completion-notes"
+                className="min-h-20 rounded-xl border border-slate-200 bg-white p-3 text-base text-slate-900"
+                value={notes}
+                onChangeText={setNotes}
+                multiline
+                textAlignVertical="top"
+              />
+            </View>
+
+            <View className="rounded-2xl bg-slate-100 p-4 gap-3">
+              <View className="flex-row items-center justify-between">
+                <Text variant="body" weight="semibold">
+                  Invoice items
+                </Text>
+                <Text variant="caption" color="secondary">
+                  from approved quote
+                </Text>
+              </View>
+              {items.map((item) => (
+                <View key={item.id} className="flex-row items-center justify-between gap-2">
+                  <Text variant="body" style={{ flex: 1 }} numberOfLines={1}>
+                    {item.description}
+                  </Text>
+                  <Text variant="body" weight="semibold">
+                    £{item.amount.toFixed(2)}
+                  </Text>
+                </View>
+              ))}
+
+              {!variationAdded && (
+                <Button
+                  testID="job-add-variation"
+                  title="+ Add on-site variation"
+                  variant="outline"
+                  size="sm"
+                  onPress={addVariation}
+                />
+              )}
+
+              <View className="my-1 h-px bg-slate-200" />
+              <View className="flex-row justify-between">
+                <Text variant="caption" color="secondary">
+                  Subtotal
+                </Text>
+                <Text variant="caption" color="secondary">
+                  £{totals.subtotal.toFixed(2)}
+                </Text>
+              </View>
+              <View className="flex-row justify-between">
+                <Text variant="caption" color="secondary">
+                  VAT (20%)
+                </Text>
+                <Text variant="caption" color="secondary">
+                  £{totals.vat.toFixed(2)}
+                </Text>
+              </View>
+              <View className="flex-row justify-between">
+                <Text variant="body" weight="bold">
+                  Total
+                </Text>
+                <Text variant="title" weight="bold" color="primary">
+                  £{totals.total.toFixed(2)}
+                </Text>
+              </View>
+            </View>
+          </>
+        ) : (
+          <View className="rounded-2xl bg-slate-100 p-4 gap-2">
+            <Text variant="body" weight="semibold">
+              Notes
+            </Text>
+            <Text variant="body" color="secondary">
+              Customer has a dog; board is in the garage. Access via side gate.
+            </Text>
+          </View>
+        )}
       </ScrollView>
 
       <View className="border-t border-slate-200 bg-white pt-4 pb-2 gap-3">
-        {status === "confirmed" && <Button title="Start job" onPress={() => setStatus("in_progress")} />}
-        {status === "in_progress" && <Button title="Mark complete" onPress={() => setStatus("completed")} />}
+        {status === "confirmed" && (
+          <Button testID="job-start" title="Start job" onPress={() => setStatus("in_progress")} />
+        )}
+        {status === "in_progress" && (
+          <Button
+            testID="job-complete"
+            title="Mark complete"
+            onPress={() => setStatus("completed")}
+          />
+        )}
         {status === "completed" && (
           <>
-            <Button title="Create invoice" onPress={handleCreateInvoice} />
+            <Button
+              testID="job-create-invoice"
+              title={`Create & send invoice · £${totals.total.toFixed(2)}`}
+              onPress={() => onSubmitInvoice?.(totals.total)}
+            />
             <Button title="Close" variant="outline" onPress={onClose} />
           </>
         )}
-        {status === "cancelled" && <Button title="Re-open" variant="outline" onPress={() => setStatus("confirmed")} />}
+        {status === "cancelled" && (
+          <Button title="Re-open" variant="outline" onPress={() => setStatus("confirmed")} />
+        )}
       </View>
     </Screen>
   );

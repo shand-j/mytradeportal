@@ -31,6 +31,7 @@ export type IconName =
   | "sunny"
   | "warning"
   | "help"
+  | "sparkles"
   | "whatsapp";
 
 const ICONS: Record<IconName, keyof typeof Ionicons.glyphMap> = {
@@ -64,6 +65,7 @@ const ICONS: Record<IconName, keyof typeof Ionicons.glyphMap> = {
   sunny: "sunny",
   warning: "warning",
   help: "help-circle",
+  sparkles: "sparkles",
   whatsapp: "logo-whatsapp",
 };
 

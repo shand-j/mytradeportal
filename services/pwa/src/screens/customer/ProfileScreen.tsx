@@ -11,6 +11,7 @@ import { MOCK_CUSTOMERS } from "../../data/mockCustomers";
 import { useBusiness } from "../../theme/ThemeProvider";
 
 const CONTACT_METHODS = [
+  { key: "in_app_chat", label: "In-app Chat", icon: "message" as const },
   { key: "phone", label: "Phone call", icon: "phone" as const },
   { key: "sms", label: "Text message", icon: "sms" as const },
   { key: "whatsapp", label: "WhatsApp", icon: "message" as const },

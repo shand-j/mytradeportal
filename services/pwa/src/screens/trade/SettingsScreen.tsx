@@ -22,6 +22,11 @@ export function SettingsScreen() {
 
   const sections = [
     {
+      title: "Revenue & costs",
+      subtitle: "Paid revenue, outstanding, profit",
+      onPress: () => router.push("/(trade)/analytics"),
+    },
+    {
       title: "Business profile",
       subtitle: business?.name ?? "Not set",
       onPress: () => router.push("/(trade)/branding"),

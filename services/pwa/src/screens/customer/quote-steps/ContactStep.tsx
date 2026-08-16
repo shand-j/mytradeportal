@@ -6,6 +6,7 @@ import { Text } from "../../../components/ui/Text";
 import { StepPropsWithBusiness } from "./types";
 
 const PREFERRED_CONTACTS = [
+  { key: "in_app_chat", label: "In-app Chat" },
   { key: "phone", label: "Phone" },
   { key: "sms", label: "SMS" },
   { key: "whatsapp", label: "WhatsApp" },

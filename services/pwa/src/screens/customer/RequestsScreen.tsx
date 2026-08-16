@@ -4,6 +4,7 @@ import { useRouter } from "expo-router";
 import { Button } from "../../components/ui/Button";
 import { Header } from "../../components/ui/Header";
 import { IconButton } from "../../components/ui/IconButton";
+import { Icon } from "../../components/ui/Icon";
 import { Screen } from "../../components/ui/Screen";
 import { Text } from "../../components/ui/Text";
 import { CustomerQuoteRequestFlow } from "./CustomerQuoteRequestFlow";
@@ -493,6 +494,23 @@ export function RequestsScreen({ navigation }: RequestsScreenProps) {
         <Text variant="body" color="secondary">
           Track your quote requests and received quotes from {business?.name ?? "your electrician"}.
         </Text>
+
+        <Pressable testID="customer-ai-banner" onPress={() => router.push("/(customer)/messages")}>
+          <View className="flex-row items-center gap-3 rounded-2xl border border-indigo-200 bg-indigo-50 p-4">
+            <View className="h-9 w-9 items-center justify-center rounded-full bg-indigo-600">
+              <Icon name="sparkles" size={18} color="#FFFFFF" />
+            </View>
+            <View className="flex-1">
+              <Text variant="body" weight="semibold">
+                {business?.name ?? "Your electrician"} Assistant
+              </Text>
+              <Text variant="caption" color="secondary">
+                A few quick questions to make your quote accurate — tap to reply
+              </Text>
+            </View>
+            <Icon name="messages" size={18} color="#4F46E5" />
+          </View>
+        </Pressable>
 
         {MOCK_QUOTES.map((quote) => {
           const status = effectiveStatus(quote);

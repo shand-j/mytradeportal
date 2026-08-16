@@ -105,7 +105,6 @@ export function LoginScreen({ role, mode = "login", onBack }: LoginScreenProps) 
 
 const styles = StyleSheet.create({
   container: {
-    justifyContent: "center",
     paddingVertical: 24,
     gap: 16,
   },

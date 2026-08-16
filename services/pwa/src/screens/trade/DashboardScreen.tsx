@@ -4,6 +4,7 @@ import { useRouter } from "expo-router";
 import { Button } from "../../components/ui/Button";
 import { Header } from "../../components/ui/Header";
 import { IconButton } from "../../components/ui/IconButton";
+import { Icon } from "../../components/ui/Icon";
 import { Screen } from "../../components/ui/Screen";
 import { Text } from "../../components/ui/Text";
 import { LeadCard } from "../../components/trade/LeadCard";
@@ -91,6 +92,26 @@ export function DashboardScreen(_props: DashboardScreenProps) {
         }
       />
       <ScrollView className="flex-1" contentContainerStyle={{ paddingBottom: 24, gap: 16 }}>
+        <Pressable
+          testID="dashboard-new-lead-banner"
+          onPress={() => router.push(`/(trade)/lead/${sortedLeads[0]?.id ?? "1"}`)}
+        >
+          <View className="flex-row items-center gap-3 rounded-2xl border border-blue-200 bg-blue-50 p-4">
+            <View className="h-9 w-9 items-center justify-center rounded-full bg-blue-600">
+              <Icon name="sparkles" size={18} color="#FFFFFF" />
+            </View>
+            <View className="flex-1">
+              <Text variant="body" weight="semibold">
+                New lead · Consumer unit upgrade
+              </Text>
+              <Text variant="caption" color="secondary">
+                SK8 3NJ · from your customer app · tap to review
+              </Text>
+            </View>
+            <Icon name="navigate" size={18} color="#2563EB" />
+          </View>
+        </Pressable>
+
         <View className="gap-0.5">
           <Text variant="body" color="secondary">
             {business?.name ?? "Your business"}
@@ -158,7 +179,11 @@ export function DashboardScreen(_props: DashboardScreenProps) {
             ))}
           </View>
           {selectedDayJobs.map((job) => (
-            <Pressable key={job.id} onPress={() => router.push(`/(trade)/job/${job.id}`)}>
+            <Pressable
+              key={job.id}
+              testID={`dashboard-job-${job.id}`}
+              onPress={() => router.push(`/(trade)/job/${job.id}`)}
+            >
               <View className="flex-row items-center gap-3 rounded-2xl border border-gray-200 bg-white p-4">
                 <View className="h-10 w-1 rounded bg-emerald-500" />
                 <View className="flex-1">

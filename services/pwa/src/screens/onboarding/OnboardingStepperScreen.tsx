@@ -9,6 +9,7 @@ import { AccountStep } from "./steps/AccountStep";
 import { AddressServiceAreaStep } from "./steps/AddressServiceAreaStep";
 import { BusinessIdentityStep } from "./steps/BusinessIdentityStep";
 import { ComplianceStep } from "./steps/ComplianceStep";
+import { PlanPaymentStep } from "./steps/PlanPaymentStep";
 import { ReviewLaunchStep } from "./steps/ReviewLaunchStep";
 import { ServicesStep } from "./steps/ServicesStep";
 import { TaxVatStep } from "./steps/TaxVatStep";
@@ -23,6 +24,7 @@ const STEPS = [
   { key: "compliance", label: "Compliance", component: ComplianceStep },
   { key: "services", label: "Services", component: ServicesStep },
   { key: "review", label: "Review", component: ReviewLaunchStep },
+  { key: "plan", label: "Plan", component: PlanPaymentStep },
 ];
 
 export function OnboardingStepperScreen() {

@@ -9,5 +9,11 @@ export default function InvoiceDetailRoute() {
 
   if (!invoice) return null;
 
-  return <InvoiceDetailScreen invoice={invoice} onClose={() => router.back()} />;
+  return (
+    <InvoiceDetailScreen
+      invoice={invoice}
+      onClose={() => router.back()}
+      onViewRevenue={() => router.push("/(trade)/analytics")}
+    />
+  );
 }

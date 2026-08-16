@@ -10,7 +10,7 @@ export type ContactDetails = {
   name: string;
   mobile: string;
   email: string;
-  preferredContact: "phone" | "sms" | "whatsapp" | "email";
+  preferredContact: "in_app_chat" | "phone" | "sms" | "whatsapp" | "email";
   bestTimeToCall: string[];
 };
 
@@ -66,7 +66,7 @@ export const INITIAL_FORM_DATA: QuoteFormData = {
     name: "Jane Homeowner",
     mobile: "07700 123 456",
     email: "jane@example.com",
-    preferredContact: "email",
+    preferredContact: "in_app_chat",
     bestTimeToCall: [],
   },
   property: {

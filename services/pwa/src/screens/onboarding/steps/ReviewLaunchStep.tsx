@@ -79,7 +79,7 @@ export function ReviewLaunchStep({ onNext }: ReviewLaunchStepProps) {
           </View>
         </View>
 
-        <Button title="Launch my business" onPress={() => onNext()} />
+        <Button testID="onboarding-choose-plan" title="Choose your plan" onPress={() => onNext()} />
       </View>
     </ScrollView>
   );

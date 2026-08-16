@@ -10,22 +10,31 @@ export default function JobDetailRoute() {
 
   if (!job) return null;
 
+  const handleSubmitInvoice = (total: number) => {
+    // Update (or create) the invoice for this job's customer to reflect the
+    // final on-site total, then open it so the electrician can send/track it.
+    const existing = MOCK_INVOICES.find((inv) => inv.quoteId === job.quoteId);
+    const invoiceId = existing?.id ?? `inv-${Date.now()}`;
+    if (existing) {
+      existing.amount = total;
+      existing.status = "sent";
+      existing.sentAt = new Date().toISOString();
+    } else {
+      MOCK_INVOICES.push({
+        id: invoiceId,
+        quoteId: job.quoteId,
+        customerName: job.customerName,
+        title: job.title,
+        amount: total,
+        status: "sent",
+        dueDate: new Date(Date.now() + 14 * 86400000).toISOString(),
+        sentAt: new Date().toISOString(),
+      });
+    }
+    router.push(`/(trade)/invoice/${invoiceId}`);
+  };
+
   return (
-    <JobDetailScreen
-      job={job}
-      onClose={() => router.back()}
-      onCreateInvoice={() => {
-        MOCK_INVOICES.push({
-          id: `inv-${Date.now()}`,
-          quoteId: job.quoteId,
-          customerName: job.customerName,
-          title: job.title,
-          amount: 745,
-          status: "draft",
-          dueDate: new Date(Date.now() + 14 * 86400000).toISOString(),
-        });
-        router.back();
-      }}
-    />
+    <JobDetailScreen job={job} onClose={() => router.back()} onSubmitInvoice={handleSubmitInvoice} />
   );
 }

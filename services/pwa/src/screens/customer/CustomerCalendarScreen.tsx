@@ -1,4 +1,4 @@
-import { Linking, Pressable, ScrollView, View } from "react-native";
+import { Pressable, ScrollView, View } from "react-native";
 import { useRouter } from "expo-router";
 import { Button } from "../../components/ui/Button";
 import { Header } from "../../components/ui/Header";
@@ -13,11 +13,6 @@ export function CustomerCalendarScreen() {
   const router = useRouter();
   const upcoming = MOCK_JOBS.filter((j) => j.status === "confirmed" || j.status === "in_progress");
   const businessName = business?.name ?? "Your electrician";
-
-  const handleNavigate = (address: string) => {
-    const query = encodeURIComponent(address);
-    Linking.openURL(`https://maps.apple.com/?q=${query}`);
-  };
 
   const handleMessage = (jobTitle: string) => {
     router.push({
@@ -69,9 +64,9 @@ export function CustomerCalendarScreen() {
                 onPress={() => {}}
               />
               <Button
-                title="Navigate"
+                title="Message"
                 size="sm"
-                onPress={() => handleNavigate(job.address)}
+                onPress={() => handleMessage(job.title)}
               />
             </View>
           </View>
