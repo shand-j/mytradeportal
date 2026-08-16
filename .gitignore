@@ -82,6 +82,9 @@ minio_data/
 # Pipeline seed catalogue is source, not a local data volume
 !services/data-pipeline/src/data_pipeline/data/
 !services/data-pipeline/src/data_pipeline/data/**
+# Expo app mock fixtures are source, not a local data volume
+!services/pwa/src/data/
+!services/pwa/src/data/**
 
 # Agent/tooling local state
 .kimi-code/
