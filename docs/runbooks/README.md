@@ -7,6 +7,7 @@ This directory contains the operational runbooks for My Trade Portal V2.
 - [`deployment.md`](deployment.md) — Full production deployment playbooks (clean ground-up and deploy onto existing production).
 - [`custom-domains.md`](custom-domains.md) — Configure custom domains and tenant subdomains on Railway.
 - [`ci-cd.md`](ci-cd.md) — Fast-paced CI/CD pipeline and direct-to-prod development.
+- [`ios-xcode.md`](ios-xcode.md) — Build and run the mobile app (`services/pwa`) in Xcode / iOS Simulator.
 - [`local-prodlike-e2e-from-railway.md`](local-prodlike-e2e-from-railway.md) — Pull hosted Railway vars and run local production-like Playwright validation.
 - [`maintenance.md`](maintenance.md) — Daily, weekly, and routine maintenance tasks.
 - [`incident-response.md`](incident-response.md) — Detect, respond to, and recover from production incidents.

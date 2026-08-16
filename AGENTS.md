@@ -418,6 +418,10 @@ pnpm start          # or: pnpm ios / pnpm web
 pnpm lint
 ```
 
+To build and run the app in **Xcode / iOS Simulator** (generates the native
+`ios/` project via `expo prebuild`, then opens the workspace), follow
+[`docs/runbooks/ios-xcode.md`](docs/runbooks/ios-xcode.md).
+
 #### Marketing demo videos
 
 The interactive mock doubles as the source for two marketing walkthrough videos
