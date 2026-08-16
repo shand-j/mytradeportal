@@ -21,7 +21,7 @@ export function IconButton({
       testID={testID}
       accessibilityLabel={accessibilityLabel}
       onPress={onPress}
-      style={({ pressed }) => [styles.button, pressed && styles.pressed]}
+      style={styles.button}
       hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
     >
       <View style={styles.content}>
@@ -35,10 +35,6 @@ const styles = StyleSheet.create({
   button: {
     padding: 8,
     borderRadius: 10,
-  },
-  pressed: {
-    opacity: 0.6,
-    backgroundColor: "#F3F4F6",
   },
   content: {
     alignItems: "center",
