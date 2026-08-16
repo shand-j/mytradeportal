@@ -1,5 +1,47 @@
 # Demo video narration script
 
+## Marketing cut — `marketing-journey.mp4` (single, ~112s, no captions)
+
+Clean iPhone-resolution screen recording of the real app, one continuous story
+across both profiles. No burned-in captions — record the voiceover against these
+approximate beat timings. Times are from the app content (the file has no
+intro/outro cards).
+
+| Time | Beat | Suggested narration |
+|---|---|---|
+| 0:00 | Customer opens the app, enters a 6-digit code | "Homeowners find their local electrician with a simple 6-digit code…" |
+| 0:07 | Requests a quote; confirms postcode | "…and request a quote in minutes." |
+| 0:09 | Contact details — In-app Chat | "They choose how they'd like to be contacted — including in-app chat." |
+| 0:12 | Property profile | "A few structured questions capture the property…" |
+| 0:14 | Job type + questionnaire | "…and the exact job." |
+| 0:18 | Fuse-board photo | "They add a photo of the fuse board." |
+| 0:19 | Urgency, budget, consent, submit | "Then submit — no endless forms." |
+| 0:25 | Confirmation | "Honest expectations: the business will review and send the quote." |
+| 0:27 | AI assistant follows up in chat | "An AI assistant follows up in chat to fill any gaps…" |
+| 0:29 | 5-question Q&A refines the quote | "…so the quote is accurate before a human ever touches it." |
+| 0:45 | Electrician logs in; new-lead notification | "The electrician gets the lead on their phone." |
+| 0:49 | Opens lead + customer's photo | "They review the details and the customer's photo…" |
+| 0:54 | Generates the AI quote | "…and AI drafts the quote." |
+| 0:59 | Reviews the draft (78% confidence) | "They review every line…" |
+| 1:03 | Switches pricing model | "…switch between time-and-materials and per-point pricing…" |
+| 1:07 | Approves & sends | "…and send — humans always have the final say." |
+| 1:09 | Customer returns; quote received | "The customer gets the quote…" |
+| 1:16 | Reviews line items & assumptions | "…fully transparent." |
+| 1:20 | Accepts the quote | "They accept…" |
+| 1:22 | Picks a day/time, confirms booking | "…and book straight from the app." |
+| 1:26 | Electrician, job day — dashboard | "On the day, the job's on the calendar." |
+| 1:30 | Opens the job | "They open the job…" |
+| 1:33 | Navigate to site | "…and navigate to site." |
+| 1:36 | Start + complete | "Once done…" |
+| 1:39 | Completion notes + on-site variation | "…they log completion notes and add on-site variations." |
+| 1:43 | Create & send invoice | "The invoice is created and sent in seconds…" |
+| 1:45 | Payment received | "…payment comes in…" |
+| 1:48 | Revenue dashboard | "…and the business sees its revenue and profit at a glance." |
+
+---
+
+## Framed cuts (with burned-in captions)
+
 Voiceover script for the two automated marketing walkthroughs produced by
 `services/pwa/scripts/build-demo-videos.sh`. Timestamps are for the **final
 MP4s**, which prepend a 3-second intro card, so the in-app action starts at
