@@ -137,6 +137,7 @@ async def test_generate_quote_returns_503_when_ai_not_configured(client: AsyncCl
     assert response.status_code == 503
 
 
+@pytest.mark.skip(reason="OCERP/BoQ is parked for the mobile-pivot MVP")
 @pytest.mark.asyncio
 async def test_generate_quote_with_ocerp(client: AsyncClient) -> None:
     tenant = await _create_tenant(client, f"sparky-{uuid4().hex[:8]}")
@@ -198,6 +199,7 @@ async def test_generate_quote_with_ocerp(client: AsyncClient) -> None:
     assert Decimal(boq_line["material_total"]) == Decimal("390.00")
 
 
+@pytest.mark.skip(reason="OCERP/BoQ is parked for the mobile-pivot MVP")
 @pytest.mark.asyncio
 async def test_generate_quote_with_ocerp_uses_updated_tenant_pricing_settings(
     admin_client: AsyncClient,
@@ -292,6 +294,7 @@ async def test_generate_quote_with_ocerp_uses_updated_tenant_pricing_settings(
     assert after_total == Decimal("360.00")
 
 
+@pytest.mark.skip(reason="OCERP/BoQ is parked for the mobile-pivot MVP")
 @pytest.mark.asyncio
 async def test_regenerate_boq_keeps_customer_total_locked_while_boq_reprices(
     admin_client: AsyncClient,
@@ -389,6 +392,7 @@ async def test_regenerate_boq_keeps_customer_total_locked_while_boq_reprices(
     assert Decimal(quote_after.json()["total"]) == Decimal("120.00")
 
 
+@pytest.mark.skip(reason="OCERP/BoQ is parked for the mobile-pivot MVP")
 @pytest.mark.asyncio
 async def test_manual_boq_edit_updates_boq_total_but_keeps_customer_quote_locked(
     admin_client: AsyncClient,

@@ -826,3 +826,214 @@ class TenantBootstrapRead(TenantRead):
     """Tenant plus the first admin user created alongside it (if requested)."""
 
     admin_user: UserRead | None = None
+
+
+# ---------------------------------------------------------------------------
+# Mobile pivot schemas
+# ---------------------------------------------------------------------------
+
+
+class BusinessPublicConfig(BaseModel):
+    """White-label config returned to the iOS app before authentication."""
+
+    slug: str
+    name: str
+    logo_url: str | None = Field(default=None, serialization_alias="logoUrl")
+    primary_color: str = Field(default="#2563EB", serialization_alias="primaryColor")
+    secondary_color: str = Field(default="#1D4ED8", serialization_alias="secondaryColor")
+    business_services: list[str] = Field(
+        default_factory=list, serialization_alias="businessServices"
+    )
+    contact_phone: str | None = Field(default=None, serialization_alias="contactPhone")
+    address: str | None = None
+
+
+class CustomerCreate(BaseModel):
+    full_name: str = Field(..., min_length=1, max_length=255)
+    email: EmailStr
+    phone: str | None = Field(default=None, max_length=50)
+    password: str | None = Field(default=None, min_length=8, max_length=128)
+    marketing_consent: bool = False
+    preferred_contact_method: str | None = Field(default=None, max_length=50)
+
+
+class CustomerRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    tenant_id: UUID
+    contact_id: UUID | None
+    email: str
+    full_name: str
+    phone: str | None
+    is_active: bool
+    marketing_consent: bool
+    preferred_contact_method: str | None
+    created_at: datetime
+    updated_at: datetime
+
+
+class PropertyCreate(BaseModel):
+    customer_id: UUID
+    address: str = Field(..., min_length=1, max_length=2000)
+    postcode: str = Field(..., min_length=1, max_length=20)
+    lat: Decimal | None = None
+    lng: Decimal | None = None
+    property_type: str | None = Field(default=None, max_length=50)
+    bedrooms: int | None = None
+    tenure: str | None = Field(default=None, max_length=50)
+    epc_rating: str | None = Field(default=None, max_length=10)
+    notes: str | None = None
+
+
+class PropertyRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    tenant_id: UUID
+    customer_id: UUID
+    address: str
+    postcode: str
+    lat: Decimal | None
+    lng: Decimal | None
+    property_type: str | None
+    bedrooms: int | None
+    tenure: str | None
+    epc_rating: str | None
+    is_active: bool
+    created_at: datetime
+    updated_at: datetime
+
+
+class PricingProfileCreate(BaseModel):
+    name: str = Field(..., min_length=1, max_length=255)
+    profile_type: str = Field(default="time_materials")
+    is_default: bool = False
+    vat_rate: Decimal = Decimal("0.20")
+    markup_percentage: Decimal = Decimal("0.00")
+    call_out_fee: Decimal = Decimal("0.0000")
+    minimum_charge: Decimal = Decimal("0.0000")
+
+
+class PricingProfileRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    tenant_id: UUID
+    name: str
+    profile_type: str
+    is_default: bool
+    vat_rate: Decimal
+    markup_percentage: Decimal
+    call_out_fee: Decimal
+    minimum_charge: Decimal
+    created_at: datetime
+    updated_at: datetime
+
+
+class PricingRateCreate(BaseModel):
+    pricing_profile_id: UUID
+    category: str = Field(..., max_length=50)
+    label: str = Field(..., min_length=1, max_length=255)
+    unit: str | None = Field(default=None, max_length=50)
+    rate: Decimal = Decimal("0.0000")
+    cost: Decimal | None = None
+    is_active: bool = True
+
+
+class PricingRateRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    tenant_id: UUID
+    pricing_profile_id: UUID
+    category: str
+    label: str
+    unit: str | None
+    rate: Decimal
+    cost: Decimal | None
+    is_active: bool
+    created_at: datetime
+    updated_at: datetime
+
+
+class QuoteRequestCreate(BaseModel):
+    contact_id: UUID | None = None
+    customer_id: UUID | None = None
+    property_id: UUID | None = None
+    source: str = Field(default="qr")
+    raw_text: str | None = None
+    structured_data: dict[str, Any] = Field(default_factory=dict)
+    urgency: str = Field(default="normal")
+    media_urls: list[str] = Field(default_factory=list)
+    preferred_dates: list[dict[str, Any]] = Field(default_factory=list)
+    safety_review_required: bool = False
+
+
+class QuoteRequestRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    tenant_id: UUID
+    contact_id: UUID | None
+    customer_id: UUID | None
+    property_id: UUID | None
+    source: str
+    raw_text: str | None
+    structured_data: dict[str, Any]
+    ai_extracted_summary: str | None
+    urgency: str
+    status: str
+    quote_id: UUID | None
+    media_urls: list[str]
+    triage_flags: list[str]
+    preferred_dates: list[dict[str, Any]]
+    safety_review_required: bool
+    ai_confidence: Decimal | None
+    reviewed_by: UUID | None
+    converted_at: datetime | None
+    created_at: datetime
+    updated_at: datetime
+
+
+class QuoteRequestMediaCreate(BaseModel):
+    file_url: str
+    file_key: str | None = None
+    mime_type: str | None = Field(default=None, max_length=100)
+    size_bytes: int | None = None
+    source: str = Field(default="in_app")
+
+
+class AiInterpretLineItem(BaseModel):
+    kind: str = Field(..., max_length=50)
+    description: str
+    qty: Decimal = Decimal("1")
+    unit: str
+    unit_price: Decimal
+
+
+class AiInterpretQuoteRequest(BaseModel):
+    quote_request_id: UUID
+
+
+class AiInterpretQuoteResponse(BaseModel):
+    confidence: float = Field(..., ge=0.0, le=1.0)
+    route: str
+    assumptions: list[str] = Field(default_factory=list)
+    line_items: list[AiInterpretLineItem] = Field(default_factory=list)
+    callout_fee: Decimal = Decimal("0.00")
+    minimum_charge: Decimal = Decimal("0.00")
+    emergency_multiplier: Decimal = Decimal("1.00")
+    compliance_notes: list[str] = Field(default_factory=list)
+
+
+class OnboardingStepUpdate(BaseModel):
+    step: str
+    value: dict[str, Any] = Field(default_factory=dict)
+
+
+class OnboardingStatusRead(BaseModel):
+    status: str
+    onboarding_progress: dict[str, Any]
+    launch_enabled: bool = False
+    pending_steps: list[str] = Field(default_factory=list)

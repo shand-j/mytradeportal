@@ -54,6 +54,21 @@ class Tenant(Base, TimestampMixin):
     slug: Mapped[str] = mapped_column(String(63), unique=True, nullable=False, index=True)
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    status: Mapped[str] = mapped_column(
+        String(50), default="active", nullable=False
+    )  # onboarding | provisional | active | suspended
+    onboarding_progress: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict, nullable=False)
+    launched_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    structure: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    year_established: Mapped[int | None] = mapped_column(nullable=True)
+    companies_house_number: Mapped[str | None] = mapped_column(String(8), nullable=True)
+    ch_verified: Mapped[str] = mapped_column(String(50), default="self_declared", nullable=False)
+    nations_served: Mapped[list[str]] = mapped_column(JSONB, default=list, nullable=False)
+    vat_registered: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    vat_number: Mapped[str | None] = mapped_column(String(12), nullable=True)
+    vat_scheme: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    quote_defaults: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict, nullable=False)
+    branding: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict, nullable=False)
     settings: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict, nullable=False)
 
     # Paddle-specific merchant configuration (sandbox vs production per tenant optional)
@@ -163,7 +178,9 @@ class User(TenantScopedBase):
 
     email: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
     full_name: Mapped[str] = mapped_column(String(255), nullable=False)
-    role: Mapped[str] = mapped_column(String(50), default="technician", nullable=False)
+    role: Mapped[str] = mapped_column(
+        String(50), default="engineer", nullable=False
+    )  # owner | admin | office_manager | engineer
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     phone: Mapped[str | None] = mapped_column(String(50), nullable=True)
     password_hash: Mapped[str | None] = mapped_column(String(255), nullable=True)
@@ -214,6 +231,19 @@ class Quote(TenantScopedBase):
     valid_until: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     approved_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     sent_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    quote_request_id: Mapped[UUID | None] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("quote_requests.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    ai_metadata: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict, nullable=False)
+    reviewed_by: Mapped[UUID | None] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
     extra_data: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict, nullable=False)
 
     contact: Mapped[Contact] = relationship("Contact", back_populates="quotes")
@@ -259,6 +289,13 @@ class QuoteLineItem(Base, TimestampMixin):
     quantity: Mapped[Decimal] = mapped_column(Numeric(10, 2), default=Decimal("1.00"))
     unit_price: Mapped[Decimal] = mapped_column(Numeric(12, 4), default=Decimal("0.0000"))
     total: Mapped[Decimal] = mapped_column(Numeric(12, 4), default=Decimal("0.0000"))
+    ai_generated: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    edited_by: Mapped[UUID | None] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
 
     quote: Mapped[Quote] = relationship("Quote", back_populates="line_items")
 
@@ -385,6 +422,16 @@ class Job(TenantScopedBase):
     scheduled_start: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     scheduled_end: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     completed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    assigned_user_id: Mapped[UUID | None] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    address: Mapped[str | None] = mapped_column(Text, nullable=True)
+    postcode: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    lat: Mapped[Decimal | None] = mapped_column(Numeric(10, 8), nullable=True)
+    lng: Mapped[Decimal | None] = mapped_column(Numeric(11, 8), nullable=True)
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     contact: Mapped[Contact] = relationship("Contact", back_populates="jobs")
@@ -412,6 +459,12 @@ class Appointment(TenantScopedBase):
     end_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
     status: Mapped[str] = mapped_column(String(50), default="confirmed", nullable=False)
     address: Mapped[str | None] = mapped_column(Text, nullable=True)
+    assigned_user_id: Mapped[UUID | None] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
 
 
@@ -570,6 +623,273 @@ class AuditLog(TenantScopedBase):
         nullable=True,
     )
     action: Mapped[str] = mapped_column(String(50), nullable=False)
+    entity_type: Mapped[str] = mapped_column(String(50), nullable=False)
+    entity_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), nullable=False)
+    payload: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict, nullable=False)
+
+
+class BusinessCredentials(TenantScopedBase):
+    """Licences, insurance and accreditations for a trade business."""
+
+    __tablename__ = "business_credentials"
+
+    credential_type: Mapped[str] = mapped_column(String(50), nullable=False)
+    provider: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    reference_number: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    coverage_amount: Mapped[Decimal | None] = mapped_column(Numeric(12, 2), nullable=True)
+    valid_from: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    valid_until: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    document_url: Mapped[str | None] = mapped_column(Text, nullable=True)
+    verification_status: Mapped[str] = mapped_column(
+        String(50), default="self_declared", nullable=False
+    )
+    verified_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    extra_data: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict, nullable=False)
+
+
+class ServiceArea(TenantScopedBase):
+    """A postcode prefix, nation or radius-based service area for a business."""
+
+    __tablename__ = "service_areas"
+
+    name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    postcode_prefix: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    nation: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    lat: Mapped[Decimal | None] = mapped_column(Numeric(10, 8), nullable=True)
+    lng: Mapped[Decimal | None] = mapped_column(Numeric(11, 8), nullable=True)
+    radius_miles: Mapped[Decimal | None] = mapped_column(Numeric(6, 2), nullable=True)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+
+
+class BusinessService(TenantScopedBase):
+    """A service category offered by a trade business."""
+
+    __tablename__ = "business_services"
+
+    category: Mapped[str] = mapped_column(String(100), nullable=False, index=True)
+    subcategory: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    is_launch_enabled: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+
+
+class PricingProfile(TenantScopedBase):
+    """A trade business pricing model (time & materials or per point)."""
+
+    __tablename__ = "pricing_profiles"
+
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    profile_type: Mapped[str] = mapped_column(
+        String(50), default="time_materials", nullable=False
+    )  # time_materials | per_point
+    is_default: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    vat_rate: Mapped[Decimal] = mapped_column(Numeric(5, 2), default=Decimal("0.20"))
+    markup_percentage: Mapped[Decimal] = mapped_column(Numeric(5, 2), default=Decimal("0.00"))
+    call_out_fee: Mapped[Decimal] = mapped_column(Numeric(12, 4), default=Decimal("0.0000"))
+    minimum_charge: Mapped[Decimal] = mapped_column(Numeric(12, 4), default=Decimal("0.0000"))
+    extra_data: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict, nullable=False)
+
+
+class PricingRate(TenantScopedBase):
+    """A line in a business rate card."""
+
+    __tablename__ = "pricing_rates"
+
+    pricing_profile_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("pricing_profiles.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    category: Mapped[str] = mapped_column(String(50), nullable=False)
+    label: Mapped[str] = mapped_column(String(255), nullable=False)
+    unit: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    rate: Mapped[Decimal] = mapped_column(Numeric(12, 4), default=Decimal("0.0000"))
+    cost: Mapped[Decimal | None] = mapped_column(Numeric(12, 4), nullable=True)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    extra_data: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict, nullable=False)
+
+
+class Integration(TenantScopedBase):
+    """A third-party integration connected to a tenant."""
+
+    __tablename__ = "integrations"
+
+    integration_type: Mapped[str] = mapped_column(String(50), nullable=False)
+    provider: Mapped[str] = mapped_column(String(50), nullable=False)
+    status: Mapped[str] = mapped_column(String(50), default="disconnected", nullable=False)
+    config: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict, nullable=False)
+    connected_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    disconnected_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    external_account_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
+
+
+class Customer(TenantScopedBase):
+    """A customer account that can log in and track quotes."""
+
+    __tablename__ = "customers"
+
+    contact_id: Mapped[UUID | None] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("contacts.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    email: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
+    full_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    phone: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    password_hash: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    magic_link_token: Mapped[str | None] = mapped_column(String(255), nullable=True, index=True)
+    magic_link_expires_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    marketing_consent: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    preferred_contact_method: Mapped[str | None] = mapped_column(String(50), nullable=True)
+
+
+class Property(TenantScopedBase):
+    """A customer property where work is carried out."""
+
+    __tablename__ = "properties"
+
+    customer_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("customers.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    address: Mapped[str] = mapped_column(Text, nullable=False)
+    postcode: Mapped[str] = mapped_column(String(20), nullable=False, index=True)
+    lat: Mapped[Decimal | None] = mapped_column(Numeric(10, 8), nullable=True)
+    lng: Mapped[Decimal | None] = mapped_column(Numeric(11, 8), nullable=True)
+    property_type: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    bedrooms: Mapped[int | None] = mapped_column(nullable=True)
+    tenure: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    epc_rating: Mapped[str | None] = mapped_column(String(10), nullable=True)
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+
+
+class QuoteRequest(TenantScopedBase):
+    """A customer lead captured from QR, web form, universal link or message share."""
+
+    __tablename__ = "quote_requests"
+
+    contact_id: Mapped[UUID | None] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("contacts.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    customer_id: Mapped[UUID | None] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("customers.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    property_id: Mapped[UUID | None] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("properties.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    source: Mapped[str] = mapped_column(
+        String(50), default="qr", nullable=False
+    )  # qr | universal_link | web_form | app_store | sms_forward
+    raw_text: Mapped[str | None] = mapped_column(Text, nullable=True)
+    structured_data: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict, nullable=False)
+    ai_extracted_summary: Mapped[str | None] = mapped_column(Text, nullable=True)
+    urgency: Mapped[str] = mapped_column(
+        String(50), default="normal", nullable=False
+    )  # normal | emergency_today | this_week | this_month | flexible | just_researching
+    status: Mapped[str] = mapped_column(
+        String(50), default="pending", nullable=False
+    )  # pending | processed | draft_quote | converted_to_quote | closed
+    quote_id: Mapped[UUID | None] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("quotes.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    media_urls: Mapped[list[str]] = mapped_column(JSONB, default=list, nullable=False)
+    triage_flags: Mapped[list[str]] = mapped_column(JSONB, default=list, nullable=False)
+    preferred_dates: Mapped[list[dict[str, Any]]] = mapped_column(
+        JSONB, default=list, nullable=False
+    )
+    safety_review_required: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    ai_confidence: Mapped[Decimal | None] = mapped_column(Numeric(5, 4), nullable=True)
+    reviewed_by: Mapped[UUID | None] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    converted_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+
+class MediaAsset(TenantScopedBase):
+    """A photo, video or document attached to a quote request, job or quote."""
+
+    __tablename__ = "media_assets"
+
+    quote_request_id: Mapped[UUID | None] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("quote_requests.id", ondelete="CASCADE"),
+        nullable=True,
+        index=True,
+    )
+    job_id: Mapped[UUID | None] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("jobs.id", ondelete="CASCADE"),
+        nullable=True,
+        index=True,
+    )
+    quote_id: Mapped[UUID | None] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("quotes.id", ondelete="CASCADE"),
+        nullable=True,
+        index=True,
+    )
+    file_url: Mapped[str] = mapped_column(Text, nullable=False)
+    file_key: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    mime_type: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    size_bytes: Mapped[int | None] = mapped_column(nullable=True)
+    captured_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    source: Mapped[str] = mapped_column(String(50), default="in_app", nullable=False)
+
+
+class Consent(TenantScopedBase):
+    """A consent record from a customer or contact."""
+
+    __tablename__ = "consents"
+
+    contact_id: Mapped[UUID | None] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("contacts.id", ondelete="CASCADE"),
+        nullable=True,
+        index=True,
+    )
+    customer_id: Mapped[UUID | None] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("customers.id", ondelete="CASCADE"),
+        nullable=True,
+        index=True,
+    )
+    consent_type: Mapped[str] = mapped_column(String(50), nullable=False)
+    version: Mapped[str] = mapped_column(String(50), nullable=False)
+    granted: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    ip_address: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    user_agent: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+
+class Event(TenantScopedBase):
+    """A timeline event for quotes, jobs or customer interactions."""
+
+    __tablename__ = "events"
+
+    actor_type: Mapped[str] = mapped_column(
+        String(50), default="system", nullable=False
+    )  # user | customer | system
+    actor_id: Mapped[UUID | None] = mapped_column(PGUUID(as_uuid=True), nullable=True)
+    event_type: Mapped[str] = mapped_column(String(50), nullable=False)
     entity_type: Mapped[str] = mapped_column(String(50), nullable=False)
     entity_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), nullable=False)
     payload: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict, nullable=False)

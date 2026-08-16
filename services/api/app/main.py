@@ -21,14 +21,19 @@ from app.routers import (
     analytics,
     appointments,
     auth,
+    businesses,
     communications,
     contacts,
+    customers,
     feature_flags,
     files,
     health,
     invoices,
     jobs,
+    onboarding,
     payments,
+    pricing,
+    quote_requests,
     quotes,
     reviews,
     tenants,
@@ -113,6 +118,11 @@ app.include_router(tenants.router)
 app.include_router(auth.router)
 app.include_router(users.router)
 app.include_router(contacts.router)
+app.include_router(customers.router)
+app.include_router(quote_requests.router)
+app.include_router(businesses.router)
+app.include_router(onboarding.router)
+app.include_router(pricing.router)
 app.include_router(address_lookup.router)
 app.include_router(quotes.router)
 app.include_router(jobs.router)

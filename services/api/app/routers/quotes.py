@@ -8,29 +8,24 @@ from io import BytesIO
 from typing import Annotated, Any
 from uuid import UUID
 
-import httpx
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.responses import StreamingResponse
 from fpdf import FPDF
-from mtp_shared import BoQGenerateRequest as BoQGenerateRequestSchema
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.audit import Actions, write_audit_log
 from app.calculations import build_invoice_from_quote, calculate_quote_totals
-from app.clients.ocerp import OCERPClient, build_quote_from_ocerp_response
 from app.database import get_db
 from app.dependencies import CurrentUserDep, TenantDep
 from app.limiter import limiter, tenant_key
-from app.models import BillOfQuantities, BoQLineItem, Contact, Quote, QuoteLineItem
+from app.models import BillOfQuantities, Contact, Quote, QuoteLineItem
 from app.rag import generate_quote_from_prompt, search_cost_items, validate_generated_quote
 from app.rag.validation import build_quote_from_validation
 from app.rls import set_tenant_in_session
 from app.routers.invoices import _get_invoice, generate_invoice_number
 from app.schemas import (
-    BillOfQuantitiesRead,
-    BillOfQuantitiesUpdate,
     InvoiceRead,
     QuoteApprove,
     QuoteConvertToInvoice,
@@ -44,62 +39,6 @@ router = APIRouter(prefix="/quotes", tags=["Quotes"])
 DbDep = Annotated[AsyncSession, Depends(get_db)]
 MONEY_QUANTIZE = Decimal("0.01")
 logger = logging.getLogger(__name__)
-
-
-def _snapshot_customer_pricing(quote: Quote) -> dict[str, Any]:
-    return {
-        "subtotal": quote.subtotal,
-        "vat_rate": quote.vat_rate,
-        "vat_amount": quote.vat_amount,
-        "total": quote.total,
-        "line_items": [
-            {
-                "description": item.description,
-                "quantity": item.quantity,
-                "unit_price": item.unit_price,
-                "total": item.total,
-                "cost_item_id": item.cost_item_id,
-                "boq_line_item_id": item.boq_line_item_id,
-            }
-            for item in quote.line_items
-        ],
-    }
-
-
-def _restore_customer_pricing(quote: Quote, snapshot: dict[str, Any]) -> None:
-    quote.subtotal = snapshot["subtotal"]
-    quote.vat_rate = snapshot["vat_rate"]
-    quote.vat_amount = snapshot["vat_amount"]
-    quote.total = snapshot["total"]
-    quote.line_items = [
-        QuoteLineItem(
-            tenant_id=quote.tenant_id,
-            description=item["description"],
-            quantity=item["quantity"],
-            unit_price=item["unit_price"],
-            total=item["total"],
-            cost_item_id=item["cost_item_id"],
-            boq_line_item_id=item["boq_line_item_id"],
-        )
-        for item in snapshot["line_items"]
-    ]
-
-
-def _recalculate_boq_totals(boq: BillOfQuantities) -> None:
-    subtotal = Decimal("0.00")
-    for item in boq.line_items:
-        line_total = (item.labour_total + item.material_total + item.plant_total).quantize(
-            Decimal("0.0001")
-        )
-        item.total = line_total
-        if item.quantity > 0:
-            item.unit_price = (line_total / item.quantity).quantize(Decimal("0.0001"))
-        else:
-            item.unit_price = Decimal("0.0000")
-        subtotal += item.total
-    boq.subtotal = subtotal.quantize(MONEY_QUANTIZE)
-    boq.vat_amount = (boq.subtotal * boq.vat_rate).quantize(MONEY_QUANTIZE)
-    boq.total = (boq.subtotal + boq.vat_amount).quantize(MONEY_QUANTIZE)
 
 
 async def _get_quote(db: AsyncSession, tenant_id: UUID, quote_id: UUID) -> Quote:
@@ -395,36 +334,7 @@ async def _generate_quote_impl(
     )
 
     try:
-        if data.use_ocerp:
-            try:
-                async with OCERPClient() as client:
-                    boq_response = await client.generate_boq(
-                        BoQGenerateRequestSchema(
-                            description=data.description,
-                            property_type=data.property_type,
-                            tenant_settings=tenant.settings,
-                            site_survey=data.site_survey,
-                        )
-                    )
-                build_quote_from_ocerp_response(quote, boq_response)
-                if not quote.line_items:
-                    logger.warning(
-                        "OCERP generated an empty quote for tenant %s; falling back to RAG",
-                        tenant.id,
-                    )
-                    quote.bill_of_quantities = None
-                    quote.line_items = []
-                    await _generate_rag_quote(quote, data, tenant)
-            except (httpx.HTTPError, OSError) as exc:
-                logger.warning(
-                    "OCERP generation failed for tenant %s, falling back to RAG: %s",
-                    tenant.id,
-                    exc,
-                )
-                await _generate_rag_quote(quote, data, tenant)
-        else:
-            await _generate_rag_quote(quote, data, tenant)
-
+        await _generate_rag_quote(quote, data, tenant)
         if not quote.line_items:
             raise RuntimeError(
                 "No priced line items were generated. Ensure the cost catalogue is loaded "
@@ -446,7 +356,7 @@ async def _generate_quote_impl(
         entity_type="quote",
         entity_id=quote.id,
         payload={
-            "backend": "ocerp" if data.use_ocerp else "rag",
+            "backend": "rag",
             "description_chars": len(data.description or ""),
             "property_type": data.property_type,
             "total": str(quote.total),
@@ -473,7 +383,7 @@ async def generate_quote(
     return await _generate_quote_impl(data, tenant, current_user, db)
 
 
-@router.post("/generate-boq", status_code=status.HTTP_201_CREATED)
+@router.post("/generate-boq", status_code=status.HTTP_501_NOT_IMPLEMENTED)
 @limiter.limit("10/minute", key_func=tenant_key)
 async def generate_boq_quote(
     request: Request,
@@ -482,126 +392,40 @@ async def generate_boq_quote(
     current_user: CurrentUserDep,
     db: DbDep,
 ) -> QuoteRead:
-    """Generate a draft quote using the OpenConstructionERP BoQ engine.
-
-    Rate limited to 10 generations per minute per tenant, matching
-    ``/quotes/generate`` — the BoQ path always calls the OCERP engine, which
-    is the most expensive generation route.
-    """
-    data.use_ocerp = True
-    return await _generate_quote_impl(data, tenant, current_user, db)
+    """OCERP / BoQ generation is parked for the mobile-pivot MVP."""
+    raise HTTPException(
+        status_code=status.HTTP_501_NOT_IMPLEMENTED,
+        detail="OCERP / BoQ generation is parked for the mobile-pivot MVP. Use /quotes/generate instead.",
+    )
 
 
 @router.get("/{quote_id}/boq")
-async def get_quote_boq(quote_id: UUID, tenant: TenantDep, db: DbDep) -> BillOfQuantitiesRead:
-    """Get the Bill of Quantities for a quote."""
-    quote = await _get_quote(db, tenant.id, quote_id)
-    if quote.bill_of_quantities is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="No Bill of Quantities found for this quote",
-        )
-    return BillOfQuantitiesRead.model_validate(quote.bill_of_quantities)
+async def get_quote_boq(quote_id: UUID, tenant: TenantDep, db: DbDep) -> None:
+    """OCERP / BoQ endpoints are parked for the mobile-pivot MVP."""
+    raise HTTPException(
+        status_code=status.HTTP_501_NOT_IMPLEMENTED,
+        detail="BoQ endpoints are parked for the mobile-pivot MVP.",
+    )
 
 
 @router.patch("/{quote_id}/boq")
 async def update_quote_boq(
     quote_id: UUID,
-    data: BillOfQuantitiesUpdate,
+    data: QuoteUpdate,
     tenant: TenantDep,
     current_user: CurrentUserDep,
     db: DbDep,
-) -> BillOfQuantitiesRead:
-    """Manually edit BoQ line items while keeping customer-facing quote totals locked."""
-    quote = await _get_quote(db, tenant.id, quote_id)
-    if quote.bill_of_quantities is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="No Bill of Quantities found for this quote",
-        )
-
-    lock_customer_pricing = bool(quote.line_items)
-    customer_pricing_snapshot = _snapshot_customer_pricing(quote) if lock_customer_pricing else None
-    previous_customer_total = quote.total if lock_customer_pricing else Decimal("0.00")
-
-    boq = quote.bill_of_quantities
-    if data.notes is not None:
-        boq.notes = data.notes
-
-    for existing in boq.line_items[:]:
-        await db.delete(existing)
-
-    boq.line_items = []
-    for raw in data.line_items:
-        item = raw.model_dump()
-        boq.line_items.append(
-            BoQLineItem(
-                tenant_id=tenant.id,
-                code=item["code"],
-                description=item["description"],
-                category=item["category"],
-                unit=item["unit"],
-                quantity=item["quantity"],
-                labour_hours=item["labour_hours"],
-                labour_rate=item["labour_rate"],
-                labour_total=item["labour_total"],
-                material_cost=item["material_cost"],
-                material_total=item["material_total"],
-                plant_cost=item["plant_cost"],
-                plant_total=item["plant_total"],
-                supplier=item["supplier"],
-                brand=item["brand"],
-                sku=item["sku"],
-                product_url=item["product_url"],
-                retail_price_incl_vat=item["retail_price_incl_vat"],
-                notes=item["notes"],
-            )
-        )
-
-    _recalculate_boq_totals(boq)
-
-    margin_delta = (previous_customer_total - boq.total).quantize(MONEY_QUANTIZE)
-    if lock_customer_pricing:
-        if margin_delta > 0:
-            boq.warnings.append(
-                f"Edited BoQ is {margin_delta} below the customer quote total; margin improves and customer price remains locked."
-            )
-        elif margin_delta < 0:
-            boq.warnings.append(
-                f"Edited BoQ exceeds the customer quote total by {abs(margin_delta)}; margin is compressed while customer price remains locked."
-            )
-
-    if lock_customer_pricing and customer_pricing_snapshot is not None:
-        _restore_customer_pricing(quote, customer_pricing_snapshot)
-
-    await db.flush()
-    await write_audit_log(
-        db,
-        tenant_id=tenant.id,
-        actor=current_user,
-        action=Actions.QUOTE_UPDATED,
-        entity_type="quote",
-        entity_id=quote.id,
-        payload={
-            "changed_fields": ["bill_of_quantities"],
-            "locked_customer_total": str(previous_customer_total),
-            "edited_boq_total": str(boq.total),
-            "margin_delta": str(margin_delta),
-        },
+) -> None:
+    """OCERP / BoQ endpoints are parked for the mobile-pivot MVP."""
+    raise HTTPException(
+        status_code=status.HTTP_501_NOT_IMPLEMENTED,
+        detail="BoQ endpoints are parked for the mobile-pivot MVP.",
     )
-    await db.commit()
-    refreshed_quote = await _get_quote(db, tenant.id, quote.id)
-    if refreshed_quote.bill_of_quantities is None:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to update BoQ",
-        )
-    return BillOfQuantitiesRead.model_validate(refreshed_quote.bill_of_quantities)
 
 
 @router.post(
     "/{quote_id}/boq/regenerate",
-    status_code=status.HTTP_201_CREATED,
+    status_code=status.HTTP_501_NOT_IMPLEMENTED,
 )
 @limiter.limit("10/minute", key_func=tenant_key)
 async def regenerate_quote_boq(
@@ -610,79 +434,12 @@ async def regenerate_quote_boq(
     tenant: TenantDep,
     current_user: CurrentUserDep,
     db: DbDep,
-) -> BillOfQuantitiesRead:
-    """Regenerate the Bill of Quantities for an existing quote."""
-    quote = await _get_quote(db, tenant.id, quote_id)
-    if quote.description is None:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Quote has no description to generate a BoQ from",
-        )
-
-    lock_customer_pricing = bool(quote.line_items)
-    customer_pricing_snapshot = _snapshot_customer_pricing(quote) if lock_customer_pricing else None
-    previous_customer_total = quote.total if lock_customer_pricing else Decimal("0.00")
-
-    if quote.bill_of_quantities is not None:
-        await db.delete(quote.bill_of_quantities)
-        quote.bill_of_quantities = None
-        await db.flush()
-
-    try:
-        async with OCERPClient() as client:
-            boq_response = await client.generate_boq(
-                BoQGenerateRequestSchema(
-                    description=quote.description,
-                    tenant_settings=tenant.settings,
-                )
-            )
-    except RuntimeError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail=str(exc),
-        ) from exc
-
-    build_quote_from_ocerp_response(quote, boq_response)
-
-    regenerated_boq_total = (
-        quote.bill_of_quantities.total if quote.bill_of_quantities else Decimal("0.00")
+) -> None:
+    """OCERP / BoQ endpoints are parked for the mobile-pivot MVP."""
+    raise HTTPException(
+        status_code=status.HTTP_501_NOT_IMPLEMENTED,
+        detail="BoQ endpoints are parked for the mobile-pivot MVP.",
     )
-    margin_delta = (previous_customer_total - regenerated_boq_total).quantize(MONEY_QUANTIZE)
-    if quote.bill_of_quantities is not None:
-        if margin_delta > 0:
-            quote.bill_of_quantities.warnings.append(
-                f"Repriced BoQ is {margin_delta} below the customer quote total; margin improves and customer price remains locked."
-            )
-        elif margin_delta < 0:
-            quote.bill_of_quantities.warnings.append(
-                f"Repriced BoQ exceeds the customer quote total by {abs(margin_delta)}; margin is compressed while customer price remains locked."
-            )
-
-    if lock_customer_pricing and customer_pricing_snapshot is not None:
-        _restore_customer_pricing(quote, customer_pricing_snapshot)
-
-    await db.flush()
-    await write_audit_log(
-        db,
-        tenant_id=tenant.id,
-        actor=current_user,
-        action=Actions.QUOTE_BOQ_REGENERATED,
-        entity_type="quote",
-        entity_id=quote.id,
-        payload={
-            "locked_customer_total": str(previous_customer_total),
-            "regenerated_boq_total": str(regenerated_boq_total),
-            "margin_delta": str(margin_delta),
-        },
-    )
-    await db.commit()
-    refreshed_quote = await _get_quote(db, tenant.id, quote.id)
-    if refreshed_quote.bill_of_quantities is None:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to regenerate BoQ",
-        )
-    return BillOfQuantitiesRead.model_validate(refreshed_quote.bill_of_quantities)
 
 
 @router.post(
