@@ -1,0 +1,40 @@
+{
+  "name": "@mtp/mobile",
+  "version": "0.1.0",
+  "private": true,
+  "main": "expo-router/entry",
+  "scripts": {
+    "start": "expo start",
+    "android": "expo run:android",
+    "ios": "expo run:ios",
+    "web": "expo start --web",
+    "lint": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@expo/vector-icons": "^15.1.1",
+    "@mtp/shared-ts": "workspace:*",
+    "@shopify/flash-list": "^2.3.2",
+    "clsx": "^2.1.1",
+    "expo": "~57.0.13",
+    "expo-image": "~57.0.3",
+    "expo-router": "~57.0.13",
+    "expo-status-bar": "~57.0.1",
+    "nativewind": "^4.2.6",
+    "react": "19.2.3",
+    "react-dom": "19.2.3",
+    "react-native": "0.86.2",
+    "react-native-css-interop": "^0.2.6",
+    "react-native-gesture-handler": "~3.2.0",
+    "react-native-reanimated": "^4.5.3",
+    "react-native-safe-area-context": "~5.4.0",
+    "react-native-screens": "~4.27.0",
+    "react-native-web": "^0.21.2",
+    "tailwind-merge": "^3.6.0",
+    "tailwindcss": "^3.4.19",
+    "zustand": "^5.0.15"
+  },
+  "devDependencies": {
+    "@types/react": "~19.2.2",
+    "typescript": "~6.0.3"
+  }
+}

@@ -1,0 +1,29 @@
+{
+  "expo": {
+    "name": "My Trade Portal",
+    "slug": "mtp-mobile",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
+    "scheme": "mtp",
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.mytradeportal.mobile",
+      "newArchEnabled": false
+    },
+    "android": {
+      "package": "com.mytradeportal.mobile",
+      "adaptiveIcon": {
+        "backgroundColor": "#E6F4FE",
+        "foregroundImage": "./assets/android-icon-foreground.png",
+        "backgroundImage": "./assets/android-icon-background.png",
+        "monochromeImage": "./assets/android-icon-monochrome.png"
+      },
+      "predictiveBackGestureEnabled": false
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    }
+  }
+}

@@ -1,0 +1,41 @@
+import { ReactNode } from "react";
+import { useAuthStore } from "../stores/authStore";
+import { AppRole, User } from "../types";
+
+export type AuthContextValue = {
+  role: AppRole;
+  user: User | null;
+  isAuthenticated: boolean;
+  onboardingComplete: boolean;
+  isRegistering: boolean;
+  setRole: (role: AppRole) => void;
+  setUser: (user: User | null) => void;
+  startRegistration: (targetRole: AppRole) => void;
+  login: (email: string, password: string, role: AppRole) => boolean;
+  logout: () => void;
+  completeOnboarding: () => void;
+  resetDemo: () => void;
+};
+
+export function useAuth(): AuthContextValue {
+  const state = useAuthStore();
+
+  return {
+    role: state.role,
+    user: state.user,
+    isAuthenticated: state.user !== null,
+    onboardingComplete: state.onboardingComplete,
+    isRegistering: state.isRegistering,
+    setRole: state.setRole,
+    setUser: state.setUser,
+    startRegistration: state.startRegistration,
+    login: state.login,
+    logout: state.logout,
+    completeOnboarding: state.completeOnboarding,
+    resetDemo: state.resetDemo,
+  };
+}
+
+export function AuthProvider({ children }: { children: ReactNode }) {
+  return <>{children}</>;
+}
