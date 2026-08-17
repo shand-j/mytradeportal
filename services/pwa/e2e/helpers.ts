@@ -87,6 +87,65 @@ export async function fetchQuoteStatus(
   return rows.find((r) => r.title === title)?.status;
 }
 
+type AuthCtx = { token: string; tenantId: string; base: string };
+
+async function authTrade(
+  apiBase = process.env.E2E_API_BASE_URL ?? "http://localhost:8000"
+): Promise<AuthCtx> {
+  const res = await fetch(`${apiBase}/auth/token`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email: "owner@demo.trade", password: "demo123", tenant_slug: "demo" }),
+  });
+  const auth = (await res.json()) as { access_token: string; user: { tenant_id: string } };
+  return { token: auth.access_token, tenantId: auth.user.tenant_id, base: apiBase };
+}
+
+function authHeaders(ctx: AuthCtx): Record<string, string> {
+  return {
+    Authorization: `Bearer ${ctx.token}`,
+    "X-Tenant-ID": ctx.tenantId,
+    "Content-Type": "application/json",
+  };
+}
+
+/**
+ * Create a fresh "sent" invoice for the demo tenant via the API and return its
+ * id plus the unique line-item description (used as the card title in the app).
+ * Keeps the money-loop E2E deterministic and re-runnable.
+ */
+export async function createSentInvoice(): Promise<{ id: string; description: string }> {
+  const ctx = await authTrade();
+  const contactsRes = await fetch(`${ctx.base}/contacts`, { headers: authHeaders(ctx) });
+  const contacts = (await contactsRes.json()) as { id: string; name: string }[];
+  const contact = contacts.find((c) => c.name === "E2E Sarah Beta") ?? contacts[0];
+
+  const description = `E2E Money Loop ${Date.now()}`;
+  const createRes = await fetch(`${ctx.base}/invoices`, {
+    method: "POST",
+    headers: authHeaders(ctx),
+    body: JSON.stringify({
+      contact_id: contact.id,
+      line_items: [{ description, quantity: 1, unit_price: 500 }],
+    }),
+  });
+  const created = (await createRes.json()) as { id: string };
+  await fetch(`${ctx.base}/invoices/${created.id}/send`, {
+    method: "POST",
+    headers: authHeaders(ctx),
+  });
+  return { id: created.id, description };
+}
+
+/** Return the backend status of a specific invoice id. */
+export async function fetchInvoiceStatus(id: string): Promise<string | undefined> {
+  const ctx = await authTrade();
+  const res = await fetch(`${ctx.base}/invoices/${id}`, { headers: authHeaders(ctx) });
+  if (!res.ok) return undefined;
+  const inv = (await res.json()) as { status: string };
+  return inv.status;
+}
+
 /**
  * Log in as the seeded demo trade owner from the entry screen. Assumes the app
  * is in connected mode (EXPO_PUBLIC_API_BASE_URL set) with no business slug, so

@@ -7,21 +7,26 @@ import { Text } from "../../components/ui/Text";
 import { MOCK_INVOICES } from "../../data/mockInvoices";
 import { MOCK_JOBS } from "../../data/mockJobs";
 import { MOCK_QUOTES, getQuoteTotal } from "../../data/mockQuotes";
+import { useDashboardKpis } from "../../api/analytics";
+import { useInvoicesList } from "../../api/invoices";
 
 export type AnalyticsScreenProps = {
   onBack: () => void;
 };
 
 export function AnalyticsScreen({ onBack }: AnalyticsScreenProps) {
-  const revenue = useMemo(
+  const { kpi, isConnected } = useDashboardKpis();
+  const { invoices: liveInvoices } = useInvoicesList();
+
+  const mockRevenue = useMemo(
     () => MOCK_INVOICES.filter((i) => i.status === "paid").reduce((sum, i) => sum + i.amount, 0),
     []
   );
-  const outstanding = useMemo(
+  const mockOutstanding = useMemo(
     () => MOCK_INVOICES.filter((i) => i.status === "sent").reduce((sum, i) => sum + i.amount, 0),
     []
   );
-  const quoted = useMemo(
+  const mockQuoted = useMemo(
     () => MOCK_QUOTES.filter((q) => q.status === "sent").reduce((sum, q) => sum + getQuoteTotal(q).total, 0),
     []
   );
@@ -29,11 +34,32 @@ export function AnalyticsScreen({ onBack }: AnalyticsScreenProps) {
     () => MOCK_JOBS.reduce((sum, j) => sum + (j.materialCost ?? 0) + (j.labourCost ?? 0), 0),
     []
   );
+
+  // Connected mode: real paid revenue (this month), outstanding (sent invoices)
+  // and quoted (pending quote value) from the backend; otherwise mock figures.
+  const revenue = isConnected && kpi ? kpi.revenueThisMonth : mockRevenue;
+  const outstanding = isConnected
+    ? liveInvoices.filter((i) => i.status === "sent").reduce((sum, i) => sum + i.amount, 0)
+    : mockOutstanding;
+  const quoted = isConnected && kpi ? kpi.pendingQuotesValue : mockQuoted;
   const profit = revenue - costs;
 
   return (
     <Screen>
-      <Header title="Revenue & costs" onBack={onBack} />
+      <Header
+        title="Revenue & costs"
+        onBack={onBack}
+        rightAction={
+          isConnected ? (
+            <View className="flex-row items-center gap-1 rounded-full bg-green-100 px-2 py-0.5">
+              <View className="h-1.5 w-1.5 rounded-full bg-green-600" />
+              <Text variant="caption" style={{ color: "#15803D", fontSize: 9 }}>
+                LIVE
+              </Text>
+            </View>
+          ) : undefined
+        }
+      />
 
       <ScrollView style={styles.scroll} contentContainerStyle={styles.scrollContent}>
         <View style={styles.grid}>

@@ -20,6 +20,7 @@ export default function TradeLayout() {
         <Stack.Screen name="job/[id]" />
         <Stack.Screen name="invoice/[id]" />
         <Stack.Screen name="analytics" />
+        <Stack.Screen name="invoices" />
         <Stack.Screen name="branding" />
         <Stack.Screen name="follow-ups" />
         <Stack.Screen name="manual-lead" />

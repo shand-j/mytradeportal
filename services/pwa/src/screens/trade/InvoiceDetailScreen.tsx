@@ -13,23 +13,43 @@ export type InvoiceDetailScreenProps = {
   invoice: Invoice;
   onClose: () => void;
   onViewRevenue?: () => void;
+  /** When provided (connected mode), called to persist payment on the backend. */
+  onMarkPaid?: () => Promise<void>;
+  markingPaid?: boolean;
 };
 
-export function InvoiceDetailScreen({ invoice, onClose, onViewRevenue }: InvoiceDetailScreenProps) {
+export function InvoiceDetailScreen({
+  invoice,
+  onClose,
+  onViewRevenue,
+  onMarkPaid,
+  markingPaid,
+}: InvoiceDetailScreenProps) {
   const [status, setStatus] = useState<InvoiceStatus>(invoice.status);
   const [paidAt, setPaidAt] = useState<string | undefined>(invoice.paidAt);
   const enqueue = useOfflineStore((s) => s.enqueue);
+  const isOnline = useOfflineStore((s) => s.isOnline);
 
   const isPaid = status === "paid";
   const isSent = status === "sent";
   const isOverdue = status === "overdue";
 
-  const markPaid = () => {
+  const markPaid = async () => {
+    // Connected + online: persist on the backend. Offline (or demo): queue the
+    // action so it isn't lost, and reflect it locally (offline-first showcase).
+    if (onMarkPaid && isOnline) {
+      try {
+        await onMarkPaid();
+      } catch {
+        enqueue("invoice", `${invoice.title} — payment received`);
+      }
+    } else {
+      enqueue("invoice", `${invoice.title} — payment received`);
+    }
     const now = new Date().toISOString();
     setStatus("paid");
     setPaidAt(now);
-    enqueue("invoice", `${invoice.title} — payment received`);
-    // Reflect the payment in the shared mock so the revenue dashboard updates.
+    // Reflect the payment in the shared mock so the demo revenue dashboard updates.
     const record = MOCK_INVOICES.find((i) => i.id === invoice.id);
     if (record) {
       record.status = "paid";
@@ -119,7 +139,12 @@ export function InvoiceDetailScreen({ invoice, onClose, onViewRevenue }: Invoice
         )}
         {isSent && (
           <>
-            <Button testID="invoice-mark-paid" title="Mark as paid" onPress={markPaid} />
+            <Button
+              testID="invoice-mark-paid"
+              title={markingPaid ? "Marking paid…" : "Mark as paid"}
+              disabled={markingPaid}
+              onPress={markPaid}
+            />
             <Button title="Send reminder" variant="outline" onPress={onClose} />
           </>
         )}

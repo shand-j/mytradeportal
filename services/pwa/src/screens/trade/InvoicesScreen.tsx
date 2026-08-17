@@ -1,17 +1,20 @@
-import { useMemo, useState } from "react";
-import { ScrollView, StyleSheet, View } from "react-native";
-import { Button } from "../../components/ui/Button";
+import { useMemo } from "react";
+import { Pressable, ScrollView, StyleSheet, View } from "react-native";
+import { useRouter } from "expo-router";
 import { Header } from "../../components/ui/Header";
 import { Screen } from "../../components/ui/Screen";
 import { Text } from "../../components/ui/Text";
 import { MOCK_INVOICES } from "../../data/mockInvoices";
+import { useInvoicesList } from "../../api/invoices";
 
 export type InvoicesScreenProps = {
   onBack: () => void;
 };
 
 export function InvoicesScreen({ onBack }: InvoicesScreenProps) {
-  const [invoices, setInvoices] = useState(MOCK_INVOICES);
+  const router = useRouter();
+  const { invoices: liveInvoices, isConnected } = useInvoicesList();
+  const invoices = isConnected ? liveInvoices : MOCK_INVOICES;
 
   const totals = useMemo(() => {
     const outstanding = invoices
@@ -23,20 +26,22 @@ export function InvoicesScreen({ onBack }: InvoicesScreenProps) {
     return { outstanding, paid, total: outstanding + paid };
   }, [invoices]);
 
-  const markPaid = (id: string) => {
-    setInvoices((prev) =>
-      prev.map((i) => (i.id === id ? { ...i, status: "paid", paidAt: new Date().toISOString() } : i))
-    );
-  };
-
-  const sendReminder = (id: string) => {
-    // eslint-disable-next-line no-console
-    console.log("Send reminder for invoice", id);
-  };
-
   return (
     <Screen>
-      <Header title="Invoices" onBack={onBack} />
+      <Header
+        title="Invoices"
+        onBack={onBack}
+        rightAction={
+          isConnected ? (
+            <View className="flex-row items-center gap-1 rounded-full bg-green-100 px-2 py-0.5">
+              <View className="h-1.5 w-1.5 rounded-full bg-green-600" />
+              <Text variant="caption" style={{ color: "#15803D", fontSize: 9 }}>
+                LIVE
+              </Text>
+            </View>
+          ) : undefined
+        }
+      />
 
       <View style={styles.summaryRow}>
         <View style={[styles.summaryCard, { backgroundColor: "#FEF3C7" }]}>
@@ -59,36 +64,43 @@ export function InvoicesScreen({ onBack }: InvoicesScreenProps) {
 
       <ScrollView style={styles.scroll} contentContainerStyle={styles.scrollContent}>
         {invoices.map((invoice) => (
-          <View key={invoice.id} style={styles.card}>
-            <View style={styles.row}>
-              <Text variant="body" weight="semibold" style={{ flex: 1 }} numberOfLines={1}>
-                {invoice.title}
-              </Text>
-              <View style={[styles.badge, invoice.status === "paid" && styles.paidBadge]}>
-                <Text variant="caption" color="secondary">
-                  {invoice.status.toUpperCase()}
+          <Pressable
+            key={invoice.id}
+            testID={`invoice-card-${invoice.id}`}
+            onPress={() => router.push(`/(trade)/invoice/${invoice.id}`)}
+          >
+            <View style={styles.card}>
+              <View style={styles.row}>
+                <Text variant="body" weight="semibold" style={{ flex: 1 }} numberOfLines={1}>
+                  {invoice.title}
                 </Text>
+                <View style={[styles.badge, invoice.status === "paid" && styles.paidBadge]}>
+                  <Text variant="caption" color="secondary">
+                    {invoice.status.toUpperCase()}
+                  </Text>
+                </View>
               </View>
+              <Text variant="caption" color="secondary">
+                {invoice.customerName}
+              </Text>
+              <Text variant="body" weight="semibold">
+                £{invoice.amount.toFixed(2)}
+              </Text>
+              <Text variant="caption" color="secondary">
+                {invoice.status === "paid"
+                  ? `Paid ${new Date(invoice.paidAt ?? invoice.dueDate).toLocaleDateString()}`
+                  : `Due ${new Date(invoice.dueDate).toLocaleDateString()}`}
+              </Text>
             </View>
-            <Text variant="caption" color="secondary">
-              {invoice.customerName}
-            </Text>
-            <Text variant="body" weight="semibold">
-              £{invoice.amount.toFixed(2)}
-            </Text>
-            <Text variant="caption" color="secondary">
-              {invoice.status === "paid"
-                ? `Paid ${new Date(invoice.paidAt ?? invoice.dueDate).toLocaleDateString()}`
-                : `Due ${new Date(invoice.dueDate).toLocaleDateString()}`}
-            </Text>
-            {invoice.status === "sent" && (
-              <View style={styles.actions}>
-                <Button title="Mark paid" size="sm" onPress={() => markPaid(invoice.id)} />
-                <Button title="Send reminder" size="sm" variant="outline" onPress={() => sendReminder(invoice.id)} />
-              </View>
-            )}
-          </View>
+          </Pressable>
         ))}
+        {invoices.length === 0 && (
+          <View style={styles.card}>
+            <Text variant="body" color="secondary" align="center">
+              No invoices yet. Complete a job to raise one.
+            </Text>
+          </View>
+        )}
       </ScrollView>
     </Screen>
   );
@@ -136,10 +148,5 @@ const styles = StyleSheet.create({
   },
   paidBadge: {
     backgroundColor: "#D1FAE5",
-  },
-  actions: {
-    flexDirection: "row",
-    gap: 8,
-    marginTop: 4,
   },
 });

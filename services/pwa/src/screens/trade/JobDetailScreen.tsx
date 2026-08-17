@@ -41,21 +41,71 @@ const DEFAULT_NOTES =
 type JobDetailScreenProps = {
   job: Job;
   onClose: () => void;
-  onSubmitInvoice?: (total: number) => void;
+  /** Connected mode: persist the on-site line items as a real invoice. */
+  onSubmitInvoice?: (
+    lineItems: { description: string; amount: number }[],
+    total: number
+  ) => void | Promise<void>;
+  /** Connected mode: persist status transitions on the backend. */
+  onStart?: () => Promise<void>;
+  onComplete?: () => Promise<void>;
+  busy?: boolean;
 };
 
-export function JobDetailScreen({ job, onClose, onSubmitInvoice }: JobDetailScreenProps) {
+export function JobDetailScreen({
+  job,
+  onClose,
+  onSubmitInvoice,
+  onStart,
+  onComplete,
+  busy,
+}: JobDetailScreenProps) {
   const [assignedTo, setAssignedTo] = useState(job.assignedTo);
   const [status, setStatus] = useState<JobStatus>(job.status);
   const [notes, setNotes] = useState(DEFAULT_NOTES);
   const [items, setItems] = useState<InvoiceItem[]>(BASE_ITEMS);
   const [variationAdded, setVariationAdded] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
 
   const totals = useMemo(() => {
     const subtotal = items.reduce((sum, i) => sum + i.amount, 0);
     const vat = subtotal * 0.2;
     return { subtotal, vat, total: subtotal + vat };
   }, [items]);
+
+  const handleStart = async () => {
+    if (onStart) {
+      try {
+        await onStart();
+      } catch {
+        // Fall through to a local transition so the demo/offline path still works.
+      }
+    }
+    setStatus("in_progress");
+  };
+
+  const handleComplete = async () => {
+    if (onComplete) {
+      try {
+        await onComplete();
+      } catch {
+        // Fall through to a local transition.
+      }
+    }
+    setStatus("completed");
+  };
+
+  const handleSubmitInvoice = async () => {
+    setSubmitting(true);
+    try {
+      await onSubmitInvoice?.(
+        items.map((i) => ({ description: i.description, amount: i.amount })),
+        totals.total
+      );
+    } finally {
+      setSubmitting(false);
+    }
+  };
 
   const navigateToAddress = async () => {
     const address = encodeURIComponent(job.address);
@@ -238,21 +288,32 @@ export function JobDetailScreen({ job, onClose, onSubmitInvoice }: JobDetailScre
 
       <View className="border-t border-slate-200 bg-white pt-4 pb-2 gap-3">
         {status === "confirmed" && (
-          <Button testID="job-start" title="Start job" onPress={() => setStatus("in_progress")} />
+          <Button
+            testID="job-start"
+            title={busy ? "Starting…" : "Start job"}
+            disabled={busy}
+            onPress={handleStart}
+          />
         )}
         {status === "in_progress" && (
           <Button
             testID="job-complete"
-            title="Mark complete"
-            onPress={() => setStatus("completed")}
+            title={busy ? "Updating…" : "Mark complete"}
+            disabled={busy}
+            onPress={handleComplete}
           />
         )}
         {status === "completed" && (
           <>
             <Button
               testID="job-create-invoice"
-              title={`Create & send invoice · £${totals.total.toFixed(2)}`}
-              onPress={() => onSubmitInvoice?.(totals.total)}
+              title={
+                submitting
+                  ? "Creating invoice…"
+                  : `Create & send invoice · £${totals.total.toFixed(2)}`
+              }
+              disabled={submitting}
+              onPress={handleSubmitInvoice}
             />
             <Button title="Close" variant="outline" onPress={onClose} />
           </>

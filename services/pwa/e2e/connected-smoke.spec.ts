@@ -1,5 +1,14 @@
 import { test, expect } from "@playwright/test";
-import { tap, tapText, waitText, bodyText, loginAsTradeOwner, fetchQuoteStatus } from "./helpers";
+import {
+  tap,
+  tapText,
+  waitText,
+  bodyText,
+  loginAsTradeOwner,
+  fetchQuoteStatus,
+  createSentInvoice,
+  fetchInvoiceStatus,
+} from "./helpers";
 
 // These exercise the mobile app against a real API (connected mode). They prove
 // the wired read pattern and the onboarding write flow end-to-end.
@@ -58,6 +67,32 @@ test.describe("trade connected mode", () => {
     await expect
       .poll(async () => fetchQuoteStatus("E2E Consumer unit upgrade"), { timeout: 20000 })
       .toBe("sent");
+  });
+
+  test("marking an invoice paid updates it on the backend and reflects in revenue", async ({
+    page,
+  }) => {
+    // Create a fresh sent invoice via the API so the flow is deterministic.
+    const { id, description } = await createSentInvoice();
+
+    await loginAsTradeOwner(page);
+    // Reach the invoices list from Settings, open the invoice, mark it paid.
+    await tap(page, "dashboard-more");
+    await waitText(page, "Settings");
+    await tapText(page, "Invoices");
+    await waitText(page, "Outstanding");
+    await tapText(page, description);
+    await tap(page, "invoice-mark-paid");
+    await waitText(page, "Payment received", 30000);
+
+    await expect.poll(async () => fetchInvoiceStatus(id), { timeout: 20000 }).toBe("paid");
+
+    // The revenue dashboard shows the LIVE badge (real paid-invoice revenue).
+    await tap(page, "invoice-view-revenue");
+    await waitText(page, "Revenue & costs");
+    await expect(
+      page.getByText("LIVE", { exact: true }).locator("visible=true").first()
+    ).toBeVisible();
   });
 
   test("registering a business provisions a real tenant and reaches the dashboard", async ({

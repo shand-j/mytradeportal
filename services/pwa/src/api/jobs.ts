@@ -1,4 +1,4 @@
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "../lib/apiClient";
 import { config } from "../lib/config";
 import { ApiContact } from "./quotes";
@@ -20,6 +20,18 @@ export type ApiJob = {
 
 export async function fetchJobs(): Promise<ApiJob[]> {
   return api.get<ApiJob[]>("/jobs");
+}
+
+export async function fetchJob(id: string): Promise<ApiJob> {
+  return api.get<ApiJob>(`/jobs/${id}`);
+}
+
+export async function startJob(id: string): Promise<ApiJob> {
+  return api.post<ApiJob>(`/jobs/${id}/start`);
+}
+
+export async function completeJob(id: string): Promise<ApiJob> {
+  return api.post<ApiJob>(`/jobs/${id}/complete`);
 }
 
 /** Backend default is "scheduled"; the app's UI vocabulary uses "confirmed". */
@@ -70,4 +82,39 @@ export function useJobsList() {
     isConnected,
     isLoading: config.apiEnabled && query.isLoading,
   };
+}
+
+/**
+ * A single job by id (connected mode). Returns both the mapped app `Job` (for
+ * display) and the raw `ApiJob` (for the contact id needed when creating an
+ * invoice from the job).
+ */
+export function useJobDetail(id: string | undefined) {
+  const query = useQuery({
+    queryKey: ["job", id],
+    queryFn: () => fetchJob(id as string),
+    enabled: config.apiEnabled && !!id,
+  });
+
+  return {
+    job: query.data ? mapJob(query.data) : undefined,
+    raw: query.data,
+    isConnected: config.apiEnabled && query.isSuccess,
+    isLoading: config.apiEnabled && !!id && query.isLoading,
+  };
+}
+
+/** Mutations for the job lifecycle, invalidating the jobs caches on success. */
+export function useJobActions(id: string | undefined) {
+  const qc = useQueryClient();
+  const invalidate = () => {
+    qc.invalidateQueries({ queryKey: ["jobs"] });
+    qc.invalidateQueries({ queryKey: ["job", id] });
+  };
+  const start = useMutation({ mutationFn: () => startJob(id as string), onSuccess: invalidate });
+  const complete = useMutation({
+    mutationFn: () => completeJob(id as string),
+    onSuccess: invalidate,
+  });
+  return { start, complete };
 }

@@ -32,6 +32,11 @@ export function SettingsScreen() {
       onPress: () => router.push("/(trade)/analytics"),
     },
     {
+      title: "Invoices",
+      subtitle: "Raise, track & mark paid",
+      onPress: () => router.push("/(trade)/invoices"),
+    },
+    {
       title: "Business profile",
       subtitle: business?.name ?? "Not set",
       onPress: () => router.push("/(trade)/branding"),
