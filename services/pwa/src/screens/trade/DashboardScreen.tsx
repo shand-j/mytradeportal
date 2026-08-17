@@ -15,6 +15,7 @@ import { MOCK_QUOTES, getQuoteTotal } from "../../data/mockQuotes";
 import { useBusiness } from "../../theme/ThemeProvider";
 import { useOfflineStore } from "../../stores/offlineStore";
 import { useOutstandingQuotes } from "../../api/quotes";
+import { useJobsList } from "../../api/jobs";
 
 const URGENCY_ORDER: Record<string, number> = {
   emergency_today: 0,
@@ -53,9 +54,12 @@ export function DashboardScreen(_props: DashboardScreenProps) {
   }, [today]);
 
   const selectedDayLabel = `${DAY_LABELS[nextDays[selectedDateIndex].getDay()]} ${nextDays[selectedDateIndex].getDate()}`;
+  // Connected mode: real jobs from the backend; otherwise mock bookings.
+  const { jobs: liveJobs, isConnected: jobsConnected } = useJobsList();
+  const jobsSource = jobsConnected ? liveJobs : MOCK_JOBS;
   const selectedDayJobs = useMemo(
-    () => MOCK_JOBS.filter((_, index) => index % 7 === selectedDateIndex),
-    [selectedDateIndex]
+    () => jobsSource.filter((_, index) => index % 7 === selectedDateIndex),
+    [jobsSource, selectedDateIndex]
   );
 
   const sortedLeads = useMemo(

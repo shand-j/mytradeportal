@@ -1,17 +1,77 @@
 import { useQuery } from "@tanstack/react-query";
 import { api } from "../lib/apiClient";
 import { config } from "../lib/config";
+import { Quote, QuoteStatus } from "../types";
 
-/** Subset of the backend Quote shape the dashboard needs (camelized). */
+/** Contact as returned nested on quotes/jobs (camelized ContactRead). */
+export type ApiContact = {
+  id: string;
+  name: string;
+  email: string | null;
+  phone: string | null;
+  address: string | null;
+  postcode: string | null;
+};
+
+type ApiQuoteLineItem = {
+  id: string;
+  description: string;
+  quantity: string;
+  unitPrice: string;
+  total: string;
+};
+
+/** Full backend quote shape (camelized QuoteRead). */
 export type ApiQuote = {
   id: string;
   title: string;
   status: string;
+  subtotal: string;
+  vatRate: string;
+  vatAmount: string;
   total: string;
+  validUntil: string | null;
+  sentAt: string | null;
+  lineItems: ApiQuoteLineItem[];
+  customer: ApiContact;
 };
 
 export async function fetchQuotes(): Promise<ApiQuote[]> {
   return api.get<ApiQuote[]>("/quotes");
+}
+
+/** Backend uses "approved"; the app's UI vocabulary uses "accepted". */
+const STATUS_MAP: Record<string, QuoteStatus> = {
+  draft: "draft",
+  sent: "sent",
+  approved: "accepted",
+  accepted: "accepted",
+  rejected: "rejected",
+  expired: "expired",
+};
+
+/** Map a backend quote into the app's display `Quote` shape. */
+function mapQuote(q: ApiQuote): Quote {
+  return {
+    id: q.id,
+    leadId: "",
+    customerName: q.customer?.name ?? "Customer",
+    title: q.title,
+    postcode: q.customer?.postcode ?? "",
+    status: STATUS_MAP[q.status] ?? "sent",
+    lineItems: (q.lineItems ?? []).map((li) => ({
+      id: li.id,
+      kind: "labour" as const,
+      description: li.description,
+      qty: String(li.quantity),
+      unit: "job",
+      unitPrice: String(li.unitPrice),
+    })),
+    assumptions: [],
+    sentAt: q.sentAt ?? undefined,
+    expiresAt: q.validUntil ?? undefined,
+    vatRate: parseFloat(q.vatRate) || 0.2,
+  };
 }
 
 /**
@@ -19,7 +79,7 @@ export async function fetchQuotes(): Promise<ApiQuote[]> {
  *
  * In connected mode this comes from the real backend (`GET /quotes`, summing
  * draft + sent). In demo/offline mode the query is disabled and the caller
- * uses its mock figure instead. `source` lets the UI show a subtle "Live" badge.
+ * uses its mock figure instead. `isConnected` lets the UI show a "Live" badge.
  */
 export function useOutstandingQuotes() {
   const query = useQuery({
@@ -37,5 +97,27 @@ export function useOutstandingQuotes() {
     count: query.data?.length ?? 0,
     isConnected: config.apiEnabled && query.isSuccess,
     isLoading: query.isLoading,
+  };
+}
+
+/**
+ * Full quotes list for the Quotes screen. Returns backend quotes mapped into
+ * the app's `Quote` shape when connected; otherwise an empty list and the
+ * caller falls back to mock data. Shares the `["quotes"]` cache with
+ * `useOutstandingQuotes`.
+ */
+export function useQuotesList() {
+  const query = useQuery({
+    queryKey: ["quotes"],
+    queryFn: fetchQuotes,
+    enabled: config.apiEnabled,
+  });
+
+  const isConnected = config.apiEnabled && query.isSuccess;
+
+  return {
+    quotes: isConnected ? (query.data ?? []).map(mapQuote) : [],
+    isConnected,
+    isLoading: config.apiEnabled && query.isLoading,
   };
 }

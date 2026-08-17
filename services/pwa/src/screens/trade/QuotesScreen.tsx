@@ -8,7 +8,8 @@ import { Text } from "../../components/ui/Text";
 import { LeadCard } from "../../components/trade/LeadCard";
 import { MOCK_LEADS } from "../../data/mockLeads";
 import { MOCK_QUOTES, getQuoteTotal } from "../../data/mockQuotes";
-import { Lead, Quote, QuoteStatus } from "../../types";
+import { Quote, QuoteStatus } from "../../types";
+import { useQuotesList } from "../../api/quotes";
 
 type FilterKey = "all" | "new" | "flagged" | "sent" | "accepted";
 
@@ -55,17 +56,23 @@ export function QuotesScreen(_props: QuotesScreenProps) {
   const router = useRouter();
   const [activeFilter, setActiveFilter] = useState<FilterKey>("all");
 
+  // Connected mode: real quotes from the backend. Leads map to quote_requests,
+  // which aren't wired yet, so they stay mock-only in demo mode.
+  const { quotes: liveQuotes, isConnected } = useQuotesList();
+  const quotesSource = isConnected ? liveQuotes : MOCK_QUOTES;
+  const leadsSource = isConnected ? [] : MOCK_LEADS;
+
   const sortedLeads = useMemo(
     () =>
-      [...MOCK_LEADS]
+      [...leadsSource]
         .filter((lead) => lead.status !== "dead")
         .sort((a, b) => (URGENCY_ORDER[a.urgency] ?? 99) - (URGENCY_ORDER[b.urgency] ?? 99)),
-    []
+    [leadsSource]
   );
 
   const sortedQuotes = useMemo(
     () =>
-      [...MOCK_QUOTES].sort((a, b) => {
+      [...quotesSource].sort((a, b) => {
         const statusOrder: Record<QuoteStatus, number> = {
           draft: 0,
           sent: 1,
@@ -75,7 +82,7 @@ export function QuotesScreen(_props: QuotesScreenProps) {
         };
         return statusOrder[a.status] - statusOrder[b.status];
       }),
-    []
+    [quotesSource]
   );
 
   const filteredLeads = useMemo(() => {
@@ -102,7 +109,19 @@ export function QuotesScreen(_props: QuotesScreenProps) {
 
   return (
     <Screen>
-      <Header title="Quotes / Leads" />
+      <Header
+        title="Quotes / Leads"
+        rightAction={
+          isConnected ? (
+            <View className="flex-row items-center gap-1 rounded-full bg-green-100 px-2 py-0.5">
+              <View className="h-1.5 w-1.5 rounded-full bg-green-600" />
+              <Text variant="caption" style={{ color: "#15803D", fontSize: 9 }}>
+                LIVE
+              </Text>
+            </View>
+          ) : undefined
+        }
+      />
       <ScrollView className="flex-1" contentContainerStyle={{ paddingBottom: 24, gap: 16 }}>
         <Text variant="body" color="secondary">
           All leads and quotes in one place, sorted by urgency.

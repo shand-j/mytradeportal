@@ -7,6 +7,7 @@ import { IconButton } from "../../components/ui/IconButton";
 import { Screen } from "../../components/ui/Screen";
 import { Text } from "../../components/ui/Text";
 import { MOCK_JOBS } from "../../data/mockJobs";
+import { useJobsList } from "../../api/jobs";
 
 const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 const DATES = [17, 18, 19, 20, 21, 22, 23];
@@ -21,7 +22,10 @@ export function CalendarScreen(_props: CalendarScreenProps) {
   const router = useRouter();
   const [selectedDay, setSelectedDay] = useState(0);
   const [viewMode, setViewMode] = useState<"day" | "week">("day");
-  const [jobs] = useState(MOCK_JOBS);
+
+  // Connected mode: real jobs from the backend; otherwise mock bookings.
+  const { jobs: liveJobs, isConnected } = useJobsList();
+  const jobs = isConnected ? liveJobs : MOCK_JOBS;
 
   const dayBookings = useMemo(
     () => jobs.filter((_, index) => index % 7 === selectedDay),
@@ -33,14 +37,24 @@ export function CalendarScreen(_props: CalendarScreenProps) {
       <Header
         title="Calendar"
         rightAction={
-          <IconButton
-            testID="calendar-more"
-            icon="more"
-            size={24}
-            color="#374151"
-            onPress={() => router.push("/(trade)/settings")}
-            accessibilityLabel="Settings"
-          />
+          <View className="flex-row items-center gap-2">
+            {isConnected && (
+              <View className="flex-row items-center gap-1 rounded-full bg-green-100 px-2 py-0.5">
+                <View className="h-1.5 w-1.5 rounded-full bg-green-600" />
+                <Text variant="caption" style={{ color: "#15803D", fontSize: 9 }}>
+                  LIVE
+                </Text>
+              </View>
+            )}
+            <IconButton
+              testID="calendar-more"
+              icon="more"
+              size={24}
+              color="#374151"
+              onPress={() => router.push("/(trade)/settings")}
+              accessibilityLabel="Settings"
+            />
+          </View>
         }
       />
       <View className="flex-row items-start justify-between gap-3">
