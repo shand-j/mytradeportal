@@ -78,6 +78,51 @@ async def test_login_invalid_password(
     assert response.status_code == 401
 
 
+async def test_token_returns_bearer_and_authorizes_me(
+    client: AsyncClient, admin_credentials: dict[str, Any]
+) -> None:
+    """The native /auth/token endpoint returns a Bearer token that authorizes
+    a subsequent request via the Authorization header (no cookie)."""
+    response = await client.post(
+        "/auth/token",
+        headers={"host": admin_credentials["host"]},
+        json={
+            "email": admin_credentials["email"],
+            "password": admin_credentials["password"],
+        },
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert data["token_type"] == "bearer"
+    assert data["access_token"]
+    assert data["user"]["email"] == admin_credentials["email"]
+    tenant_id = data["user"]["tenant_id"]
+
+    me = await client.get(
+        "/auth/me",
+        headers={
+            "Authorization": f"Bearer {data['access_token']}",
+            "X-Tenant-ID": tenant_id,
+        },
+    )
+    assert me.status_code == 200
+    assert me.json()["email"] == admin_credentials["email"]
+
+
+async def test_token_invalid_password(
+    client: AsyncClient, admin_credentials: dict[str, Any]
+) -> None:
+    response = await client.post(
+        "/auth/token",
+        headers={"host": admin_credentials["host"]},
+        json={
+            "email": admin_credentials["email"],
+            "password": "wrong-password",
+        },
+    )
+    assert response.status_code == 401
+
+
 async def test_login_with_explicit_tenant_slug(client: AsyncClient, db: AsyncSession) -> None:
     """An explicit tenant_slug authenticates a non-default tenant's user even
     when the Host header carries no tenant subdomain (bare domain)."""

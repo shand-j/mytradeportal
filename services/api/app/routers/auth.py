@@ -1,13 +1,13 @@
-"""Authentication endpoints for the back-office UI."""
+"""Authentication endpoints for the back-office UI and native clients."""
 
 from fastapi import APIRouter, HTTPException, Request, Response, status
 from sqlalchemy import select
 
 from app.dependencies import ActiveUserDep, DbDep, get_current_tenant, resolve_tenant
 from app.limiter import limiter
-from app.models import User
+from app.models import Tenant, User
 from app.rls import set_tenant_in_session
-from app.schemas import UserLogin, UserRead
+from app.schemas import TokenResponse, UserLogin, UserRead
 from app.security import (
     clear_auth_cookie,
     create_access_token,
@@ -19,33 +19,21 @@ from app.supabase import is_supabase_configured, sign_in_with_password
 router = APIRouter(prefix="/auth", tags=["Auth"])
 
 
-@router.post("/login")
-@limiter.limit("5/minute")
-async def login(
-    request: Request,
-    data: UserLogin,
-    response: Response,
-    db: DbDep,
-) -> UserRead:
-    """Authenticate a staff user and set an HTTP-only session cookie.
+async def _authenticate(request: Request, data: UserLogin, db: DbDep) -> tuple[Tenant, User]:
+    """Resolve the tenant and verify credentials, or raise 401.
 
-    Rate limited to 5 attempts per minute per source IP to slow credential
-    stuffing. The limit is enforced regardless of which tenant is targeted.
-
-    When ``tenant_slug`` is provided it takes precedence over Host-subdomain
-    resolution, so login works on bare domains (e.g. Railway's
-    ``*.up.railway.app``) where every tenant shares one hostname. When
-    omitted, the tenant is resolved from the Host header as before.
+    Shared by the cookie-based ``/login`` (web) and token-based ``/token``
+    (native) endpoints so both apply identical tenant resolution and
+    Supabase/bcrypt credential checks.
     """
     if data.tenant_slug:
         # Resolve explicitly by slug. An unknown slug is a 401, same as an
         # unknown subdomain, so tenant enumeration behaviour is unchanged.
-        # A stale session cookie for another tenant must not block logging
-        # in to this one — the new cookie simply overwrites it.
         tenant = await resolve_tenant(db, data.tenant_slug)
         await set_tenant_in_session(db, tenant.id)
     else:
         tenant = await get_current_tenant(request, db=db)
+
     user_result = await db.execute(
         select(User).where(User.email == data.email, User.tenant_id == tenant.id)
     )
@@ -81,6 +69,24 @@ async def login(
             detail="Invalid credentials",
         )
 
+    return tenant, user
+
+
+@router.post("/login")
+@limiter.limit("5/minute")
+async def login(
+    request: Request,
+    data: UserLogin,
+    response: Response,
+    db: DbDep,
+) -> UserRead:
+    """Authenticate a staff user and set an HTTP-only session cookie (web).
+
+    Rate limited to 5 attempts per minute per source IP to slow credential
+    stuffing. When ``tenant_slug`` is provided it takes precedence over
+    Host-subdomain resolution, so login works on bare domains.
+    """
+    _, user = await _authenticate(request, data, db)
     token = create_access_token(
         user_id=user.id,
         tenant_id=user.tenant_id,
@@ -89,6 +95,29 @@ async def login(
     )
     set_auth_cookie(response, token)
     return UserRead.model_validate(user)
+
+
+@router.post("/token", response_model=TokenResponse)
+@limiter.limit("5/minute")
+async def token(
+    request: Request,
+    data: UserLogin,
+    db: DbDep,
+) -> TokenResponse:
+    """Authenticate and return a Bearer token for native (iOS) clients.
+
+    Same credential and tenant checks as ``/login`` but returns the JWT in the
+    body instead of a cookie. Clients send it as ``Authorization: Bearer`` and
+    ``X-Tenant-ID`` on subsequent requests.
+    """
+    _, user = await _authenticate(request, data, db)
+    access = create_access_token(
+        user_id=user.id,
+        tenant_id=user.tenant_id,
+        role=user.role,
+        email=user.email,
+    )
+    return TokenResponse(access_token=access, user=UserRead.model_validate(user))
 
 
 @router.post("/logout")

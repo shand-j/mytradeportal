@@ -822,6 +822,19 @@ class UserLogin(BaseModel):
     tenant_slug: str | None = Field(default=None, min_length=2, max_length=63)
 
 
+class TokenResponse(BaseModel):
+    """Bearer token response for native (iOS) clients.
+
+    Web clients use the cookie-based ``/auth/login`` endpoint; native clients
+    that cannot rely on cookies use ``/auth/token`` and send the token as an
+    ``Authorization: Bearer`` header on subsequent requests.
+    """
+
+    access_token: str
+    token_type: str = "bearer"
+    user: UserRead
+
+
 class TenantBootstrapRead(TenantRead):
     """Tenant plus the first admin user created alongside it (if requested)."""
 

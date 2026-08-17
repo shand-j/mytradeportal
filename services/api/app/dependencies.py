@@ -16,6 +16,17 @@ from app.security import AUTH_COOKIE_NAME, decode_access_token
 settings = get_settings()
 
 
+def _extract_token(request: Request) -> str | None:
+    """Return the auth JWT from an ``Authorization: Bearer`` header (native
+    clients) or the session cookie (web). Header takes precedence."""
+    auth = request.headers.get("Authorization") or request.headers.get("authorization")
+    if auth and auth.lower().startswith("bearer "):
+        bearer = auth[7:].strip()
+        if bearer:
+            return bearer
+    return request.cookies.get(AUTH_COOKIE_NAME)
+
+
 def _extract_tenant_slug(host: str | None) -> str | None:
     """Return the subdomain slug from a Host header, or None for bare domains."""
     if not host:
@@ -89,10 +100,11 @@ async def get_current_tenant(
             detail="Invalid or inactive tenant",
         )
 
-    # Cross-check against the auth cookie if one was provided. We deliberately
-    # only enforce when a token is present and decodable so anonymous
-    # endpoints (login, health, public webhooks) continue to work.
-    token = request.cookies.get(AUTH_COOKIE_NAME)
+    # Cross-check against the auth token (Bearer header or cookie) if one was
+    # provided. We deliberately only enforce when a token is present and
+    # decodable so anonymous endpoints (login, health, public webhooks)
+    # continue to work.
+    token = _extract_token(request)
     if token:
         claims = decode_access_token(token)
         if claims is not None:
@@ -115,8 +127,8 @@ async def get_current_user(
     request: Request,
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> User | None:
-    """Return the authenticated user from the session cookie, or None."""
-    token = request.cookies.get(AUTH_COOKIE_NAME)
+    """Return the authenticated user from the Bearer token or session cookie."""
+    token = _extract_token(request)
     if not token:
         return None
     claims = decode_access_token(token)
