@@ -8,6 +8,7 @@
     "android": "expo run:android",
     "ios": "expo run:ios",
     "web": "expo start --web",
+    "ios:connected": "bash scripts/run-ios.sh",
     "lint": "tsc --noEmit",
     "test:e2e": "bash e2e/run.sh",
     "test:e2e:trade": "playwright test --config=playwright.config.ts",

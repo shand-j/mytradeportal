@@ -80,6 +80,50 @@ Pick a specific simulator if needed:
 pnpm exec expo run:ios --device "iPhone 17"
 ```
 
+## 4c. Connected manual testing (against the Docker backend)
+
+To exercise the **real** wired flows (login, quotes, jobs, leads, invoices,
+onboarding, the customer portal) the app must point at a running backend. One
+script orchestrates everything — it brings up the API in dev mode with local
+auth + demo seed data, then builds, installs, launches the app and starts Metro
+in **connected** mode:
+
+```bash
+cd services/pwa
+pnpm ios:connected            # = bash scripts/run-ios.sh  (defaults to iPhone 17)
+pnpm ios:connected "iPhone 16 Pro"   # pick a different simulator
+```
+
+What it sets up:
+
+- Backend: `services/pwa/e2e/start-stack.sh` (Docker) — API in `development`
+  mode with **Supabase disabled** (so local bcrypt login works), rate limiting
+  off, and the demo tenant seeded (`owner@demo.trade`, plus quotes / jobs / a
+  lead so screens have data). Idempotent.
+- App: `EXPO_PUBLIC_API_BASE_URL=http://localhost:8000` is inlined into the JS
+  bundle. The iOS Simulator shares the host network, so `localhost:8000` reaches
+  the Docker-published API. (A physical device needs the host's LAN IP.)
+- `EXPO_PUBLIC_SETUP_TOKEN` is set so the in-app **Register my business** flow
+  provisions a real tenant (the dev API leaves `POST /tenants` open).
+
+Sign in once it's running:
+
+| Who | How |
+|---|---|
+| **Electrician** | Tap **Electrician login** → **Sign in** (pre-filled `owner@demo.trade` / `demo123`). |
+| **Homeowner (branded)** | Enter code **123456** at the entry → opens the "Demo" business → **Request a quote** or **Customer login**. |
+| **Homeowner (account)** | Tap **Customer login** → **Create an account** to register, or sign in. |
+
+Keep the script running — it serves Metro (the JS bundle) and hot-reloads JS
+edits. `Ctrl-C` to stop; re-run to relaunch.
+
+Notes:
+- Already have the stack up? Skip the Docker step: `SKIP_BACKEND=1 pnpm ios:connected`.
+- Run **without** the script (demo mode, no backend) with `pnpm ios` — the app
+  falls back to mock data and the pre-filled demo credentials.
+- A one-time iOS system prompt ("Allow widgets from Maps to use your location")
+  can appear over the entry screen — tap **Don't Allow**; it's unrelated to the app.
+
 ## 4b. Open and run in Xcode (GUI)
 
 ```bash

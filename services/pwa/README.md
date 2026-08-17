@@ -52,6 +52,16 @@ EXPO_PUBLIC_API_BASE_URL=http://localhost:8000 pnpm start
 `EXPO_PUBLIC_*` variables are inlined by Metro at bundle time, so restart the dev
 server after changing it.
 
+**Manual testing on the iOS Simulator against Docker** — one command brings up
+the backend (dev + local auth + demo seed) and launches the app connected:
+
+```bash
+pnpm ios:connected     # iPhone 17 by default; e.g. pnpm ios:connected "iPhone 16 Pro"
+```
+
+See [`../../docs/runbooks/ios-xcode.md`](../../docs/runbooks/ios-xcode.md#4c-connected-manual-testing-against-the-docker-backend)
+for login credentials and details.
+
 ## Lint
 
 ```bash
