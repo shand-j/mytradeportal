@@ -11,10 +11,11 @@ export type AuthContextValue = {
   setRole: (role: AppRole) => void;
   setUser: (user: User | null) => void;
   startRegistration: (targetRole: AppRole) => void;
-  login: (email: string, password: string, role: AppRole) => boolean;
+  login: (email: string, password: string, role: AppRole) => Promise<boolean>;
   logout: () => void;
   completeOnboarding: () => void;
   resetDemo: () => void;
+  loading: boolean;
 };
 
 export function useAuth(): AuthContextValue {
@@ -33,6 +34,7 @@ export function useAuth(): AuthContextValue {
     logout: state.logout,
     completeOnboarding: state.completeOnboarding,
     resetDemo: state.resetDemo,
+    loading: state.loading,
   };
 }
 

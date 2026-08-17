@@ -29,13 +29,18 @@ export function LoginScreen({ role, mode = "login", onBack }: LoginScreenProps) 
   const handleSubmit = () => {
     setError(null);
     setLoading(true);
-    setTimeout(() => {
-      const ok = login(email, password, role);
-      if (!ok) {
-        setError("Invalid email or password. Try the demo credentials.");
+    void (async () => {
+      try {
+        const ok = await login(email, password, role);
+        if (!ok) {
+          setError("Invalid email or password. Try the demo credentials.");
+        }
+      } catch {
+        setError("Something went wrong. Please try again.");
+      } finally {
+        setLoading(false);
       }
-      setLoading(false);
-    }, 600);
+    })();
   };
 
   const title =

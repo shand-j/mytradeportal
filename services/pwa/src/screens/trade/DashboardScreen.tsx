@@ -14,6 +14,7 @@ import { MOCK_LEADS } from "../../data/mockLeads";
 import { MOCK_QUOTES, getQuoteTotal } from "../../data/mockQuotes";
 import { useBusiness } from "../../theme/ThemeProvider";
 import { useOfflineStore } from "../../stores/offlineStore";
+import { useOutstandingQuotes } from "../../api/quotes";
 
 const URGENCY_ORDER: Record<string, number> = {
   emergency_today: 0,
@@ -70,7 +71,7 @@ export function DashboardScreen(_props: DashboardScreenProps) {
     []
   );
 
-  const totalOutstanding = useMemo(
+  const mockOutstanding = useMemo(
     () =>
       pendingQuotes.reduce((sum, quote) => {
         const totals = getQuoteTotal(quote);
@@ -78,6 +79,10 @@ export function DashboardScreen(_props: DashboardScreenProps) {
       }, 0),
     [pendingQuotes]
   );
+
+  // Connected mode: real outstanding total from the backend; otherwise the mock.
+  const outstanding = useOutstandingQuotes();
+  const totalOutstanding = outstanding.isConnected ? outstanding.total : mockOutstanding;
 
   return (
     <Screen>
@@ -175,9 +180,19 @@ export function DashboardScreen(_props: DashboardScreenProps) {
             </Text>
           </View>
           <View className="flex-1 gap-1 rounded-2xl bg-amber-100 p-4">
-            <Text variant="caption" color="secondary">
-              Outstanding quotes
-            </Text>
+            <View className="flex-row items-center justify-between">
+              <Text variant="caption" color="secondary">
+                Outstanding quotes
+              </Text>
+              {outstanding.isConnected && (
+                <View className="flex-row items-center gap-1 rounded-full bg-green-100 px-1.5 py-0.5">
+                  <View className="h-1.5 w-1.5 rounded-full bg-green-600" />
+                  <Text variant="caption" style={{ color: "#15803D", fontSize: 9 }}>
+                    LIVE
+                  </Text>
+                </View>
+              )}
+            </View>
             <Text variant="title" weight="bold">
               £{totalOutstanding.toFixed(0)}
             </Text>
