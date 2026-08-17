@@ -73,6 +73,75 @@ async def test_generate_quote_creates_draft_quote(client: AsyncClient) -> None:
 
 
 @pytest.mark.asyncio
+async def test_generate_quote_from_lead_links_back(client: AsyncClient) -> None:
+    """Generating from a quote request builds the description from the captured
+    data, reuses its contact, and links the lead to the resulting quote."""
+    tenant = await _create_tenant(client, f"sparky-{uuid4().hex[:8]}")
+
+    # Submit a lead through the public (homeowner) endpoint.
+    submit = await client.post(
+        f"/businesses/{tenant['slug']}/quote-requests",
+        json={
+            "contact": {
+                "name": "Lead Owner",
+                "email": "lead.owner@example.com",
+                "postcode": "M1 1AA",
+            },
+            "category": "consumer_unit",
+            "title": "Consumer unit upgrade",
+            "raw_text": "Old fuse board keeps tripping",
+        },
+    )
+    assert submit.status_code == 201, submit.text
+    lead_id = submit.json()["id"]
+
+    retrieved = [
+        {
+            "code": "ELEC-CU-UPGRADE",
+            "description": "Upgrade consumer unit",
+            "unit": "each",
+            "unit_price": "480.00",
+            "category": "Consumer Units",
+        }
+    ]
+    generated = {"line_items": [{"code": "ELEC-CU-UPGRADE", "quantity": 1}], "notes": ""}
+
+    captured: dict[str, str] = {}
+
+    async def _fake_generate(**kwargs: Any) -> dict[str, Any]:
+        captured["description"] = kwargs["job_description"]
+        return generated
+
+    with (
+        patch("app.routers.quotes.search_cost_items", new=AsyncMock(return_value=retrieved)),
+        patch(
+            "app.routers.quotes.generate_quote_from_prompt",
+            new=AsyncMock(side_effect=_fake_generate),
+        ),
+    ):
+        response = await client.post(
+            "/quotes/generate",
+            headers={"X-Tenant-ID": tenant["id"]},
+            json={"quote_request_id": lead_id, "use_ocerp": False},
+        )
+
+    assert response.status_code == 201, response.text
+    quote = response.json()
+    # Description was built from the lead (category + raw text).
+    assert "consumer_unit" in captured["description"] or "Consumer unit" in captured["description"]
+    assert "fuse board" in captured["description"]
+    # The quote reuses the lead's contact.
+    assert quote["customer"]["name"] == "Lead Owner"
+
+    # The lead is now linked to the generated quote.
+    lead = await client.get(f"/quote-requests/{lead_id}", headers={"X-Tenant-ID": tenant["id"]})
+    assert lead.status_code == 200
+    lead_body = lead.json()
+    assert lead_body["quote_id"] == quote["id"]
+    assert lead_body["status"] == "converted_to_quote"
+
+
+@pytest.mark.asyncio
 async def test_generate_quote_creates_contact_when_not_provided(client: AsyncClient) -> None:
     tenant = await _create_tenant(client, f"sparky-{uuid4().hex[:8]}")
 

@@ -20,7 +20,7 @@ from app.calculations import build_invoice_from_quote, calculate_quote_totals
 from app.database import get_db
 from app.dependencies import CurrentUserDep, TenantDep
 from app.limiter import limiter, tenant_key
-from app.models import BillOfQuantities, Contact, Quote, QuoteLineItem
+from app.models import BillOfQuantities, Contact, Quote, QuoteLineItem, QuoteRequest
 from app.rag import generate_quote_from_prompt, search_cost_items, validate_generated_quote
 from app.rag.validation import build_quote_from_validation
 from app.rls import set_tenant_in_session
@@ -297,6 +297,29 @@ async def _generate_rag_quote(
         )
 
 
+def _build_lead_description(quote_request: QuoteRequest) -> str:
+    """Compose an LLM job description from a captured quote request."""
+    sd = quote_request.structured_data or {}
+    parts: list[str] = []
+    category = sd.get("category") or sd.get("title")
+    if category:
+        parts.append(f"Job type: {category}.")
+    if quote_request.raw_text:
+        parts.append(str(quote_request.raw_text))
+
+    def _summarise(label: str, obj: object) -> None:
+        if isinstance(obj, dict):
+            pairs = [f"{k}: {v}" for k, v in obj.items() if v not in (None, "", [], {})]
+            if pairs:
+                parts.append(f"{label}: " + ", ".join(pairs) + ".")
+
+    _summarise("Property", sd.get("property"))
+    _summarise("Details", sd.get("questionnaire"))
+
+    description = " ".join(parts).strip()
+    return description or "Electrical work requested by a customer."
+
+
 async def _generate_quote_impl(
     data: QuoteGenerateRequest,
     tenant: TenantDep,
@@ -311,7 +334,27 @@ async def _generate_quote_impl(
     """
     await set_tenant_in_session(db, tenant.id)
 
-    if data.contact_id:
+    # Generating from a lead: pull the description and contact from the captured
+    # quote request, and link the resulting quote back to it.
+    quote_request: QuoteRequest | None = None
+    if data.quote_request_id:
+        quote_request = await db.scalar(
+            select(QuoteRequest)
+            .options(selectinload(QuoteRequest.contact))
+            .where(QuoteRequest.id == data.quote_request_id)
+        )
+        if quote_request is None or quote_request.tenant_id != tenant.id:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid quote request"
+            )
+        if not data.description.strip():
+            data.description = _build_lead_description(quote_request)
+
+    if quote_request is not None and quote_request.contact_id:
+        contact = await db.get(Contact, quote_request.contact_id)
+        if contact is None or contact.tenant_id != tenant.id:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid contact")
+    elif data.contact_id:
         contact = await db.get(Contact, data.contact_id)
         if contact is None or contact.tenant_id != tenant.id:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid contact")
@@ -348,6 +391,13 @@ async def _generate_quote_impl(
 
     db.add(quote)
     await db.flush()
+
+    # Link the lead to the generated quote so the two-sided loop is traceable.
+    if quote_request is not None:
+        quote_request.quote_id = quote.id
+        quote_request.status = "converted_to_quote"
+        quote_request.converted_at = datetime.utcnow()
+
     await write_audit_log(
         db,
         tenant_id=tenant.id,
@@ -359,6 +409,7 @@ async def _generate_quote_impl(
             "backend": "rag",
             "description_chars": len(data.description or ""),
             "property_type": data.property_type,
+            "quote_request_id": str(data.quote_request_id) if data.quote_request_id else None,
             "total": str(quote.total),
         },
     )

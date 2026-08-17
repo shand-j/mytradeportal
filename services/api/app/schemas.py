@@ -406,13 +406,22 @@ class QuoteUpdate(BaseModel):
 
 class QuoteGenerateRequest(BaseModel):
     contact_id: UUID | None = None
+    # When set, generate from an existing lead: the description, contact and
+    # captured questionnaire are taken from the quote request.
+    quote_request_id: UUID | None = None
     customer_name: str | None = None
     customer_email: str | None = None
     customer_phone: str | None = None
-    description: str = Field(..., min_length=5)
+    description: str = Field(default="", max_length=5000)
     property_type: str | None = None
     site_survey: dict[str, Any] | None = None
     use_ocerp: bool = False
+
+    @model_validator(mode="after")
+    def _require_description_or_lead(self) -> "QuoteGenerateRequest":
+        if self.quote_request_id is None and len(self.description.strip()) < 5:
+            raise ValueError("description (min 5 chars) or quote_request_id is required")
+        return self
 
 
 # ---------------------------------------------------------------------------

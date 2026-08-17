@@ -98,6 +98,10 @@ class Settings(BaseSettings):
     allowed_origins: str = Field(default="http://localhost:3000,http://demo.localhost:3000")
     allowed_origin_regex: str = Field(default="")
 
+    # Rate limiting. Enabled by default; disabled in the E2E stack so a suite's
+    # own repeated logins don't trip the per-IP auth limit.
+    rate_limit_enabled: bool = Field(default=True)
+
     # Supabase Auth (optional — when set, email/password login is handled by Supabase)
     supabase_url: str = Field(default="")
     supabase_anon_key: str = Field(default="")

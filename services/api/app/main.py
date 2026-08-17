@@ -81,6 +81,7 @@ app = FastAPI(
 # Rate limiting: register the shared limiter instance with the app so route
 # decorators (e.g. ``@limiter.limit("5/minute")``) take effect, and surface
 # 429s through slowapi's exception handler.
+limiter.enabled = settings.rate_limit_enabled
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)  # type: ignore[arg-type]
 app.add_middleware(SlowAPIMiddleware)

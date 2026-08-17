@@ -73,6 +73,7 @@ async def test_public_submission_reuses_contact_by_email(
     assert second.status_code == 201
 
     tenant = await db.scalar(select(Tenant).where(Tenant.slug == slug))
+    assert tenant is not None
     listing = await client.get(
         "/quote-requests",
         headers={"X-Tenant-ID": str(tenant.id)},
