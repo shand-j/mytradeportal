@@ -3,6 +3,7 @@ import { AppRole, TradeRole, User } from "../types";
 import { config } from "../lib/config";
 import { ApiError, NetworkError } from "../lib/apiClient";
 import { loginWithToken, logoutToken } from "../api/auth";
+import { registerBusiness, canRegisterOnline, RegisterBusinessInput } from "../api/onboarding";
 import { useBusinessStore } from "./businessStore";
 
 type AuthState = {
@@ -18,6 +19,7 @@ type AuthState = {
   login: (email: string, password: string, role: AppRole) => Promise<boolean>;
   logout: () => void;
   completeOnboarding: () => void;
+  finishRegistration: (input: RegisterBusinessInput | null) => Promise<void>;
   resetDemo: () => void;
 };
 
@@ -136,5 +138,38 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         },
       });
     }
+  },
+
+  finishRegistration: async (input) => {
+    // Connected mode with a setup token: provision a real tenant + admin,
+    // authenticate, and land on the dashboard. Otherwise (demo mode, no token,
+    // or the backend is unreachable) fall back to demo completion so the
+    // interactive demo always finishes.
+    if (input && canRegisterOnline()) {
+      set({ loading: true });
+      try {
+        const apiUser = await registerBusiness(input);
+        set({
+          user: {
+            id: apiUser.id,
+            email: apiUser.email,
+            fullName: apiUser.fullName,
+            role: asTradeRole(apiUser.role),
+          },
+          role: "trade",
+          onboardingComplete: true,
+          isRegistering: false,
+          loading: false,
+        });
+        return;
+      } catch (err) {
+        set({ loading: false });
+        // Surface real backend errors (bad token, validation) to the UI.
+        if (err instanceof ApiError) throw err;
+        // NetworkError (offline) — fall through to demo completion.
+        if (!(err instanceof NetworkError)) throw err;
+      }
+    }
+    get().completeOnboarding();
   },
 }));

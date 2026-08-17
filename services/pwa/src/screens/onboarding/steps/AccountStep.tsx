@@ -20,12 +20,12 @@ export function AccountStep({ data, onNext }: AccountStepProps) {
   const [fullName, setFullName] = useState((data?.fullName as string) ?? "Demo Owner");
   const [email, setEmail] = useState((data?.email as string) ?? "owner@demo.trade");
   const [phone, setPhone] = useState((data?.phone as string) ?? "07700 123 456");
-  const [password, setPassword] = useState((data?.password as string) ?? "demo123456");
+  const [password, setPassword] = useState((data?.password as string) ?? "demo12345678");
   const [role, setRole] = useState((data?.role as string) ?? "owner");
   const [termsAccepted, setTermsAccepted] = useState((data?.termsAccepted as boolean) ?? true);
   const [showPassword, setShowPassword] = useState(false);
 
-  const canContinue = fullName.trim().length >= 2 && email.includes("@") && password.length >= 10 && termsAccepted;
+  const canContinue = fullName.trim().length >= 2 && email.includes("@") && password.length >= 12 && termsAccepted;
 
   const strength = password.length === 0 ? 0 : password.length < 8 ? 1 : password.length < 12 ? 2 : 3;
   const strengthLabels = ["", "Weak", "Good", "Strong"];
@@ -46,7 +46,7 @@ export function AccountStep({ data, onNext }: AccountStepProps) {
             Demo pre-fill
           </Text>
           <Text variant="caption" color="secondary">
-            Tap any field to edit it. Use owner@demo.trade / demo123456 to skip in later runs.
+            Tap any field to edit it. Use owner@demo.trade / demo12345678 to skip in later runs.
           </Text>
         </View>
 
@@ -75,9 +75,9 @@ export function AccountStep({ data, onNext }: AccountStepProps) {
             label="Password"
             value={password}
             onChangeText={setPassword}
-            placeholder="At least 10 characters"
+            placeholder="At least 12 characters"
             secureTextEntry={!showPassword}
-            helper="Demo password: demo123456"
+            helper="Demo password: demo12345678"
           />
           <View className="flex-row items-center gap-2">
             <View className="h-2 flex-1 rounded-full bg-slate-200">

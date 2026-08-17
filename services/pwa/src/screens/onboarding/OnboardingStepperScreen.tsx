@@ -1,10 +1,13 @@
 import { useState } from "react";
 import { ScrollView, StyleSheet, View } from "react-native";
+import { useRouter } from "expo-router";
 import { Header } from "../../components/ui/Header";
 import { Screen } from "../../components/ui/Screen";
 import { Text } from "../../components/ui/Text";
 import { useAuth } from "../../contexts/AuthContext";
 import { useBusiness } from "../../theme/ThemeProvider";
+import { ApiError } from "../../lib/apiClient";
+import { RegisterBusinessInput } from "../../api/onboarding";
 import { AccountStep } from "./steps/AccountStep";
 import { AddressServiceAreaStep } from "./steps/AddressServiceAreaStep";
 import { BusinessIdentityStep } from "./steps/BusinessIdentityStep";
@@ -27,22 +30,63 @@ const STEPS = [
   { key: "plan", label: "Plan", component: PlanPaymentStep },
 ];
 
+/** Map the collected wizard data into the shape the backend needs to provision. */
+function buildRegisterInput(data: Record<string, unknown>): RegisterBusinessInput | null {
+  const account = (data.account ?? {}) as Record<string, unknown>;
+  const identity = (data.identity ?? {}) as Record<string, unknown>;
+  const compliance = (data.compliance ?? {}) as Record<string, unknown>;
+  const services = (data.services ?? {}) as Record<string, unknown>;
+
+  const email = account.email as string | undefined;
+  const password = account.password as string | undefined;
+  const fullName = account.fullName as string | undefined;
+  if (!email || !password || !fullName) return null;
+
+  return {
+    fullName,
+    email,
+    password,
+    phone: account.phone as string | undefined,
+    role: account.role as string | undefined,
+    tradingName: (identity.tradingName as string | undefined) ?? "My Electrical Business",
+    identity,
+    compliance,
+    services: (services.services as string[] | undefined) ?? [],
+  };
+}
+
 export function OnboardingStepperScreen() {
   const { business } = useBusiness();
-  const { completeOnboarding, resetDemo } = useAuth();
+  const { resetDemo, finishRegistration, loading } = useAuth();
+  const router = useRouter();
   const [stepIndex, setStepIndex] = useState(0);
   const [data, setData] = useState<Record<string, unknown>>({});
+  const [error, setError] = useState<string | null>(null);
 
   const StepComponent = STEPS[stepIndex].component;
   const isFirst = stepIndex === 0;
   const isLast = stepIndex === STEPS.length - 1;
 
-  const goNext = (stepData?: Record<string, unknown>) => {
+  const goNext = async (stepData?: Record<string, unknown>) => {
+    const merged = stepData ? { ...data, [STEPS[stepIndex].key]: stepData } : data;
     if (stepData) {
-      setData((prev) => ({ ...prev, [STEPS[stepIndex].key]: stepData }));
+      setData(merged);
     }
     if (isLast) {
-      completeOnboarding();
+      setError(null);
+      try {
+        // Real provisioning when connected + configured; demo completion otherwise.
+        await finishRegistration(buildRegisterInput(merged));
+        // Completion happens on this route, so navigate to the dashboard
+        // explicitly (the root router effect only runs on the entry screen).
+        router.replace("/(trade)/dashboard");
+      } catch (err) {
+        const message =
+          err instanceof ApiError
+            ? err.detail
+            : "We couldn't create your business account. Please try again.";
+        setError(message);
+      }
     } else {
       setStepIndex((i) => i + 1);
     }
@@ -80,8 +124,27 @@ export function OnboardingStepperScreen() {
         Step {stepIndex + 1} of {STEPS.length}: {STEPS[stepIndex].label}
       </Text>
 
+      {error && (
+        <View style={styles.errorBanner}>
+          <Text variant="caption" color="warning">
+            {error}
+          </Text>
+        </View>
+      )}
+
+      {loading && (
+        <Text testID="onboarding-provisioning" variant="caption" color="secondary">
+          Creating your business account…
+        </Text>
+      )}
+
       <ScrollView style={styles.scroll} contentContainerStyle={styles.content}>
-        <StepComponent data={data[STEPS[stepIndex].key] as Record<string, unknown>} onNext={goNext} />
+        <StepComponent
+          data={data[STEPS[stepIndex].key] as Record<string, unknown>}
+          onNext={(stepData?: Record<string, unknown>) => {
+            void goNext(stepData);
+          }}
+        />
       </ScrollView>
     </Screen>
   );
@@ -111,5 +174,11 @@ const styles = StyleSheet.create({
   content: {
     gap: 16,
     paddingBottom: 24,
+  },
+  errorBanner: {
+    marginTop: 8,
+    padding: 12,
+    borderRadius: 12,
+    backgroundColor: "#FEF3C7",
   },
 });

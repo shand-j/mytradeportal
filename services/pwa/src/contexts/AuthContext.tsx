@@ -1,5 +1,6 @@
 import { ReactNode } from "react";
 import { useAuthStore } from "../stores/authStore";
+import { RegisterBusinessInput } from "../api/onboarding";
 import { AppRole, User } from "../types";
 
 export type AuthContextValue = {
@@ -14,6 +15,7 @@ export type AuthContextValue = {
   login: (email: string, password: string, role: AppRole) => Promise<boolean>;
   logout: () => void;
   completeOnboarding: () => void;
+  finishRegistration: (input: RegisterBusinessInput | null) => Promise<void>;
   resetDemo: () => void;
   loading: boolean;
 };
@@ -33,6 +35,7 @@ export function useAuth(): AuthContextValue {
     login: state.login,
     logout: state.logout,
     completeOnboarding: state.completeOnboarding,
+    finishRegistration: state.finishRegistration,
     resetDemo: state.resetDemo,
     loading: state.loading,
   };

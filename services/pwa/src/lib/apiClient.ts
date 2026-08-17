@@ -27,6 +27,8 @@ type RequestOptions = {
   body?: unknown;
   /** Skip attaching the Authorization/X-Tenant-ID headers (e.g. public config). */
   auth?: boolean;
+  /** Extra headers to merge in (e.g. X-Setup-Token for tenant bootstrap). */
+  headers?: Record<string, string>;
   signal?: AbortSignal;
 };
 
@@ -35,7 +37,7 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
     throw new NetworkError("No API base URL configured (demo mode)");
   }
 
-  const { method = "GET", body, auth = true, signal } = options;
+  const { method = "GET", body, auth = true, headers: extraHeaders, signal } = options;
   const headers: Record<string, string> = { Accept: "application/json" };
 
   if (body !== undefined) {
@@ -49,6 +51,10 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
     ]);
     if (token) headers["Authorization"] = `Bearer ${token}`;
     if (tenantId) headers["X-Tenant-ID"] = tenantId;
+  }
+
+  if (extraHeaders) {
+    Object.assign(headers, extraHeaders);
   }
 
   let response: Response;
