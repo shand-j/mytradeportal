@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
 import { Linking, ScrollView, StyleSheet, View } from "react-native";
+import { useQueryClient } from "@tanstack/react-query";
 import { Header } from "../../components/ui/Header";
 import { Icon } from "../../components/ui/Icon";
 import { Screen } from "../../components/ui/Screen";
@@ -56,6 +57,7 @@ export function CustomerQuoteRequestFlow({
   onCancel,
 }: CustomerQuoteRequestFlowProps) {
   const { business, theme } = useBusiness();
+  const queryClient = useQueryClient();
   const [formData, setFormData] = useState<QuoteFormData>(INITIAL_FORM_DATA);
   const [stepIndex, setStepIndex] = useState(0);
   const [triage, setTriage] = useState<TriageLevel>("standard");
@@ -82,6 +84,8 @@ export function CustomerQuoteRequestFlow({
     if (!config.apiEnabled || !business?.slug) return;
     try {
       await submitPublicQuoteRequest(business.slug, formData);
+      // Refresh the customer's history so the new request appears immediately.
+      queryClient.invalidateQueries({ queryKey: ["my-requests"] });
     } catch {
       // Swallow: capture UX should not hard-fail on a flaky submit.
     }

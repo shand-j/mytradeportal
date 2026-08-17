@@ -10,6 +10,7 @@ import { Text } from "../../components/ui/Text";
 import { CustomerQuoteRequestFlow } from "./CustomerQuoteRequestFlow";
 import { MOCK_QUOTES, getQuoteTotal } from "../../data/mockQuotes";
 import { useBusiness } from "../../theme/ThemeProvider";
+import { useMyRequests, CustomerRequest } from "../../api/quoteRequests";
 import type { Quote, QuoteStatus } from "../../types";
 
 type CustomerQuoteStatus = "awaiting_review" | "open" | "accepted" | "rejected" | "expired";
@@ -404,9 +405,40 @@ export type RequestsScreenProps = {
   };
 };
 
+const REQUEST_BADGE: Record<CustomerRequest["status"], CustomerQuoteStatus> = {
+  awaiting_review: "awaiting_review",
+  open: "open",
+  converted: "accepted",
+  closed: "expired",
+};
+
+/** A card for a real (backend) customer quote request. */
+function CustomerRequestCard({ request }: { request: CustomerRequest }) {
+  return (
+    <View testID={`request-card-${request.id}`} className="gap-2 rounded-2xl border border-slate-200 bg-white p-4">
+      <View className="flex-row items-center justify-between gap-2">
+        <Text variant="body" weight="semibold" numberOfLines={1} style={{ flex: 1 }}>
+          {request.title}
+        </Text>
+        <StatusBadge status={REQUEST_BADGE[request.status]} />
+      </View>
+      {request.postcode ? (
+        <Text variant="caption" color="secondary">
+          {request.postcode}
+        </Text>
+      ) : null}
+      <Text variant="caption" color="secondary">
+        Submitted {new Date(request.createdAt).toLocaleDateString()}
+      </Text>
+    </View>
+  );
+}
+
 export function RequestsScreen({ navigation }: RequestsScreenProps) {
   const { business } = useBusiness();
   const router = useRouter();
+
+  const { requests: liveRequests, isConnected } = useMyRequests();
 
   const [requesting, setRequesting] = useState(false);
   const [view, setView] = useState<"list" | "detail" | "reject" | "booking">("list");
@@ -512,7 +544,23 @@ export function RequestsScreen({ navigation }: RequestsScreenProps) {
           </View>
         </Pressable>
 
-        {MOCK_QUOTES.map((quote) => {
+        {isConnected &&
+          liveRequests.map((req) => <CustomerRequestCard key={req.id} request={req} />)}
+
+        {isConnected && liveRequests.length === 0 && (
+          <View className="gap-2 rounded-2xl border border-slate-200 bg-white p-4">
+            <Text variant="body" weight="semibold">
+              No requests yet
+            </Text>
+            <Text variant="caption" color="secondary">
+              Tap “Request a new quote” to send your first request to{" "}
+              {business?.name ?? "your electrician"}.
+            </Text>
+          </View>
+        )}
+
+        {!isConnected &&
+          MOCK_QUOTES.map((quote) => {
           const status = effectiveStatus(quote);
           const isAwaiting = status === "awaiting_review";
           const total = isAwaiting ? null : getQuoteTotal(quote);
@@ -565,7 +613,7 @@ export function RequestsScreen({ navigation }: RequestsScreenProps) {
           );
         })}
 
-        <Button title="Request a new quote" onPress={() => setRequesting(true)} />
+        <Button testID="request-new-quote" title="Request a new quote" onPress={() => setRequesting(true)} />
       </ScrollView>
     </Screen>
   );

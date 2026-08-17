@@ -62,7 +62,9 @@ export async function submitPublicQuoteRequest(
       safetyReviewRequired: form.triage === "emergency" || form.redFlagSymptoms.length > 0,
       marketingConsent: form.consents.marketingOptIn,
     },
-    { auth: false }
+    // Attach the customer token when logged in (auth is optional server-side):
+    // a present token links the request to the customer's account/history.
+    { auth: true }
   );
 }
 
@@ -101,6 +103,64 @@ function mapLead(qr: ApiQuoteRequest): Lead {
 
 export async function fetchLeads(): Promise<ApiQuoteRequest[]> {
   return api.get<ApiQuoteRequest[]>("/quote-requests");
+}
+
+/** The authenticated customer's own quote requests (their history). */
+export async function fetchMyRequests(): Promise<ApiQuoteRequest[]> {
+  return api.get<ApiQuoteRequest[]>("/customer/quote-requests");
+}
+
+/** Customer-facing status derived from a quote request's backend status. */
+export type CustomerRequestStatus = "awaiting_review" | "open" | "converted" | "closed";
+
+export type CustomerRequest = {
+  id: string;
+  title: string;
+  postcode: string;
+  status: CustomerRequestStatus;
+  createdAt: string;
+};
+
+const CUSTOMER_STATUS_MAP: Record<string, CustomerRequestStatus> = {
+  pending: "awaiting_review",
+  processed: "open",
+  draft_quote: "open",
+  converted_to_quote: "converted",
+  closed: "closed",
+};
+
+function mapCustomerRequest(qr: ApiQuoteRequest): CustomerRequest {
+  const sd = qr.structuredData ?? {};
+  return {
+    id: qr.id,
+    title:
+      (sd.title as string | undefined) ||
+      categoryLabel(sd.category as string | undefined) ||
+      "Quote request",
+    postcode: qr.customer?.postcode ?? "",
+    status: CUSTOMER_STATUS_MAP[qr.status] ?? "awaiting_review",
+    createdAt: qr.createdAt,
+  };
+}
+
+/**
+ * The logged-in customer's quote-request history. Returns mapped requests when
+ * connected; otherwise an empty list and the caller falls back to mock data.
+ */
+export function useMyRequests() {
+  const query = useQuery({
+    queryKey: ["my-requests"],
+    queryFn: fetchMyRequests,
+    enabled: config.apiEnabled,
+  });
+
+  const isConnected = config.apiEnabled && query.isSuccess;
+
+  return {
+    requests: isConnected ? (query.data ?? []).map(mapCustomerRequest) : [],
+    isConnected,
+    isLoading: config.apiEnabled && query.isLoading,
+  };
 }
 
 export async function fetchLead(id: string): Promise<Lead> {

@@ -33,6 +33,13 @@ export async function waitText(page: Page, text: string, timeout = 30000): Promi
     .waitFor({ state: "visible", timeout });
 }
 
+/** Fill a text input (by testID) with a value, replacing any existing text. */
+export async function fill(page: Page, testId: string, value: string): Promise<void> {
+  const input = page.locator(`[data-testid="${testId}"]`).locator("visible=true").first();
+  await input.waitFor({ state: "visible", timeout: 20000 });
+  await input.fill(value);
+}
+
 /** The current visible page text (for coarse content assertions). */
 export async function bodyText(page: Page): Promise<string> {
   return page.locator("body").innerText();

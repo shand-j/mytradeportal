@@ -16,7 +16,8 @@ export type LoginScreenProps = {
 };
 
 export function LoginScreen({ role, mode = "login", onBack }: LoginScreenProps) {
-  const { login } = useAuth();
+  const { login, registerCustomerAccount } = useAuth();
+  const [currentMode, setCurrentMode] = useState<LoginScreenMode>(mode);
   const [email, setEmail] = useState(role === "trade" ? "owner@demo.trade" : "jane@example.com");
   const [password, setPassword] = useState("demo123");
   const [name, setName] = useState("");
@@ -24,16 +25,22 @@ export function LoginScreen({ role, mode = "login", onBack }: LoginScreenProps) 
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
-  const isRegister = mode === "register";
+  const isRegister = currentMode === "register";
 
   const handleSubmit = () => {
     setError(null);
     setLoading(true);
     void (async () => {
       try {
-        const ok = await login(email, password, role);
+        const ok = isRegister
+          ? await registerCustomerAccount({ fullName: name, email, phone, password })
+          : await login(email, password, role);
         if (!ok) {
-          setError("Invalid email or password. Try the demo credentials.");
+          setError(
+            isRegister
+              ? "We couldn't create your account. That email may already be registered."
+              : "Invalid email or password. Try the demo credentials."
+          );
         }
       } catch {
         setError("Something went wrong. Please try again.");
@@ -59,7 +66,10 @@ export function LoginScreen({ role, mode = "login", onBack }: LoginScreenProps) 
       ? "Signing in…"
       : "Sign in";
 
-  const canSubmit = email && password && (!isRegister || (name.trim() && phone.trim()));
+  const canSubmit =
+    email &&
+    password &&
+    (!isRegister || (name.trim() && phone.trim() && password.length >= 8));
 
   return (
     <Screen style={styles.container}>
@@ -71,11 +81,12 @@ export function LoginScreen({ role, mode = "login", onBack }: LoginScreenProps) 
       <View style={styles.card}>
         {isRegister && role === "customer" && (
           <>
-            <TextInput style={styles.input} value={name} onChangeText={setName} placeholder="Full name" />
-            <TextInput style={styles.input} value={phone} onChangeText={setPhone} placeholder="Phone" keyboardType="phone-pad" />
+            <TextInput testID="login-name" style={styles.input} value={name} onChangeText={setName} placeholder="Full name" />
+            <TextInput testID="login-phone" style={styles.input} value={phone} onChangeText={setPhone} placeholder="Phone" keyboardType="phone-pad" />
           </>
         )}
         <TextInput
+          testID="login-email"
           style={styles.input}
           value={email}
           onChangeText={setEmail}
@@ -84,26 +95,40 @@ export function LoginScreen({ role, mode = "login", onBack }: LoginScreenProps) 
           keyboardType="email-address"
         />
         <TextInput
+          testID="login-password"
           style={styles.input}
           value={password}
           onChangeText={setPassword}
-          placeholder="Password"
+          placeholder={isRegister ? "Password (min 8 characters)" : "Password"}
           secureTextEntry
         />
         {error && (
-          <Text variant="caption" color="warning">
+          <Text testID="login-error" variant="caption" color="warning">
             {error}
           </Text>
         )}
-        <Button title={submitLabel} onPress={handleSubmit} disabled={!canSubmit} />
+        <Button testID="login-submit" title={submitLabel} onPress={handleSubmit} disabled={!canSubmit} />
         {!isRegister && <Button title="Forgot password?" variant="ghost" onPress={() => {}} />}
+        {role === "customer" && (
+          <Button
+            testID="login-toggle-mode"
+            title={isRegister ? "I already have an account" : "Create an account"}
+            variant="ghost"
+            onPress={() => {
+              setError(null);
+              setCurrentMode(isRegister ? "login" : "register");
+            }}
+          />
+        )}
       </View>
 
-      <View style={styles.hint}>
-        <Text variant="caption" color="secondary">
-          Demo: {role === "trade" ? "owner@demo.trade" : "jane@example.com"} / demo123
-        </Text>
-      </View>
+      {!isRegister && (
+        <View style={styles.hint}>
+          <Text variant="caption" color="secondary">
+            Demo: {role === "trade" ? "owner@demo.trade" : "jane@example.com"} / demo123
+          </Text>
+        </View>
+      )}
     </Screen>
   );
 }

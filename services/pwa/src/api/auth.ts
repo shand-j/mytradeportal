@@ -44,3 +44,51 @@ export async function fetchMe(): Promise<ApiUser> {
 export async function logoutToken(): Promise<void> {
   await tokenStorage.clear();
 }
+
+/** Homeowner (customer) account returned by the customer portal. */
+export type ApiCustomer = {
+  id: string;
+  tenantId: string;
+  email: string;
+  fullName: string;
+  phone: string | null;
+};
+
+type CustomerTokenResponse = {
+  accessToken: string;
+  tokenType: string;
+  customer: ApiCustomer;
+};
+
+/**
+ * Register a homeowner against a business (by slug) and persist the customer
+ * token + tenant id. Throws ApiError (e.g. email already exists) or
+ * NetworkError.
+ */
+export async function registerCustomer(
+  slug: string,
+  input: { fullName: string; email: string; phone?: string; password: string }
+): Promise<ApiCustomer> {
+  const data = await api.post<CustomerTokenResponse>(
+    "/customer/register",
+    { slug, ...input },
+    { auth: false }
+  );
+  await tokenStorage.save(data.accessToken, data.customer.tenantId);
+  return data.customer;
+}
+
+/** Authenticate a homeowner and persist the customer token + tenant id. */
+export async function loginCustomer(
+  slug: string,
+  email: string,
+  password: string
+): Promise<ApiCustomer> {
+  const data = await api.post<CustomerTokenResponse>(
+    "/customer/login",
+    { slug, email, password },
+    { auth: false }
+  );
+  await tokenStorage.save(data.accessToken, data.customer.tenantId);
+  return data.customer;
+}

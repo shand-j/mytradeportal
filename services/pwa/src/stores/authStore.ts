@@ -2,7 +2,7 @@ import { create } from "zustand";
 import { AppRole, TradeRole, User } from "../types";
 import { config } from "../lib/config";
 import { ApiError, NetworkError } from "../lib/apiClient";
-import { loginWithToken, logoutToken } from "../api/auth";
+import { loginWithToken, logoutToken, loginCustomer, registerCustomer } from "../api/auth";
 import { registerBusiness, canRegisterOnline, RegisterBusinessInput } from "../api/onboarding";
 import { useBusinessStore } from "./businessStore";
 
@@ -17,6 +17,12 @@ type AuthState = {
   setUser: (user: User | null) => void;
   startRegistration: (targetRole: AppRole) => void;
   login: (email: string, password: string, role: AppRole) => Promise<boolean>;
+  registerCustomerAccount: (input: {
+    fullName: string;
+    email: string;
+    phone: string;
+    password: string;
+  }) => Promise<boolean>;
   logout: () => void;
   completeOnboarding: () => void;
   finishRegistration: (input: RegisterBusinessInput | null) => Promise<void>;
@@ -79,8 +85,10 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   setUser: (user) => set({ user }),
 
   login: async (email, password, targetRole) => {
-    // Connected mode: try the real backend first for trade users. Customer auth
-    // is not wired yet (Phase 3), so customers stay on the demo path.
+    // Connected mode: try the real backend first. Trade users authenticate as
+    // staff; customers authenticate against the customer portal for their
+    // business (slug). On network error we fall back to demo mode so the
+    // interactive demo keeps working without a backend.
     if (config.apiEnabled && targetRole === "trade") {
       set({ loading: true });
       try {
@@ -101,15 +109,76 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         return true;
       } catch (err) {
         set({ loading: false });
-        // Real backend rejected the credentials — do not silently fall back.
         if (err instanceof ApiError) return false;
-        // NetworkError (offline / no server) — fall through to demo mode so the
-        // interactive demo keeps working without a backend.
+        if (!(err instanceof NetworkError)) throw err;
+      }
+    }
+
+    if (config.apiEnabled && targetRole === "customer") {
+      set({ loading: true });
+      try {
+        const slug = useBusinessStore.getState().business?.slug ?? "demo";
+        const customer = await loginCustomer(slug, email, password);
+        set({
+          user: {
+            id: customer.id,
+            email: customer.email,
+            fullName: customer.fullName,
+            role: "owner",
+          },
+          role: "customer",
+          onboardingComplete: true,
+          isRegistering: false,
+          loading: false,
+        });
+        return true;
+      } catch (err) {
+        set({ loading: false });
+        if (err instanceof ApiError) return false;
         if (!(err instanceof NetworkError)) throw err;
       }
     }
 
     return demoLogin(email, password, targetRole, set);
+  },
+
+  registerCustomerAccount: async (input) => {
+    // Connected mode: create a real homeowner account against the business
+    // (slug) and land signed in. Falls back to demo completion when offline or
+    // in demo mode so the interactive demo still works.
+    if (config.apiEnabled) {
+      set({ loading: true });
+      try {
+        const slug = useBusinessStore.getState().business?.slug ?? "demo";
+        const customer = await registerCustomer(slug, input);
+        set({
+          user: {
+            id: customer.id,
+            email: customer.email,
+            fullName: customer.fullName,
+            role: "owner",
+          },
+          role: "customer",
+          onboardingComplete: true,
+          isRegistering: false,
+          loading: false,
+        });
+        return true;
+      } catch (err) {
+        set({ loading: false });
+        if (err instanceof ApiError) return false;
+        if (!(err instanceof NetworkError)) throw err;
+      }
+    }
+
+    // Demo fallback: sign in as the demo customer.
+    set({
+      user: { id: "demo-customer", email: input.email, fullName: input.fullName, role: "owner" },
+      role: "customer",
+      onboardingComplete: true,
+      isRegistering: false,
+    });
+    return true;
   },
 
   logout: () => {

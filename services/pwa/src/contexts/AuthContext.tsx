@@ -13,6 +13,12 @@ export type AuthContextValue = {
   setUser: (user: User | null) => void;
   startRegistration: (targetRole: AppRole) => void;
   login: (email: string, password: string, role: AppRole) => Promise<boolean>;
+  registerCustomerAccount: (input: {
+    fullName: string;
+    email: string;
+    phone: string;
+    password: string;
+  }) => Promise<boolean>;
   logout: () => void;
   completeOnboarding: () => void;
   finishRegistration: (input: RegisterBusinessInput | null) => Promise<void>;
@@ -33,6 +39,7 @@ export function useAuth(): AuthContextValue {
     setUser: state.setUser,
     startRegistration: state.startRegistration,
     login: state.login,
+    registerCustomerAccount: state.registerCustomerAccount,
     logout: state.logout,
     completeOnboarding: state.completeOnboarding,
     finishRegistration: state.finishRegistration,
