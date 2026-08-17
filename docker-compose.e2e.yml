@@ -1,0 +1,11 @@
+# Compose override for the mobile connected-mode E2E stack.
+#
+# Forces LOCAL bcrypt/JWT auth by blanking the Supabase credentials that a
+# developer's root .env may set. This keeps the E2E self-contained and matches
+# CI, where no Supabase instance is running. Used by services/pwa/e2e/start-stack.sh.
+services:
+  api:
+    environment:
+      SUPABASE_URL: ""
+      SUPABASE_ANON_KEY: ""
+      SUPABASE_SERVICE_ROLE_KEY: ""

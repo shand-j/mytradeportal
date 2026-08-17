@@ -58,6 +58,32 @@ server after changing it.
 pnpm lint
 ```
 
+## Connected-mode E2E
+
+`e2e/` holds a Playwright smoke suite that drives the app (served as web) against
+a real API stack — proving the wired flows end-to-end: trade login → live
+dashboard/quotes/jobs, business onboarding → a real tenant, and white-label
+branding from `/businesses/{slug}/public-config`.
+
+```bash
+# One-shot: bring up the API stack + seed, then run both suites (requires Docker)
+pnpm test:e2e
+
+# Or run a single suite against an already-running stack (see e2e/start-stack.sh)
+pnpm test:e2e:trade
+pnpm test:e2e:white-label
+```
+
+Notes:
+- `e2e/start-stack.sh` starts the API in dev mode with local auth (Supabase
+  disabled via `docker-compose.e2e.yml`) and seeds the demo tenant + owner
+  (`owner@demo.trade` / `demo123`) plus a quote and a job.
+- The web build is a test harness for the native app (which has no CORS), so
+  Chromium runs with web security disabled.
+- The trade and white-label suites use different `EXPO_PUBLIC_*` builds, so they
+  run sequentially on the same port (never concurrently).
+- CI runs this via `.github/workflows/pwa-e2e.yml`.
+
 ## Structure
 
 - `src/theme/` — theming and white-label branding.

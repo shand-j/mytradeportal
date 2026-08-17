@@ -1,0 +1,64 @@
+import { test, expect } from "@playwright/test";
+import { tap, tapText, waitText, bodyText, loginAsTradeOwner } from "./helpers";
+
+// These exercise the mobile app against a real API (connected mode). They prove
+// the wired read pattern and the onboarding write flow end-to-end.
+
+test.describe("trade connected mode", () => {
+  test("login lands on a live dashboard", async ({ page }) => {
+    await loginAsTradeOwner(page);
+    // The outstanding-quotes card shows a LIVE badge only when the real /quotes
+    // query succeeds, so its presence proves the dashboard is backend-driven.
+    await expect(page.getByText("LIVE", { exact: true }).first()).toBeVisible();
+    expect(await bodyText(page)).toMatch(/Outstanding quotes/);
+  });
+
+  test("quotes list shows the seeded quote from the API", async ({ page }) => {
+    await loginAsTradeOwner(page);
+    await tap(page, "tab-quotes");
+    await waitText(page, "Quotes / Leads");
+    await waitText(page, "E2E Consumer unit upgrade");
+    await expect(page.getByText("LIVE", { exact: true }).first()).toBeVisible();
+  });
+
+  test("calendar shows the seeded job from the API", async ({ page }) => {
+    await loginAsTradeOwner(page);
+    await tap(page, "tab-calendar");
+    await waitText(page, "Bookings");
+    await waitText(page, "E2E EV charger install");
+  });
+
+  test("registering a business provisions a real tenant and reaches the dashboard", async ({
+    page,
+  }) => {
+    await page.goto("/", { waitUntil: "networkidle" });
+    await waitText(page, "My Trade Portal", 120000);
+
+    await tap(page, "entry-register-trade");
+    await waitText(page, "Create my account", 30000);
+    await tapText(page, "Create my account");
+
+    // account -> identity -> address -> tax -> compliance all use pre-filled
+    // demo values, so a single "Continue" advances each.
+    await waitText(page, "Create your account", 30000);
+    for (let i = 0; i < 5; i++) {
+      const cont = page.getByText("Continue", { exact: false }).locator("visible=true").first();
+      await cont.waitFor({ state: "visible" });
+      await cont.click({ force: true });
+      await page.waitForTimeout(500);
+    }
+
+    // services requires at least one selection before Continue is enabled.
+    await waitText(page, "Services offered");
+    await tapText(page, "EV charger");
+    const cont = page.getByText("Continue", { exact: false }).locator("visible=true").first();
+    await cont.click({ force: true });
+
+    // review -> plan -> (simulated) checkout -> dashboard.
+    await tap(page, "onboarding-choose-plan");
+    await tap(page, "plan-continue");
+    await tap(page, "payment-go-dashboard", 1200);
+
+    await waitText(page, "Top leads", 40000);
+  });
+});
