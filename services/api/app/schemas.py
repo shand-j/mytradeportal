@@ -861,6 +861,42 @@ class BusinessPublicConfig(BaseModel):
     address: str | None = None
 
 
+class PublicContactInput(BaseModel):
+    """Homeowner contact details captured by the public quote-request form."""
+
+    name: str = Field(..., min_length=1, max_length=255)
+    email: EmailStr | None = None
+    phone: str | None = Field(default=None, max_length=50)
+    postcode: str | None = Field(default=None, max_length=20)
+
+
+class PublicQuoteRequestCreate(BaseModel):
+    """A quote request submitted by a homeowner via the white-label app.
+
+    No authentication is required: the target business is identified by slug in
+    the URL. Everything else is the captured questionnaire data.
+    """
+
+    contact: PublicContactInput
+    category: str | None = Field(default=None, max_length=100)
+    title: str | None = Field(default=None, max_length=255)
+    raw_text: str | None = None
+    structured_data: dict[str, Any] = Field(default_factory=dict)
+    urgency: str = Field(default="normal", max_length=50)
+    media_urls: list[str] = Field(default_factory=list)
+    preferred_dates: list[dict[str, Any]] = Field(default_factory=list)
+    safety_review_required: bool = False
+    marketing_consent: bool = False
+
+
+class PublicQuoteRequestAck(BaseModel):
+    """Minimal acknowledgement returned to the (unauthenticated) homeowner."""
+
+    id: UUID
+    status: str
+    reference: str
+
+
 class CustomerCreate(BaseModel):
     full_name: str = Field(..., min_length=1, max_length=255)
     email: EmailStr
@@ -1007,6 +1043,9 @@ class QuoteRequestRead(BaseModel):
     converted_at: datetime | None
     created_at: datetime
     updated_at: datetime
+    customer: ContactRead | None = Field(
+        default=None, validation_alias="contact", serialization_alias="customer"
+    )
 
 
 class QuoteRequestMediaCreate(BaseModel):

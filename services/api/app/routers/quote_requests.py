@@ -7,6 +7,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.database import get_db
 from app.dependencies import CurrentUserDep, TenantDep
@@ -64,7 +65,7 @@ async def create_quote_request(
     )
     db.add(quote_request)
     await db.flush()
-    await db.refresh(quote_request)
+    await db.refresh(quote_request, ["contact"])
     return quote_request
 
 
@@ -78,6 +79,7 @@ async def list_quote_requests(
     await _set_tenant(db, tenant.id)
     result = await db.execute(
         select(QuoteRequest)
+        .options(selectinload(QuoteRequest.contact))
         .where(QuoteRequest.tenant_id == tenant.id)
         .order_by(QuoteRequest.created_at.desc())
     )
@@ -93,7 +95,11 @@ async def get_quote_request(
 ) -> QuoteRequest:
     """Get a single quote request."""
     await _set_tenant(db, tenant.id)
-    quote_request = await db.get(QuoteRequest, quote_request_id)
+    quote_request = await db.scalar(
+        select(QuoteRequest)
+        .options(selectinload(QuoteRequest.contact))
+        .where(QuoteRequest.id == quote_request_id)
+    )
     if quote_request is None or quote_request.tenant_id != tenant.id:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Quote request not found")
     return quote_request

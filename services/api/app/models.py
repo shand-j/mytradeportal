@@ -824,6 +824,10 @@ class QuoteRequest(TenantScopedBase):
     )
     converted_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
+    # ORM-only relationship (no schema change): lets the leads list eager-load
+    # the linked contact for the customer name/postcode shown on lead cards.
+    contact: Mapped[Contact | None] = relationship("Contact")
+
 
 class MediaAsset(TenantScopedBase):
     """A photo, video or document attached to a quote request, job or quote."""
