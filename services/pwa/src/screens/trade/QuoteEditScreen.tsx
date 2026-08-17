@@ -9,7 +9,11 @@ import { MOCK_LEADS } from "../../data/mockLeads";
 import { MOCK_QUOTES } from "../../data/mockQuotes";
 import { useOfflineStore } from "../../stores/offlineStore";
 import { Lead, Quote, QuoteLineItem } from "../../types";
+import { config } from "../../lib/config";
+import { useSendQuote } from "../../api/quotes";
 import { RequestInfoScreen } from "./RequestInfoScreen";
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 const MODEL_OPTIONS = [
   { key: "time_materials", label: "Time & materials" },
@@ -64,9 +68,29 @@ export function QuoteEditScreen({ lead, seed, onClose }: QuoteEditScreenProps) {
 
   const [pricingModel, setPricingModel] = useState<"time_materials" | "per_point">("time_materials");
   const enqueue = useOfflineStore((s) => s.enqueue);
+  const isOnline = useOfflineStore((s) => s.isOnline);
+  const sendQuoteMutation = useSendQuote();
   const [timeItems, setTimeItems] = useState<QuoteLineItem[]>(() => buildTimeItems(seedQuote));
   const [pointItems, setPointItems] = useState<QuoteLineItem[]>(() => buildPointItems(seedQuote, resolvedLead));
   const [showRequestInfo, setShowRequestInfo] = useState(false);
+
+  // A real (backend) quote is one with a UUID id while connected. When online
+  // we call the API; when offline we queue the action (offline-first showcase).
+  const isRealQuote = config.apiEnabled && !!seedQuote && UUID_RE.test(seedQuote.id);
+
+  const handleApproveSend = async () => {
+    if (isRealQuote && isOnline) {
+      try {
+        await sendQuoteMutation.mutateAsync(seedQuote!.id);
+        onClose();
+        return;
+      } catch {
+        // Fall through to the offline queue so the action isn't lost.
+      }
+    }
+    enqueue("quote", `${title} — ${customerName}`);
+    onClose();
+  };
 
   const items = pricingModel === "time_materials" ? timeItems : pointItems;
 
@@ -230,11 +254,17 @@ export function QuoteEditScreen({ lead, seed, onClose }: QuoteEditScreenProps) {
 
         <Button
           testID="quote-approve-send"
-          title={seedQuote?.status === "sent" ? "Update quote" : isFromLead ? "Approve & send" : "Save changes"}
-          onPress={() => {
-            enqueue("quote", `${title} — ${customerName}`);
-            onClose();
-          }}
+          title={
+            sendQuoteMutation.isPending
+              ? "Sending…"
+              : seedQuote?.status === "sent"
+                ? "Update quote"
+                : isFromLead
+                  ? "Approve & send"
+                  : "Save changes"
+          }
+          disabled={sendQuoteMutation.isPending}
+          onPress={handleApproveSend}
         />
         <Button
           testID="quote-request-info"

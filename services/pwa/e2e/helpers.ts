@@ -66,6 +66,27 @@ export async function fetchLeadCustomerNames(
   return rows.map((r) => r.customer?.name ?? "").filter(Boolean);
 }
 
+/** Return the backend status of the demo tenant's quote with the given title. */
+export async function fetchQuoteStatus(
+  title: string,
+  apiBase = process.env.E2E_API_BASE_URL ?? "http://localhost:8000"
+): Promise<string | undefined> {
+  const authRes = await fetch(`${apiBase}/auth/token`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email: "owner@demo.trade", password: "demo123", tenant_slug: "demo" }),
+  });
+  const auth = (await authRes.json()) as { access_token: string; user: { tenant_id: string } };
+  const res = await fetch(`${apiBase}/quotes`, {
+    headers: {
+      Authorization: `Bearer ${auth.access_token}`,
+      "X-Tenant-ID": auth.user.tenant_id,
+    },
+  });
+  const rows = (await res.json()) as { title: string; status: string }[];
+  return rows.find((r) => r.title === title)?.status;
+}
+
 /**
  * Log in as the seeded demo trade owner from the entry screen. Assumes the app
  * is in connected mode (EXPO_PUBLIC_API_BASE_URL set) with no business slug, so

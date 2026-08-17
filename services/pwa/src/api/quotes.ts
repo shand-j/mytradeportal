@@ -1,4 +1,4 @@
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "../lib/apiClient";
 import { config } from "../lib/config";
 import { Quote, QuoteStatus } from "../types";
@@ -53,6 +53,28 @@ export async function fetchQuote(id: string): Promise<ApiQuote> {
 export async function generateQuoteFromLead(quoteRequestId: string): Promise<Quote> {
   const q = await api.post<ApiQuote>("/quotes/generate", { quoteRequestId });
   return mapQuote(q);
+}
+
+/** Mark a quote as sent to the customer (POST /quotes/{id}/send). */
+export async function sendQuote(id: string): Promise<void> {
+  await api.post(`/quotes/${id}/send`);
+}
+
+/** Convert an approved/sent quote into a draft invoice. */
+export async function convertQuoteToInvoice(id: string): Promise<{ id: string }> {
+  return api.post<{ id: string }>(`/quotes/${id}/convert-to-invoice`, {});
+}
+
+/** Mutation: send a quote and refresh the quotes caches. */
+export function useSendQuote() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => sendQuote(id),
+    onSuccess: (_data, id) => {
+      qc.invalidateQueries({ queryKey: ["quotes"] });
+      qc.invalidateQueries({ queryKey: ["quote", id] });
+    },
+  });
 }
 
 /** Backend uses "approved"; the app's UI vocabulary uses "accepted". */
