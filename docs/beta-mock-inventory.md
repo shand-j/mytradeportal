@@ -1,34 +1,43 @@
 # Beta Mock & Placeholder Inventory
 
-> A curated audit of every mock, scripted fake, placeholder handler, and demo literal currently in the codebase, each mapped to a headline change requirement for Beta. Generated 2026-08-17 against branch `mvp-pivot`.
+> A curated audit of every mock, scripted fake, placeholder handler, and demo literal currently in the codebase, each mapped to a headline change requirement for Beta. Generated 2026-08-17 against branch `mvp-pivot`. AI scope locked 2026-08-17.
 >
-> **Legend:** 🔴 headline differentiator faked · 🟠 core flow mock-bound · 🟡 scaffolding/cosmetic · ⚪ backend stub.
+> **Legend:** 🔴 in Beta scope · 🟠 core flow mock-bound · 🟡 scaffolding/cosmetic · ⚪ backend stub · 🟣 **deferred — demo-only, NOT Beta**.
+
+## Beta AI scope (authoritative)
+
+Beta ships **exactly two, light-touch AI features**. Everything else labelled "AI" in the app is demo-only and explicitly deferred.
+
+1. **AI quote creation.** Takes **form input + free text** and returns a **JSON of line items with guide prices**. Purpose is a simple efficiency: get the job into an editable quote the electrician reviews and adjusts. **No OCERP, no BoQ, no catalogue hard-grounding.** Guide prices come from the model (materials + labour); the scraped catalogue may be used as an *optional* price reference but must never block generation.
+2. **AI chat with the customer.** A real assistant that asks clarifying questions as necessary to improve quote accuracy, tied to the quote request.
+
+**Explicitly NOT in Beta (remain demo-only mocks):** voice transcription, voice-to-quote, voice-to-cert, dashboard AI insights, OCERP/BoQ, schedule optimisation.
 
 ## How to read this
 
 The app runs in two modes: **connected** (`config.apiEnabled`, i.e. `EXPO_PUBLIC_API_BASE_URL` set) and **demo** (mock data). Many screens already fall back to real APIs when connected, but a significant surface is still mock-only or scripted even in connected mode. This document tracks what must become real for Beta.
 
-**The three Beta blockers this list rolls up to:**
+**The Beta blockers this list rolls up to:**
 
-1. **Make the AI real** — voice transcription, voice-to-quote, voice-to-cert, RAG quote generation, customer AI assistant, dashboard insights (§A).
+1. **Ship the two AI features** — real guide-price quote creation (§A4) and real customer chat (§A5).
 2. **Make offline real** — persistent queue + backend replay on reconnect (§A7).
 3. **Cut the mock fallbacks** — so connected mode is fully backend-bound (§B, §C, §G).
 
-Voice and offline are the marketed differentiators and are currently **100% simulated**.
-
 ---
 
-## A. Headline differentiators that are currently faked (highest priority)
+## A. AI features
+
+Only **A4** and **A5** are in Beta scope. A1–A3 and A6 are deferred (demo-only). A7 (offline) is not AI but is grouped here as a marketed differentiator.
 
 | # | Sev | Mock / placeholder (location) | Beta change requirement |
 |---|---|---|---|
-| A1 | 🔴 | **Voice transcription** — `src/components/VoiceCaptureSheet.tsx` streams a hardcoded string word-by-word (`setTimeout`); no mic, no audio capture, no STT | Real on-device/cloud transcription (e.g. Whisper) capturing actual speech |
-| A2 | 🔴 | **Voice-to-quote** — `src/screens/trade/VoiceQuoteScreen.tsx` `DICTATION` + `EXTRACTED` line items hardcoded; no LLM; writes to `MOCK_QUOTES` | Real transcript → structured LLM extraction (Zod-typed) → draft quote persisted via API |
-| A3 | 🔴 | **Voice-to-cert** — `src/screens/trade/CertificateScreen.tsx` `DICTATION` + `VOICE_OBSERVATIONS` hardcoded; writes to `MOCK_CERTIFICATES` | Real dictation → EICR field extraction with BS 7671 validation |
-| A4 | 🔴 | **RAG quote generation** — real path `POST /quotes/generate` exists but returns **HTTP 503** ("No priced line items"): the 8,464-item catalogue has **0 labour/service items** so the LLM correctly refuses | Add a labour/service cost layer (day/hour/per-circuit rates) so a real GPT-priced quote is produced end-to-end |
-| A5 | 🔴 | **Customer AI assistant** — `src/screens/customer/MessagesScreen.tsx` `FOLLOW_UP` is a scripted Q&A with fake "typing…" delays; no LLM, no persistence | Real LLM-driven clarifying questions wired to the quote request record |
-| A6 | 🟠 | **Dashboard "AI insight"** — `src/screens/trade/DashboardScreen.tsx` sparkles banner just links to the newest lead; no analysis | Real AI insight (revenue / scheduling / follow-up recommendation) |
+| A4 | 🔴 | **AI quote creation** — real path `POST /quotes/generate` exists but returns **HTTP 503**. Root cause: `validation.py:33` drops any line item whose `code` isn't in the retrieved catalogue, and `generation.py` SYSTEM_PROMPT forbids inventing prices; so all labour/service lines are discarded → empty → `quotes.py:293` raises | **Rework to the Beta scope:** form + free text → LLM → JSON line items **with guide prices** (materials + labour). Catalogue is an *optional* price reference, not a gate. Remove the hard 503 / catalogue-lock so the electrician always gets an editable draft |
+| A5 | 🔴 | **Customer AI assistant** — `src/screens/customer/MessagesScreen.tsx` `FOLLOW_UP` is a scripted Q&A with fake "typing…" delays; no LLM, no persistence | Real LLM-driven clarifying questions tied to the quote request, to improve quote accuracy |
 | A7 | 🔴 | **Offline-first sync** — `src/stores/offlineStore.ts` uses `setTimeout` to fake upload; in-memory queue (lost on reload); manual online toggle | Real persistent queue (MMKV/PowerSync) + backend replay on reconnect |
+| A1 | 🟣 | **Voice transcription** — `src/components/VoiceCaptureSheet.tsx` streams a hardcoded string word-by-word; no mic/audio/STT | **Deferred — demo-only.** Not a Beta feature |
+| A2 | 🟣 | **Voice-to-quote** — `src/screens/trade/VoiceQuoteScreen.tsx` `DICTATION` + `EXTRACTED` hardcoded | **Deferred — demo-only.** Not a Beta feature |
+| A3 | 🟣 | **Voice-to-cert** — `src/screens/trade/CertificateScreen.tsx` `DICTATION` + `VOICE_OBSERVATIONS` hardcoded | **Deferred — demo-only.** Not a Beta feature |
+| A6 | 🟣 | **Dashboard "AI insight"** — `src/screens/trade/DashboardScreen.tsx` sparkles banner just links to the newest lead | **Deferred — demo-only.** Not a Beta feature |
 
 ---
 
@@ -92,7 +101,7 @@ Voice and offline are the marketed differentiators and are currently **100% simu
 |---|---|---|---|
 | F1 | ⚪ | `services/api/app/routers/quotes.py` — `/generate-boq` + BoQ read endpoints return **501** | Decide: enable OCERP or remove from Beta surface |
 | F2 | ⚪ | `services/ocerp/ocerp/routers/takeoff.py` — pdf/cad/photo return **501** | Out of Beta scope; keep parked |
-| F3 | ⚪ | No routers for voice/transcribe or AI insights | Add endpoints backing A1–A3, A6 |
+| F3 | ⚪ | No router for customer AI chat; quote generation endpoint exists but is catalogue-locked (see A4) | Add a small AI chat endpoint (A5); rework `/quotes/generate` for guide prices (A4). **No voice/insights endpoints in Beta** |
 | F4 | ⚪ | `reviews.py` / `communications.py` routers exist but are **not wired to mobile** | Wire or defer explicitly |
 
 ---
@@ -109,11 +118,13 @@ Location: `services/pwa/src/data/`
 
 ## Suggested burn-down order
 
-1. **A4** (real RAG quote works) — unblocks the whole trade quoting story; closest to done.
-2. **A1–A3** (real voice) — the headline differentiator.
-3. **A7** (real offline) — the second headline differentiator.
+1. **A4** (real guide-price quote creation) — the primary Beta AI feature; unblocks the trade quoting story. Simplify the RAG path: drop the catalogue-lock, let the LLM return guide-priced line items, keep catalogue as optional reference.
+2. **A5 + F3** (real customer AI chat) — the second Beta AI feature; needs a small chat endpoint.
+3. **A7** (real offline) — marketed differentiator.
 4. **B1–B3** (customer portal real data) — needed for a coherent customer Beta.
 5. **C1–C5** (trade portal real data) + **G** (retire mocks behind fixtures).
 6. **D1, D4, E1** (payments, address, bank details) — real money/identity paths.
-7. **A5, A6, B4** (AI assistant + insights + chat persistence) — polish differentiators.
+7. **B4** (chat persistence) — supports A5.
 8. **Cosmetic cleanup** (D2, D3, D5–D7, E2–E4, B5–B7, C6–C7) — remove demo scaffolding before public Beta.
+
+**Deferred (demo-only, revisit post-Beta):** A1, A2, A3 (voice), A6 (dashboard insights), F1/F2 (OCERP/BoQ takeoff).
