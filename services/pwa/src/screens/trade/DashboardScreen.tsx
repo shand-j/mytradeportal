@@ -16,6 +16,7 @@ import { useBusiness } from "../../theme/ThemeProvider";
 import { useOfflineStore } from "../../stores/offlineStore";
 import { useOutstandingQuotes } from "../../api/quotes";
 import { useJobsList } from "../../api/jobs";
+import { useLeadsList } from "../../api/quoteRequests";
 
 const URGENCY_ORDER: Record<string, number> = {
   emergency_today: 0,
@@ -62,12 +63,16 @@ export function DashboardScreen(_props: DashboardScreenProps) {
     [jobsSource, selectedDateIndex]
   );
 
+  // Connected mode: real leads from quote requests; otherwise mock leads.
+  const { leads: liveLeads, isConnected: leadsConnected } = useLeadsList();
+  const leadsSource = leadsConnected ? liveLeads : MOCK_LEADS;
+
   const sortedLeads = useMemo(
     () =>
-      [...MOCK_LEADS]
+      [...leadsSource]
         .filter((lead) => lead.status !== "dead")
         .sort((a, b) => (URGENCY_ORDER[a.urgency] ?? 99) - (URGENCY_ORDER[b.urgency] ?? 99)),
-    []
+    [leadsSource]
   );
 
   const pendingQuotes = useMemo(
@@ -114,25 +119,29 @@ export function DashboardScreen(_props: DashboardScreenProps) {
         }
       />
       <ScrollView className="flex-1" contentContainerStyle={{ paddingBottom: 24, gap: 16 }}>
-        <Pressable
-          testID="dashboard-new-lead-banner"
-          onPress={() => router.push(`/(trade)/lead/${sortedLeads[0]?.id ?? "1"}`)}
-        >
-          <View className="flex-row items-center gap-3 rounded-2xl border border-blue-200 bg-blue-50 p-4">
-            <View className="h-9 w-9 items-center justify-center rounded-full bg-blue-600">
-              <Icon name="sparkles" size={18} color="#FFFFFF" />
+        {sortedLeads[0] && (
+          <Pressable
+            testID="dashboard-new-lead-banner"
+            onPress={() => router.push(`/(trade)/lead/${sortedLeads[0].id}`)}
+          >
+            <View className="flex-row items-center gap-3 rounded-2xl border border-blue-200 bg-blue-50 p-4">
+              <View className="h-9 w-9 items-center justify-center rounded-full bg-blue-600">
+                <Icon name="sparkles" size={18} color="#FFFFFF" />
+              </View>
+              <View className="flex-1">
+                <Text variant="body" weight="semibold">
+                  New lead · {sortedLeads[0].title}
+                </Text>
+                <Text variant="caption" color="secondary">
+                  {[sortedLeads[0].postcode, "from your customer app", "tap to review"]
+                    .filter(Boolean)
+                    .join(" · ")}
+                </Text>
+              </View>
+              <Icon name="navigate" size={18} color="#2563EB" />
             </View>
-            <View className="flex-1">
-              <Text variant="body" weight="semibold">
-                New lead · Consumer unit upgrade
-              </Text>
-              <Text variant="caption" color="secondary">
-                SK8 3NJ · from your customer app · tap to review
-              </Text>
-            </View>
-            <Icon name="navigate" size={18} color="#2563EB" />
-          </View>
-        </Pressable>
+          </Pressable>
+        )}
 
         <View className="gap-0.5">
           <Text variant="body" color="secondary">

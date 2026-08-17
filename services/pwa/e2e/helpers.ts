@@ -39,6 +39,34 @@ export async function bodyText(page: Page): Promise<string> {
 }
 
 /**
+ * Fetch the customer names on the demo tenant's leads (quote requests) directly
+ * from the API. Used to assert that a homeowner submission actually reached the
+ * backend, independent of the (non-blocking) mobile UI.
+ */
+export async function fetchLeadCustomerNames(
+  apiBase = process.env.E2E_API_BASE_URL ?? "http://localhost:8000"
+): Promise<string[]> {
+  const authRes = await fetch(`${apiBase}/auth/token`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      email: "owner@demo.trade",
+      password: "demo123",
+      tenant_slug: "demo",
+    }),
+  });
+  const auth = (await authRes.json()) as { access_token: string; user: { tenant_id: string } };
+  const res = await fetch(`${apiBase}/quote-requests`, {
+    headers: {
+      Authorization: `Bearer ${auth.access_token}`,
+      "X-Tenant-ID": auth.user.tenant_id,
+    },
+  });
+  const rows = (await res.json()) as { customer?: { name?: string } }[];
+  return rows.map((r) => r.customer?.name ?? "").filter(Boolean);
+}
+
+/**
  * Log in as the seeded demo trade owner from the entry screen. Assumes the app
  * is in connected mode (EXPO_PUBLIC_API_BASE_URL set) with no business slug, so
  * the entry screen shows the "Electrician login" option and the login form is

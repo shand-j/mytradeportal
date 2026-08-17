@@ -28,6 +28,14 @@ test.describe("trade connected mode", () => {
     await waitText(page, "E2E EV charger install");
   });
 
+  test("a lead submitted from the customer app appears on the leads list", async ({ page }) => {
+    await loginAsTradeOwner(page);
+    await tap(page, "tab-quotes");
+    await waitText(page, "Quotes / Leads");
+    // Seeded via the public /businesses/{slug}/quote-requests endpoint.
+    await waitText(page, "E2E Landlord EICR");
+  });
+
   test("registering a business provisions a real tenant and reaches the dashboard", async ({
     page,
   }) => {
@@ -59,6 +67,8 @@ test.describe("trade connected mode", () => {
     await tap(page, "plan-continue");
     await tap(page, "payment-go-dashboard", 1200);
 
-    await waitText(page, "Top leads", 40000);
+    // Provisioning runs several sequential API calls (create tenant, login,
+    // record steps, launch) before navigating, so allow generous headroom.
+    await waitText(page, "Top leads", 60000);
   });
 });

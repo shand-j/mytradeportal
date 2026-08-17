@@ -5,6 +5,8 @@ import { Icon } from "../../components/ui/Icon";
 import { Screen } from "../../components/ui/Screen";
 import { Text } from "../../components/ui/Text";
 import { useBusiness } from "../../theme/ThemeProvider";
+import { config } from "../../lib/config";
+import { submitPublicQuoteRequest } from "../../api/quoteRequests";
 import { BudgetContextStep } from "./quote-steps/BudgetContextStep";
 import { ConfirmationStep } from "./quote-steps/ConfirmationStep";
 import { ConsentsStep } from "./quote-steps/ConsentsStep";
@@ -73,7 +75,23 @@ export function CustomerQuoteRequestFlow({
     setFormData((prev) => ({ ...prev, ...patch }));
   };
 
+  const submitToBackend = async () => {
+    // Connected mode with a resolved business: create a real quote request so it
+    // lands as a lead in the tradesperson's dashboard. Non-blocking — the
+    // confirmation screen still shows if the network hiccups (demo stays mock).
+    if (!config.apiEnabled || !business?.slug) return;
+    try {
+      await submitPublicQuoteRequest(business.slug, formData);
+    } catch {
+      // Swallow: capture UX should not hard-fail on a flaky submit.
+    }
+  };
+
   const handleNext = () => {
+    // The consents step is the last data step before confirmation; submit here.
+    if (step.key === "consents") {
+      void submitToBackend();
+    }
     if (isLast) {
       onClose();
       return;

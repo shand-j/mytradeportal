@@ -10,6 +10,7 @@ import { MOCK_LEADS } from "../../data/mockLeads";
 import { MOCK_QUOTES, getQuoteTotal } from "../../data/mockQuotes";
 import { Quote, QuoteStatus } from "../../types";
 import { useQuotesList } from "../../api/quotes";
+import { useLeadsList } from "../../api/quoteRequests";
 
 type FilterKey = "all" | "new" | "flagged" | "sent" | "accepted";
 
@@ -56,11 +57,11 @@ export function QuotesScreen(_props: QuotesScreenProps) {
   const router = useRouter();
   const [activeFilter, setActiveFilter] = useState<FilterKey>("all");
 
-  // Connected mode: real quotes from the backend. Leads map to quote_requests,
-  // which aren't wired yet, so they stay mock-only in demo mode.
+  // Connected mode: real quotes + leads from the backend.
   const { quotes: liveQuotes, isConnected } = useQuotesList();
+  const { leads: liveLeads, isConnected: leadsConnected } = useLeadsList();
   const quotesSource = isConnected ? liveQuotes : MOCK_QUOTES;
-  const leadsSource = isConnected ? [] : MOCK_LEADS;
+  const leadsSource = leadsConnected ? liveLeads : MOCK_LEADS;
 
   const sortedLeads = useMemo(
     () =>

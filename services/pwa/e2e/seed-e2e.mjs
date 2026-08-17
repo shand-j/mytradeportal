@@ -11,6 +11,7 @@ const SLUG = process.env.E2E_TENANT_SLUG ?? "demo";
 
 const QUOTE_TITLE = "E2E Consumer unit upgrade";
 const JOB_TITLE = "E2E EV charger install";
+const LEAD_TITLE = "E2E Landlord EICR";
 
 async function api(path, { method = "GET", token, tenantId, body } = {}) {
   const headers = { Accept: "application/json" };
@@ -41,10 +42,13 @@ async function main() {
 
   const quotes = await api("/quotes", ctx);
   const jobs = await api("/jobs", ctx);
+  const leads = await api("/quote-requests", ctx);
   const haveQuote = Array.isArray(quotes) && quotes.some((q) => q.title === QUOTE_TITLE);
   const haveJob = Array.isArray(jobs) && jobs.some((j) => j.title === JOB_TITLE);
+  const haveLead =
+    Array.isArray(leads) && leads.some((l) => (l.structured_data || {}).title === LEAD_TITLE);
 
-  if (haveQuote && haveJob) {
+  if (haveQuote && haveJob && haveLead) {
     console.log("E2E data already present; skipping seed.");
     return;
   }
@@ -100,7 +104,30 @@ async function main() {
     });
   }
 
-  console.log("Seeded E2E data for tenant", SLUG, `(quote=${!haveQuote}, job=${!haveJob})`);
+  if (!haveLead) {
+    // Submit through the public (unauthenticated) endpoint, exactly as the
+    // homeowner app does, so the lead exercises the real two-sided path.
+    await api(`/businesses/${SLUG}/quote-requests`, {
+      method: "POST",
+      body: {
+        contact: {
+          name: "E2E Landlord",
+          email: "e2e.landlord@example.com",
+          phone: "07700 900666",
+          postcode: "SK8 3NJ",
+        },
+        category: "eicr",
+        title: LEAD_TITLE,
+        urgency: "this_week",
+      },
+    });
+  }
+
+  console.log(
+    "Seeded E2E data for tenant",
+    SLUG,
+    `(quote=${!haveQuote}, job=${!haveJob}, lead=${!haveLead})`
+  );
 }
 
 main().catch((err) => {
