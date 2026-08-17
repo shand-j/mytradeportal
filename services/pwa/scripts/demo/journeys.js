@@ -20,7 +20,11 @@ const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 function makeHelpers(baseUrl) {
   async function tap(page, testId, settleMs = 500) {
-    const locator = page.locator(`[data-testid="${testId}"]`).first();
+    // Prefer the visible instance: expo-router can keep previous screens in the
+    // DOM (hidden), so a plain .first() may resolve a stale hidden element.
+    const visible = page.locator(`[data-testid="${testId}"]:visible`).first();
+    const any = page.locator(`[data-testid="${testId}"]`).first();
+    const locator = (await visible.count()) > 0 ? visible : any;
     await locator.waitFor({ state: "visible", timeout: 15000 });
     await locator.click({ force: true });
     await sleep(settleMs);

@@ -1,42 +1,48 @@
 # Demo video narration script
 
-## Marketing cut — `marketing-journey.mp4` (single, ~112s, no captions)
+## Marketing cut — `marketing-journey.mp4` (single, ~168s, no captions)
 
 Clean iPhone-resolution screen recording of the real app, one continuous story
-across both profiles. No burned-in captions — record the voiceover against these
-approximate beat timings. Times are from the app content (the file has no
-intro/outro cards).
+across both profiles — now including the **voice-to-quote / voice-to-cert** and
+**offline-first** showcases. No burned-in captions — record the voiceover
+against these approximate beat timings.
 
 | Time | Beat | Suggested narration |
 |---|---|---|
 | 0:00 | Customer opens the app, enters a 6-digit code | "Homeowners find their local electrician with a simple 6-digit code…" |
-| 0:07 | Requests a quote; confirms postcode | "…and request a quote in minutes." |
-| 0:09 | Contact details — In-app Chat | "They choose how they'd like to be contacted — including in-app chat." |
-| 0:12 | Property profile | "A few structured questions capture the property…" |
-| 0:14 | Job type + questionnaire | "…and the exact job." |
-| 0:18 | Fuse-board photo | "They add a photo of the fuse board." |
-| 0:19 | Urgency, budget, consent, submit | "Then submit — no endless forms." |
-| 0:25 | Confirmation | "Honest expectations: the business will review and send the quote." |
-| 0:27 | AI assistant follows up in chat | "An AI assistant follows up in chat to fill any gaps…" |
-| 0:29 | 5-question Q&A refines the quote | "…so the quote is accurate before a human ever touches it." |
-| 0:45 | Electrician logs in; new-lead notification | "The electrician gets the lead on their phone." |
-| 0:49 | Opens lead + customer's photo | "They review the details and the customer's photo…" |
-| 0:54 | Generates the AI quote | "…and AI drafts the quote." |
-| 0:59 | Reviews the draft (78% confidence) | "They review every line…" |
-| 1:03 | Switches pricing model | "…switch between time-and-materials and per-point pricing…" |
-| 1:07 | Approves & sends | "…and send — humans always have the final say." |
-| 1:09 | Customer returns; quote received | "The customer gets the quote…" |
-| 1:16 | Reviews line items & assumptions | "…fully transparent." |
-| 1:20 | Accepts the quote | "They accept…" |
-| 1:22 | Picks a day/time, confirms booking | "…and book straight from the app." |
-| 1:26 | Electrician, job day — dashboard | "On the day, the job's on the calendar." |
-| 1:30 | Opens the job | "They open the job…" |
-| 1:33 | Navigate to site | "…and navigate to site." |
-| 1:36 | Start + complete | "Once done…" |
-| 1:39 | Completion notes + on-site variation | "…they log completion notes and add on-site variations." |
-| 1:43 | Create & send invoice | "The invoice is created and sent in seconds…" |
-| 1:45 | Payment received | "…payment comes in…" |
-| 1:48 | Revenue dashboard | "…and the business sees its revenue and profit at a glance." |
+| 0:04 | Requests a quote; confirms postcode | "…and request a quote in minutes." |
+| 0:06 | Contact details — In-app Chat | "They choose how they'd like to be contacted — including in-app chat." |
+| 0:09 | Property profile | "A few structured questions capture the property…" |
+| 0:11 | Job type + questionnaire | "…and the exact job." |
+| 0:15 | Fuse-board photo | "They add a photo of the fuse board." |
+| 0:17 | Urgency, budget, consent, submit | "Then submit — no endless forms." |
+| 0:22 | Confirmation | "The business will review and send the quote." |
+| 0:24 | AI assistant follows up in chat | "An AI assistant follows up in chat to refine the quote…" |
+| 0:26 | 5-question Q&A | "…so it's accurate before a human touches it." |
+| 0:42 | Electrician logs in | "Meanwhile the electrician opens their mobile back office." |
+| 0:46 | **Goes offline (on-site, no signal)** | "Out in a basement with no signal? No problem — the app works fully offline." |
+| 0:48 | **Dictates a quote by voice** (waveform + live transcript) | "They just describe the job out loud…" |
+| 1:05 | **AI extracts the line items** (saved on device) | "…and AI turns it into a priced quote — saved on the device." |
+| 1:09 | **Dictates an EICR by voice** | "Same for certificates: dictate the test results…" |
+| ~1:20 | **BS 7671 validation** (per-circuit PASS, Satisfactory) | "…and the app validates every Zs, RCD and IR reading against BS 7671, then issues the EICR." |
+| 1:40 | **Back online — everything syncs** | "Back in signal, everything syncs automatically — nothing is ever lost." |
+| 1:45 | Opens the new customer lead | "Back to the lead that came in from the customer app…" |
+| 1:49 | Generates the AI quote | "…AI drafts the quote…" |
+| 1:54 | Reviews the draft (78% confidence) | "They review every line…" |
+| 1:58 | Switches pricing model | "…switch between time-and-materials and per-point pricing…" |
+| 2:02 | Approves & sends | "…and send — humans always have the final say." |
+| 2:04 | Customer returns; quote received | "The customer gets the quote…" |
+| 2:12 | Reviews line items & assumptions | "…fully transparent." |
+| 2:16 | Accepts the quote | "They accept…" |
+| 2:18 | Picks a day/time, confirms booking | "…and book straight from the app." |
+| 2:21 | Electrician, job day — dashboard | "On the day, the job's on the calendar." |
+| 2:25 | Opens the job | "They open the job…" |
+| 2:29 | Navigate to site | "…and navigate to site." |
+| 2:32 | Start + complete | "Once done…" |
+| 2:35 | Completion notes + on-site variation | "…they log completion notes and add on-site variations." |
+| 2:38 | Create & send invoice | "The invoice is created and sent in seconds…" |
+| 2:41 | Payment received | "…payment comes in…" |
+| 2:44 | Revenue dashboard | "…and the business sees its revenue and profit at a glance." |
 
 ---
 

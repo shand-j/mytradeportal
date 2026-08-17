@@ -159,6 +159,45 @@ async function main() {
   await h.waitText(page, "New lead");
   await sleep(1200);
 
+  // ------------------------------------------------------------------
+  // Voice-to-quote + offline-first showcase.
+  // ------------------------------------------------------------------
+  log("Electrician: go offline (on-site, no signal)");
+  await h.tap(page, "offline-toggle", 1400);
+
+  log("Electrician: dictate a quote by voice");
+  await h.tap(page, "dashboard-voice-quote", 900);
+  await h.waitText(page, "Describe the job");
+  await sleep(700);
+  await h.tap(page, "voice-start", 800);
+  await h.waitText(page, "AI extracted", 20000); // waveform + streaming transcript play out
+  await sleep(1800);
+
+  log("Electrician: AI-extracted line items (saved offline)");
+  await h.tap(page, "voice-create-quote", 1200);
+  await h.waitText(page, "Review AI quote", 15000);
+  await sleep(1600);
+  await h.tap(page, "tab-dashboard", 1000);
+
+  log("Electrician: dictate an EICR certificate");
+  await h.tap(page, "dashboard-new-cert", 900);
+  await h.waitText(page, "Voice-to-certificate");
+  await sleep(700);
+  await h.tap(page, "cert-new", 900);
+  await h.waitText(page, "Dictate your test results");
+  await sleep(600);
+  await h.tap(page, "cert-dictate", 900);
+  await h.tap(page, "voice-start", 800);
+  await h.waitText(page, "Schedule of test results", 25000);
+  await sleep(2000); // BS 7671 validation: PASS badges + Satisfactory
+  await h.tap(page, "cert-sign-issue", 1400);
+  await sleep(1400);
+  await h.tap(page, "tab-dashboard", 1000).catch(() => {});
+
+  log("Electrician: back online — everything syncs");
+  await h.tap(page, "offline-toggle", 1500); // "syncing" banner
+  await sleep(3400); // "all changes synced" banner
+
   log("Electrician: open new lead");
   await h.tap(page, "dashboard-new-lead-banner", 800);
   await h.waitText(page, "Lead detail");

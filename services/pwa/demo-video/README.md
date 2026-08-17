@@ -15,10 +15,14 @@ Storyboard (one story, both profiles):
    photo, urgency, budget, consent).
 2. The AI assistant follows up in chat and refines the quote (Q&A), then confirms
    the quote is under way.
-3. Electrician: new-lead notification → review lead + customer photo → AI-drafted
+3. **Voice-to-quote + offline-first:** the electrician goes offline on-site,
+   **dictates a quote by voice** (live waveform + transcript → AI-extracted line
+   items, saved on device), **dictates an EICR** that is validated against
+   BS 7671 and issued, then comes **back online and everything syncs**.
+4. Electrician: new-lead notification → review lead + customer photo → AI-drafted
    quote (78% confidence) → pricing toggle → approve & send.
-4. Customer: quote received → review line items/assumptions → accept → book a date.
-5. Electrician (job day): dashboard today → job detail → navigate → start/complete
+5. Customer: quote received → review line items/assumptions → accept → book a date.
+6. Electrician (job day): dashboard today → job detail → navigate → start/complete
    → completion notes → on-site variation → create & send invoice → payment
    received → revenue dashboard.
 
