@@ -14,7 +14,7 @@ const CU_LOCATIONS = ["Hallway", "Kitchen", "Garage", "Utility", "Under stairs",
 export type QuoteIntakeScreenProps = {
   lead: Lead;
   onBack: () => void;
-  onComplete: () => void;
+  onComplete: () => void | Promise<void>;
 };
 
 export function QuoteIntakeScreen({ lead, onBack, onComplete }: QuoteIntakeScreenProps) {
@@ -26,17 +26,24 @@ export function QuoteIntakeScreen({ lead, onBack, onComplete }: QuoteIntakeScree
   const [notes, setNotes] = useState(lead.note ?? "");
   const [photoCount, setPhotoCount] = useState(0);
   const [generating, setGenerating] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const canComplete =
     propertyType.trim() && bedrooms.trim() && cuLocation.trim() && parking.trim() && access.trim();
 
-  const handleComplete = () => {
+  const handleComplete = async () => {
     if (!canComplete) return;
     setGenerating(true);
-    setTimeout(() => {
+    setError(null);
+    try {
+      await onComplete();
+    } catch {
+      setError(
+        "We couldn't generate the quote automatically. AI quoting may not be enabled — try again or build the quote manually."
+      );
+    } finally {
       setGenerating(false);
-      onComplete();
-    }, 1200);
+    }
   };
 
   const addPhoto = () => setPhotoCount((c) => Math.min(c + 1, 5));
@@ -155,6 +162,14 @@ export function QuoteIntakeScreen({ lead, onBack, onComplete }: QuoteIntakeScree
           <View className="rounded-2xl bg-slate-100 p-4">
             <Text variant="body" color="secondary" align="center">
               Analysing intake and drafting AI quote…
+            </Text>
+          </View>
+        )}
+
+        {error && (
+          <View className="rounded-2xl bg-amber-50 p-4">
+            <Text testID="intake-error" variant="caption" color="warning">
+              {error}
             </Text>
           </View>
         )}

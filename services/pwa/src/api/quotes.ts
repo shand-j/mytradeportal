@@ -40,6 +40,21 @@ export async function fetchQuotes(): Promise<ApiQuote[]> {
   return api.get<ApiQuote[]>("/quotes");
 }
 
+export async function fetchQuote(id: string): Promise<ApiQuote> {
+  return api.get<ApiQuote>(`/quotes/${id}`);
+}
+
+/**
+ * Generate a draft quote from a lead (quote request) using the real backend AI
+ * pipeline (retrieval + LLM + catalogue pricing). Returns the mapped quote.
+ * Throws ApiError/NetworkError, which the caller surfaces (e.g. when the LLM is
+ * not configured).
+ */
+export async function generateQuoteFromLead(quoteRequestId: string): Promise<Quote> {
+  const q = await api.post<ApiQuote>("/quotes/generate", { quoteRequestId });
+  return mapQuote(q);
+}
+
 /** Backend uses "approved"; the app's UI vocabulary uses "accepted". */
 const STATUS_MAP: Record<string, QuoteStatus> = {
   draft: "draft",
@@ -119,5 +134,20 @@ export function useQuotesList() {
     quotes: isConnected ? (query.data ?? []).map(mapQuote) : [],
     isConnected,
     isLoading: config.apiEnabled && query.isLoading,
+  };
+}
+
+/** A single quote by id (connected mode), mapped to the app `Quote` shape. */
+export function useQuote(id: string | undefined) {
+  const query = useQuery({
+    queryKey: ["quote", id],
+    queryFn: () => fetchQuote(id as string),
+    enabled: config.apiEnabled && !!id,
+  });
+
+  return {
+    quote: query.data ? mapQuote(query.data) : undefined,
+    isConnected: config.apiEnabled && query.isSuccess,
+    isLoading: config.apiEnabled && !!id && query.isLoading,
   };
 }

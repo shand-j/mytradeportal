@@ -36,6 +36,15 @@ test.describe("trade connected mode", () => {
     await waitText(page, "E2E Landlord EICR");
   });
 
+  test("opening a real lead shows its detail with the AI-quote action", async ({ page }) => {
+    await loginAsTradeOwner(page);
+    await tap(page, "tab-quotes");
+    await waitText(page, "E2E Landlord EICR");
+    // Tapping a real lead (UUID id) must resolve the backend lead, not a mock.
+    await tapText(page, "E2E Landlord EICR");
+    await waitText(page, "Generate AI quote", 30000);
+  });
+
   test("registering a business provisions a real tenant and reaches the dashboard", async ({
     page,
   }) => {

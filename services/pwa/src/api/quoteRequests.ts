@@ -103,6 +103,26 @@ export async function fetchLeads(): Promise<ApiQuoteRequest[]> {
   return api.get<ApiQuoteRequest[]>("/quote-requests");
 }
 
+export async function fetchLead(id: string): Promise<Lead> {
+  const qr = await api.get<ApiQuoteRequest>(`/quote-requests/${id}`);
+  return mapLead(qr);
+}
+
+/** A single lead (quote request) by id, mapped to the app `Lead` shape. */
+export function useLead(id: string | undefined) {
+  const query = useQuery({
+    queryKey: ["quote-request", id],
+    queryFn: () => fetchLead(id as string),
+    enabled: config.apiEnabled && !!id,
+  });
+
+  return {
+    lead: query.data,
+    isConnected: config.apiEnabled && query.isSuccess,
+    isLoading: config.apiEnabled && !!id && query.isLoading,
+  };
+}
+
 /**
  * Trade leads list from real quote requests. Returns app `Lead`s when connected;
  * otherwise an empty list and the caller falls back to mock leads.

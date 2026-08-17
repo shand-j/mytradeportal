@@ -1,11 +1,15 @@
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { LeadDetailScreen } from "../../../src/screens/trade/LeadDetailScreen";
 import { MOCK_LEADS } from "../../../src/data/mockLeads";
+import { useLead } from "../../../src/api/quoteRequests";
 
 export default function LeadDetailRoute() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
-  const lead = MOCK_LEADS.find((l) => l.id === id);
+
+  // Connected mode: resolve the real lead (quote request); otherwise mock.
+  const { lead: realLead } = useLead(id);
+  const lead = realLead ?? MOCK_LEADS.find((l) => l.id === id);
 
   if (!lead) return null;
 
