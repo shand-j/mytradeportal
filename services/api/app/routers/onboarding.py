@@ -58,7 +58,10 @@ async def update_onboarding_step(
     """Update a single onboarding step and recalculate launch eligibility."""
     await _set_tenant(db, tenant.id)
 
-    progress: dict[str, Any] = tenant.onboarding_progress or {}
+    # Copy the JSONB dict so the reassignment below is a genuinely new object.
+    # Mutating the existing dict in place is not tracked by SQLAlchemy, which
+    # would silently drop every step after the first.
+    progress: dict[str, Any] = dict(tenant.onboarding_progress or {})
     progress[step_name] = {"completed": True, "value": data.value}
 
     required_steps = ["business_identity", "compliance", "services"]
