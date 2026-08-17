@@ -9,7 +9,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
-from app.models import Tenant, User
+from app.models import Customer, Tenant, User
 from app.rls import set_tenant_in_session
 from app.security import AUTH_COOKIE_NAME, decode_access_token
 
@@ -134,6 +134,9 @@ async def get_current_user(
     claims = decode_access_token(token)
     if claims is None:
         return None
+    # A customer token must never resolve as a staff user.
+    if claims.get("subject_type") == "customer":
+        return None
     try:
         user_id = UUID(claims.get("sub"))
     except (ValueError, TypeError):
@@ -160,6 +163,40 @@ async def get_current_active_user(
 
 
 ActiveUserDep = Annotated[User, Depends(get_current_active_user)]
+
+
+async def get_current_customer(
+    request: Request,
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> Customer:
+    """Resolve the authenticated homeowner (customer) from a customer token.
+
+    Rejects staff-user tokens (``subject_type`` must be ``customer``), looks up
+    the Customer, and sets the tenant RLS context from the token's tenant so
+    subsequent tenant-scoped reads are correctly isolated.
+    """
+    token = _extract_token(request)
+    if not token:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Not authenticated")
+    claims = decode_access_token(token)
+    if claims is None or claims.get("subject_type") != "customer":
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Not authenticated")
+    try:
+        customer_id = UUID(claims.get("sub"))
+        tenant_id = UUID(claims.get("tenant_id"))
+    except (ValueError, TypeError) as exc:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token"
+        ) from exc
+
+    await set_tenant_in_session(db, tenant_id)
+    customer = await db.get(Customer, customer_id)
+    if customer is None or not customer.is_active or customer.tenant_id != tenant_id:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Not authenticated")
+    return customer
+
+
+CurrentCustomerDep = Annotated[Customer, Depends(get_current_customer)]
 
 
 class RoleChecker:

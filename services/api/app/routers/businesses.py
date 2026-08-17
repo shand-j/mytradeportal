@@ -6,20 +6,23 @@ and do not require an auth token.
 """
 
 from typing import Annotated
+from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
+from app.dependencies import _extract_token
 from app.limiter import limiter
-from app.models import BusinessService, Contact, QuoteRequest, Tenant
+from app.models import BusinessService, Contact, Customer, QuoteRequest, Tenant
 from app.rls import bypass_rls_in_session, set_tenant_in_session
 from app.schemas import (
     BusinessPublicConfig,
     PublicQuoteRequestAck,
     PublicQuoteRequestCreate,
 )
+from app.security import decode_access_token
 
 router = APIRouter(prefix="/businesses", tags=["Businesses"])
 DbDep = Annotated[AsyncSession, Depends(get_db)]
@@ -90,8 +93,28 @@ async def submit_public_quote_request(
     # Insert tenant-scoped rows under this tenant's RLS context.
     await set_tenant_in_session(db, tenant.id)
 
+    # If the homeowner is logged in (customer token for this tenant), link the
+    # request to their account so it appears in their history, and reuse their
+    # contact record.
+    customer: Customer | None = None
+    token = _extract_token(request)
+    if token:
+        claims = decode_access_token(token)
+        if claims is not None and claims.get("subject_type") == "customer":
+            try:
+                token_customer_id = UUID(str(claims.get("sub")))
+                token_tenant_id = UUID(str(claims.get("tenant_id")))
+            except (ValueError, TypeError):
+                token_customer_id = token_tenant_id = None  # type: ignore[assignment]
+            if token_customer_id is not None and token_tenant_id == tenant.id:
+                candidate = await db.get(Customer, token_customer_id)
+                if candidate is not None and candidate.tenant_id == tenant.id:
+                    customer = candidate
+
     contact: Contact | None = None
-    if data.contact.email:
+    if customer is not None and customer.contact_id:
+        contact = await db.get(Contact, customer.contact_id)
+    if contact is None and data.contact.email:
         contact = await db.scalar(
             select(Contact).where(
                 Contact.tenant_id == tenant.id,
@@ -119,6 +142,7 @@ async def submit_public_quote_request(
     quote_request = QuoteRequest(
         tenant_id=tenant.id,
         contact_id=contact.id,
+        customer_id=customer.id if customer is not None else None,
         source="app",
         raw_text=data.raw_text,
         structured_data=structured_data,

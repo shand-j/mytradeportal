@@ -24,6 +24,7 @@ from app.routers import (
     businesses,
     communications,
     contacts,
+    customer_portal,
     customers,
     feature_flags,
     files,
@@ -120,6 +121,7 @@ app.include_router(auth.router)
 app.include_router(users.router)
 app.include_router(contacts.router)
 app.include_router(customers.router)
+app.include_router(customer_portal.router)
 app.include_router(quote_requests.router)
 app.include_router(businesses.router)
 app.include_router(onboarding.router)

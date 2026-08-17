@@ -931,6 +931,29 @@ class CustomerRead(BaseModel):
     updated_at: datetime
 
 
+class CustomerRegister(BaseModel):
+    """Homeowner self-registration against a specific business (by slug)."""
+
+    slug: str = Field(..., min_length=2, max_length=63)
+    full_name: str = Field(..., min_length=1, max_length=255)
+    email: EmailStr
+    phone: str | None = Field(default=None, max_length=50)
+    password: str = Field(..., min_length=8, max_length=128)
+    marketing_consent: bool = False
+
+
+class CustomerLogin(BaseModel):
+    slug: str = Field(..., min_length=2, max_length=63)
+    email: EmailStr
+    password: str = Field(..., min_length=1, max_length=128)
+
+
+class CustomerTokenResponse(BaseModel):
+    access_token: str = Field(serialization_alias="accessToken")
+    token_type: str = Field(default="bearer", serialization_alias="tokenType")
+    customer: CustomerRead
+
+
 class PropertyCreate(BaseModel):
     customer_id: UUID
     address: str = Field(..., min_length=1, max_length=2000)

@@ -33,8 +33,14 @@ def create_access_token(
     role: str,
     email: str,
     expires_delta: timedelta | None = None,
+    subject_type: str = "user",
 ) -> str:
-    """Create a signed JWT access token for a user."""
+    """Create a signed JWT access token for a user or customer.
+
+    ``subject_type`` distinguishes a staff ``user`` token from a homeowner
+    ``customer`` token so the two auth surfaces cannot be used against each
+    other. Existing tokens have no claim and are treated as ``user``.
+    """
     if expires_delta is None:
         expires_delta = timedelta(minutes=settings.auth_access_token_expire_minutes)
     now = datetime.now(UTC)
@@ -43,6 +49,7 @@ def create_access_token(
         "tenant_id": str(tenant_id),
         "role": role,
         "email": email,
+        "subject_type": subject_type,
         "iat": now,
         "exp": now + expires_delta,
     }
