@@ -59,6 +59,27 @@ class Settings(BaseSettings):
     embedding_dimensions: int | None = Field(default=None)
     llm_model: str = Field(default="gpt-4o-mini")
     llm_timeout_seconds: int = Field(default=60)
+
+    # LLM provider (OpenAI-compatible endpoints). To use Kimi / Moonshot set:
+    #   LLM_API_BASE=https://api.moonshot.ai/v1
+    #   LLM_API_KEY=<moonshot key>
+    #   LLM_MODEL=openai/kimi-k2.6   (the openai/ prefix routes via the
+    #                                 OpenAI-compatible handler in LiteLLM)
+    #   LLM_TEMPERATURE=             (leave blank: kimi-k* reject a custom
+    #                                 temperature; only moonshot-v1 allows it)
+    # Empty base/key fall back to the OpenAI defaults + ``openai_api_key``.
+    llm_api_base: str = Field(default="")
+    llm_api_key: str = Field(default="")
+    llm_temperature: float | None = Field(default=0.2)
+
+    # Embeddings are provider-specific and Kimi has no embeddings API, so the
+    # embedder is configured independently of the chat LLM. It defaults to
+    # OpenAI (or any OpenAI-compatible embeddings endpoint). When no embedding
+    # key is configured, catalogue retrieval is skipped and quotes are still
+    # generated from the model's own guide prices.
+    embedding_api_base: str = Field(default="")
+    embedding_api_key: str = Field(default="")
+
     qdrant_collection_name: str = Field(default="cost_items")
     qdrant_knowledge_collection_name: str = Field(default="quoting_knowledge")
     rag_top_k: int = Field(default=10)
@@ -131,6 +152,31 @@ class Settings(BaseSettings):
         if value.startswith("postgres://"):
             return "postgresql+asyncpg://" + value[len("postgres://") :]
         return value
+
+    @field_validator("llm_temperature", mode="before")
+    @classmethod
+    def _blank_temperature_to_none(cls, value: object) -> object:
+        """Treat a blank ``LLM_TEMPERATURE`` as unset.
+
+        Kimi's ``kimi-k*`` models reject a custom ``temperature`` (it is fixed
+        server-side); leaving the env var empty omits the parameter entirely so
+        the same code path works for OpenAI, ``moonshot-v1`` and ``kimi-k*``.
+        """
+        if value is None:
+            return None
+        if isinstance(value, str) and value.strip() == "":
+            return None
+        return value
+
+    @property
+    def resolved_llm_api_key(self) -> str:
+        """Chat LLM key, falling back to ``openai_api_key`` for back-compat."""
+        return self.llm_api_key or self.openai_api_key
+
+    @property
+    def resolved_embedding_api_key(self) -> str:
+        """Embeddings key, falling back to ``openai_api_key``."""
+        return self.embedding_api_key or self.openai_api_key
 
     def get_app_database_url(self) -> str:
         """Return ``database_url`` rewritten to authenticate as ``app_role_name``.

@@ -292,8 +292,8 @@ async def _generate_rag_quote(
     build_quote_from_validation(quote, validated)
     if not quote.line_items:
         raise RuntimeError(
-            "No priced line items were generated. "
-            "Cost catalogue items were not resolved for this job."
+            "The AI did not return any line items for this job. Please try again "
+            "or build the quote manually."
         )
 
 
@@ -380,8 +380,8 @@ async def _generate_quote_impl(
         await _generate_rag_quote(quote, data, tenant)
         if not quote.line_items:
             raise RuntimeError(
-                "No priced line items were generated. Ensure the cost catalogue is loaded "
-                "and tenant labour-rate settings are configured."
+                "The AI did not return any line items for this job. Please try "
+                "again or build the quote manually."
             )
     except RuntimeError as exc:
         raise HTTPException(

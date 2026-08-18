@@ -29,8 +29,10 @@ def _embedding_kwargs(texts: list[str]) -> dict[str, Any]:
         "model": settings.embedding_model,
         "input": texts,
     }
-    if settings.openai_api_key:
-        kwargs["api_key"] = settings.openai_api_key
+    if settings.resolved_embedding_api_key:
+        kwargs["api_key"] = settings.resolved_embedding_api_key
+    if settings.embedding_api_base:
+        kwargs["api_base"] = settings.embedding_api_base
     return kwargs
 
 
@@ -38,8 +40,8 @@ async def embed_texts(texts: list[str]) -> list[list[float]]:
     """Return embedding vectors for the supplied texts."""
     if not texts:
         return []
-    if not settings.openai_api_key:
-        raise RuntimeError("OPENAI_API_KEY is not configured")
+    if not settings.resolved_embedding_api_key:
+        raise RuntimeError("Embedding API key is not configured")
     try:
         response = await aembedding(**_embedding_kwargs(texts))
     except APIError as exc:
@@ -65,7 +67,15 @@ async def search_cost_items(
 
     By default only ``domestic_pipeline`` (scraped supplier) items are returned
     so generated quotes are grounded in real catalogue prices.
+
+    When no embedding provider is configured (e.g. a Kimi-only deployment with
+    no OpenAI embeddings key), catalogue retrieval is skipped and an empty list
+    is returned; the generator then produces guide prices from its own
+    knowledge instead of failing.
     """
+    if not settings.resolved_embedding_api_key:
+        return []
+
     vector = await embed_text(query)
     limit = top_k or settings.rag_top_k
 

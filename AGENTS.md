@@ -52,7 +52,7 @@ Reference docs:
 | Cache / broker | Redis 7 |
 | Object storage | MinIO (S3-compatible) |
 | Email (dev) | Mailpit |
-| LLM routing | LiteLLM backed by OpenAI (default `LLM_MODEL=gpt-4o-mini`) |
+| LLM routing | LiteLLM against any OpenAI-compatible endpoint. Default OpenAI (`LLM_MODEL=gpt-4o-mini`); Kimi/Moonshot supported via `LLM_API_BASE`/`LLM_API_KEY` + `openai/kimi-k2.6`. Embeddings stay OpenAI (Kimi has none) and are optional |
 | Payments | Paddle Billing (checkout + webhooks) |
 | Auth | Local bcrypt/JWT session cookies; optional Supabase Auth |
 | Containerisation | Docker + Docker Compose |
@@ -629,7 +629,7 @@ Key variables (see `.env.example` for the full template):
 - `QDRANT_COLLECTION_NAME`, `QDRANT_KNOWLEDGE_COLLECTION_NAME`
 - `MINIO_ENDPOINT`, `MINIO_USE_SSL`, `MINIO_ACCESS_KEY`, `MINIO_SECRET_KEY`, `MINIO_BUCKET`
 - `AUTH_SECRET_KEY`
-- `OPENAI_API_KEY` (required), `LLM_MODEL`, `EMBEDDING_MODEL`, `LLM_TIMEOUT_SECONDS`
+- `OPENAI_API_KEY`, `LLM_MODEL`, `LLM_API_BASE`, `LLM_API_KEY`, `LLM_TEMPERATURE`, `EMBEDDING_MODEL`, `EMBEDDING_API_BASE`, `EMBEDDING_API_KEY`, `LLM_TIMEOUT_SECONDS`
 - `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`
 - `VITE_API_BASE_URL`
 - `APIFY_API_TOKEN`, `PIPELINE_DEMO_MODE`, `SCREWFIX_*`, `TOOLSTATION_ENABLED`, `SCRAPE_FREQUENCY`

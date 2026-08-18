@@ -128,7 +128,8 @@ def test_validate_generated_quote() -> None:
     assert not result["warnings"]
 
 
-def test_validate_generated_quote_warns_on_unknown_code() -> None:
+def test_validate_generated_quote_keeps_guide_priced_item() -> None:
+    """Non-catalogue items are kept with the model's own guide price, not dropped."""
     retrieved = [
         {
             "code": "ELEC-SOCKET-ADD",
@@ -140,7 +141,14 @@ def test_validate_generated_quote_warns_on_unknown_code() -> None:
     generated = {
         "line_items": [
             {"code": "ELEC-SOCKET-ADD", "quantity": 1},
-            {"code": "UNKNOWN", "quantity": 1},
+            {
+                "description": "Consumer unit replacement (labour)",
+                "kind": "labour",
+                "quantity": 1,
+                "unit": "job",
+                "unit_price": 320.00,
+                "code": None,
+            },
         ],
         "notes": "",
     }
@@ -151,6 +159,12 @@ def test_validate_generated_quote_warns_on_unknown_code() -> None:
         tenant_settings={},
     )
 
-    assert len(result["line_items"]) == 1
-    assert result["confidence"] == 0.5
-    assert any("UNKNOWN" in w for w in result["warnings"])
+    # Both lines are kept: one catalogue-grounded, one guide-priced.
+    assert len(result["line_items"]) == 2
+    grounded = result["line_items"][0]
+    guide = result["line_items"][1]
+    assert grounded["unit_price"] == Decimal("85.00")
+    assert guide["description"] == "Consumer unit replacement (labour)"
+    assert guide["unit_price"] == Decimal("320.00")
+    # Half the lines are catalogue-grounded → 0.5 baseline + 0.5 * 0.5.
+    assert result["confidence"] == 0.75
