@@ -6,14 +6,18 @@
  *   railway config plan    # preview the diff against the linked environment
  *   railway config apply   # apply after confirmation
  *
- * Layout (9 resources):
+ * Layout (8 resources) — mobile-only beta stack:
  *   postgres + redis      — native Railway database plugins
  *   qdrant, minio         — Docker-image services with mounted volumes
- *   api, ocerp, web, admin, data-pipeline — built from this GitHub repo
+ *   api, admin, data-pipeline — built from this GitHub repo
+ *
+ * Not deployed for the mobile beta (parked as commented blocks):
+ *   ocerp — BoQ engine, superseded by the LLM quote pipeline
+ *   web   — Vite SPA back-office, superseded by the mobile app + Django admin
  *
  * Things this file CANNOT do (Railway IaC beta limitations):
  *   - Generate public service domains. After the first apply, generate domains
- *     in the dashboard for: api, web, admin, minio (target port 9000). Until
+ *     in the dashboard for: api, admin, minio (target port 9000). Until
  *     then the `*_RAILWAY_PUBLIC_DOMAIN` references below stay empty.
  *   - Register custom domains (dashboard only, then `railway config pull`).
  *
@@ -144,10 +148,27 @@ export default defineRailway(() => {
       MINIO_ACCESS_KEY: preserve(),
       MINIO_SECRET_KEY: preserve(),
       OPENAI_API_KEY: preserve(),
-      EMBEDDING_MODEL: "text-embedding-3-small",
-      LLM_MODEL: "gpt-4o-mini",
+      EMBEDDING_MODEL: "text-embedding-3-large",
+      // LiteLLM provider override. Set LLM_API_BASE + LLM_API_KEY to a Kimi /
+      // Moonshot key and LLM_MODEL to "openai/kimi-k2.6" for the cheaper,
+      // more reliable UK quote model. Leave blank to fall back to OpenAI.
+      LLM_MODEL: "openai/kimi-k2.6",
+      LLM_API_BASE: preserve(),
+      LLM_API_KEY: preserve(),
+      LLM_TEMPERATURE: "",
+      LLM_MAX_RETRIES: "3",
       LLM_TIMEOUT_SECONDS: "300",
-      ALLOWED_ORIGINS: "https://${{web.RAILWAY_PUBLIC_DOMAIN}}",
+      // Email delivery. Resend is preferred; SMTP is only used if
+      // RESEND_API_KEY is unset (there is no SMTP host in prod).
+      RESEND_API_KEY: preserve(),
+      RESEND_FROM_EMAIL: preserve(),
+      // Public URL the reset-password + quote links resolve to. Update to
+      // the App Store / landing page domain once available.
+      APP_PUBLIC_URL: preserve(),
+      // In beta only the Django admin has a public browser origin; CORS from
+      // the native app doesn't need this (no Origin header). Extend when
+      // app.mytradeportal.com goes live.
+      ALLOWED_ORIGINS: ADMIN_PUBLIC_URL,
       // Keep production strict: exact allowed origins are defined explicitly
       // by ALLOWED_ORIGINS (set per environment).
       ALLOWED_ORIGIN_REGEX: "",
@@ -163,6 +184,14 @@ export default defineRailway(() => {
       PADDLE_API_KEY: preserve(),
       PADDLE_WEBHOOK_SECRET: preserve(),
       PADDLE_SANDBOX: "true",
+      // Paddle Billing catalog IDs. Created via the paddle-sandbox MCP; wire
+      // once, keep in the dashboard, IaC picks them up via preserve().
+      PADDLE_PRICE_ID_STARTER: preserve(),
+      PADDLE_PRICE_ID_PRO: preserve(),
+      PADDLE_PRICE_ID_BUSINESS: preserve(),
+      // Auto-applies a 100% recurring discount to every checkout while set;
+      // unset to charge full price once the beta closes.
+      PADDLE_BETA_DISCOUNT_ID: preserve(),
       // New Relic observability (free tier). Set NEW_RELIC_LICENSE_KEY to enable APM.
       NEW_RELIC_LICENSE_KEY: preserve(),
       NEW_RELIC_APP_NAME: "mytradeportal-api",
@@ -172,20 +201,24 @@ export default defineRailway(() => {
     },
   });
 
-  const web = service("web", {
-    source: github(GITHUB_REPO, { rootDirectory: "web/app" }),
-    build: { builder: "DOCKERFILE", dockerfilePath: "Dockerfile" },
-    healthcheck: "/",
-    regions: { [TARGET_REGION]: 1 },
-    env: {
-      // Route browser API calls through web's /api reverse proxy, which then
-      // uses Railway private networking to reach the API service.
-      VITE_API_BASE_URL: "/api",
-      API_UPSTREAM_URL: "http://${{api.RAILWAY_PRIVATE_DOMAIN}}:8000",
-      // Match nginx template ${PORT}; Railway overrides $PORT otherwise.
-      PORT: "80",
-    },
-  });
+  // Vite SPA back-office — parked for the mobile beta (the Django admin covers
+  // support ops for now). Uncomment + rerun `railway config apply` to bring it
+  // back. When re-adding, restore the api service's ALLOWED_ORIGINS to include
+  // ${{web.RAILWAY_PUBLIC_DOMAIN}}.
+  // const web = service("web", {
+  //   source: github(GITHUB_REPO, { rootDirectory: "web/app" }),
+  //   build: { builder: "DOCKERFILE", dockerfilePath: "Dockerfile" },
+  //   healthcheck: "/",
+  //   regions: { [TARGET_REGION]: 1 },
+  //   env: {
+  //     // Route browser API calls through web's /api reverse proxy, which then
+  //     // uses Railway private networking to reach the API service.
+  //     VITE_API_BASE_URL: "/api",
+  //     API_UPSTREAM_URL: "http://${{api.RAILWAY_PRIVATE_DOMAIN}}:8000",
+  //     // Match nginx template ${PORT}; Railway overrides $PORT otherwise.
+  //     PORT: "80",
+  //   },
+  // });
 
   const admin = service("admin", {
     source: github(GITHUB_REPO),
@@ -218,7 +251,7 @@ export default defineRailway(() => {
   const dataPipeline = service("data-pipeline", {
     source: github(GITHUB_REPO),
     build: { builder: "DOCKERFILE", dockerfilePath: "services/data-pipeline/Dockerfile" },
-    start: "python -m data_pipeline.scheduler",
+    start: "newrelic-admin run-program python -m data_pipeline.scheduler",
     healthcheck: "/health",
     regions: { [TARGET_REGION]: 1 },
     env: {
@@ -227,7 +260,10 @@ export default defineRailway(() => {
       QDRANT_COLLECTION_NAME: "cost_items",
       QDRANT_KNOWLEDGE_COLLECTION_NAME: "quoting_knowledge",
       OPENAI_API_KEY: preserve(),
-      EMBEDDING_MODEL: "text-embedding-3-small",
+      // Must match the api service's embedding model — both read/write the
+      // same Qdrant collections, and 3-small (1536 dims) vs 3-large (3072
+      // dims) would silently break retrieval.
+      EMBEDDING_MODEL: "text-embedding-3-large",
       APIFY_API_TOKEN: preserve(),
       PIPELINE_DEMO_MODE: "false",
       SCREWFIX_START_URL: "https://www.screwfix.com/c/electrical-lighting/cat840780",
@@ -238,12 +274,17 @@ export default defineRailway(() => {
       TOOLSTATION_ENABLED: "false",
       SCRAPE_FREQUENCY: "monthly",
       PORT: "8000",
+      // New Relic observability. Set NEW_RELIC_LICENSE_KEY to enable APM; the
+      // start command above wraps the scheduler with newrelic-admin (the IaC
+      // start overrides the Dockerfile CMD, so the wrapper lives here).
+      NEW_RELIC_LICENSE_KEY: preserve(),
+      NEW_RELIC_APP_NAME: "mytradeportal-data-pipeline",
       APP_ROLE_NAME: "mtp_app",
       APP_ROLE_PASSWORD: preserve(),
     },
   });
 
   return project("mytradeportal", {
-    resources: [db, cache, qdrant, minio, api, web, admin, dataPipeline, qdrantStorage, minioData],
+    resources: [db, cache, qdrant, minio, api, admin, dataPipeline, qdrantStorage, minioData],
   });
 });

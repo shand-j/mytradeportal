@@ -22,4 +22,6 @@ ENV PYTHONUNBUFFERED=1
 # Default command: run the scheduler loop continuously. The scheduler fires the
 # pipeline on its configured schedule and exposes a /health endpoint for Railway.
 # For a one-off manual run, use: python -m data_pipeline.loader
-CMD ["python", "-m", "data_pipeline.scheduler"]
+# New Relic APM wrapper is enabled automatically when NEW_RELIC_LICENSE_KEY is set.
+# Note: railway.ts overrides this CMD via `start` — keep the wrapper in both.
+CMD ["sh", "-c", "newrelic-admin run-program python -m data_pipeline.scheduler"]
