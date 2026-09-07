@@ -4,6 +4,7 @@ from typing import Any
 
 import bcrypt
 from django import forms
+from django.db.models import Field
 
 from operations.models import Tenant, User
 
@@ -30,7 +31,7 @@ class TenantAdminForm(forms.ModelForm):
             self.fields[name].required = False
 
     def clean(self) -> dict[str, Any]:
-        cleaned_data = super().clean()
+        cleaned_data = super().clean() or {}
         for name in (
             "settings",
             "onboarding_progress",
@@ -39,7 +40,8 @@ class TenantAdminForm(forms.ModelForm):
             "branding",
         ):
             if cleaned_data.get(name) is None:
-                cleaned_data[name] = Tenant._meta.get_field(name).get_default()
+                field = Tenant._meta.get_field(name)
+                cleaned_data[name] = field.get_default() if isinstance(field, Field) else {}
         return cleaned_data
 
 

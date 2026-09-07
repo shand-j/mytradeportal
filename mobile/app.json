@@ -10,6 +10,7 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.mytradeportal.mobile",
+      "buildNumber": "1",
       "newArchEnabled": false
     },
     "android": {
@@ -26,7 +27,20 @@
       "favicon": "./assets/favicon.png"
     },
     "plugins": [
-      "expo-secure-store"
+      "expo-secure-store",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Allow My Trade Portal to attach photos from your library to jobs and quote requests."
+        }
+      ],
+      [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "Allow My Trade Portal to use your location so tradespeople can see job areas and plan visits."
+        }
+      ],
+      "expo-notifications"
     ]
   }
 }
