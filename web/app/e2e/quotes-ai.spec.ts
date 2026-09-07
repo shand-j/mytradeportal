@@ -3,7 +3,7 @@ import { ensureDefaultAdminSession } from './helpers';
 
 test.skip(!process.env.RUN_AI_E2E, 'AI E2E tests skipped by default; set RUN_AI_E2E=1 to run');
 
-test.setTimeout(120000);
+test.setTimeout(300000);
 
 test('generate an AI draft quote from the quotes page', async ({ page }) => {
   await ensureDefaultAdminSession(page);
@@ -25,7 +25,7 @@ test('generate an AI draft quote from the quotes page', async ({ page }) => {
 
   const generateResponsePromise = page.waitForResponse(
     (res) => res.url().includes('/quotes/generate') && res.request().method() === 'POST',
-    { timeout: 90_000 }
+    { timeout: 240_000 }
   );
   await page.getByRole('button', { name: /generate draft/i }).click();
   const generateResponse = await generateResponsePromise;

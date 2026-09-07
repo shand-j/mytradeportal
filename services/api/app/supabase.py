@@ -13,7 +13,7 @@ from app.config import settings
 
 
 def _base_url() -> str:
-    return settings.supabase_url.rstrip("/")
+    return str(settings.supabase_url).rstrip("/")
 
 
 def _auth_url() -> str:

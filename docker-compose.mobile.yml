@@ -1,0 +1,182 @@
+# Mobile backend stack — everything the iOS app needs for connected-mode dev.
+#
+# Brings up the FastAPI backend, Django admin, and their dependencies (Postgres,
+# Redis, Qdrant, MinIO, Mailpit) without the web SPA or data-pipeline scraper.
+#
+# Usage:
+#   docker compose -f docker-compose.mobile.yml up -d
+#
+# The e2e API is available at http://localhost:8002 (never collides with the main
+# dev stack on :8000). To point the iOS Simulator at the MAIN seeded stack instead:
+#   EXPO_PUBLIC_API_BASE_URL=http://localhost:8000 pnpm ios
+#
+# Local bcrypt/JWT auth is used by default so no Supabase instance is required.
+# To use Supabase Auth instead, set SUPABASE_URL and the two keys in your .env.
+# IMPORTANT: separate compose project name. Without this, the project defaults
+# to the directory name — the same as docker-compose.yml — and the two files
+# fight over service names (`api`, `postgres`, ...), each `up` replacing the
+# other's containers. With a distinct project AND distinct host ports
+# (api :8002, postgres :5433, redis :6380, qdrant :6335/6336), this stack
+# coexists with the main dev stack.
+name: mtp-mobile-e2e
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: mtp_mobile_postgres
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-mtp}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-mtp}
+      POSTGRES_DB: ${POSTGRES_DB:-mtp}
+    volumes:
+      - mobile_postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5433:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-mtp} -d ${POSTGRES_DB:-mtp}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: mtp_mobile_redis
+    volumes:
+      - mobile_redis_data:/data
+    ports:
+      - "6380:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  qdrant:
+    image: qdrant/qdrant:v1.11.5
+    container_name: mtp_mobile_qdrant
+    volumes:
+      - mobile_qdrant_storage:/qdrant/storage
+    ports:
+      - "6335:6333"
+      - "6336:6334"
+    healthcheck:
+      test: ["CMD-SHELL", "bash -c 'echo >/dev/tcp/localhost/6333'"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  minio:
+    image: quay.io/minio/minio:RELEASE.2025-07-23T15-54-02Z
+    container_name: mtp_mobile_minio
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin}
+    command: server /data --console-address ":9001"
+    volumes:
+      - mobile_minio_data:/data
+    ports:
+      - "9002:9000"
+      - "9003:9001"
+    healthcheck:
+      test: ["CMD-SHELL", "bash -c 'echo >/dev/tcp/localhost/9000'"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  mailpit:
+    image: axllent/mailpit:v1.18
+    container_name: mtp_mobile_mailpit
+    ports:
+      - "1026:1025"
+      - "8026:8025"
+
+  api:
+    build:
+      context: .
+      dockerfile: services/api/Dockerfile
+    container_name: mtp_mobile_api
+    environment:
+      DATABASE_URL: postgresql+asyncpg://mtp:mtp@postgres:5432/mtp
+      REDIS_URL: redis://redis:6379/0
+      QDRANT_URL: http://qdrant:6333
+      MINIO_ENDPOINT: minio:9000
+      MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY:-minioadmin}
+      MINIO_SECRET_KEY: ${MINIO_SECRET_KEY:-minioadmin}
+      MINIO_USE_SSL: ${MINIO_USE_SSL:-false}
+      MINIO_BUCKET: ${MINIO_BUCKET:-mtp-uploads}
+      ENVIRONMENT: ${ENVIRONMENT:-development}
+      AUTH_SECRET_KEY: ${AUTH_SECRET_KEY:-dev-auth-secret-key-change-in-production}
+      AUTH_COOKIE_SECURE: ${AUTH_COOKIE_SECURE:-true}
+      APP_ROLE_NAME: ${APP_ROLE_NAME:-mtp_app}
+      APP_ROLE_PASSWORD: ${APP_ROLE_PASSWORD:-mtp_app}
+      SETUP_TOKEN: ${SETUP_TOKEN:-}
+      # Default to local bcrypt/JWT auth. Override in .env to use Supabase Auth.
+      SUPABASE_URL: ${SUPABASE_URL:-}
+      SUPABASE_ANON_KEY: ${SUPABASE_ANON_KEY:-}
+      SUPABASE_SERVICE_ROLE_KEY: ${SUPABASE_SERVICE_ROLE_KEY:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      EMBEDDING_MODEL: ${EMBEDDING_MODEL:-text-embedding-3-small}
+      EMBEDDING_API_BASE: ${EMBEDDING_API_BASE:-}
+      EMBEDDING_API_KEY: ${EMBEDDING_API_KEY:-}
+      LLM_MODEL: ${LLM_MODEL:-gpt-4o-mini}
+      LLM_API_BASE: ${LLM_API_BASE:-}
+      LLM_API_KEY: ${LLM_API_KEY:-}
+      LLM_TEMPERATURE: ${LLM_TEMPERATURE-0.2}
+      LLM_TIMEOUT_SECONDS: ${LLM_TIMEOUT_SECONDS:-180}
+      FETCHIFY_API_KEY: ${FETCHIFY_API_KEY:-${IDEAL_POSTCODES_API_KEY:-${GETADDRESS_IO_API_KEY:-${VITE_GETADDRESS_IO_API_KEY:-}}}}
+      IDEAL_POSTCODES_API_KEY: ${IDEAL_POSTCODES_API_KEY:-${GETADDRESS_IO_API_KEY:-${VITE_GETADDRESS_IO_API_KEY:-}}}
+      GETADDRESS_IO_API_KEY: ${GETADDRESS_IO_API_KEY:-${VITE_GETADDRESS_IO_API_KEY:-}}
+      SMTP_HOST: ${SMTP_HOST:-mailpit}
+      SMTP_PORT: ${SMTP_PORT:-1025}
+      RESEND_API_KEY: ${RESEND_API_KEY:-}
+      RESEND_FROM_EMAIL: ${RESEND_FROM_EMAIL:-}
+      APP_PUBLIC_URL: ${APP_PUBLIC_URL:-}
+      RAILWAY_TOKEN: ${RAILWAY_TOKEN:-}
+      RAILWAY_PROJECT_ID: ${RAILWAY_PROJECT_ID:-}
+      RATE_LIMIT_ENABLED: ${RATE_LIMIT_ENABLED:-true}
+    volumes:
+      - ./services/api:/app/services/api
+      - ./packages/shared/py:/app/packages/shared/py
+      - ./scripts:/app/scripts
+    ports:
+      - "8002:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      qdrant:
+        condition: service_healthy
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload --reload-dir /app/services/api --reload-dir /app/packages/shared/py
+
+  admin:
+    build:
+      context: .
+      dockerfile: services/admin/Dockerfile
+    container_name: mtp_mobile_admin
+    environment:
+      DATABASE_URL: postgresql://mtp:mtp@postgres:5432/mtp
+      SECRET_KEY: ${ADMIN_SECRET_KEY:-dev-secret-key-change-in-production}
+      DEBUG: ${ADMIN_DEBUG:-True}
+      ALLOWED_HOSTS: ${ADMIN_ALLOWED_HOSTS:-localhost,127.0.0.1}
+      DJANGO_SUPERUSER_USERNAME: ${DJANGO_SUPERUSER_USERNAME:-admin}
+      DJANGO_SUPERUSER_EMAIL: ${DJANGO_SUPERUSER_EMAIL:-admin@example.com}
+      DJANGO_SUPERUSER_PASSWORD: ${DJANGO_SUPERUSER_PASSWORD:-admin}
+    volumes:
+      - ./services/admin:/app
+    ports:
+      - "8003:8001"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    command: >
+      sh -c "python manage.py migrate --noinput &&
+             python manage.py collectstatic --noinput &&
+             python scripts/ensure_superuser.py &&
+             gunicorn admin_project.wsgi --bind 0.0.0.0:8001"
+
+volumes:
+  mobile_postgres_data:
+  mobile_redis_data:
+  mobile_qdrant_storage:
+  mobile_minio_data:

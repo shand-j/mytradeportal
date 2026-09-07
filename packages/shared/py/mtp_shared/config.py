@@ -52,13 +52,25 @@ class Settings(BaseSettings):
     paddle_webhook_secret: str = Field(default="")
     paddle_sandbox: bool = Field(default=True)
     paddle_default_currency_code: str = Field(default="GBP")
+    # Paddle Billing price IDs for the three MTP plans (created in the Paddle
+    # dashboard or via Paddle MCP). Empty in dev until wired up.
+    paddle_price_id_starter: str = Field(default="")
+    paddle_price_id_pro: str = Field(default="")
+    paddle_price_id_business: str = Field(default="")
+    # When set, every new /billing/checkout transaction auto-applies this
+    # discount id. Used during beta to make plans effectively free.
+    paddle_beta_discount_id: str = Field(default="")
 
     # AI / RAG Quote Engine
     openai_api_key: str = Field(default="")
-    embedding_model: str = Field(default="text-embedding-3-small")
+    embedding_model: str = Field(default="text-embedding-3-large")
     embedding_dimensions: int | None = Field(default=None)
     llm_model: str = Field(default="gpt-4o-mini")
-    llm_timeout_seconds: int = Field(default=60)
+    # Kimi (openai/kimi-k*) quote-generation JSON reliably takes 60-120s, so
+    # the default is deliberately above LiteLLM's 60s. Docker overrides via
+    # ``LLM_TIMEOUT_SECONDS`` env; keeping the same default here so native /
+    # local runs don't spuriously time out.
+    llm_timeout_seconds: int = Field(default=180)
 
     # LLM provider (OpenAI-compatible endpoints). To use Kimi / Moonshot set:
     #   LLM_API_BASE=https://api.moonshot.ai/v1
@@ -71,6 +83,10 @@ class Settings(BaseSettings):
     llm_api_base: str = Field(default="")
     llm_api_key: str = Field(default="")
     llm_temperature: float | None = Field(default=0.2)
+    # Kimi/Moonshot has intermittent InternalServerError / connection-drop
+    # bursts. LiteLLM's ``num_retries`` uses tenacity-style exponential
+    # backoff; 3 keeps p99 latency reasonable while covering typical blips.
+    llm_max_retries: int = Field(default=3)
 
     # Embeddings are provider-specific and Kimi has no embeddings API, so the
     # embedder is configured independently of the chat LLM. It defaults to
@@ -82,14 +98,36 @@ class Settings(BaseSettings):
 
     qdrant_collection_name: str = Field(default="cost_items")
     qdrant_knowledge_collection_name: str = Field(default="quoting_knowledge")
-    rag_top_k: int = Field(default=10)
-    retrieval_quality_min_citations: int = Field(default=0)
-    retrieval_quality_min_top_relevance: float = Field(default=0.0)
+    # 5 is a stronger nudge than 10: fewer, higher-quality matches raise the
+    # LLM's compliance with catalogue codes (10 wide matches invites Kimi to
+    # ignore them all). Override via ``RAG_TOP_K`` env when tuning.
+    rag_top_k: int = Field(default=5)
+    # Cosine-similarity floor for vector retrieval. Screwfix items that score
+    # below this are treated as not-a-match rather than "the best of a bad
+    # bunch". 0.45 filters out semantic siblings (burglar-alarms retrieved for
+    # smoke-alarm queries, extension reels for SWA cable) that scored 0.40-0.46
+    # under the earlier 0.30 floor. Calibrated for text-embedding-3-large.
+    rag_min_relevance: float = Field(default=0.45)
+    # Retrieval-quality gates consumed by
+    # ``app.rag.retrieval.compute_retrieval_quality`` and applied as a
+    # confidence cap in ``app.rag.validation.validate_generated_quote``. The
+    # min-citations gate defaults to 1 so a zero-retrieval quote is flagged
+    # even though it still generates; the top-relevance gate uses the same
+    # calibration as the vector floor. Adjust when the eval reveals better
+    # cut-offs; keep gate policies conservative in prod.
+    retrieval_quality_min_citations: int = Field(default=1)
+    retrieval_quality_min_top_relevance: float = Field(default=0.45)
     retrieval_quality_require_knowledge_available: bool = Field(default=False)
     retrieval_quality_fallback_policy: str = Field(
         default="warn_only", pattern="^(warn_only|deterministic_only)$"
     )
     retrieval_quality_confidence_cap: float = Field(default=0.6)
+
+    # Triage / follow-up chat. `max_followup_turns` caps how many AI questions
+    # the customer sees before the chat is forced closed. Each turn = 1 AI
+    # message + 1 customer reply. Was hard-coded to 3; 5 lets the AI probe
+    # more when the initial answers don't tip confidence over 80%.
+    max_followup_turns: int = Field(default=5)
 
     # OpenConstructionERP microservice
     ocerp_url: str = Field(default="http://ocerp:8000")
@@ -100,7 +138,7 @@ class Settings(BaseSettings):
     # Legacy field retained temporarily for migration fallback.
     getaddress_io_api_key: str = Field(default="")
 
-    # Email / SMTP
+    # Email / SMTP (dev fallback via Mailpit)
     smtp_host: str = Field(default="localhost")
     smtp_port: int = Field(default=1025)
     smtp_use_tls: bool = Field(default=False)
@@ -109,6 +147,17 @@ class Settings(BaseSettings):
     smtp_from_email: str = Field(default="quotes@mytradeportal.local")
     smtp_from_name: str = Field(default="My Trade Portal")
 
+    # Resend (preferred production email transport). When ``resend_api_key``
+    # is set the email helper skips SMTP and posts to https://api.resend.com.
+    # ``resend_from_email`` overrides ``smtp_from_email`` for Resend sends so
+    # dev SMTP + prod Resend can each keep their own verified sender.
+    resend_api_key: str = Field(default="")
+    resend_from_email: str = Field(default="")
+
+    # Public base URL used to build customer/staff email links. Falls back to
+    # the API's own origin at runtime when unset.
+    app_public_url: str = Field(default="")
+
     # Auth
     auth_secret_key: str = Field(default="dev-auth-secret-key-change-in-production")
     auth_access_token_expire_minutes: int = Field(default=60 * 24 * 7)  # 1 week
@@ -116,8 +165,20 @@ class Settings(BaseSettings):
 
     # Tenancy
     default_tenant_slug: str = Field(default="demo")
-    allowed_origins: str = Field(default="http://localhost:3000,http://demo.localhost:3000")
-    allowed_origin_regex: str = Field(default="")
+    allowed_origins: str = Field(
+        default=(
+            "http://localhost:3000,http://demo.localhost:3000,"
+            "http://localhost:8090,http://localhost:8091,"
+            "http://localhost:8092,http://localhost:8093,"
+            "http://localhost:8094,http://localhost:8095"
+        )
+    )
+    # Extra origin regex allowing Expo dev-client tunnels and Expo Go previews
+    # that use random subdomains under ``exp.host``/``expo.app``. Anything the
+    # ops team needs beyond this can still be pushed via the env var.
+    allowed_origin_regex: str = Field(
+        default=r"^https?://[a-zA-Z0-9-]+\.(exp\.host|expo\.app|expo\.dev)$"
+    )
 
     # Rate limiting. Enabled by default; disabled in the E2E stack so a suite's
     # own repeated logins don't trip the per-IP auth limit.

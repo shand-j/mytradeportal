@@ -1,7 +1,7 @@
 """Quote request capture, triage and AI interpretation endpoints."""
 
 from decimal import Decimal
-from typing import Annotated
+from typing import Annotated, cast
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
@@ -9,10 +9,11 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from app.audit import Actions, write_audit_log
 from app.database import get_db
 from app.dependencies import CurrentUserDep, TenantDep
 from app.limiter import limiter, tenant_key
-from app.models import Customer, MediaAsset, Property, QuoteRequest
+from app.models import BillOfQuantities, Customer, MediaAsset, Property, Quote, QuoteRequest
 from app.rls import set_tenant_in_session
 from app.schemas import (
     AiInterpretLineItem,
@@ -20,6 +21,7 @@ from app.schemas import (
     QuoteRequestCreate,
     QuoteRequestMediaCreate,
     QuoteRequestRead,
+    QuoteRequestUpdate,
 )
 
 router = APIRouter(prefix="/quote-requests", tags=["Quote Requests"])
@@ -79,7 +81,14 @@ async def list_quote_requests(
     await _set_tenant(db, tenant.id)
     result = await db.execute(
         select(QuoteRequest)
-        .options(selectinload(QuoteRequest.contact))
+        .options(
+            selectinload(QuoteRequest.contact),
+            selectinload(QuoteRequest.quote).selectinload(Quote.line_items),
+            selectinload(QuoteRequest.quote).selectinload(Quote.contact),
+            selectinload(QuoteRequest.quote)
+            .selectinload(Quote.bill_of_quantities)
+            .selectinload(BillOfQuantities.line_items),
+        )
         .where(QuoteRequest.tenant_id == tenant.id)
         .order_by(QuoteRequest.created_at.desc())
     )
@@ -97,12 +106,90 @@ async def get_quote_request(
     await _set_tenant(db, tenant.id)
     quote_request = await db.scalar(
         select(QuoteRequest)
-        .options(selectinload(QuoteRequest.contact))
+        .options(
+            selectinload(QuoteRequest.contact),
+            selectinload(QuoteRequest.quote).selectinload(Quote.line_items),
+            selectinload(QuoteRequest.quote).selectinload(Quote.contact),
+            selectinload(QuoteRequest.quote)
+            .selectinload(Quote.bill_of_quantities)
+            .selectinload(BillOfQuantities.line_items),
+        )
         .where(QuoteRequest.id == quote_request_id)
     )
     if quote_request is None or quote_request.tenant_id != tenant.id:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Quote request not found")
     return quote_request
+
+
+@router.patch("/{quote_request_id}", response_model=QuoteRequestRead)
+async def update_quote_request(
+    quote_request_id: UUID,
+    data: QuoteRequestUpdate,
+    tenant: TenantDep,
+    current_user: CurrentUserDep,
+    db: DbDep,
+) -> QuoteRequest:
+    """Update a quote request (lead) with tradesperson review notes/edits.
+
+    The caller can merge into ``structured_data`` by supplying the keys they
+    want to overwrite; existing keys not present in the request are preserved.
+    """
+    await _set_tenant(db, tenant.id)
+    quote_request = await db.scalar(
+        select(QuoteRequest)
+        .options(selectinload(QuoteRequest.contact))
+        .where(QuoteRequest.id == quote_request_id, QuoteRequest.tenant_id == tenant.id)
+    )
+    if quote_request is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Quote request not found"
+        )
+
+    update_data = data.model_dump(exclude_unset=True)
+    changed_fields: list[str] = []
+
+    if "structured_data" in update_data:
+        # Merge rather than replace so electrician notes supplement customer data.
+        merged = dict(quote_request.structured_data or {})
+        merged.update(update_data.pop("structured_data"))
+        quote_request.structured_data = merged
+        changed_fields.append("structured_data")
+
+    for key, value in update_data.items():
+        setattr(quote_request, key, value)
+        changed_fields.append(key)
+
+    if "reviewed_by" not in changed_fields and current_user is not None:
+        quote_request.reviewed_by = current_user.id
+
+    await db.flush()
+    await write_audit_log(
+        db,
+        tenant_id=tenant.id,
+        actor=current_user,
+        action=Actions.QUOTE_REQUEST_UPDATED,
+        entity_type="quote_request",
+        entity_id=quote_request.id,
+        payload={"changed_fields": sorted(changed_fields)},
+    )
+    await db.commit()
+    # Re-fetch with eager loads so the response model can serialise the linked
+    # quote (and its line items / bill of quantities) without triggering a lazy load.
+    quote_request = await db.scalar(
+        select(QuoteRequest)
+        .options(
+            selectinload(QuoteRequest.contact),
+            selectinload(QuoteRequest.quote).selectinload(Quote.line_items),
+            selectinload(QuoteRequest.quote).selectinload(Quote.contact),
+            selectinload(QuoteRequest.quote)
+            .selectinload(Quote.bill_of_quantities)
+            .selectinload(BillOfQuantities.line_items),
+        )
+        .where(QuoteRequest.id == quote_request_id, QuoteRequest.tenant_id == tenant.id)
+    )
+    if quote_request is None:  # pragma: no cover - deleted between update and re-fetch
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Quote request not found")
+    return cast("QuoteRequest", quote_request)
 
 
 @router.post("/{quote_request_id}/media", status_code=status.HTTP_201_CREATED)

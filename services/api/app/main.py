@@ -9,11 +9,13 @@ from fastapi.middleware.cors import CORSMiddleware
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
+from sqlalchemy import text
 
 from app.config import settings
 from app.database import engine
 from app.limiter import limiter
 from app.logging import configure_logging
+from app.middleware import RequestLoggingMiddleware
 from app.models import Base
 from app.rls import apply_tenant_rls_sync
 from app.routers import (
@@ -21,6 +23,7 @@ from app.routers import (
     analytics,
     appointments,
     auth,
+    billing,
     businesses,
     communications,
     contacts,
@@ -31,6 +34,7 @@ from app.routers import (
     health,
     invoices,
     jobs,
+    notifications,
     onboarding,
     payments,
     pricing,
@@ -56,6 +60,15 @@ async def lifespan(app: FastAPI) -> "AsyncIterator[None]":
     if settings.environment == "development":
         async with engine.begin() as conn:
             await conn.run_sync(Base.metadata.create_all)
+            # `create_all` does not add columns to existing tables. Backfill any
+            # columns added since the volume was first created so local dev keeps
+            # working without a manual migration.
+            await conn.execute(
+                text(
+                    "ALTER TABLE communications ADD COLUMN IF NOT EXISTS "
+                    "ai_metadata JSONB NOT NULL DEFAULT '{}'::jsonb"
+                )
+            )
             # `create_all` sets up the schema in dev; apply the tenant-isolation
             # RLS policies here too. Production deployments run the same schema
             # init via `scripts/init_db.py` (the single source of truth).
@@ -114,6 +127,10 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Request IDs + structured access logs. Added last so it runs outermost and
+# sees every request, including CORS preflights and rate-limit rejections.
+app.add_middleware(RequestLoggingMiddleware)
+
 app.include_router(health.router)
 app.include_router(feature_flags.router)
 app.include_router(tenants.router)
@@ -132,8 +149,10 @@ app.include_router(jobs.router)
 app.include_router(appointments.router)
 app.include_router(invoices.router)
 app.include_router(payments.router)
+app.include_router(billing.router)
 app.include_router(webhooks.router)
 app.include_router(analytics.router)
 app.include_router(reviews.router)
 app.include_router(communications.router)
 app.include_router(files.router)
+app.include_router(notifications.router)

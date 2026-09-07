@@ -11,10 +11,9 @@ import {
   useGenerateQuote,
   useRefineQuote,
   useConvertQuoteToInvoice,
-  useQuoteBoq,
 } from './quotes';
 import { renderHookWithProviders, createTestQueryClient } from '@/test/test-utils';
-import type { Quote, BillOfQuantities } from '@/types';
+import type { Quote } from '@/types';
 
 const mockFetch = vi.fn();
 const API_BASE_URL = 'http://demo.localhost:8000';
@@ -45,7 +44,11 @@ function mockQuoteResponse(id: string, overrides: Record<string, unknown> = {}) 
     vat_rate: 20,
     total: 0,
     ai_generated: false,
-    ai_confidence_score: null,
+    ai_confidence: null,
+    ai_warnings: [],
+    ai_assumptions: [],
+    ai_notes: null,
+    retrieval_status: null,
     service_type: 'Test',
     property_address: '',
     customer_message: null,
@@ -87,7 +90,11 @@ describe('quote hooks', () => {
           vat_rate: 20,
           total: 120,
           ai_generated: false,
-          ai_confidence_score: null,
+          ai_confidence: null,
+          ai_warnings: [],
+          ai_assumptions: [],
+          ai_notes: null,
+          retrieval_status: null,
           service_type: 'Test',
           property_address: '1 Road',
           customer_message: null,
@@ -163,7 +170,11 @@ describe('quote hooks', () => {
       vatAmount: 0,
       total: 0,
       aiGenerated: false,
-      aiConfidenceScore: null,
+      aiConfidence: null,
+      aiWarnings: [],
+      aiAssumptions: [],
+      aiNotes: null,
+      retrievalStatus: null,
       customerMessage: null,
       internalNotes: null,
       expiresAt: null,
@@ -243,7 +254,7 @@ describe('quote hooks', () => {
   });
 
   it('useGenerateQuote posts generation variables and invalidates contacts when a contactId is used', async () => {
-    mockFetch.mockResolvedValueOnce(mockQuoteResponse('q-ai', { ai_generated: true, ai_confidence_score: 95, service_type: 'AI Test' }));
+    mockFetch.mockResolvedValueOnce(mockQuoteResponse('q-ai', { ai_generated: true, ai_confidence: 0.95, service_type: 'AI Test' }));
 
     const queryClient = createTestQueryClient();
     queryClient.setQueryData(['quotes'], []);
@@ -255,7 +266,6 @@ describe('quote hooks', () => {
       contactId: 'c1',
       description: 'Full rewire',
       propertyType: 'house',
-      useOcerp: true,
     });
 
     expect(mockFetch).toHaveBeenCalledWith(
@@ -265,7 +275,6 @@ describe('quote hooks', () => {
 
     const body = lastFetchBody();
     expect(body).toHaveProperty('contact_id', 'c1');
-    expect(body).toHaveProperty('use_ocerp', true);
 
     expect(queryClient.getQueryCache().find({ queryKey: ['quotes'] })?.state.isInvalidated).toBe(true);
     expect(queryClient.getQueryCache().find({ queryKey: ['contacts'] })?.state.isInvalidated).toBe(true);
@@ -317,36 +326,68 @@ describe('quote hooks', () => {
     expect(queryClient.getQueryCache().find({ queryKey: ['invoices'] })?.state.isInvalidated).toBe(true);
   });
 
-  it('useQuoteBoq fetches the bill of quantities', async () => {
-    mockFetch.mockResolvedValueOnce(buildResponse({
-      id: 'boq-1',
-      quote_id: 'q1',
-      status: 'draft',
-      notes: null,
-      subtotal: 100,
-      vat_rate: 20,
-      vat_amount: 20,
-      total: 120,
-      confidence: 90,
-      warnings: [],
-      standard: null,
-      line_items: [],
-      suppliers: [],
-      created_at: '2025-01-01T00:00:00Z',
-      updated_at: '2025-01-01T00:00:00Z',
-    }));
+  it('maps the AI quote fields from the snake_case API response', async () => {
+    mockFetch.mockResolvedValueOnce(
+      mockQuoteResponse('q-ai', {
+        ai_generated: true,
+        ai_confidence: 0.87,
+        ai_warnings: ['Price above typical range'],
+        ai_assumptions: ['Standard 3-bed layout'],
+        ai_notes: 'Review consumer unit brand with customer',
+        retrieval_status: 'no_index',
+        line_items: [
+          {
+            id: 'li-1',
+            description: 'Consumer unit',
+            quantity: 1,
+            unit_price: 480,
+            total: 480,
+            ai_generated: true,
+          },
+        ],
+      }),
+    );
 
-    const { result } = renderHookNoAuth(() => useQuoteBoq('q1'));
+    const { result } = renderHookNoAuth(() => useQuote('q-ai'));
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
 
-    expect(mockFetch).toHaveBeenCalledWith(
-      `${API_BASE_URL}/quotes/q1/boq`,
-      expect.objectContaining({ method: 'GET' }),
-    );
+    const quote = result.current.data as Quote;
+    expect(quote.aiGenerated).toBe(true);
+    expect(quote.aiConfidence).toBe(0.87);
+    expect(quote.aiWarnings).toEqual(['Price above typical range']);
+    expect(quote.aiAssumptions).toEqual(['Standard 3-bed layout']);
+    expect(quote.aiNotes).toBe('Review consumer unit brand with customer');
+    expect(quote.retrievalStatus).toBe('no_index');
+    expect(quote.lineItems[0].aiGenerated).toBe(true);
+  });
 
-    const data = result.current.data as BillOfQuantities;
-    expect(data.quoteId).toBe('q1');
-    expect(data.suppliers).toEqual([]);
+  it('defaults the AI quote fields when the API omits them', async () => {
+    mockFetch.mockResolvedValueOnce(buildResponse({
+      id: 'q-plain',
+      reference: 'Q-PLAIN',
+      customer_id: 'c1',
+      status: 'draft',
+      line_items: [{ id: 'li-1', description: 'Labour', quantity: 1, unit_price: 100 }],
+      subtotal: 100,
+      vat_amount: 20,
+      vat_rate: 20,
+      total: 120,
+      service_type: 'Test',
+      created_at: '2025-01-01T00:00:00Z',
+    }));
+
+    const { result } = renderHookNoAuth(() => useQuote('q-plain'));
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+
+    const quote = result.current.data as Quote;
+    expect(quote.aiGenerated).toBe(false);
+    expect(quote.aiConfidence).toBeNull();
+    expect(quote.aiWarnings).toEqual([]);
+    expect(quote.aiAssumptions).toEqual([]);
+    expect(quote.aiNotes).toBeNull();
+    expect(quote.retrievalStatus).toBeNull();
+    expect(quote.lineItems[0].aiGenerated).toBe(false);
   });
 });

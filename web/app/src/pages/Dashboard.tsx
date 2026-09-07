@@ -1,17 +1,13 @@
 import { useEffect } from 'react';
-import { TrendingUp, TrendingDown, FileText, Wrench, Star, Clock, Phone, Sparkles, Zap } from 'lucide-react';
+import { TrendingUp, TrendingDown, FileText, Wrench, Star, Clock, Phone, Sparkles } from 'lucide-react';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, PieChart, Pie, Cell, ResponsiveContainer } from 'recharts';
-import { useDashboard, useFeatureFlags } from '@/lib/api/hooks';
+import { useDashboard } from '@/lib/api/hooks';
 import { useUiStore } from '@/stores/uiStore';
 import { formatDistanceToNow } from 'date-fns';
 
 export function Dashboard() {
   const setPageTitle = useUiStore(s => s.setPageTitle);
   const { data, isLoading, error } = useDashboard();
-  const { data: featureFlags } = useFeatureFlags();
-  // Voice AI is not yet implemented; the stats blocks stay hidden until the
-  // `voice_ai_insights` feature flag is enabled in Railway.
-  const voiceAiEnabled = featureFlags?.voiceAiInsights === true;
 
   useEffect(() => {
     setPageTitle('Dashboard');
@@ -25,28 +21,10 @@ export function Dashboard() {
     return <div className="text-center py-12 text-[#DC2626]">Failed to load dashboard</div>;
   }
 
-  const { kpi, revenueChart, serviceBreakdown, recentActivity, voiceStats } = data;
+  const { kpi, revenueChart, serviceBreakdown, recentActivity } = data;
 
   return (
     <div className="space-y-6">
-      {/* Voice Agent Banner */}
-      {voiceAiEnabled && voiceStats && (
-      <div className="bg-[#1C1917] rounded-xl p-4 flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-full bg-[#D4650A] flex items-center justify-center">
-            <Phone className="w-5 h-5 text-white" />
-          </div>
-          <div>
-            <div className="text-sm font-semibold text-white">Voice AI Agent is live</div>
-            <div className="text-xs text-[#A8A29E]">{voiceStats.callsToday} calls handled today · {voiceStats.resolutionRate}% resolution rate · £4,913 in voice-generated quotes</div>
-          </div>
-        </div>
-        <button className="h-9 px-4 rounded-lg bg-[#D4650A] text-white text-xs font-semibold hover:bg-[#B85500] transition-colors flex items-center gap-2">
-          <Zap className="w-3.5 h-3.5" /> View Call Log
-        </button>
-      </div>
-      )}
-
       {/* KPI Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <KpiCard
@@ -81,48 +59,6 @@ export function Dashboard() {
           stars={kpi.averageRating}
         />
       </div>
-
-      {/* Voice Stats Row */}
-      {voiceAiEnabled && voiceStats && (
-      <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
-        <div className="bg-white rounded-xl border border-[#E7E5E4] p-4 shadow-sm flex items-center gap-3">
-          <div className="w-10 h-10 rounded-lg bg-[#F5F3FF] flex items-center justify-center flex-shrink-0">
-            <Phone className="w-5 h-5 text-[#7C3AED]" />
-          </div>
-          <div>
-            <div className="text-lg font-bold text-[#1C1917]">{voiceStats.callsToday}</div>
-            <div className="text-[11px] text-[#78716C] uppercase tracking-[0.05em]">Calls Today</div>
-          </div>
-        </div>
-        <div className="bg-white rounded-xl border border-[#E7E5E4] p-4 shadow-sm flex items-center gap-3">
-          <div className="w-10 h-10 rounded-lg bg-[#F0FDF4] flex items-center justify-center flex-shrink-0">
-            <Sparkles className="w-5 h-5 text-[#16A34A]" />
-          </div>
-          <div>
-            <div className="text-lg font-bold text-[#1C1917]">{voiceStats.resolutionRate}%</div>
-            <div className="text-[11px] text-[#78716C] uppercase tracking-[0.05em]">AI Resolution</div>
-          </div>
-        </div>
-        <div className="bg-white rounded-xl border border-[#E7E5E4] p-4 shadow-sm flex items-center gap-3">
-          <div className="w-10 h-10 rounded-lg bg-[#FFF7ED] flex items-center justify-center flex-shrink-0">
-            <FileText className="w-5 h-5 text-[#D4650A]" />
-          </div>
-          <div>
-            <div className="text-lg font-bold text-[#1C1917]">{voiceStats.quotesFromVoice}</div>
-            <div className="text-[11px] text-[#78716C] uppercase tracking-[0.05em]">Voice Quotes</div>
-          </div>
-        </div>
-        <div className="bg-white rounded-xl border border-[#E7E5E4] p-4 shadow-sm flex items-center gap-3">
-          <div className="w-10 h-10 rounded-lg bg-[#EFF6FF] flex items-center justify-center flex-shrink-0">
-            <Clock className="w-5 h-5 text-[#2563EB]" />
-          </div>
-          <div>
-            <div className="text-lg font-bold text-[#1C1917]">{voiceStats.avgCallDuration}</div>
-            <div className="text-[11px] text-[#78716C] uppercase tracking-[0.05em]">Avg Duration</div>
-          </div>
-        </div>
-      </div>
-      )}
 
       {/* Charts Section */}
       <div className="grid grid-cols-1 lg:grid-cols-5 gap-4">

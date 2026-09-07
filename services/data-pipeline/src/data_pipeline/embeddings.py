@@ -30,8 +30,10 @@ def _embedding_kwargs(texts: list[str]) -> dict[str, Any]:
         "model": settings.embedding_model,
         "input": texts,
     }
-    if settings.openai_api_key:
-        kwargs["api_key"] = settings.openai_api_key
+    if settings.resolved_embedding_api_key:
+        kwargs["api_key"] = settings.resolved_embedding_api_key
+    if settings.embedding_api_base:
+        kwargs["api_base"] = settings.embedding_api_base
     return kwargs
 
 

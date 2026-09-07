@@ -22,6 +22,8 @@ const mockData = {
     acceptanceRate: 68,
     averageValue: 1240,
     averageGenerationTime: 12,
+    editRate: 0.35,
+    avgPriceDriftPct: 4.2,
     monthlyData: [
       { month: 'Jan', aiQuotes: 10, manualQuotes: 4 },
       { month: 'Feb', aiQuotes: 12, manualQuotes: 5 },
@@ -63,16 +65,45 @@ describe('AiInsights', () => {
     expect(screen.getByText(/failed to load ai insights/i)).toBeInTheDocument();
   });
 
+  it('renders the error message instead of a skeleton when the request fails with no data', () => {
+    mockUseAiInsights.mockReturnValue({ data: undefined, isLoading: false, error: new Error('boom') });
+    renderWithProviders(<AiInsights />);
+    expect(screen.getByText(/failed to load ai insights/i)).toBeInTheDocument();
+    expect(document.querySelectorAll('.animate-pulse').length).toBe(0);
+  });
+
   it('renders insights from mock data', () => {
     mockUseAiInsights.mockReturnValue({ data: mockData, isLoading: false, error: null });
     renderWithProviders(<AiInsights />);
     expect(screen.getByText('AI Quote Performance')).toBeInTheDocument();
+    expect(screen.getByText('Powered by AI')).toBeInTheDocument();
     expect(screen.getByText('Voice Agent Activity')).toBeInTheDocument();
     expect(screen.getByText('Demand Forecast')).toBeInTheDocument();
     expect(screen.getByText('124')).toBeInTheDocument();
     expect(screen.getByText('68%')).toBeInTheDocument();
     expect(screen.getByText('86')).toBeInTheDocument();
     expect(screen.getByText(/demand is expected to rise/i)).toBeInTheDocument();
+  });
+
+  it('renders the edit rate and price drift stats when present', () => {
+    mockUseAiInsights.mockReturnValue({ data: mockData, isLoading: false, error: null });
+    renderWithProviders(<AiInsights />);
+    expect(screen.getByText('AI Drafts Edited')).toBeInTheDocument();
+    expect(screen.getByText('35%')).toBeInTheDocument();
+    expect(screen.getByText('Avg Price Adjustment')).toBeInTheDocument();
+    expect(screen.getByText('4.2%')).toBeInTheDocument();
+  });
+
+  it('hides the edit rate and price drift stats when null', () => {
+    const withoutNewStats = {
+      ...mockData,
+      aiQuotePerformance: { ...mockData.aiQuotePerformance, editRate: null, avgPriceDriftPct: null },
+    };
+    mockUseAiInsights.mockReturnValue({ data: withoutNewStats, isLoading: false, error: null });
+    renderWithProviders(<AiInsights />);
+    expect(screen.getByText('AI Quote Performance')).toBeInTheDocument();
+    expect(screen.queryByText('AI Drafts Edited')).not.toBeInTheDocument();
+    expect(screen.queryByText('Avg Price Adjustment')).not.toBeInTheDocument();
   });
 
   it('hides voice analytics and demand forecast when their feature flags are off', () => {

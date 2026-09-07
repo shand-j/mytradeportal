@@ -53,6 +53,7 @@ export function QuotesList() {
           id: `li-${Date.now()}-${i}`,
           ...item,
           total: item.quantity * item.unitPrice,
+          aiGenerated: false,
           isAiSuggested: false,
         })),
         subtotal,
@@ -60,7 +61,11 @@ export function QuotesList() {
         vatAmount,
         total,
         aiGenerated: false,
-        aiConfidenceScore: null,
+        aiConfidence: null,
+        aiWarnings: [],
+        aiAssumptions: [],
+        aiNotes: null,
+        retrievalStatus: null,
         customerMessage: null,
         internalNotes: null,
         expiresAt: null,
@@ -197,7 +202,16 @@ export function QuotesList() {
                   <td className="px-4 py-3"><StatusPill status={quote.status} /></td>
                   <td className="px-4 py-3 text-xs text-[#78716C]">{new Date(quote.createdAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}</td>
                   <td className="px-4 py-3 text-center">
-                    {quote.aiGenerated ? <Sparkles className="w-4 h-4 text-[#7C3AED] mx-auto" /> : <span className="text-[#A8A29E]">—</span>}
+                    {quote.aiGenerated ? (
+                      <span
+                        className="inline-flex"
+                        title={quote.aiConfidence != null
+                          ? `AI generated — confidence ${Math.round(quote.aiConfidence * 100)}%`
+                          : 'AI generated'}
+                      >
+                        <Sparkles className="w-4 h-4 text-[#7C3AED]" aria-label="AI generated" />
+                      </span>
+                    ) : <span className="text-[#A8A29E]">—</span>}
                   </td>
                   <td className="px-4 py-3">
                     <div className="flex items-center justify-center gap-1">
@@ -322,7 +336,6 @@ interface AiQuoteDialogProps {
     customerPhone?: string;
     description: string;
     propertyType?: string;
-    useOcerp?: boolean;
   }) => void;
   isSubmitting: boolean;
 }
@@ -335,7 +348,6 @@ function AiQuoteDialog({ contacts, onClose, onSubmit, isSubmitting }: AiQuoteDia
   const [customerPhone, setCustomerPhone] = useState('');
   const [description, setDescription] = useState('');
   const [propertyType, setPropertyType] = useState('house');
-  const [useOcerp, setUseOcerp] = useState(true);
 
   const canSubmit =
     description.trim().length >= 5 &&
@@ -435,16 +447,6 @@ function AiQuoteDialog({ contacts, onClose, onSubmit, isSubmitting }: AiQuoteDia
             </select>
           </div>
 
-          <label className="flex items-center gap-2 text-sm text-[#1C1917]">
-            <input
-              type="checkbox"
-              checked={useOcerp}
-              onChange={(e) => setUseOcerp(e.target.checked)}
-              data-testid="use-ocerp"
-            />
-            Generate detailed Bill of Quantities (OpenConstructionERP)
-          </label>
-
           <div>
             <label htmlFor="ai-job-description" className="block text-[11px] font-semibold uppercase text-[#78716C] mb-1">
               Job description
@@ -472,8 +474,8 @@ function AiQuoteDialog({ contacts, onClose, onSubmit, isSubmitting }: AiQuoteDia
             onClick={() =>
               onSubmit(
                 mode === 'existing'
-                  ? { contactId, description, propertyType, useOcerp }
-                  : { customerName, customerEmail, customerPhone, description, propertyType, useOcerp }
+                  ? { contactId, description, propertyType }
+                  : { customerName, customerEmail, customerPhone, description, propertyType }
               )
             }
             className="h-9 px-4 text-sm font-semibold bg-[#7C3AED] text-white rounded-lg hover:bg-[#6D28D9] disabled:opacity-50 flex items-center gap-2"

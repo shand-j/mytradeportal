@@ -67,6 +67,7 @@ export interface QuoteLineItem {
   unit: string;
   unitPrice: number;
   total: number;
+  aiGenerated: boolean;
   isAiSuggested: boolean;
 }
 
@@ -143,7 +144,11 @@ export interface Quote {
   vatRate: number;
   total: number;
   aiGenerated: boolean;
-  aiConfidenceScore: number | null;
+  aiConfidence: number | null;
+  aiWarnings: string[];
+  aiAssumptions: string[];
+  aiNotes: string | null;
+  retrievalStatus: 'grounded' | 'no_index' | 'skipped_no_key' | null;
   serviceType: string;
   propertyAddress: string;
   customerMessage: string | null;
@@ -178,7 +183,8 @@ export interface Job {
 export interface Appointment {
   id: string;
   customerId: string;
-  customer: Customer;
+  // The API does not embed a customer object on appointments.
+  customer?: Customer;
   jobId: string | null;
   title: string;
   startTime: string;
@@ -225,7 +231,8 @@ export type ReviewPlatform = 'google' | 'trustpilot' | 'yell' | 'facebook';
 export interface Review {
   id: string;
   customerId: string;
-  customer: Customer;
+  // The API does not embed a customer object on reviews.
+  customer?: Customer;
   platform: ReviewPlatform;
   rating: number;
   reviewText: string;
@@ -355,6 +362,8 @@ export interface AiQuotePerformance {
   acceptanceRate: number;
   averageValue: number;
   averageGenerationTime: number;
+  editRate: number | null;
+  avgPriceDriftPct: number | null;
   monthlyData: {
     month: string;
     aiQuotes: number;

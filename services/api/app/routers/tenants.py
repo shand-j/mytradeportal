@@ -15,6 +15,8 @@ from app.models import Tenant, User
 from app.rls import set_tenant_in_session
 from app.schemas import TenantBootstrapRead, TenantCreate, TenantRead, TenantUpdate, UserRead
 from app.security import get_password_hash
+from app.supabase import admin_create_user, is_supabase_configured
+from app.utils.tenant_code import generate_unique_tenant_code
 
 router = APIRouter(prefix="/tenants", tags=["Tenants"])
 DbDep = Annotated[AsyncSession, Depends(get_db)]
@@ -72,7 +74,8 @@ async def create_tenant(
             status_code=status.HTTP_409_CONFLICT,
             detail="Tenant slug already exists",
         )
-    tenant = Tenant(slug=data.slug, name=data.name)
+    tenant_code = await generate_unique_tenant_code(db)
+    tenant = Tenant(slug=data.slug, code=tenant_code, name=data.name)
     db.add(tenant)
     await db.flush()
 
@@ -81,12 +84,22 @@ async def create_tenant(
         # The users table is tenant-scoped under RLS; declare which tenant
         # this session operates on before inserting the first user.
         await set_tenant_in_session(db, tenant.id)
+
+        password_hash: str | None = None
+        supabase_uid: str | None = None
+        if is_supabase_configured():
+            sb_user = admin_create_user(data.admin_email, data.admin_password)
+            supabase_uid = sb_user.get("id")
+        else:
+            password_hash = get_password_hash(data.admin_password)
+
         admin_user = User(
             tenant_id=tenant.id,
             email=data.admin_email,
             full_name=data.admin_name,
             role="admin",
-            password_hash=get_password_hash(data.admin_password),
+            password_hash=password_hash,
+            supabase_uid=supabase_uid,
             is_active=True,
         )
         db.add(admin_user)
@@ -154,6 +167,8 @@ async def update_current_tenant(
         "vat_rate",
         "plan_tier",
         "google_place_id",
+        "quotes_per_week",
+        "avg_minutes_per_quote",
     }
     settings_update: dict[str, object] = {}
     for key in settings_fields:

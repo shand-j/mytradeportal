@@ -4,6 +4,7 @@ from uuid import uuid4
 
 from app.models import Tenant
 from app.rls import bypass_rls_in_session
+from app.utils.tenant_code import generate_unique_tenant_code
 from httpx import AsyncClient
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -11,7 +12,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 async def _create_tenant(db: AsyncSession, slug: str) -> Tenant:
     await bypass_rls_in_session(db)
-    tenant = Tenant(slug=slug, name=f"{slug} Electrical")
+    code = await generate_unique_tenant_code(db)
+    tenant = Tenant(slug=slug, code=code, name=f"{slug} Electrical")
     db.add(tenant)
     await db.flush()
     return tenant
@@ -90,4 +92,22 @@ async def test_public_submission_unknown_business_is_404(client: AsyncClient) ->
         "/businesses/does-not-exist/quote-requests",
         json={"contact": {"name": "Nobody"}},
     )
+    assert response.status_code == 404
+
+
+async def test_public_config_by_code_returns_tenant(client: AsyncClient, db: AsyncSession) -> None:
+    slug = f"code-{uuid4().hex[:8]}"
+    tenant = await _create_tenant(db, slug)
+    assert tenant.code is not None
+
+    response = await client.get(f"/businesses/by-code/{tenant.code}/public-config")
+    assert response.status_code == 200, response.text
+    data = response.json()
+    assert data["slug"] == slug
+    assert data["code"] == tenant.code
+    assert data["name"] == tenant.name
+
+
+async def test_public_config_by_code_unknown_is_404(client: AsyncClient) -> None:
+    response = await client.get("/businesses/by-code/000000/public-config")
     assert response.status_code == 404

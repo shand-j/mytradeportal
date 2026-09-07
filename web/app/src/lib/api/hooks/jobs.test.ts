@@ -63,6 +63,7 @@ describe('job hooks', () => {
 
   it('useJobs fetches the job list', async () => {
     mockFetch.mockResolvedValueOnce(buildResponse([mockBackendJob('j1')]));
+    mockFetch.mockResolvedValueOnce(buildResponse([]));
 
     const { result } = renderHookNoAuth(() => useJobs());
 
@@ -78,6 +79,48 @@ describe('job hooks', () => {
     expect(data[0].serviceType).toBe('Rewire');
     expect(data[0].reference).toBe('J-j1');
     expect(data[0].scheduledDate).toBe('2025-01-01');
+  });
+
+  it('useJobs derives the job value from the linked quote total', async () => {
+    // Regression: the API has no job value field, so every job rendered £0.
+    mockFetch.mockResolvedValueOnce(buildResponse([mockBackendJob('j1', { quote_id: 'q1' })]));
+    mockFetch.mockResolvedValueOnce(buildResponse([{ id: 'q1', total: '450.00' }]));
+
+    const { result } = renderHookNoAuth(() => useJobs());
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+
+    expect(mockFetch).toHaveBeenCalledWith(
+      `${API_BASE_URL}/quotes`,
+      expect.objectContaining({ method: 'GET' }),
+    );
+    const data = result.current.data as Job[];
+    expect(data[0].value).toBe(450);
+  });
+
+  it('useJobs prefers an explicit value over the linked quote total', async () => {
+    mockFetch.mockResolvedValueOnce(buildResponse([mockBackendJob('j1', { quote_id: 'q1', value: 200 })]));
+    mockFetch.mockResolvedValueOnce(buildResponse([{ id: 'q1', total: '450.00' }]));
+
+    const { result } = renderHookNoAuth(() => useJobs());
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect((result.current.data as Job[])[0].value).toBe(200);
+  });
+
+  it('useJob fetches the linked quote to derive the value', async () => {
+    mockFetch.mockResolvedValueOnce(mockJobResponse('j1', { quote_id: 'q1' }));
+    mockFetch.mockResolvedValueOnce(buildResponse({ id: 'q1', total: '375.00' }));
+
+    const { result } = renderHookNoAuth(() => useJob('j1'));
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+
+    expect(mockFetch).toHaveBeenCalledWith(
+      `${API_BASE_URL}/quotes/q1`,
+      expect.objectContaining({ method: 'GET' }),
+    );
+    expect((result.current.data as Job).value).toBe(375);
   });
 
   it('useJob fetches a single job', async () => {

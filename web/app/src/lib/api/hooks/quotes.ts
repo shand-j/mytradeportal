@@ -69,7 +69,8 @@ function toLineItem(raw: Record<string, unknown>): QuoteLineItem {
     unit: (raw.unit as string) ?? 'item',
     unitPrice,
     total,
-    isAiSuggested: Boolean(raw.isAiSuggested ?? false),
+    aiGenerated: Boolean(raw.aiGenerated ?? raw.isAiSuggested ?? false),
+    isAiSuggested: Boolean(raw.isAiSuggested ?? raw.aiGenerated ?? false),
   };
 }
 
@@ -159,7 +160,11 @@ export function toQuote(raw: Record<string, unknown>): Quote {
     vatRate: Number(raw.vatRate ?? 0.2),
     total: Number(raw.total ?? 0),
     aiGenerated: Boolean(raw.aiGenerated ?? false),
-    aiConfidenceScore: raw.aiConfidenceScore != null ? Number(raw.aiConfidenceScore) : null,
+    aiConfidence: raw.aiConfidence != null ? Number(raw.aiConfidence) : null,
+    aiWarnings: Array.isArray(raw.aiWarnings) ? raw.aiWarnings.map(String) : [],
+    aiAssumptions: Array.isArray(raw.aiAssumptions) ? raw.aiAssumptions.map(String) : [],
+    aiNotes: (raw.aiNotes as string | null) ?? null,
+    retrievalStatus: (raw.retrievalStatus as Quote['retrievalStatus']) ?? null,
     serviceType: (raw.serviceType as string) ?? (raw.title as string) ?? '',
     propertyAddress: (raw.propertyAddress as string) ?? '',
     customerMessage: (raw.customerMessage as string | null) ?? null,
@@ -316,7 +321,6 @@ export interface GenerateQuoteVariables {
   customerPhone?: string;
   description: string;
   propertyType?: string;
-  useOcerp?: boolean;
 }
 
 export function useGenerateQuote() {
@@ -332,61 +336,6 @@ export function useGenerateQuote() {
       if (variables.contactId) {
         queryClient.invalidateQueries({ queryKey: ['contacts'] });
       }
-    },
-  });
-}
-
-export function useQuoteBoq(quoteId: string) {
-  return useQuery<BillOfQuantities, ApiError>({
-    queryKey: ['quote-boq', quoteId],
-    queryFn: async () => {
-      const data = await api.get<Record<string, unknown>>(`/quotes/${quoteId}/boq`);
-      return toBillOfQuantities(data);
-    },
-    enabled: Boolean(quoteId),
-  });
-}
-
-export interface UpdateQuoteBoqVariables {
-  quoteId: string;
-  data: {
-    notes?: string | null;
-    lineItems: Array<{
-      id?: string;
-      code: string;
-      description: string;
-      category?: string | null;
-      unit: string;
-      quantity: number;
-      labourHours: number;
-      labourRate: number;
-      labourTotal: number;
-      materialCost: number;
-      materialTotal: number;
-      plantCost: number;
-      plantTotal: number;
-      supplier?: string | null;
-      brand?: string | null;
-      sku?: string | null;
-      productUrl?: string | null;
-      retailPriceInclVat?: number | null;
-      notes?: string | null;
-    }>;
-  };
-}
-
-export function useUpdateQuoteBoq() {
-  const queryClient = useQueryClient();
-
-  return useMutation<BillOfQuantities, ApiError, UpdateQuoteBoqVariables>({
-    mutationFn: async ({ quoteId, data }) => {
-      const raw = await api.patch<Record<string, unknown>>(`/quotes/${quoteId}/boq`, data);
-      return toBillOfQuantities(raw);
-    },
-    onSuccess: (_, variables) => {
-      queryClient.invalidateQueries({ queryKey: quoteKeys.detail(variables.quoteId) });
-      queryClient.invalidateQueries({ queryKey: ['quote-boq', variables.quoteId] });
-      queryClient.invalidateQueries({ queryKey: quoteKeys.all });
     },
   });
 }

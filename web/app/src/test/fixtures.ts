@@ -68,6 +68,8 @@ export const mockAiInsightsData: AiInsightsData = {
     acceptanceRate: 68,
     averageValue: 3200,
     averageGenerationTime: 4.2,
+    editRate: 0.42,
+    avgPriceDriftPct: 6.5,
     monthlyData: [
       { month: 'Jan', aiQuotes: 5, manualQuotes: 8, aiAcceptance: 60, manualAcceptance: 45 },
       { month: 'Feb', aiQuotes: 6, manualQuotes: 7, aiAcceptance: 65, manualAcceptance: 50 },

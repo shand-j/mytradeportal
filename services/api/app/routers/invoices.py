@@ -1,6 +1,7 @@
 """Invoice endpoints."""
 
 from datetime import datetime, timedelta
+from decimal import Decimal
 from typing import Annotated
 from uuid import UUID
 
@@ -14,6 +15,7 @@ from app.calculations import build_invoice_from_quote, calculate_invoice_totals
 from app.database import get_db
 from app.dependencies import CurrentUserDep, TenantDep
 from app.models import Contact, Invoice, InvoiceLineItem, Job, Quote
+from app.push import notify_staff
 from app.rls import set_tenant_in_session
 from app.schemas import InvoiceCreate, InvoiceRead, InvoiceUpdate
 
@@ -83,6 +85,7 @@ async def create_invoice(
     if contact is None or contact.tenant_id != tenant.id:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid contact")
 
+    job: Job | None = None
     if data.job_id:
         job = await db.get(Job, data.job_id)
         if job is None or job.tenant_id != tenant.id:
@@ -114,9 +117,23 @@ async def create_invoice(
             due_date=due_date,
             vat_rate=data.vat_rate,
         )
-        invoice.line_items = [
-            InvoiceLineItem(tenant_id=tenant.id, **item.model_dump()) for item in data.line_items
-        ]
+        # When the caller did not supply line items, derive a sensible default from
+        # the source record so the invoice is not empty. This happens when the
+        # electrician taps "Create invoice" from a completed job without adding
+        # manual line items in the app.
+        if not data.line_items and job is not None:
+            invoice.line_items = [
+                InvoiceLineItem(
+                    tenant_id=tenant.id,
+                    description=job.title,
+                    quantity=Decimal("1"),
+                    unit_price=Decimal("0.00"),
+                )
+            ]
+        else:
+            invoice.line_items = [
+                InvoiceLineItem(tenant_id=tenant.id, **item.model_dump()) for item in data.line_items
+            ]
         calculate_invoice_totals(invoice)
 
     db.add(invoice)
@@ -238,6 +255,14 @@ async def mark_invoice_paid(
         entity_type="invoice",
         entity_id=invoice.id,
         payload={"total": str(invoice.total)},
+    )
+    await notify_staff(
+        db,
+        tenant.id,
+        kind="invoice_paid",
+        title="Invoice paid",
+        body=f"Invoice {invoice.invoice_number} for £{invoice.total} has been marked paid.",
+        link=f"/invoices/{invoice.id}",
     )
     await db.commit()
     return InvoiceRead.model_validate(await _get_invoice(db, tenant.id, invoice.id))

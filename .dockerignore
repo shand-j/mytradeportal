@@ -1,0 +1,42 @@
+# Git / VCS
+.git
+.gitignore
+
+# Node / front-end build outputs
+node_modules
+mobile/node_modules
+web/app/node_modules
+packages/shared/ts/node_modules
+mobile/.expo
+mobile/ios
+web/app/dist
+
+# Python
+.venv
+__pycache__
+*.pyc
+*.pyo
+*.egg-info
+.pytest_cache
+.mypy_cache
+.ruff_cache
+
+# IDE / local config
+.idea
+.vscode
+*.swp
+*.swo
+.DS_Store
+
+# Test / coverage outputs
+coverage
+.coverage
+htmlcov
+
+# Docker artifacts
+docker-compose*.yml
+Dockerfile*
+
+# Logs / local data
+*.log
+logs/

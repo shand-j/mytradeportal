@@ -21,7 +21,7 @@ function splitDateTime(iso: string | null): { date: string; time: string } {
   return { date: date || '', time: time ? time.slice(0, 5) : '' };
 }
 
-export function toJob(raw: Record<string, unknown>): Job {
+export function toJob(raw: Record<string, unknown>, quoteTotals?: ReadonlyMap<string, number>): Job {
   const customer = raw.customer ? toCustomer(raw.customer as Record<string, unknown>) : undefined;
   const scheduledStart = String(raw.scheduledStart ?? raw.scheduled_start ?? '');
   const scheduledEnd = String(raw.scheduledEnd ?? raw.scheduled_end ?? '');
@@ -29,13 +29,21 @@ export function toJob(raw: Record<string, unknown>): Job {
   const { time: scheduledTimeEnd } = splitDateTime(scheduledEnd || null);
   const title = String(raw.title ?? raw.reference ?? '');
   const description = String(raw.description ?? '');
+  const quoteId = (raw.quoteId ?? raw.quote_id ?? null) as string | null;
+  // The API has no job value field; the job's value comes from its linked
+  // quote's total when no explicit value is present.
+  const explicitValue = raw.value ?? raw.total;
+  const value =
+    explicitValue != null
+      ? Number(explicitValue)
+      : (quoteId ? quoteTotals?.get(quoteId) : 0) ?? 0;
 
   return {
     id: String(raw.id),
     reference: title,
     customerId: String(raw.customerId ?? raw.contactId ?? raw.contact_id ?? ''),
     customer: customer as Job['customer'],
-    quoteId: (raw.quoteId ?? raw.quote_id ?? null) as string | null,
+    quoteId,
     status: (raw.status as Job['status']) ?? 'scheduled',
     serviceType: description || title,
     description,
@@ -45,19 +53,27 @@ export function toJob(raw: Record<string, unknown>): Job {
     technicianId: (raw.technicianId ?? raw.technician_id ?? null) as string | null,
     technicianName: (raw.technicianName ?? raw.technician_name ?? null) as string | null,
     propertyAddress: String(raw.propertyAddress ?? raw.property_address ?? ''),
-    value: Number(raw.value ?? 0),
+    value,
     completionNotes: (raw.completionNotes ?? raw.completion_notes ?? null) as string | null,
     photos: Array.isArray(raw.photos) ? (raw.photos as string[]) : [],
     createdAt: String(raw.createdAt ?? raw.created_at),
   };
 }
 
+async function fetchQuoteTotals(): Promise<Map<string, number>> {
+  const quotes = await api.get<Record<string, unknown>[]>('/quotes');
+  return new Map(quotes.map(q => [String(q.id), Number(q.total ?? 0)]));
+}
+
 export function useJobs() {
   return useQuery<Job[], ApiError>({
     queryKey: jobKeys.all,
     queryFn: async () => {
-      const data = await api.get<Record<string, unknown>[]>('/jobs');
-      return data.map(toJob);
+      const [jobs, quoteTotals] = await Promise.all([
+        api.get<Record<string, unknown>[]>('/jobs'),
+        fetchQuoteTotals(),
+      ]);
+      return jobs.map(job => toJob(job, quoteTotals));
     },
   });
 }
@@ -66,8 +82,16 @@ export function useJob(id: string) {
   return useQuery<Job, ApiError>({
     queryKey: jobKeys.detail(id),
     queryFn: async () => {
-      const data = await api.get<Record<string, unknown>>(`/jobs/${id}`);
-      return toJob(data);
+      const raw = await api.get<Record<string, unknown>>(`/jobs/${id}`);
+      const quoteId = (raw.quoteId ?? raw.quote_id ?? null) as string | null;
+      let quoteTotals: Map<string, number> | undefined;
+      if (quoteId && raw.value == null && raw.total == null) {
+        const quote = await api
+          .get<Record<string, unknown>>(`/quotes/${quoteId}`)
+          .catch(() => null);
+        if (quote) quoteTotals = new Map([[String(quote.id), Number(quote.total ?? 0)]]);
+      }
+      return toJob(raw, quoteTotals);
     },
     enabled: Boolean(id),
   });

@@ -1,6 +1,5 @@
 packages:
   - 'packages/*'
   - 'packages/**/*'
-  - 'services/pwa'
+  - 'mobile'
   - 'web/app'
-  - 'user-docs'

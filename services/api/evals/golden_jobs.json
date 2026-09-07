@@ -1,0 +1,152 @@
+[
+  {
+    "id": "ev-charger-install",
+    "description": "Customer wants a 7kW EV charger (e.g. Ohme/Zappi) fitted on the front wall of the house. Consumer unit is in the hallway about 8m from the charge point, driveway parking.",
+    "property_type": "detached house",
+    "expected_kinds": ["labour", "material"],
+    "expected_keywords": ["ev", "charger", "cable", "rcbo", "earthing", "testing"],
+    "min_keyword_hits": 4,
+    "min_grounded_lines": 1,
+    "price_band_gbp": [800, 1500]
+  },
+  {
+    "id": "consumer-unit-replacement",
+    "description": "Replace old fuse box with a modern metal consumer unit with RCBOs and surge protection. 10 circuits, 3-bed semi.",
+    "property_type": "semi-detached house",
+    "expected_kinds": ["labour", "material"],
+    "expected_keywords": ["consumer unit", "rcbo", "testing", "certification", "fuse", "surge"],
+    "min_keyword_hits": 4,
+    "min_grounded_lines": 1,
+    "price_band_gbp": [450, 900]
+  },
+  {
+    "id": "eicr-3-bed",
+    "description": "Landlord needs an EICR for a 3-bed terraced rental property before new tenants move in. No known issues.",
+    "property_type": "terraced house",
+    "expected_kinds": ["labour"],
+    "expected_keywords": ["eicr", "inspection", "testing", "certificate", "report"],
+    "min_keyword_hits": 3,
+    "min_grounded_lines": 0,
+    "price_band_gbp": [150, 350]
+  },
+  {
+    "id": "additional-sockets",
+    "description": "Add two double sockets in the living room and one in the bedroom. Walls are brick, happy for surface trunking if easier.",
+    "property_type": "flat",
+    "expected_kinds": ["labour", "material"],
+    "expected_keywords": ["socket", "cable", "back box", "faceplate", "trunking"],
+    "min_keyword_hits": 3,
+    "min_grounded_lines": 2,
+    "price_band_gbp": [150, 400]
+  },
+  {
+    "id": "garden-office-power",
+    "description": "Need power run to a new garden office at the bottom of the garden, about 20m from the house. Wants lights, 4 sockets and a small heater circuit. Armoured cable buried, small consumer unit in the office.",
+    "property_type": "detached house",
+    "expected_kinds": ["labour", "material"],
+    "expected_keywords": ["swa", "armoured", "cable", "consumer unit", "trench", "earthing"],
+    "min_keyword_hits": 4,
+    "min_grounded_lines": 2,
+    "price_band_gbp": [700, 1800]
+  },
+  {
+    "id": "fault-finding-emergency",
+    "description": "Power keeps tripping in the kitchen since last night, half the sockets dead. Need someone out urgently to find the fault.",
+    "property_type": null,
+    "expected_kinds": ["callout", "labour"],
+    "expected_keywords": ["fault", "diagnostic", "call-out", "callout", "testing", "repair", "diagnose", "isolate", "trace"],
+    "min_keyword_hits": 2,
+    "min_grounded_lines": 0,
+    "price_band_gbp": [80, 300]
+  },
+  {
+    "id": "kitchen-downlights",
+    "description": "Swap the old fluorescent strip in the kitchen for 6 LED downlights, dimmable. Existing ceiling, access from loft above.",
+    "property_type": "bungalow",
+    "expected_kinds": ["labour", "material"],
+    "expected_keywords": ["downlight", "led", "dimmer", "lighting", "cable"],
+    "min_keyword_hits": 4,
+    "min_grounded_lines": 2,
+    "price_band_gbp": [250, 600]
+  },
+  {
+    "id": "bathroom-extractor",
+    "description": "Fit a new extractor fan in the bathroom with timer and an isolation switch. Currently no fan, just a window. First floor bathroom, external wall.",
+    "property_type": "terraced house",
+    "expected_kinds": ["labour", "material"],
+    "expected_keywords": ["extractor", "fan", "isolator", "isolation", "ducting", "testing"],
+    "min_keyword_hits": 4,
+    "min_grounded_lines": 1,
+    "price_band_gbp": [120, 350]
+  },
+  {
+    "id": "cooker-circuit",
+    "description": "New induction hob being delivered next week, need a proper cooker circuit run from the consumer unit - currently only a 13A socket. About 10m cable run through kitchen units.",
+    "property_type": "semi-detached house",
+    "expected_kinds": ["labour", "material"],
+    "expected_keywords": ["cooker", "circuit", "cable", "isolator", "rcbo", "connection"],
+    "min_keyword_hits": 4,
+    "min_grounded_lines": 2,
+    "price_band_gbp": [250, 600]
+  },
+  {
+    "id": "smoke-alarms",
+    "description": "Fit interlinked mains smoke alarms - hallway, landing and kitchen heat alarm. Two-storey house, need it sorted for insurance.",
+    "property_type": "semi-detached house",
+    "expected_kinds": ["labour", "material"],
+    "expected_keywords": ["smoke", "alarm", "heat", "interlinked", "cable"],
+    "min_keyword_hits": 4,
+    "min_grounded_lines": 2,
+    "price_band_gbp": [200, 450]
+  },
+  {
+    "id": "outdoor-lighting",
+    "description": "Want 4 outside wall lights and a PIR security light by the garage. Cables to run externally clipped, switched from inside the hallway.",
+    "property_type": "detached house",
+    "expected_kinds": ["labour", "material"],
+    "expected_keywords": ["light", "pir", "cable", "outdoor", "switch"],
+    "min_keyword_hits": 3,
+    "min_grounded_lines": 2,
+    "price_band_gbp": [250, 700]
+  },
+  {
+    "id": "partial-rewire",
+    "description": "Partial rewire of kitchen and utility room as part of renovation - new circuits for sockets, hob, oven and lighting. Old rubber cabling found, plaster coming off anyway. 4-bed house.",
+    "property_type": "detached house",
+    "expected_kinds": ["labour", "material"],
+    "expected_keywords": ["rewire", "circuit", "cable", "socket", "testing", "certification"],
+    "min_keyword_hits": 4,
+    "min_grounded_lines": 3,
+    "price_band_gbp": [1500, 4000]
+  },
+  {
+    "id": "immersion-heater",
+    "description": "Immersion heater element has gone, no hot water. Replace element and thermostat in the airing cupboard cylinder, and check the wiring while you're at it.",
+    "property_type": "flat",
+    "expected_kinds": ["labour", "material"],
+    "expected_keywords": ["immersion", "heater", "element", "thermostat", "testing"],
+    "min_keyword_hits": 3,
+    "min_grounded_lines": 1,
+    "price_band_gbp": [180, 450]
+  },
+  {
+    "id": "shower-circuit",
+    "description": "Install a 9.5kW electric shower replacing an old 8.5kW unit. Existing shower circuit present but may need upgrading to 10mm cable and 45A breaker, ceiling pull cord also faulty.",
+    "property_type": "terraced house",
+    "expected_kinds": ["labour", "material"],
+    "expected_keywords": ["shower", "circuit", "cable", "breaker", "pull cord", "rcbo"],
+    "min_keyword_hits": 4,
+    "min_grounded_lines": 2,
+    "price_band_gbp": [350, 800]
+  },
+  {
+    "id": "doorbell-transformer",
+    "description": "Doorbell stopped working - think the transformer in the hallway has died. Replace the wired doorbell transformer and check the bell push.",
+    "property_type": null,
+    "expected_kinds": ["labour", "material"],
+    "expected_keywords": ["doorbell", "transformer", "bell", "testing"],
+    "min_keyword_hits": 2,
+    "min_grounded_lines": 1,
+    "price_band_gbp": [80, 250]
+  }
+]

@@ -45,6 +45,7 @@ async def admin_credentials(client: AsyncClient, db: AsyncSession) -> dict[str, 
         "email": "admin@test.local",
         "password": password,
         "tenant_id": str(tenant.id),
+        "tenant_slug": tenant.slug,
     }
 
 
@@ -95,6 +96,7 @@ async def test_token_returns_bearer_and_authorizes_me(
     data = response.json()
     assert data["token_type"] == "bearer"
     assert data["access_token"]
+    assert data["tenant_slug"] == admin_credentials["tenant_slug"]
     assert data["user"]["email"] == admin_credentials["email"]
     tenant_id = data["user"]["tenant_id"]
 
@@ -121,6 +123,23 @@ async def test_token_invalid_password(
         },
     )
     assert response.status_code == 401
+
+
+async def test_token_with_bare_domain_falls_back_to_email_lookup(
+    client: AsyncClient, db: AsyncSession
+) -> None:
+    """Native clients often call /auth/token against localhost with no tenant
+    context. The backend should resolve the tenant from the user's email."""
+    tenant, user, password = await _create_admin_user(db)
+    response = await client.post(
+        "/auth/token",
+        headers={"host": "localhost:8000"},
+        json={"email": user.email, "password": password},
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert data["tenant_slug"] == tenant.slug
+    assert data["user"]["email"] == user.email
 
 
 async def test_login_with_explicit_tenant_slug(client: AsyncClient, db: AsyncSession) -> None:
@@ -311,3 +330,160 @@ async def test_login_fails_when_supabase_rejects_credentials(
         },
     )
     assert response.status_code == 401
+
+
+async def test_login_falls_back_to_bcrypt_when_supabase_unreachable(
+    client: AsyncClient, admin_credentials: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A Supabase outage must not 500 login: users with a local password hash
+    still authenticate via bcrypt. Bad credentials are unaffected — a clean
+    Supabase rejection returns None and never reaches the fallback."""
+    import httpx
+
+    monkeypatch.setattr("app.routers.auth.is_supabase_configured", lambda: True)
+
+    async def _sign_in(email: str, password: str) -> None:
+        raise httpx.ConnectError("All connection attempts failed")
+
+    monkeypatch.setattr("app.routers.auth.sign_in_with_password", _sign_in)
+
+    response = await client.post(
+        "/auth/login",
+        headers={"host": admin_credentials["host"]},
+        json={
+            "email": admin_credentials["email"],
+            "password": admin_credentials["password"],
+        },
+    )
+    assert response.status_code == 200
+    assert response.json()["email"] == admin_credentials["email"]
+
+
+# --------------------------------------------------------------------------
+# Password reset flow
+
+
+@pytest.fixture
+def deterministic_reset_token(monkeypatch: pytest.MonkeyPatch) -> str:
+    """Patch ``secrets.token_urlsafe`` so tests know the token that will land."""
+    token = "test-token-" + "x" * 40
+    monkeypatch.setattr(
+        "app.routers.auth.secrets.token_urlsafe", lambda _n: token
+    )
+    return token
+
+
+@pytest.fixture(autouse=True)
+def stub_email_send(monkeypatch: pytest.MonkeyPatch) -> list[dict[str, Any]]:
+    """Swallow email sends during auth tests + record them for assertions."""
+    sent: list[dict[str, Any]] = []
+
+    async def _fake_send(**kwargs: Any) -> dict[str, Any]:
+        sent.append(kwargs)
+        return {"recipient": kwargs.get("to_email"), "subject": kwargs.get("subject")}
+
+    monkeypatch.setattr("app.routers.auth.send_email", _fake_send)
+    return sent
+
+
+async def test_password_reset_request_returns_generic_for_unknown_email(
+    client: AsyncClient,
+) -> None:
+    """Unknown emails must not be enumerated: same response as a real reset."""
+    response = await client.post(
+        "/auth/password-reset/request",
+        json={"email": "nobody@example.com"},
+    )
+    assert response.status_code == 200
+    assert "a reset link has been sent" in response.json()["detail"]
+
+
+async def test_password_reset_request_issues_token_for_known_user(
+    client: AsyncClient,
+    admin_credentials: dict[str, Any],
+    deterministic_reset_token: str,
+    stub_email_send: list[dict[str, Any]],
+) -> None:
+    """Real user → reset email is sent with the token embedded in the link."""
+    response = await client.post(
+        "/auth/password-reset/request",
+        json={"email": admin_credentials["email"]},
+    )
+    assert response.status_code == 200
+    assert "a reset link has been sent" in response.json()["detail"]
+
+    assert len(stub_email_send) == 1
+    email = stub_email_send[0]
+    assert email["to_email"] == admin_credentials["email"]
+    assert deterministic_reset_token in email["html_body"]
+    assert deterministic_reset_token in email["text_body"]
+
+
+async def test_password_reset_confirm_updates_password(
+    client: AsyncClient,
+    admin_credentials: dict[str, Any],
+    deterministic_reset_token: str,
+) -> None:
+    """Happy path: request → confirm → old password rejected, new one works."""
+    await client.post(
+        "/auth/password-reset/request",
+        json={"email": admin_credentials["email"]},
+    )
+
+    new_password = "NewSecureP@ssw0rd!"
+    confirm = await client.post(
+        "/auth/password-reset/confirm",
+        json={"token": deterministic_reset_token, "new_password": new_password},
+    )
+    assert confirm.status_code == 200
+    assert confirm.json()["detail"] == "Password updated"
+
+    old = await client.post(
+        "/auth/login",
+        headers={"host": admin_credentials["host"]},
+        json={
+            "email": admin_credentials["email"],
+            "password": admin_credentials["password"],
+        },
+    )
+    assert old.status_code == 401
+
+    new = await client.post(
+        "/auth/login",
+        headers={"host": admin_credentials["host"]},
+        json={"email": admin_credentials["email"], "password": new_password},
+    )
+    assert new.status_code == 200
+
+
+async def test_password_reset_confirm_rejects_invalid_token(client: AsyncClient) -> None:
+    """A random token must be rejected with 400."""
+    response = await client.post(
+        "/auth/password-reset/confirm",
+        json={"token": "a" * 64, "new_password": "SomeOtherP@ssw0rd!"},
+    )
+    assert response.status_code == 400
+
+
+async def test_password_reset_confirm_rejects_used_token(
+    client: AsyncClient,
+    admin_credentials: dict[str, Any],
+    deterministic_reset_token: str,
+) -> None:
+    """Second use of the same token must fail (single-use guarantee)."""
+    await client.post(
+        "/auth/password-reset/request",
+        json={"email": admin_credentials["email"]},
+    )
+
+    first = await client.post(
+        "/auth/password-reset/confirm",
+        json={"token": deterministic_reset_token, "new_password": "FirstUseP@ssw0rd!"},
+    )
+    assert first.status_code == 200
+
+    second = await client.post(
+        "/auth/password-reset/confirm",
+        json={"token": deterministic_reset_token, "new_password": "SecondUseP@ssw0rd!"},
+    )
+    assert second.status_code == 400

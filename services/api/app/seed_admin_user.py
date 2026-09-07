@@ -27,6 +27,7 @@ from app.models import Base, Tenant, User
 from app.rls import bypass_rls_in_session
 from app.security import get_password_hash
 from app.supabase import admin_create_user, is_supabase_configured
+from app.utils.tenant_code import generate_unique_tenant_code
 
 
 def _require_env(name: str) -> str:
@@ -61,11 +62,12 @@ async def seed() -> None:
         tenant_result = await session.execute(select(Tenant).where(Tenant.slug == tenant_slug))
         tenant = tenant_result.scalar_one_or_none()
         if tenant is None:
-            tenant = Tenant(slug=tenant_slug, name=tenant_name)
+            tenant_code = await generate_unique_tenant_code(session)
+            tenant = Tenant(slug=tenant_slug, code=tenant_code, name=tenant_name)
             session.add(tenant)
             await session.flush()
             await session.refresh(tenant)
-            print(f"Created tenant: {tenant.name} ({tenant.slug}) — id={tenant.id}")
+            print(f"Created tenant: {tenant.name} ({tenant.slug}) — code={tenant.code} — id={tenant.id}")
         else:
             print(f"Tenant already exists: {tenant.slug}")
 
@@ -130,6 +132,7 @@ async def seed() -> None:
 
         print("\nSeed complete.")
         print(f"  Tenant slug: {tenant.slug}")
+        print(f"  Tenant code: {tenant.code or 'N/A'}")
         print(f"  Admin email: {admin_email}")
 
 

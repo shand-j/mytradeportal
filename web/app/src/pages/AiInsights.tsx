@@ -17,9 +17,11 @@ export function AiInsights() {
     setPageTitle('AI Insights');
   }, [setPageTitle]);
 
-  if (isLoading || !data) return <div className="space-y-4"><div className="bg-white rounded-xl h-64 animate-pulse" /><div className="bg-white rounded-xl h-64 animate-pulse" /></div>;
+  if (isLoading) return <div className="space-y-4"><div className="bg-white rounded-xl h-64 animate-pulse" /><div className="bg-white rounded-xl h-64 animate-pulse" /></div>;
 
   if (error) return <div className="text-center py-12 text-[#DC2626]">Failed to load AI insights</div>;
+
+  if (!data) return <div className="space-y-4"><div className="bg-white rounded-xl h-64 animate-pulse" /><div className="bg-white rounded-xl h-64 animate-pulse" /></div>;
 
   const { aiQuotePerformance, voiceAnalytics, demandForecast } = data;
 
@@ -28,7 +30,7 @@ export function AiInsights() {
       <div className="flex items-center gap-2">
         <Sparkles className="w-6 h-6 text-[#7C3AED]" />
         <h1 className="text-xl font-semibold text-[#1C1917]">AI Insights</h1>
-        <span className="px-2 py-0.5 bg-[#F5F3FF] rounded-full text-[11px] font-medium text-[#7C3AED]">Powered by GPT-4o</span>
+        <span className="px-2 py-0.5 bg-[#F5F3FF] rounded-full text-[11px] font-medium text-[#7C3AED]">Powered by AI</span>
       </div>
 
       {/* Quote Performance */}
@@ -53,6 +55,18 @@ export function AiInsights() {
             <div className="text-2xl font-bold text-[#2563EB]">{aiQuotePerformance.averageGenerationTime}s</div>
             <div className="text-[11px] text-[#78716C] uppercase tracking-[0.05em]">Avg Generation</div>
           </div>
+          {aiQuotePerformance.editRate != null && (
+            <div className="text-center p-3 bg-[#F5F4F0] rounded-lg">
+              <div className="text-2xl font-bold text-[#1C1917]">{Math.round(aiQuotePerformance.editRate * 100)}%</div>
+              <div className="text-[11px] text-[#78716C] uppercase tracking-[0.05em]">AI Drafts Edited</div>
+            </div>
+          )}
+          {aiQuotePerformance.avgPriceDriftPct != null && (
+            <div className="text-center p-3 bg-[#F5F4F0] rounded-lg">
+              <div className="text-2xl font-bold text-[#1C1917]">{aiQuotePerformance.avgPriceDriftPct}%</div>
+              <div className="text-[11px] text-[#78716C] uppercase tracking-[0.05em]">Avg Price Adjustment</div>
+            </div>
+          )}
         </div>
         <div className="h-[250px]">
           <ResponsiveContainer width="100%" height="100%">

@@ -1,13 +1,20 @@
 """Integration tests for AI quote generation endpoint."""
 
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from decimal import Decimal
 from typing import Any
 from unittest.mock import AsyncMock, patch
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import pytest
+from app.config import settings
+from app.models import Contact, Customer, Notification, Quote, QuoteLineItem, QuoteRequest
+from app.rls import set_tenant_in_session
 from httpx import AsyncClient
 from mtp_shared import BoQGenerateResponse, BoQLineItem
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 
 async def _create_tenant(client: AsyncClient, slug: str) -> dict[str, Any]:
@@ -46,7 +53,10 @@ async def test_generate_quote_creates_draft_quote(client: AsyncClient) -> None:
     }
 
     with (
-        patch("app.routers.quotes.search_cost_items", new=AsyncMock(return_value=retrieved)),
+        patch(
+            "app.routers.quotes.search_cost_items_with_status",
+            new=AsyncMock(return_value=(retrieved, "grounded")),
+        ),
         patch(
             "app.routers.quotes.generate_quote_from_prompt", new=AsyncMock(return_value=generated)
         ),
@@ -70,6 +80,14 @@ async def test_generate_quote_creates_draft_quote(client: AsyncClient) -> None:
     assert quote["total"] == "204.00"
     assert len(quote["line_items"]) == 1
     assert quote["line_items"][0]["quantity"] == "2"
+    assert quote["line_items"][0]["ai_generated"] is True
+    # AI metadata derived from extra_data["rag"] is exposed on QuoteRead.
+    assert quote["ai_generated"] is True
+    # Confidence 2.0: 0.3 + 0.3 * grounded_ratio (1.0) + 0.4 * completeness
+    # (description signal only, weight 0.10) = 0.64.
+    assert quote["ai_confidence"] == 0.64
+    assert quote["retrieval_status"] == "grounded"
+    assert quote["ai_warnings"] == []
 
 
 @pytest.mark.asyncio
@@ -113,7 +131,10 @@ async def test_generate_quote_from_lead_links_back(client: AsyncClient) -> None:
         return generated
 
     with (
-        patch("app.routers.quotes.search_cost_items", new=AsyncMock(return_value=retrieved)),
+        patch(
+            "app.routers.quotes.search_cost_items_with_status",
+            new=AsyncMock(return_value=(retrieved, "grounded")),
+        ),
         patch(
             "app.routers.quotes.generate_quote_from_prompt",
             new=AsyncMock(side_effect=_fake_generate),
@@ -160,7 +181,10 @@ async def test_generate_quote_creates_contact_when_not_provided(client: AsyncCli
     }
 
     with (
-        patch("app.routers.quotes.search_cost_items", new=AsyncMock(return_value=retrieved)),
+        patch(
+            "app.routers.quotes.search_cost_items_with_status",
+            new=AsyncMock(return_value=(retrieved, "grounded")),
+        ),
         patch(
             "app.routers.quotes.generate_quote_from_prompt", new=AsyncMock(return_value=generated)
         ),
@@ -189,7 +213,7 @@ async def test_generate_quote_returns_503_when_ai_not_configured(client: AsyncCl
 
     with (
         patch(
-            "app.routers.quotes.search_cost_items",
+            "app.routers.quotes.search_cost_items_with_status",
             new=AsyncMock(side_effect=RuntimeError("OPENAI_API_KEY is not configured")),
         ),
     ):
@@ -204,6 +228,144 @@ async def test_generate_quote_returns_503_when_ai_not_configured(client: AsyncCl
         )
 
     assert response.status_code == 503
+
+
+@pytest.mark.asyncio
+async def test_refine_quote_replaces_ai_lines_and_keeps_manual_lines(
+    client: AsyncClient, db: AsyncSession
+) -> None:
+    """Refining a quote regenerates only the AI-drafted line items; lines the
+    electrician owns (ai_generated=False) are preserved."""
+    tenant = await _create_tenant(client, f"sparky-{uuid4().hex[:8]}")
+    contact = await _create_contact(client, tenant["id"], "Refine Customer")
+
+    generated_v1 = {
+        "line_items": [
+            {
+                "description": "Garden lighting labour",
+                "kind": "labour",
+                "unit": "job",
+                "quantity": 1,
+                "unit_price": 300.00,
+            },
+            {
+                "description": "Spike lights and cable",
+                "kind": "material",
+                "unit": "each",
+                "quantity": 1,
+                "unit_price": 120.00,
+            },
+        ],
+        "notes": "",
+    }
+
+    with (
+        patch(
+            "app.routers.quotes.search_cost_items_with_status",
+            new=AsyncMock(return_value=([], "no_index")),
+        ),
+        patch(
+            "app.routers.quotes.generate_quote_from_prompt",
+            new=AsyncMock(return_value=generated_v1),
+        ),
+    ):
+        created = await client.post(
+            "/quotes/generate",
+            headers={"X-Tenant-ID": tenant["id"]},
+            json={
+                "contact_id": contact["id"],
+                "description": "Install garden lighting",
+                "use_ocerp": False,
+            },
+        )
+    assert created.status_code == 201, created.text
+    quote_id = created.json()["id"]
+
+    # Simulate the electrician repricing one line manually.
+    await set_tenant_in_session(db, UUID(tenant["id"]))
+    rows = (
+        (await db.execute(select(QuoteLineItem).where(QuoteLineItem.quote_id == UUID(quote_id))))
+        .scalars()
+        .all()
+    )
+    manual = next(li for li in rows if li.description == "Spike lights and cable")
+    manual.ai_generated = False
+    manual.description = "Electrician-priced spike lights"
+    manual.unit_price = Decimal("150.00")
+    await db.flush()
+
+    generated_v2 = {
+        "line_items": [
+            {
+                "description": "Garden lighting labour incl. containment",
+                "kind": "labour",
+                "unit": "job",
+                "quantity": 1,
+                "unit_price": 350.00,
+            }
+        ],
+        "notes": "Refined per instructions",
+    }
+
+    with (
+        patch(
+            "app.routers.quotes.search_cost_items_with_status",
+            new=AsyncMock(return_value=([], "no_index")),
+        ),
+        patch(
+            "app.routers.quotes.generate_quote_from_prompt",
+            new=AsyncMock(return_value=generated_v2),
+        ),
+    ):
+        refined = await client.post(
+            f"/quotes/{quote_id}/refine",
+            headers={"X-Tenant-ID": tenant["id"]},
+            json={"instructions": "Add containment and increase labour"},
+        )
+
+    assert refined.status_code == 200, refined.text
+    body = refined.json()
+    by_description = {li["description"]: li for li in body["line_items"]}
+
+    # The manual line survives untouched; the AI line was regenerated.
+    assert "Electrician-priced spike lights" in by_description
+    assert by_description["Electrician-priced spike lights"]["ai_generated"] is False
+    assert Decimal(by_description["Electrician-priced spike lights"]["unit_price"]) == Decimal(
+        "150.00"
+    )
+    assert "Garden lighting labour" not in by_description
+    assert "Garden lighting labour incl. containment" in by_description
+    assert by_description["Garden lighting labour incl. containment"]["ai_generated"] is True
+
+    # Totals recalculated: (350 + 150) * 1.2 VAT.
+    assert Decimal(body["subtotal"]) == Decimal("500.00")
+    assert Decimal(body["total"]) == Decimal("600.00")
+
+    # Fresh AI metadata reflects the refinement.
+    assert body["ai_generated"] is True
+    assert body["ai_confidence"] is not None
+    assert body["retrieval_status"] == "no_index"
+    assert body["ai_notes"] == "Refined per instructions"
+
+
+@pytest.mark.asyncio
+async def test_refine_quote_validates_instructions(client: AsyncClient) -> None:
+    tenant = await _create_tenant(client, f"sparky-{uuid4().hex[:8]}")
+    contact = await _create_contact(client, tenant["id"], "Refine Customer")
+    created = await client.post(
+        "/quotes",
+        headers={"X-Tenant-ID": tenant["id"]},
+        json={"contact_id": contact["id"], "title": "Manual quote"},
+    )
+    assert created.status_code == 201
+    quote_id = created.json()["id"]
+
+    response = await client.post(
+        f"/quotes/{quote_id}/refine",
+        headers={"X-Tenant-ID": tenant["id"]},
+        json={"instructions": ""},
+    )
+    assert response.status_code == 422
 
 
 @pytest.mark.skip(reason="OCERP/BoQ is parked for the mobile-pivot MVP")
@@ -546,3 +708,331 @@ async def test_manual_boq_edit_updates_boq_total_but_keeps_customer_quote_locked
     )
     assert quote_after.status_code == 200
     assert Decimal(quote_after.json()["total"]) == Decimal("120.00")
+
+
+# ---------------------------------------------------------------------------
+# POST /quotes/generate-async
+# ---------------------------------------------------------------------------
+
+
+def _worker_session(db: AsyncSession) -> Any:
+    """Patch the background worker's session factory to the test session."""
+
+    @asynccontextmanager
+    async def _session() -> AsyncIterator[AsyncSession]:
+        yield db
+
+    return patch("app.quote_automation.get_db_session", _session)
+
+
+_ASYNC_RETRIEVED = [
+    {
+        "code": "ELEC-SOCKET-ADD",
+        "description": "Install one additional double socket",
+        "unit": "each",
+        "unit_price": "85.00",
+        "category": "Sockets",
+    }
+]
+
+
+async def _tenant_notifications(db: AsyncSession, tenant_id: str) -> list[Notification]:
+    await set_tenant_in_session(db, UUID(tenant_id))
+    rows = await db.execute(select(Notification).where(Notification.tenant_id == UUID(tenant_id)))
+    return list(rows.scalars().all())
+
+
+@pytest.mark.asyncio
+async def test_generate_async_returns_202_and_worker_creates_quote_and_notification(
+    client: AsyncClient, db: AsyncSession
+) -> None:
+    tenant = await _create_tenant(client, f"sparky-{uuid4().hex[:8]}")
+    contact = await _create_contact(client, tenant["id"], "Async Customer")
+
+    generated = {
+        "line_items": [{"code": "ELEC-SOCKET-ADD", "quantity": 2, "reason": "two sockets"}],
+        "notes": "",
+    }
+
+    with (
+        _worker_session(db),
+        patch(
+            "app.routers.quotes.search_cost_items_with_status",
+            new=AsyncMock(return_value=(_ASYNC_RETRIEVED, "grounded")),
+        ),
+        patch(
+            "app.routers.quotes.generate_quote_from_prompt",
+            new=AsyncMock(return_value=generated),
+        ),
+    ):
+        response = await client.post(
+            "/quotes/generate-async",
+            headers={"X-Tenant-ID": tenant["id"]},
+            json={
+                "contact_id": contact["id"],
+                "description": "I need two extra double sockets installed",
+                "use_ocerp": False,
+            },
+        )
+
+    assert response.status_code == 202, response.text
+    assert response.json() == {"status": "generating", "quote_request_id": None}
+
+    # The background worker already ran: the draft quote exists...
+    quotes = await client.get("/quotes", headers={"X-Tenant-ID": tenant["id"]})
+    assert quotes.status_code == 200
+    quote_rows = quotes.json()
+    assert len(quote_rows) == 1
+    quote = quote_rows[0]
+    assert quote["status"] == "draft"
+    assert quote["ai_generated"] is True
+
+    # ...and a tenant-wide staff notification was recorded.
+    notifications = await _tenant_notifications(db, tenant["id"])
+    assert len(notifications) == 1
+    notification = notifications[0]
+    assert notification.type == "quote_ready"
+    assert notification.title == "Quote ready for review"
+    assert notification.recipient_type == "staff"
+    assert notification.recipient_id is None
+    assert notification.link == f"/quotes/{quote['id']}"
+    assert quote["title"] in notification.body
+
+
+@pytest.mark.asyncio
+async def test_generate_async_with_lead_notifies_linked_customer(
+    client: AsyncClient, db: AsyncSession
+) -> None:
+    """When the lead has a customer account, the customer is notified too."""
+    tenant = await _create_tenant(client, f"sparky-{uuid4().hex[:8]}")
+    tenant_id = UUID(tenant["id"])
+    await set_tenant_in_session(db, tenant_id)
+
+    contact = Contact(tenant_id=tenant_id, name="Lead Owner", email="lead.owner@example.com")
+    db.add(contact)
+    await db.flush()
+    customer = Customer(
+        tenant_id=tenant_id,
+        contact_id=contact.id,
+        email="lead.owner@example.com",
+        full_name="Lead Owner",
+    )
+    db.add(customer)
+    await db.flush()
+    lead = QuoteRequest(
+        tenant_id=tenant_id,
+        contact_id=contact.id,
+        customer_id=customer.id,
+        source="web_form",
+        raw_text="Old fuse board keeps tripping in the hallway",
+        structured_data={"category": "consumer_unit", "title": "Consumer unit upgrade"},
+    )
+    db.add(lead)
+    await db.flush()
+
+    generated = {"line_items": [{"code": "ELEC-SOCKET-ADD", "quantity": 1}], "notes": ""}
+    with (
+        _worker_session(db),
+        patch(
+            "app.routers.quotes.search_cost_items_with_status",
+            new=AsyncMock(return_value=(_ASYNC_RETRIEVED, "grounded")),
+        ),
+        patch(
+            "app.routers.quotes.generate_quote_from_prompt",
+            new=AsyncMock(return_value=generated),
+        ),
+    ):
+        response = await client.post(
+            "/quotes/generate-async",
+            headers={"X-Tenant-ID": tenant["id"]},
+            json={"quote_request_id": str(lead.id), "use_ocerp": False},
+        )
+
+    assert response.status_code == 202, response.text
+    assert response.json() == {"status": "generating", "quote_request_id": str(lead.id)}
+
+    notifications = await _tenant_notifications(db, tenant["id"])
+    by_recipient = {n.recipient_type: n for n in notifications}
+    assert set(by_recipient) == {"staff", "customer"}
+    customer_notification = by_recipient["customer"]
+    assert customer_notification.recipient_id == customer.id
+    assert customer_notification.type == "quote_ready"
+    assert customer_notification.link is not None
+    assert customer_notification.link.startswith("/quotes/")
+
+
+@pytest.mark.asyncio
+async def test_generate_async_failure_creates_quote_failed_notification(
+    client: AsyncClient, db: AsyncSession
+) -> None:
+    tenant = await _create_tenant(client, f"sparky-{uuid4().hex[:8]}")
+
+    with (
+        _worker_session(db),
+        patch(
+            "app.routers.quotes.search_cost_items_with_status",
+            new=AsyncMock(side_effect=RuntimeError("LLM API key is not configured")),
+        ),
+    ):
+        response = await client.post(
+            "/quotes/generate-async",
+            headers={"X-Tenant-ID": tenant["id"]},
+            json={"description": "Upgrade my consumer unit", "use_ocerp": False},
+        )
+
+    # The ack is unaffected by the background failure.
+    assert response.status_code == 202, response.text
+
+    # No quote was created, but staff were told to build it manually.
+    quotes = await client.get("/quotes", headers={"X-Tenant-ID": tenant["id"]})
+    assert quotes.json() == []
+
+    notifications = await _tenant_notifications(db, tenant["id"])
+    assert len(notifications) == 1
+    notification = notifications[0]
+    assert notification.type == "quote_failed"
+    assert notification.title == "Quote generation failed"
+    assert notification.recipient_type == "staff"
+    assert notification.recipient_id is None
+    assert "manually or retry" in notification.body
+
+
+@pytest.mark.asyncio
+async def test_generate_async_rejects_unknown_quote_request(client: AsyncClient) -> None:
+    tenant = await _create_tenant(client, f"sparky-{uuid4().hex[:8]}")
+    response = await client.post(
+        "/quotes/generate-async",
+        headers={"X-Tenant-ID": tenant["id"]},
+        json={"quote_request_id": str(uuid4()), "use_ocerp": False},
+    )
+    assert response.status_code == 400
+
+
+# ---------------------------------------------------------------------------
+# LLM usage / AI spend tracking
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_generate_stores_llm_usage_and_refine_accumulates(
+    client: AsyncClient, db: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Token usage from the LLM response lands in extra_data["rag"]["llm_usage"]
+    with a cost estimate, and multi-call flows sum the totals."""
+    monkeypatch.setattr(settings, "llm_model", "openai/kimi-k2.6")
+    tenant = await _create_tenant(client, f"sparky-{uuid4().hex[:8]}")
+    contact = await _create_contact(client, tenant["id"], "Usage Customer")
+
+    generated = {
+        "line_items": [{"code": "ELEC-SOCKET-ADD", "quantity": 1}],
+        "notes": "",
+        "usage": {"prompt_tokens": 1000, "completion_tokens": 500},
+    }
+
+    with (
+        patch(
+            "app.routers.quotes.search_cost_items_with_status",
+            new=AsyncMock(return_value=(_ASYNC_RETRIEVED, "grounded")),
+        ),
+        patch(
+            "app.routers.quotes.generate_quote_from_prompt",
+            new=AsyncMock(return_value=generated),
+        ),
+    ):
+        created = await client.post(
+            "/quotes/generate",
+            headers={"X-Tenant-ID": tenant["id"]},
+            json={
+                "contact_id": contact["id"],
+                "description": "Install one extra double socket",
+                "use_ocerp": False,
+            },
+        )
+    assert created.status_code == 201, created.text
+    quote_id = created.json()["id"]
+
+    await set_tenant_in_session(db, UUID(tenant["id"]))
+    quote = await db.get(Quote, UUID(quote_id))
+    assert quote is not None
+    usage = quote.extra_data["rag"]["llm_usage"]
+    assert usage["model"] == "openai/kimi-k2.6"
+    assert usage["prompt_tokens"] == 1000
+    assert usage["completion_tokens"] == 500
+    # kimi-k2.6 estimate: (1000 * 0.0006 + 500 * 0.0025) / 1000
+    assert usage["est_cost_usd"] == pytest.approx(0.00185)
+
+    # A refine call accumulates onto the same record.
+    refined_generated = {
+        "line_items": [{"code": "ELEC-SOCKET-ADD", "quantity": 2}],
+        "notes": "",
+        "usage": {"prompt_tokens": 2000, "completion_tokens": 1000},
+    }
+    with (
+        patch(
+            "app.routers.quotes.search_cost_items_with_status",
+            new=AsyncMock(return_value=(_ASYNC_RETRIEVED, "grounded")),
+        ),
+        patch(
+            "app.routers.quotes.generate_quote_from_prompt",
+            new=AsyncMock(return_value=refined_generated),
+        ),
+    ):
+        refined = await client.post(
+            f"/quotes/{quote_id}/refine",
+            headers={"X-Tenant-ID": tenant["id"]},
+            json={"instructions": "Make it two sockets"},
+        )
+    assert refined.status_code == 200, refined.text
+
+    await db.refresh(quote)
+    usage = quote.extra_data["rag"]["llm_usage"]
+    assert usage["prompt_tokens"] == 3000
+    assert usage["completion_tokens"] == 1500
+    assert usage["est_cost_usd"] == pytest.approx(0.00185 + 0.0037)
+
+
+@pytest.mark.asyncio
+async def test_generate_records_unpriced_usage_when_model_unknown(
+    client: AsyncClient, db: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A model missing from the pricing map stores tokens with est_cost_usd=None."""
+    monkeypatch.setattr(settings, "llm_model", "some-unknown-model")
+    tenant = await _create_tenant(client, f"sparky-{uuid4().hex[:8]}")
+    contact = await _create_contact(client, tenant["id"], "Usage Customer")
+
+    generated = {
+        "line_items": [{"code": "ELEC-SOCKET-ADD", "quantity": 1}],
+        "notes": "",
+        "usage": {"prompt_tokens": 100, "completion_tokens": 50},
+    }
+    with (
+        patch(
+            "app.routers.quotes.search_cost_items_with_status",
+            new=AsyncMock(return_value=(_ASYNC_RETRIEVED, "grounded")),
+        ),
+        patch(
+            "app.routers.quotes.generate_quote_from_prompt",
+            new=AsyncMock(return_value=generated),
+        ),
+    ):
+        created = await client.post(
+            "/quotes/generate",
+            headers={"X-Tenant-ID": tenant["id"]},
+            json={
+                "contact_id": contact["id"],
+                "description": "Install one extra double socket",
+                "use_ocerp": False,
+            },
+        )
+    assert created.status_code == 201, created.text
+
+    await set_tenant_in_session(db, UUID(tenant["id"]))
+    quote = await db.get(Quote, UUID(created.json()["id"]))
+    assert quote is not None
+    usage = quote.extra_data["rag"]["llm_usage"]
+    assert usage == {
+        "model": "some-unknown-model",
+        "prompt_tokens": 100,
+        "completion_tokens": 50,
+        "est_cost_usd": None,
+    }

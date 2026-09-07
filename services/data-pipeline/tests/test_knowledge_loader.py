@@ -11,6 +11,7 @@ from data_pipeline.knowledge_loader import (
     KnowledgeChunk,
     chunk_job_capture_data_model,
     chunk_json_tables,
+    chunk_labour_norms,
     chunk_markdown,
 )
 
@@ -152,3 +153,46 @@ def test_knowledge_chunk_defaults() -> None:
     chunk = KnowledgeChunk(text="hello", source="test")
     assert chunk.rule_tier == "reference"
     assert chunk.doc_type == "prose"
+
+
+def test_chunk_labour_norms(tmp_path: Path) -> None:
+    """Each labour norm entry becomes one retrievable chunk tagged doc_type=labour_norm."""
+    path = tmp_path / "labour_norms.json"
+    path.write_text(
+        json.dumps(
+            {
+                "norms": [
+                    {
+                        "task_key": "consumer_unit_replacement",
+                        "title": "CU replacement",
+                        "typical_hours": 6,
+                        "min_hours": 4,
+                        "max_hours": 10,
+                        "job_type_tags": ["consumer_unit", "eicr"],
+                        "assumptions": ["Existing tails serviceable"],
+                    },
+                    {
+                        "task_key": "eicr_3_bed",
+                        "title": "EICR 3-bed",
+                        "typical_hours": 4,
+                        "min_hours": 3,
+                        "max_hours": 6,
+                        "job_type_tags": ["eicr"],
+                        "assumptions": [],
+                    },
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    chunks = chunk_labour_norms(path, "labour_norms_uk")
+
+    assert len(chunks) == 2
+    assert all(c.doc_type == "labour_norm" for c in chunks)
+    assert all(c.source == "labour_norms_uk" for c in chunks)
+    assert chunks[0].section_path == ["consumer_unit_replacement"]
+    assert "consumer_unit" in chunks[0].job_types
+    assert "Typical hours: 6" in chunks[0].text
+    assert "Existing tails serviceable" in chunks[0].text
+    # Chunks with the same source + section_path get deterministic IDs
+    assert chunks[0].id != chunks[1].id

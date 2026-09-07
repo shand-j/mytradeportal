@@ -105,6 +105,57 @@ async def create_checkout(
         }
 
 
+async def create_subscription_transaction(
+    price_id: str,
+    tenant_id: str,
+    plan_key: str,
+    customer_email: str | None = None,
+    success_url: str | None = None,
+    discount_id: str | None = None,
+) -> dict[str, str]:
+    """Create a Paddle Billing transaction for a subscription checkout.
+
+    Returns the hosted checkout URL the client opens. Trials configured on
+    the price are applied by Paddle automatically. ``customer_email`` is
+    unused today because ``transactions.create`` requires a pre-created
+    ``customer_id`` — we collect the email in the checkout instead.
+    ``discount_id`` auto-applies a Paddle discount at checkout (used by the
+    beta cohort to make plans free).
+    """
+    if not settings.paddle_api_key:
+        raise RuntimeError("Paddle API key is not configured")
+    if not price_id:
+        raise RuntimeError("Paddle price id is not configured for this plan")
+    _ = customer_email  # kept for future pre-fill via customers.create
+
+    payload: dict[str, Any] = {
+        "items": [{"price_id": price_id, "quantity": 1}],
+        "collection_mode": "automatic",
+        "custom_data": {
+            "tenant_id": str(tenant_id),
+            "plan_key": plan_key,
+        },
+    }
+    if success_url:
+        payload["checkout"] = {"url": success_url}
+    if discount_id:
+        payload["discount_id"] = discount_id
+
+    async with httpx.AsyncClient(base_url=_paddle_base_url(), headers=_headers()) as client:
+        response = await client.post("/transactions", json=payload)
+        response.raise_for_status()
+        data = response.json()["data"]
+
+    checkout_url = (data.get("checkout") or {}).get("url")
+    if not checkout_url:
+        raise RuntimeError("Paddle transaction created without a checkout URL")
+
+    return {
+        "transaction_id": data["id"],
+        "checkout_url": checkout_url,
+    }
+
+
 def verify_webhook_signature(
     body: bytes,
     signature_header: str,

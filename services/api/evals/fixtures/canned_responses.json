@@ -1,0 +1,156 @@
+{
+  "ev-charger-install": {
+    "line_items": [
+      {"description": "EV charger supply and installation (labour)", "kind": "labour", "quantity": 1, "unit": "job", "unit_price": 450.0, "code": null, "reason": "Half-day install plus commissioning"},
+      {"description": "7kW EV charge point (Ohme/Zappi class)", "kind": "material", "quantity": 1, "unit": "each", "unit_price": 500.0, "code": null, "reason": "Standard 7kW tethered unit"},
+      {"description": "6mm SWA cable and gland kit", "kind": "material", "quantity": 10, "unit": "m", "unit_price": 4.5, "code": null, "reason": "8m run plus allowance"},
+      {"description": "RCBO protection and earthing materials", "kind": "material", "quantity": 1, "unit": "job", "unit_price": 85.0, "code": null, "reason": "Dedicated circuit protection"},
+      {"description": "Testing, commissioning and certification", "kind": "labour", "quantity": 1, "unit": "job", "unit_price": 95.0, "code": null, "reason": "BS 7671 certification"}
+    ],
+    "assumptions": ["Existing consumer unit has spare capacity", "No DNO notification delays"],
+    "notes": "Confirm earthing arrangement (TT may need earth rod)."
+  },
+  "consumer-unit-replacement": {
+    "line_items": [
+      {"description": "Consumer unit replacement (labour)", "kind": "labour", "quantity": 1, "unit": "job", "unit_price": 380.0, "code": null, "reason": "Full day including re-termination of 10 circuits"},
+      {"description": "Metal 10-way RCBO consumer unit", "kind": "material", "quantity": 1, "unit": "each", "unit_price": 220.0, "code": null, "reason": "Amendment 3 compliant metal enclosure"},
+      {"description": "Surge protection device (SPD)", "kind": "material", "quantity": 1, "unit": "each", "unit_price": 65.0, "code": null, "reason": "Type 2 SPD per current regs"},
+      {"description": "Testing, labelling and certification", "kind": "labour", "quantity": 1, "unit": "job", "unit_price": 95.0, "code": null, "reason": "EIC and schedule of test results"}
+    ],
+    "assumptions": ["Existing circuit cables are long enough to re-terminate"],
+    "notes": "Power will be off for most of the day."
+  },
+  "eicr-3-bed": {
+    "line_items": [
+      {"description": "EICR inspection and testing (3-bed)", "kind": "labour", "quantity": 1, "unit": "job", "unit_price": 200.0, "code": null, "reason": "Half day for typical 3-bed terraced"},
+      {"description": "EICR certificate and documentation", "kind": "labour", "quantity": 1, "unit": "each", "unit_price": 30.0, "code": null, "reason": "Report production"},
+      {"description": "Call-out fee", "kind": "callout", "quantity": 1, "unit": "job", "unit_price": 45.0, "code": null, "reason": "Local visit"}
+    ],
+    "assumptions": ["Single consumer unit, up to 8 circuits"],
+    "notes": "Any C1/C2 remedial work quoted separately."
+  },
+  "additional-sockets": {
+    "line_items": [
+      {"description": "Install double socket (labour per point)", "kind": "labour", "quantity": 3, "unit": "point", "unit_price": 85.0, "code": null, "reason": "Three new sockets"},
+      {"description": "Double socket faceplate and back box", "kind": "material", "quantity": 3, "unit": "each", "unit_price": 12.0, "code": null, "reason": "Standard white accessories"},
+      {"description": "Cable, trunking and sundries", "kind": "material", "quantity": 1, "unit": "job", "unit_price": 40.0, "code": null, "reason": "Surface trunking as agreed"},
+      {"description": "Call-out fee", "kind": "callout", "quantity": 1, "unit": "job", "unit_price": 45.0, "code": null, "reason": "Local visit"}
+    ],
+    "assumptions": ["Spurs taken from existing ring final circuit"],
+    "notes": ""
+  },
+  "garden-office-power": {
+    "line_items": [
+      {"description": "Trenching and cable burial (labour)", "kind": "labour", "quantity": 1, "unit": "job", "unit_price": 250.0, "code": null, "reason": "20m trench with warning tape"},
+      {"description": "SWA armoured cable 10mm 3-core", "kind": "material", "quantity": 20, "unit": "m", "unit_price": 7.0, "code": null, "reason": "20m buried run"},
+      {"description": "Small consumer unit for garden office", "kind": "material", "quantity": 1, "unit": "each", "unit_price": 120.0, "code": null, "reason": "4-way RCBO board"},
+      {"description": "Sockets, lights and heater circuit materials", "kind": "material", "quantity": 1, "unit": "job", "unit_price": 180.0, "code": null, "reason": "4 sockets, lighting and heater feed"},
+      {"description": "First and second fix labour in office", "kind": "labour", "quantity": 1, "unit": "job", "unit_price": 380.0, "code": null, "reason": "One day two-person"},
+      {"description": "Earthing rod and testing/certification", "kind": "material", "quantity": 1, "unit": "job", "unit_price": 140.0, "code": null, "reason": "TT earthing at office end plus EIC"}
+    ],
+    "assumptions": ["Soft ground, no obstructions on cable route"],
+    "notes": "Route to be agreed on site before trenching."
+  },
+  "fault-finding-emergency": {
+    "line_items": [
+      {"description": "Emergency call-out fee", "kind": "callout", "quantity": 1, "unit": "job", "unit_price": 65.0, "code": null, "reason": "Same-day attendance"},
+      {"description": "Fault finding and diagnostics (first hour)", "kind": "labour", "quantity": 1, "unit": "hour", "unit_price": 120.0, "code": null, "reason": "Trace tripping circuit"},
+      {"description": "Subsequent fault-finding labour", "kind": "labour", "quantity": 1, "unit": "hour", "unit_price": 75.0, "code": null, "reason": "Isolation and testing"}
+    ],
+    "assumptions": ["Fault located within two hours"],
+    "notes": "Any replacement parts quoted once fault is identified."
+  },
+  "kitchen-downlights": {
+    "line_items": [
+      {"description": "Install 6 LED downlights (labour)", "kind": "labour", "quantity": 1, "unit": "job", "unit_price": 240.0, "code": null, "reason": "Including removal of fluorescent strip"},
+      {"description": "Dimmable LED downlights", "kind": "material", "quantity": 6, "unit": "each", "unit_price": 18.0, "code": null, "reason": "Fire-rated IP20 downlights"},
+      {"description": "LED-compatible dimmer switch", "kind": "material", "quantity": 1, "unit": "each", "unit_price": 25.0, "code": null, "reason": "Trailing edge dimmer"},
+      {"description": "Cable and sundries", "kind": "material", "quantity": 1, "unit": "job", "unit_price": 30.0, "code": null, "reason": "Loft access available"}
+    ],
+    "assumptions": ["Loft access above kitchen ceiling"],
+    "notes": ""
+  },
+  "bathroom-extractor": {
+    "line_items": [
+      {"description": "Fit bathroom extractor fan (labour)", "kind": "labour", "quantity": 1, "unit": "job", "unit_price": 120.0, "code": null, "reason": "Including core drilling external wall"},
+      {"description": "Timer extractor fan 100mm", "kind": "material", "quantity": 1, "unit": "each", "unit_price": 55.0, "code": null, "reason": "SELV not required with external wall fit"},
+      {"description": "Fan isolator switch", "kind": "material", "quantity": 1, "unit": "each", "unit_price": 15.0, "code": null, "reason": "3-pole isolation per regs"},
+      {"description": "Ducting and external grille", "kind": "material", "quantity": 1, "unit": "job", "unit_price": 20.0, "code": null, "reason": "Through-wall kit"},
+      {"description": "Testing and minor works certificate", "kind": "labour", "quantity": 1, "unit": "job", "unit_price": 25.0, "code": null, "reason": "Zone-compliant installation"}
+    ],
+    "assumptions": ["Lighting circuit available for fan feed"],
+    "notes": ""
+  },
+  "cooker-circuit": {
+    "line_items": [
+      {"description": "Run new cooker circuit (labour)", "kind": "labour", "quantity": 1, "unit": "job", "unit_price": 260.0, "code": null, "reason": "10m run through kitchen units"},
+      {"description": "10mm twin and earth cable", "kind": "material", "quantity": 10, "unit": "m", "unit_price": 3.2, "code": null, "reason": "Induction hob load"},
+      {"description": "RCBO for cooker circuit", "kind": "material", "quantity": 1, "unit": "each", "unit_price": 45.0, "code": null, "reason": "Dedicated 32A/40A protection"},
+      {"description": "Cooker isolator and connection unit", "kind": "material", "quantity": 1, "unit": "job", "unit_price": 35.0, "code": null, "reason": "45A switch and outlet plate"},
+      {"description": "Testing and certification", "kind": "labour", "quantity": 1, "unit": "job", "unit_price": 60.0, "code": null, "reason": "Minor works certificate"}
+    ],
+    "assumptions": ["Spare way available in consumer unit"],
+    "notes": "Hob connection on delivery day to be coordinated."
+  },
+  "smoke-alarms": {
+    "line_items": [
+      {"description": "Install interlinked alarms (labour)", "kind": "labour", "quantity": 1, "unit": "job", "unit_price": 160.0, "code": null, "reason": "Three alarms, two storeys"},
+      {"description": "Mains smoke alarm with battery backup", "kind": "material", "quantity": 2, "unit": "each", "unit_price": 35.0, "code": null, "reason": "Hallway and landing"},
+      {"description": "Heat alarm (kitchen)", "kind": "material", "quantity": 1, "unit": "each", "unit_price": 40.0, "code": null, "reason": "Kitchen heat detection"},
+      {"description": "Cable, clips and testing", "kind": "material", "quantity": 1, "unit": "job", "unit_price": 50.0, "code": null, "reason": "Interlink wiring and commissioning"}
+    ],
+    "assumptions": ["Alarm feed taken from lighting circuit"],
+    "notes": "Complies with LD2-style coverage for insurance."
+  },
+  "outdoor-lighting": {
+    "line_items": [
+      {"description": "Install outdoor lights (labour)", "kind": "labour", "quantity": 1, "unit": "job", "unit_price": 260.0, "code": null, "reason": "Five fittings, external clipped cable"},
+      {"description": "Outdoor wall lights (IP44)", "kind": "material", "quantity": 4, "unit": "each", "unit_price": 30.0, "code": null, "reason": "Customer-approved style"},
+      {"description": "PIR security light", "kind": "material", "quantity": 1, "unit": "each", "unit_price": 45.0, "code": null, "reason": "Garage coverage"},
+      {"description": "Cable, clips, glands and switch", "kind": "material", "quantity": 1, "unit": "job", "unit_price": 55.0, "code": null, "reason": "Internal hallway switch"},
+      {"description": "Testing and certification", "kind": "labour", "quantity": 1, "unit": "job", "unit_price": 40.0, "code": null, "reason": "Minor works certificate"}
+    ],
+    "assumptions": ["Existing lighting circuit has capacity"],
+    "notes": ""
+  },
+  "partial-rewire": {
+    "line_items": [
+      {"description": "Partial rewire labour (kitchen and utility)", "kind": "labour", "quantity": 4, "unit": "day", "unit_price": 450.0, "code": null, "reason": "First and second fix, plaster off"},
+      {"description": "Cable and containment materials", "kind": "material", "quantity": 1, "unit": "job", "unit_price": 450.0, "code": null, "reason": "Sockets, hob, oven and lighting circuits"},
+      {"description": "Sockets, switches and accessories", "kind": "material", "quantity": 1, "unit": "job", "unit_price": 220.0, "code": null, "reason": "Customer-chosen finish"},
+      {"description": "Consumer unit circuit additions", "kind": "material", "quantity": 1, "unit": "job", "unit_price": 150.0, "code": null, "reason": "New RCBOs for added circuits"},
+      {"description": "Testing, inspection and certification (EIC)", "kind": "labour", "quantity": 1, "unit": "job", "unit_price": 180.0, "code": null, "reason": "EIC for new circuits"}
+    ],
+    "assumptions": ["Plaster removed by others before first fix", "Making good excluded"],
+    "notes": "Old rubber cabling elsewhere in the house should be budgeted for future replacement."
+  },
+  "immersion-heater": {
+    "line_items": [
+      {"description": "Replace immersion element and thermostat (labour)", "kind": "labour", "quantity": 1, "unit": "job", "unit_price": 150.0, "code": null, "reason": "Drain down and refit"},
+      {"description": "Immersion heater element and thermostat", "kind": "material", "quantity": 1, "unit": "job", "unit_price": 65.0, "code": null, "reason": "Standard 3kW element"},
+      {"description": "Wiring check and testing", "kind": "labour", "quantity": 1, "unit": "job", "unit_price": 25.0, "code": null, "reason": "Verify circuit and isolator"}
+    ],
+    "assumptions": ["Cylinder in serviceable condition"],
+    "notes": "If the cylinder itself is leaking, replacement would be a separate quote."
+  },
+  "shower-circuit": {
+    "line_items": [
+      {"description": "Upgrade shower circuit and fit shower (labour)", "kind": "labour", "quantity": 1, "unit": "job", "unit_price": 320.0, "code": null, "reason": "Re-run cable, swap unit, commission"},
+      {"description": "10mm twin and earth cable", "kind": "material", "quantity": 8, "unit": "m", "unit_price": 3.2, "code": null, "reason": "9.5kW load requires 10mm"},
+      {"description": "45A RCBO breaker", "kind": "material", "quantity": 1, "unit": "each", "unit_price": 55.0, "code": null, "reason": "Consumer unit upgrade for new load"},
+      {"description": "45A ceiling pull cord switch", "kind": "material", "quantity": 1, "unit": "each", "unit_price": 18.0, "code": null, "reason": "Replace faulty cord"},
+      {"description": "Testing and certification", "kind": "labour", "quantity": 1, "unit": "job", "unit_price": 60.0, "code": null, "reason": "Minor works certificate"}
+    ],
+    "assumptions": ["Shower unit supplied by customer", "Meter tails adequate for load"],
+    "notes": "Confirm maximum demand with existing circuits before energising."
+  },
+  "doorbell-transformer": {
+    "line_items": [
+      {"description": "Call-out fee", "kind": "callout", "quantity": 1, "unit": "job", "unit_price": 45.0, "code": null, "reason": "Short local visit"},
+      {"description": "Diagnose and replace doorbell transformer (labour)", "kind": "labour", "quantity": 1, "unit": "job", "unit_price": 60.0, "code": null, "reason": "Including bell push check"},
+      {"description": "Doorbell transformer and bell push", "kind": "material", "quantity": 1, "unit": "job", "unit_price": 37.0, "code": null, "reason": "8V transformer and replacement push"}
+    ],
+    "assumptions": ["Transformer accessible in hallway"],
+    "notes": ""
+  }
+}

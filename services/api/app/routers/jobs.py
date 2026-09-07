@@ -12,6 +12,7 @@ from sqlalchemy.orm import selectinload
 from app.database import get_db
 from app.dependencies import TenantDep
 from app.models import Contact, Job, Quote
+from app.push import notify_staff
 from app.rls import set_tenant_in_session
 from app.schemas import JobCreate, JobRead, JobUpdate
 
@@ -61,6 +62,19 @@ async def create_job(data: JobCreate, tenant: TenantDep, db: DbDep) -> JobRead:
 
     job = Job(tenant_id=tenant.id, **data.model_dump())
     db.add(job)
+    await db.flush()
+    if job.status == "scheduled":
+        scheduled_str = (
+            job.scheduled_start.strftime("%a %d %b %H:%M") if job.scheduled_start else "TBC"
+        )
+        await notify_staff(
+            db,
+            tenant.id,
+            kind="job_scheduled",
+            title="Job scheduled",
+            body=f"'{job.title}' scheduled for {scheduled_str}.",
+            link=f"/job/{job.id}",
+        )
     await db.commit()
     await db.refresh(job)
     return JobRead.model_validate(job)

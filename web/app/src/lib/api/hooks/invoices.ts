@@ -26,15 +26,22 @@ export function toInvoice(raw: Record<string, unknown>): Invoice {
     jobId: (raw.jobId ?? raw.job_id ?? null) as string | null,
     quoteId: (raw.quoteId ?? raw.quote_id ?? null) as string | null,
     status,
-    lineItems: Array.isArray(raw.lineItems)
-      ? (raw.lineItems as Record<string, unknown>[]).map((item) => ({
-          id: String(item.id),
-          description: String(item.description ?? ''),
-          quantity: Number(item.quantity ?? 1),
-          unit: String(item.unit ?? 'item'),
-          unitPrice: Number(item.unitPrice ?? item.unit_price ?? 0),
-          total: Number(item.total ?? item.quantity ?? 1) * Number(item.unitPrice ?? item.unit_price ?? 0),
-        }))
+    lineItems: Array.isArray(raw.lineItems ?? raw.line_items)
+      ? ((raw.lineItems ?? raw.line_items) as Record<string, unknown>[]).map((item) => {
+          const quantity = Number(item.quantity ?? 1);
+          const unitPrice = Number(item.unitPrice ?? item.unit_price ?? 0);
+          // Prefer the API's per-line total; only fall back to qty × unit price
+          // when it is absent (multiplying a present total again double-counts).
+          const total = item.total != null ? Number(item.total) : quantity * unitPrice;
+          return {
+            id: String(item.id),
+            description: String(item.description ?? ''),
+            quantity,
+            unit: String(item.unit ?? 'item'),
+            unitPrice,
+            total,
+          };
+        })
       : [],
     subtotal: Number(raw.subtotal ?? 0),
     vatAmount: Number(raw.vatAmount ?? raw.vat_amount ?? 0),

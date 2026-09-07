@@ -17,7 +17,16 @@ class Tenant(models.Model):
     slug = models.SlugField(unique=True, max_length=63)
     name = models.CharField(max_length=255)
     is_active = models.BooleanField(default=True)
-    settings = models.JSONField(default=dict)
+    status = models.CharField(
+        max_length=50, default="active"
+    )  # onboarding | provisional | active | suspended
+    onboarding_progress = models.JSONField(default=dict, blank=True)
+    ch_verified = models.CharField(max_length=50, default="self_declared")
+    nations_served = models.JSONField(default=list, blank=True)
+    vat_registered = models.BooleanField(default=False)
+    quote_defaults = models.JSONField(default=dict, blank=True)
+    branding = models.JSONField(default=dict, blank=True)
+    settings = models.JSONField(default=dict, blank=True)
     paddle_sandbox = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)

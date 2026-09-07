@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { useNavigate, useParams } from 'react-router-dom';
 import { ChevronLeft, ChevronRight, CalendarPlus, X, Trash2 } from 'lucide-react';
 import {
   useAppointments,
@@ -15,6 +16,9 @@ import type { Appointment, AppointmentStatus } from '@/types';
 
 type CalendarView = 'month' | 'week' | 'day';
 
+const DAY_START_HOUR = 7;
+const DAY_END_HOUR = 19;
+
 const appointmentStatuses: AppointmentStatus[] = ['scheduled', 'confirmed', 'in_progress', 'completed', 'cancelled', 'no_show'];
 
 export function Calendar() {
@@ -24,7 +28,9 @@ export function Calendar() {
   const updateAppointment = useUpdateAppointment();
   const deleteAppointment = useDeleteAppointment();
   const [currentDate, setCurrentDate] = useState(new Date());
-  const [view, setView] = useState<CalendarView>('month');
+  const navigate = useNavigate();
+  const { view: viewParam } = useParams<{ view?: string }>();
+  const view: CalendarView = viewParam === 'week' || viewParam === 'day' ? viewParam : 'month';
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [selectedAppt, setSelectedAppt] = useState<Appointment | null>(null);
 
@@ -40,23 +46,32 @@ export function Calendar() {
 
   const getApptsForDay = (day: Date) => (appointments ?? []).filter(a => {
     const d = new Date(a.startTime);
-    return d.getDate() === day.getDate() && d.getMonth() === day.getMonth() && d.getFullYear() === day.getFullYear();
+    return !Number.isNaN(d.getTime()) && isSameDay(d, day);
   });
-
-  const statusColors: Record<string, string> = {
-    scheduled: 'bg-[#FFF7ED] text-[#C2410C]',
-    confirmed: 'bg-[#F0FDF4] text-[#15803D]',
-    in_progress: 'bg-[#EFF6FF] text-[#1D4ED8]',
-    completed: 'bg-[#F0FDF4] text-[#15803D]',
-    cancelled: 'bg-[#FEF2F2] text-[#B91C1C]',
-  };
 
   const setViewFromLabel = (label: string) => {
     const lower = label.toLowerCase();
     if (lower === 'month' || lower === 'week' || lower === 'day') {
-      setView(lower);
+      navigate(lower === 'month' ? '/calendar' : `/calendar/${lower}`);
     }
   };
+
+  const stepDate = (direction: 1 | -1) => {
+    if (view === 'month') {
+      setCurrentDate(direction === 1 ? addMonths(currentDate, 1) : subMonths(currentDate, 1));
+    } else if (view === 'week') {
+      setCurrentDate(addDays(currentDate, direction * 7));
+    } else {
+      setCurrentDate(addDays(currentDate, direction));
+    }
+  };
+
+  const headerTitle =
+    view === 'month'
+      ? format(currentDate, 'MMMM yyyy')
+      : view === 'week'
+        ? `Week of ${format(startOfWeek(currentDate, { weekStartsOn: 1 }), 'd MMM yyyy')}`
+        : format(currentDate, 'EEEE d MMMM yyyy');
 
   const handleCreate = (payload: {
     customerId: string;
@@ -112,15 +127,15 @@ export function Calendar() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
-          <h2 className="text-xl font-semibold text-[#1C1917]">{format(currentDate, 'MMMM yyyy')}</h2>
+          <h2 className="text-xl font-semibold text-[#1C1917]">{headerTitle}</h2>
           <div className="flex items-center gap-1">
-            <button onClick={() => setCurrentDate(subMonths(currentDate, 1))} className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-[#F5F4F0] transition-colors">
+            <button onClick={() => stepDate(-1)} className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-[#F5F4F0] transition-colors">
               <ChevronLeft className="w-4 h-4" />
             </button>
             <button onClick={() => setCurrentDate(new Date())} className="px-3 h-8 text-xs font-medium rounded-lg hover:bg-[#F5F4F0] transition-colors text-[#57534E]">
               Today
             </button>
-            <button onClick={() => setCurrentDate(addMonths(currentDate, 1))} className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-[#F5F4F0] transition-colors">
+            <button onClick={() => stepDate(1)} className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-[#F5F4F0] transition-colors">
               <ChevronRight className="w-4 h-4" />
             </button>
           </div>
@@ -198,84 +213,121 @@ interface ViewProps {
   onSelect: (appt: Appointment) => void;
 }
 
+const statusColors: Record<string, string> = {
+  scheduled: 'bg-[#FFF7ED] text-[#C2410C]',
+  confirmed: 'bg-[#F0FDF4] text-[#15803D]',
+  in_progress: 'bg-[#EFF6FF] text-[#1D4ED8]',
+  completed: 'bg-[#F0FDF4] text-[#15803D]',
+  cancelled: 'bg-[#FEF2F2] text-[#B91C1C]',
+  no_show: 'bg-[#FEF2F2] text-[#B91C1C]',
+};
+
+const HOURS = Array.from({ length: DAY_END_HOUR - DAY_START_HOUR + 1 }, (_, i) => DAY_START_HOUR + i);
+
+function isSameDay(a: Date, b: Date) {
+  return a.getDate() === b.getDate() && a.getMonth() === b.getMonth() && a.getFullYear() === b.getFullYear();
+}
+
+function appointmentsAtHour(appointments: Appointment[], day: Date, hour: number) {
+  return appointments.filter(a => {
+    const start = new Date(a.startTime);
+    return !Number.isNaN(start.getTime()) && isSameDay(start, day) && start.getHours() === hour;
+  });
+}
+
+function TimeBlock({ appt, onSelect }: { appt: Appointment; onSelect: (a: Appointment) => void }) {
+  const start = new Date(appt.startTime);
+  const end = new Date(appt.endTime);
+  const minutes = Number.isNaN(start.getTime()) ? 0 : start.getMinutes();
+  return (
+    <button
+      onClick={() => onSelect(appt)}
+      style={{ marginTop: `${(minutes / 60) * 100}%` }}
+      className={`block w-full text-left px-1.5 py-1 rounded text-[10px] font-medium truncate ${statusColors[appt.status] || 'bg-[#F5F4F0] text-[#57534E]'}`}
+    >
+      {format(start, 'HH:mm')}{!Number.isNaN(end.getTime()) ? `–${format(end, 'HH:mm')}` : ''} {appt.title}
+    </button>
+  );
+}
+
 function WeekView({ currentDate, appointments, onSelect }: ViewProps) {
-  const statusColors: Record<string, string> = {
-    scheduled: 'bg-[#FFF7ED] text-[#C2410C]',
-    confirmed: 'bg-[#F0FDF4] text-[#15803D]',
-    in_progress: 'bg-[#EFF6FF] text-[#1D4ED8]',
-    completed: 'bg-[#F0FDF4] text-[#15803D]',
-    cancelled: 'bg-[#FEF2F2] text-[#B91C1C]',
-  };
   const weekStart = startOfWeek(currentDate, { weekStartsOn: 1 });
   const days = Array.from({ length: 7 }, (_, i) => addDays(weekStart, i));
-  const hours = Array.from({ length: 13 }, (_, i) => i + 7);
+  const outsideHours = appointments.filter(a => {
+    const start = new Date(a.startTime);
+    if (Number.isNaN(start.getTime()) || !days.some(d => isSameDay(start, d))) return false;
+    const h = start.getHours();
+    return h < DAY_START_HOUR || h > DAY_END_HOUR;
+  });
 
   return (
     <div className="bg-white rounded-xl border border-[#E7E5E4] shadow-sm overflow-hidden">
       <div className="grid grid-cols-8 border-b border-[#F0EFEA]">
         <div className="py-2.5 px-2 text-[11px] font-semibold text-[#A8A29E] uppercase">Time</div>
         {days.map(d => (
-          <div key={d.toISOString()} className={`py-2.5 text-center text-xs font-medium ${isToday(d) ? 'text-[#D4650A]' : 'text-[#57534E]'}`}>
+          <div key={d.toISOString()} className={`py-2.5 text-center text-xs font-medium ${isToday(d) ? 'text-[#D4650A] font-semibold' : 'text-[#57534E]'}`}>
             {format(d, 'EEE d')}
           </div>
         ))}
       </div>
       <div className="max-h-[600px] overflow-y-auto">
-        {hours.map(hour => (
+        {HOURS.map(hour => (
           <div key={hour} className="grid grid-cols-8 border-b border-[#F0EFEA]" style={{ minHeight: '60px' }}>
             <div className="px-2 py-2 text-[11px] text-[#A8A29E] font-medium">{hour}:00</div>
-            {days.map(day => {
-              const appts = appointments.filter(a => {
-                const d = new Date(a.startTime);
-                return d.getDate() === day.getDate() && d.getMonth() === day.getMonth() && d.getHours() === hour;
-              });
-              return (
-                <div key={day.toISOString()} className="border-l border-[#F0EFEA] p-1 relative">
-                  {appts.map(appt => (
-                    <button
-                      key={appt.id}
-                      onClick={() => onSelect(appt)}
-                      className={`block w-full text-left px-1.5 py-1 rounded text-[10px] font-medium truncate ${statusColors[appt.status] || ''}`}
-                    >
-                      {appt.title}
-                    </button>
-                  ))}
-                </div>
-              );
-            })}
+            {days.map(day => (
+              <div key={day.toISOString()} className={`border-l border-[#F0EFEA] p-1 relative overflow-hidden ${isToday(day) ? 'bg-[#FFFBEB]/40' : ''}`}>
+                {appointmentsAtHour(appointments, day, hour).map(appt => (
+                  <TimeBlock key={appt.id} appt={appt} onSelect={onSelect} />
+                ))}
+              </div>
+            ))}
           </div>
         ))}
       </div>
+      {outsideHours.length > 0 && (
+        <div className="border-t border-[#F0EFEA] px-4 py-2 text-xs text-[#78716C]">
+          Outside {DAY_START_HOUR}:00–{DAY_END_HOUR}:00:{' '}
+          {outsideHours.map(a => `${a.title} (${format(new Date(a.startTime), 'EEE d MMM, HH:mm')})`).join(' · ')}
+        </div>
+      )}
     </div>
   );
 }
 
 function DayView({ currentDate, appointments, onSelect }: ViewProps) {
   const dayAppts = appointments.filter(a => {
-    const d = new Date(a.startTime);
-    return d.getDate() === currentDate.getDate() && d.getMonth() === currentDate.getMonth();
-  }).sort((a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime());
+    const start = new Date(a.startTime);
+    return !Number.isNaN(start.getTime()) && isSameDay(start, currentDate);
+  });
+  const outsideHours = dayAppts.filter(a => {
+    const h = new Date(a.startTime).getHours();
+    return h < DAY_START_HOUR || h > DAY_END_HOUR;
+  });
 
   return (
-    <div className="bg-white rounded-xl border border-[#E7E5E4] shadow-sm p-5 space-y-3">
-      <div className="text-sm font-medium text-[#78716C] mb-4">{format(currentDate, 'EEEE, MMMM do')}</div>
+    <div className="bg-white rounded-xl border border-[#E7E5E4] shadow-sm overflow-hidden">
+      <div className="py-2.5 px-4 border-b border-[#F0EFEA] text-sm font-medium text-[#57534E]">
+        {format(currentDate, 'EEEE, d MMMM yyyy')}
+      </div>
+      <div className="max-h-[600px] overflow-y-auto">
+        {HOURS.map(hour => (
+          <div key={hour} className="grid grid-cols-[64px_1fr] border-b border-[#F0EFEA]" style={{ minHeight: '60px' }}>
+            <div className="px-2 py-2 text-[11px] text-[#A8A29E] font-medium">{hour}:00</div>
+            <div className="border-l border-[#F0EFEA] p-1 relative overflow-hidden">
+              {appointmentsAtHour(dayAppts, currentDate, hour).map(appt => (
+                <TimeBlock key={appt.id} appt={appt} onSelect={onSelect} />
+              ))}
+            </div>
+          </div>
+        ))}
+      </div>
       {dayAppts.length === 0 && <div className="text-sm text-[#A8A29E] py-8 text-center">No appointments scheduled</div>}
-      {dayAppts.map(appt => (
-        <button
-          key={appt.id}
-          onClick={() => onSelect(appt)}
-          className="w-full flex items-center gap-4 p-4 rounded-lg border border-[#E7E5E4] hover:bg-[#F5F4F0] transition-colors text-left"
-        >
-          <div className={`w-1 h-12 rounded-full ${appt.status === 'in_progress' ? 'bg-[#2563EB]' : appt.status === 'completed' ? 'bg-[#16A34A]' : 'bg-[#D4650A]'}`} />
-          <div className="flex-1 min-w-0">
-            <div className="text-sm font-semibold text-[#1C1917]">{appt.title}</div>
-            <div className="text-xs text-[#78716C]">{appt.customer.firstName} {appt.customer.lastName} · {appt.propertyAddress}</div>
-          </div>
-          <div className="text-xs text-[#57534E] font-medium">
-            {format(new Date(appt.startTime), 'HH:mm')} - {format(new Date(appt.endTime), 'HH:mm')}
-          </div>
-        </button>
-      ))}
+      {outsideHours.length > 0 && (
+        <div className="border-t border-[#F0EFEA] px-4 py-2 text-xs text-[#78716C]">
+          Outside {DAY_START_HOUR}:00–{DAY_END_HOUR}:00:{' '}
+          {outsideHours.map(a => a.title).join(', ')}
+        </div>
+      )}
     </div>
   );
 }

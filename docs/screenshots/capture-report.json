@@ -1,0 +1,136 @@
+{
+  "web": [],
+  "mobile": [
+    {
+      "name": "entry",
+      "ok": true,
+      "file": "docs/screenshots/mobile/entry.png"
+    },
+    {
+      "name": "trade-login",
+      "ok": true,
+      "file": "docs/screenshots/mobile/trade-login.png"
+    },
+    {
+      "name": "customer-login",
+      "ok": true,
+      "file": "docs/screenshots/mobile/customer-login.png"
+    },
+    {
+      "name": "trade-dashboard",
+      "ok": true,
+      "file": "docs/screenshots/mobile/trade-dashboard.png"
+    },
+    {
+      "name": "trade-quotes",
+      "ok": true,
+      "file": "docs/screenshots/mobile/trade-quotes.png"
+    },
+    {
+      "name": "trade-leads",
+      "ok": true,
+      "file": "docs/screenshots/mobile/trade-leads.png"
+    },
+    {
+      "name": "trade-lead-detail-triage",
+      "ok": true,
+      "file": "docs/screenshots/mobile/trade-lead-detail-triage.png"
+    },
+    {
+      "name": "trade-request-info-chat",
+      "ok": true,
+      "file": "docs/screenshots/mobile/trade-request-info-chat.png"
+    },
+    {
+      "name": "trade-messages-thread",
+      "ok": true,
+      "file": "docs/screenshots/mobile/trade-messages-thread.png"
+    },
+    {
+      "name": "trade-quote-review-ai",
+      "ok": true,
+      "file": "docs/screenshots/mobile/trade-quote-review-ai.png"
+    },
+    {
+      "name": "trade-quote-intake",
+      "ok": true,
+      "file": "docs/screenshots/mobile/trade-quote-intake.png"
+    },
+    {
+      "name": "trade-customers",
+      "ok": true,
+      "file": "docs/screenshots/mobile/trade-customers.png"
+    },
+    {
+      "name": "trade-calendar-week",
+      "ok": true,
+      "file": "docs/screenshots/mobile/trade-calendar-week.png"
+    },
+    {
+      "name": "trade-invoices",
+      "ok": true,
+      "file": "docs/screenshots/mobile/trade-invoices.png"
+    },
+    {
+      "name": "trade-invoice-detail-paid",
+      "ok": true,
+      "file": "docs/screenshots/mobile/trade-invoice-detail-paid.png"
+    },
+    {
+      "name": "trade-certificates",
+      "ok": true,
+      "file": "docs/screenshots/mobile/trade-certificates.png"
+    },
+    {
+      "name": "trade-certificate-new",
+      "ok": true,
+      "file": "docs/screenshots/mobile/trade-certificate-new.png"
+    },
+    {
+      "name": "trade-settings",
+      "ok": true,
+      "file": "docs/screenshots/mobile/trade-settings.png"
+    },
+    {
+      "name": "trade-analytics",
+      "ok": true,
+      "file": "docs/screenshots/mobile/trade-analytics.png"
+    },
+    {
+      "name": "trade-branding",
+      "ok": true,
+      "file": "docs/screenshots/mobile/trade-branding.png"
+    },
+    {
+      "name": "trade-follow-ups",
+      "ok": true,
+      "file": "docs/screenshots/mobile/trade-follow-ups.png"
+    },
+    {
+      "name": "trade-manual-lead",
+      "ok": true,
+      "file": "docs/screenshots/mobile/trade-manual-lead.png"
+    },
+    {
+      "name": "customer-requests",
+      "ok": true,
+      "file": "docs/screenshots/mobile/customer-requests.png"
+    },
+    {
+      "name": "customer-request-chat",
+      "ok": true,
+      "file": "docs/screenshots/mobile/customer-request-chat.png"
+    },
+    {
+      "name": "customer-calendar",
+      "ok": true,
+      "file": "docs/screenshots/mobile/customer-calendar.png"
+    },
+    {
+      "name": "customer-profile",
+      "ok": true,
+      "file": "docs/screenshots/mobile/customer-profile.png"
+    }
+  ],
+  "failures": []
+}

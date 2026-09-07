@@ -14,6 +14,10 @@ from data_pipeline.config import settings
 from data_pipeline.database import get_db_session
 from data_pipeline.embeddings import embed_texts, get_embedding_dimension
 from data_pipeline.models import CostItem
+from data_pipeline.normalizer.attributes import (
+    extract_product_attributes,
+    format_attributes_tail,
+)
 from data_pipeline.normalizer.unified_product import (
     ProductCategory,
     ProductNormalizer,
@@ -72,15 +76,30 @@ def _category_to_cost_category(category: ProductCategory) -> str:
 
 
 def _build_description(product: UnifiedProduct) -> str:
-    """Build a searchable cost-item description from a product."""
-    parts = [product.name]
-    if product.brand:
-        parts.insert(0, product.brand)
-    if product.description and product.description != product.name:
-        parts.append(product.description)
-    if product.supplier.value != "unknown":
-        parts.append(f"Supplier: {product.supplier.value}")
-    return " ".join(parts)
+    """Build a searchable cost-item description from a product.
+
+    Structured for retrieval quality:
+    - category token first so lexical/BM25-style match keys off it
+    - brand once (Screwfix listings sometimes lead the name with the brand,
+      so avoid duplicating it as a separate prefix)
+    - product name
+    - a compact free-text description if it adds anything
+
+    Deliberately omits ``Supplier: screwfix`` — that hint hurts vector search
+    (every row shared the same token) and is redundant with the ``source``
+    field on the row.
+    """
+    category = _category_to_cost_category(product.category)
+    name = (product.name or "").strip()
+    brand = (product.brand or "").strip()
+
+    if brand and name and not name.lower().startswith(brand.lower()):
+        name = f"{brand} {name}"
+
+    parts = [f"[{category}]", name]
+    if product.description and product.description.strip() and product.description != product.name:
+        parts.append(product.description.strip())
+    return re.sub(r"\s+", " ", " ".join(p for p in parts if p)).strip()
 
 
 def unified_product_to_cost_item(product: UnifiedProduct) -> dict[str, Any] | None:
@@ -117,7 +136,8 @@ def unified_product_to_cost_item(product: UnifiedProduct) -> dict[str, Any] | No
         return None
 
     code = f"DOM-{supplier_value}-{identifier}".replace(" ", "_")[:63]
-    description = _build_description(product)
+    attributes = extract_product_attributes(product)
+    description = _build_description(product) + format_attributes_tail(attributes)
 
     return {
         "code": code,
@@ -144,6 +164,7 @@ def unified_product_to_cost_item(product: UnifiedProduct) -> dict[str, Any] | No
             "metre_length": metre_length,
             "scraped_at": product.scraped_at,
             "stock_status": product.stock_status,
+            "attributes": attributes,
         },
     }
 
@@ -229,12 +250,14 @@ async def _deactivate_old_pipeline_items(
 
 def _cost_item_to_payload(item: CostItem) -> dict[str, Any]:
     """Build a Qdrant payload from a CostItem."""
-    return {
+    attributes = item.extra_data.get("attributes") or {}
+    payload: dict[str, Any] = {
         "code": item.code,
         "trade": item.trade,
         "region": item.region,
         "category": item.category,
         "description": item.description,
+        "search_text": item.description,
         "unit": item.unit,
         "unit_price": str(item.unit_price),
         "currency": item.currency,
@@ -250,6 +273,11 @@ def _cost_item_to_payload(item: CostItem) -> dict[str, Any]:
         "metre_length": item.extra_data.get("metre_length"),
         "scraped_at": item.extra_data.get("scraped_at"),
     }
+    # Flatten attributes to top-level payload keys so Qdrant field filters
+    # (Filter/FieldCondition/MatchValue) can target them without dotted paths.
+    for key, value in attributes.items():
+        payload[f"attr_{key}"] = value
+    return payload
 
 
 async def _index_in_qdrant(items: list[CostItem]) -> None:

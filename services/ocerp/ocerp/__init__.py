@@ -1,1 +1,0 @@
-"""OpenConstructionERP service package."""

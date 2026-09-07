@@ -34,13 +34,14 @@ class KnowledgeChunk(BaseModel):
     doc_type: str = "prose"
 
 
-DEFAULT_KB_MARKDOWN = Path("docs/UK_Domestic_Electrical_Quoting_Knowledge_Base.md")
+DEFAULT_KB_MARKDOWN = Path("docs/archived/UK_Domestic_Electrical_Quoting_Knowledge_Base.md")
 DEFAULT_KB_JSON = Path(
-    "docs/ai_electrician_quoting_platform_research/uk_domestic_electrical_knowledge_base.json"
+    "docs/archived/ai_electrician_quoting_platform_research/uk_domestic_electrical_knowledge_base.json"
 )
 DEFAULT_JOB_CAPTURE_JSON = Path(
-    "docs/ai_electrician_quoting_platform_research/job_capture_data_model.json"
+    "docs/archived/ai_electrician_quoting_platform_research/job_capture_data_model.json"
 )
+DEFAULT_LABOUR_NORMS_JSON = Path("services/data-pipeline/data/labour_norms_uk.json")
 
 # Simple heuristics to tag chunks for agent retrieval filters.
 _RULE_TIER_HINTS = {
@@ -332,6 +333,44 @@ def _chunk_payload(chunk: KnowledgeChunk) -> dict[str, Any]:
     }
 
 
+def chunk_labour_norms(path: Path, source: str) -> list[KnowledgeChunk]:
+    """Chunk the hand-curated UK labour norms JSON into retrievable rows.
+
+    Each task becomes one chunk. Text is a compact human-readable block the
+    LLM can quote back in labour-line reasoning. ``job_types`` come from the
+    ``job_type_tags`` field so the same retrieval-side intent tags apply.
+    """
+    data = json.loads(path.read_text(encoding="utf-8"))
+    chunks: list[KnowledgeChunk] = []
+    for idx, norm in enumerate(data.get("norms", [])):
+        title = str(norm.get("title", "")).strip()
+        task_key = str(norm.get("task_key", "")).strip()
+        typical = norm.get("typical_hours")
+        low = norm.get("min_hours")
+        high = norm.get("max_hours")
+        assumptions = norm.get("assumptions", []) or []
+        job_types = norm.get("job_type_tags", []) or []
+        text_lines = [
+            f"Labour norm: {title}",
+            f"Typical hours: {typical} (range {low}-{high})",
+        ]
+        if assumptions:
+            text_lines.append("Assumptions:")
+            text_lines.extend(f"- {a}" for a in assumptions)
+        chunks.append(
+            KnowledgeChunk(
+                id=_chunk_id(source, [task_key], idx),
+                text="\n".join(text_lines),
+                source=source,
+                section_path=[task_key],
+                rule_tier="reference",
+                job_types=job_types,
+                doc_type="labour_norm",
+            )
+        )
+    return chunks
+
+
 async def load_knowledge(
     *,
     reset: bool = True,
@@ -349,6 +388,8 @@ async def load_knowledge(
     chunks.extend(chunk_markdown(DEFAULT_KB_MARKDOWN, "uk_domestic_electrical_kb"))
     chunks.extend(chunk_json_tables(DEFAULT_KB_JSON, "uk_domestic_electrical_kb_tables"))
     chunks.extend(chunk_job_capture_data_model(DEFAULT_JOB_CAPTURE_JSON, "job_capture_data_model"))
+    if DEFAULT_LABOUR_NORMS_JSON.exists():
+        chunks.extend(chunk_labour_norms(DEFAULT_LABOUR_NORMS_JSON, "labour_norms_uk"))
 
     if dry_run:
         return chunks

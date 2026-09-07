@@ -22,6 +22,9 @@ async def test_bootstrap_creates_tenant_and_admin_who_can_login(client: AsyncCli
     assert response.status_code == 201
     data = response.json()
     assert data["slug"] == slug
+    assert data["code"] is not None
+    assert len(data["code"]) == 6
+    assert data["code"].isdigit()
     assert data["admin_user"]["email"] == f"admin@{slug}.example.com"
     assert data["admin_user"]["role"] == "admin"
     assert data["admin_user"]["tenant_id"] == data["id"]

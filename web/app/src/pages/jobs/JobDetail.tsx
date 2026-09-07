@@ -4,6 +4,7 @@ import { Calendar, MapPin, User, FileText, Edit, CheckCircle, XCircle, X } from 
 import { useJob, useTransitionJobStatus, useUpdateJob } from '@/lib/api/hooks';
 import { useUiStore } from '@/stores/uiStore';
 import { StatusPill } from '@/components/shared/StatusPill';
+import { formatGBP } from '@/lib/utils';
 import { toast } from 'sonner';
 import type { Job, JobStatus } from '@/types';
 
@@ -62,7 +63,7 @@ export function JobDetail() {
                 <div className="font-mono text-lg font-semibold text-[#1C1917]">{job.reference}</div>
                 <StatusPill status={job.status} />
               </div>
-              <div className="text-2xl font-bold text-[#1C1917]">£{job.value.toLocaleString()}</div>
+              <div className="text-2xl font-bold text-[#1C1917]">{formatGBP(job.value)}</div>
             </div>
             <h3 className="text-lg font-semibold text-[#1C1917] mb-1">{job.serviceType}</h3>
             <p className="text-sm text-[#57534E] mb-4">{job.description}</p>

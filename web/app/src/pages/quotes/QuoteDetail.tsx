@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
-import { Sparkles, Send, Edit, FileDown, Wrench, CheckCircle, XCircle, Trash2 } from 'lucide-react';
+import { Sparkles, Send, Edit, FileDown, Wrench, CheckCircle, XCircle, Trash2, TriangleAlert } from 'lucide-react';
 import { API_BASE_URL } from '@/lib/api/client';
-import { useQuote, useSendQuote, useApproveQuote, useRejectQuote, useConvertQuoteToInvoice, useDeleteQuote, useQuoteBoq, useUpdateQuote, useUpdateQuoteBoq } from '@/lib/api/hooks';
+import { useQuote, useSendQuote, useApproveQuote, useRejectQuote, useConvertQuoteToInvoice, useDeleteQuote, useUpdateQuote, useRefineQuote } from '@/lib/api/hooks';
 import { useUiStore } from '@/stores/uiStore';
 import { StatusPill } from '@/components/shared/StatusPill';
 import { toast } from 'sonner';
@@ -14,48 +14,21 @@ function formatCurrency(value: number, fractionDigits = 2): string {
   });
 }
 
-function formatCurrencySafe(value: number, fractionDigits = 2): string {
-  if (!Number.isFinite(value)) return formatCurrency(0, fractionDigits);
-  return formatCurrency(value, fractionDigits);
-}
-
 export function QuoteDetail() {
   const { id = '' } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const setPageTitle = useUiStore(s => s.setPageTitle);
   const { data: quote, isLoading, error } = useQuote(id);
-  const { data: boq } = useQuoteBoq(id);
   const sendQuote = useSendQuote();
   const updateQuote = useUpdateQuote();
-  const updateQuoteBoq = useUpdateQuoteBoq();
+  const refineQuote = useRefineQuote();
   const approveQuote = useApproveQuote();
   const rejectQuote = useRejectQuote();
   const convertQuote = useConvertQuoteToInvoice();
   const deleteQuote = useDeleteQuote();
   const [isEditing, setIsEditing] = useState(false);
   const [draftItems, setDraftItems] = useState<Array<{ id: string; description: string; quantity: number; unitPrice: number }>>([]);
-  const [isBoqEditing, setIsBoqEditing] = useState(false);
-  const [draftBoqItems, setDraftBoqItems] = useState<Array<{
-    id: string;
-    code: string;
-    description: string;
-    category: string | null;
-    unit: string;
-    quantity: number;
-    labourHours: number;
-    labourRate: number;
-    labourTotal: number;
-    materialCost: number;
-    materialTotal: number;
-    plantCost: number;
-    plantTotal: number;
-    supplier: string | null;
-    brand: string | null;
-    sku: string | null;
-    productUrl: string | null;
-    retailPriceInclVat: number | null;
-    notes: string | null;
-  }>>([]);
+  const [refineInstructions, setRefineInstructions] = useState('');
 
   useEffect(() => {
     setPageTitle('Quote Detail');
@@ -73,33 +46,6 @@ export function QuoteDetail() {
     );
   }, [quote]);
 
-  useEffect(() => {
-    if (!boq) return;
-    setDraftBoqItems(
-      boq.lineItems.map((item) => ({
-        id: item.id,
-        code: item.code,
-        description: item.description,
-        category: item.category,
-        unit: item.unit,
-        quantity: item.quantity,
-        labourHours: item.labourHours,
-        labourRate: item.labourRate,
-        labourTotal: item.labourTotal,
-        materialCost: item.materialCost,
-        materialTotal: item.materialTotal,
-        plantCost: item.plantCost,
-        plantTotal: item.plantTotal,
-        supplier: item.supplier,
-        brand: item.brand,
-        sku: item.sku,
-        productUrl: item.productUrl,
-        retailPriceInclVat: item.retailPriceInclVat,
-        notes: item.notes,
-      })),
-    );
-  }, [boq]);
-
   if (isLoading) return <div className="animate-pulse bg-white rounded-xl h-96" />;
   if (error || !quote) return <div className="text-center py-12 text-[#A8A29E]">Quote not found</div>;
 
@@ -108,6 +54,7 @@ export function QuoteDetail() {
   const editingSubtotal = draftItems.reduce((sum, item) => sum + (item.quantity * item.unitPrice), 0);
   const editingVat = editingSubtotal * vatRateMultiplier;
   const editingTotal = editingSubtotal + editingVat;
+  const aiGeneratedLineIds = new Set(quote.lineItems.filter((item) => item.aiGenerated).map((item) => item.id));
 
   const handleSend = () => {
     sendQuote.mutate(quote.id, {
@@ -226,6 +173,7 @@ export function QuoteDetail() {
             unit: 'item',
             unitPrice: item.unitPrice,
             total: item.quantity * item.unitPrice,
+            aiGenerated: false,
             isAiSuggested: false,
           })),
         },
@@ -261,84 +209,17 @@ export function QuoteDetail() {
     }
   };
 
-  const handleBoqDraftChange = (
-    id: string,
-    key: 'description' | 'quantity' | 'labourTotal' | 'materialTotal' | 'plantTotal' | 'notes',
-    value: string,
-  ) => {
-    setDraftBoqItems((current) =>
-      current.map((item) => {
-        if (item.id !== id) return item;
-        if (key === 'description') return { ...item, description: value };
-        if (key === 'notes') return { ...item, notes: value };
-        const numeric = Number(value);
-        if (Number.isNaN(numeric)) return item;
-        return { ...item, [key]: numeric };
-      }),
-    );
-  };
-
-  const handleBoqCancelEdit = () => {
-    if (!boq) return;
-    setDraftBoqItems(
-      boq.lineItems.map((item) => ({
-        id: item.id,
-        code: item.code,
-        description: item.description,
-        category: item.category,
-        unit: item.unit,
-        quantity: item.quantity,
-        labourHours: item.labourHours,
-        labourRate: item.labourRate,
-        labourTotal: item.labourTotal,
-        materialCost: item.materialCost,
-        materialTotal: item.materialTotal,
-        plantCost: item.plantCost,
-        plantTotal: item.plantTotal,
-        supplier: item.supplier,
-        brand: item.brand,
-        sku: item.sku,
-        productUrl: item.productUrl,
-        retailPriceInclVat: item.retailPriceInclVat,
-        notes: item.notes,
-      })),
-    );
-    setIsBoqEditing(false);
-  };
-
-  const handleBoqSaveEdit = () => {
-    if (!boq) return;
-    const sanitized = draftBoqItems
-      .map((item) => ({
-        ...item,
-        description: item.description.trim(),
-        notes: item.notes?.trim() || null,
-        quantity: Math.max(0, item.quantity),
-        labourTotal: Math.max(0, item.labourTotal),
-        materialTotal: Math.max(0, item.materialTotal),
-        plantTotal: Math.max(0, item.plantTotal),
-      }))
-      .filter((item) => item.description.length > 0);
-
-    if (sanitized.length === 0) {
-      toast.error('At least one BoQ line item is required');
-      return;
-    }
-
-    updateQuoteBoq.mutate(
-      {
-        quoteId: quote.id,
-        data: {
-          notes: boq.notes,
-          lineItems: sanitized,
-        },
-      },
+  const handleRefine = () => {
+    const instructions = refineInstructions.trim();
+    if (!instructions) return;
+    refineQuote.mutate(
+      { id: quote.id, instructions },
       {
         onSuccess: () => {
-          toast.success('BoQ updated');
-          setIsBoqEditing(false);
+          toast.success('Quote refined');
+          setRefineInstructions('');
         },
-        onError: (err) => toast.error(err.message || 'Failed to update BoQ'),
+        onError: (err) => toast.error(err.message || 'Failed to refine quote'),
       },
     );
   };
@@ -425,7 +306,19 @@ export function QuoteDetail() {
                           onChange={(e) => handleDraftChange(item.id, 'description', e.target.value)}
                           className="w-full rounded-md border border-[#E7E5E4] px-2 py-1 text-sm"
                         />
-                      ) : item.description}
+                      ) : (
+                        <span className="flex items-center gap-1.5">
+                          {item.description}
+                          {aiGeneratedLineIds.has(item.id) && (
+                            <span title="AI suggested" className="inline-flex">
+                              <Sparkles
+                                className="w-3.5 h-3.5 text-[#7C3AED] flex-shrink-0"
+                                aria-label="AI suggested line"
+                              />
+                            </span>
+                          )}
+                        </span>
+                      )}
                     </td>
                     <td className="py-2.5 text-sm text-[#57534E] text-right">
                       {isEditing ? (
@@ -485,247 +378,84 @@ export function QuoteDetail() {
             </div>
           </div>
 
-          {/* Bill of Quantities */}
-          {boq && (
-            <div className="bg-white rounded-xl border border-[#E7E5E4] p-5 shadow-sm">
-              <div className="flex items-center justify-between mb-3">
-                <h3 className="text-sm font-semibold text-[#1C1917] uppercase tracking-[0.05em]">Bill of Quantities</h3>
-                <div className="flex items-center gap-2">
-                  <span className="text-xs px-2 py-1 rounded-full bg-[#F5F4F0] text-[#57534E]">{Math.round(boq.confidence * 100)}% confidence</span>
-                  {isBoqEditing ? (
-                    <>
-                      <button
-                        onClick={handleBoqSaveEdit}
-                        disabled={updateQuoteBoq.isPending}
-                        className="h-8 rounded-md bg-[#D4650A] px-3 text-xs font-semibold uppercase tracking-[0.05em] text-white hover:bg-[#B85500] disabled:opacity-50"
-                      >
-                        Save
-                      </button>
-                      <button
-                        onClick={handleBoqCancelEdit}
-                        className="h-8 rounded-md border border-[#E7E5E4] bg-white px-3 text-xs font-semibold uppercase tracking-[0.05em] text-[#57534E] hover:bg-[#F5F4F0]"
-                      >
-                        Cancel
-                      </button>
-                    </>
-                  ) : (
-                    <button
-                      onClick={() => setIsBoqEditing(true)}
-                      className="h-8 rounded-md border border-[#E7E5E4] bg-white px-3 text-xs font-semibold uppercase tracking-[0.05em] text-[#57534E] hover:bg-[#F5F4F0]"
-                    >
-                      Edit BoQ
-                    </button>
-                  )}
-                </div>
-              </div>
-              {boq.suppliers && boq.suppliers.length > 0 && (
-                <div className="mb-3 text-xs text-[#78716C]">
-                  Prices sourced from: {boq.suppliers.join(", ")}
-                </div>
-              )}
-              <div className="mb-4 p-3 bg-[#FEF9C3] rounded-lg text-xs text-[#854D0E]">
-                This is an indicative bill of quantities based on publicly listed supplier prices
-                and rule-based/AI estimates. It is not a fixed quote. Supplier list prices (e.g.
-                Screwfix/Toolstation) include VAT; the material costs below are shown excluding VAT
-                and VAT is applied once to the quote total. Final pricing, availability, and
-                specification must be confirmed with the named supplier(s) before contract.
-              </div>
-
-              {boq.customerSummaryLines.length > 0 && (
-                <div className="mb-4 rounded-lg border border-[#E7E5E4] bg-[#FAFAF9] p-3">
-                  <div className="mb-2 text-xs font-semibold uppercase tracking-[0.05em] text-[#57534E]">
-                    Customer Quote View
-                  </div>
-                  <div className="space-y-1">
-                    {boq.customerSummaryLines.map((line, idx) => (
-                      <div key={`${line.description}-${idx}`} className="flex items-center justify-between text-sm">
-                        <span className="text-[#1C1917]">{line.description}</span>
-                        <span className="font-semibold text-[#1C1917]">£{formatCurrency(line.total)}</span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {boq.marginIndicator && (
-                <div className="mb-4 rounded-lg border border-[#E7E5E4] bg-white p-3">
-                  <div className="mb-2 text-xs font-semibold uppercase tracking-[0.05em] text-[#57534E]">
-                    Profit Margin Indicator
-                  </div>
-                  <div className="grid grid-cols-2 gap-y-1 text-xs">
-                    <span className="text-[#78716C]">Materials</span>
-                    <span className="text-right text-[#1C1917]">£{formatCurrency(boq.marginIndicator.materialSubtotal)}</span>
-                    <span className="text-[#78716C]">Labour</span>
-                    <span className="text-right text-[#1C1917]">£{formatCurrency(boq.marginIndicator.labourSubtotal)}</span>
-                    <span className="text-[#78716C]">Target markup</span>
-                    <span className="text-right text-[#1C1917]">{formatCurrency(boq.marginIndicator.targetMarkupPercent, 2)}%</span>
-                    <span className="text-[#78716C]">Estimated margin</span>
-                    <span className="text-right text-[#1C1917]">
-                      £{formatCurrency(boq.marginIndicator.estimatedMarginAmount)} ({formatCurrency(boq.marginIndicator.estimatedMarginPercent, 2)}%)
-                    </span>
-                  </div>
-                </div>
-              )}
-
-              <div className="overflow-x-auto">
-              <table className="min-w-[980px] w-full">
-                <thead>
-                  <tr className="border-b border-[#F0EFEA]">
-                    <th className="text-left py-2 text-[11px] font-semibold uppercase text-[#78716C]">Item</th>
-                    <th className="text-right py-2 text-[11px] font-semibold uppercase text-[#78716C]">Qty</th>
-                    <th className="text-right py-2 text-[11px] font-semibold uppercase text-[#78716C]">Labour</th>
-                    <th className="text-right py-2 text-[11px] font-semibold uppercase text-[#78716C]">Materials</th>
-                    <th className="text-right py-2 text-[11px] font-semibold uppercase text-[#78716C]">Plant</th>
-                    <th className="text-right py-2 text-[11px] font-semibold uppercase text-[#78716C]">Total</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {(isBoqEditing ? draftBoqItems : boq.lineItems).map(item => (
-                    <tr key={item.id} className="border-b border-[#F0EFEA] last:border-0">
-                      <td className="py-2.5 text-sm text-[#1C1917]">
-                        <div>
-                          {isBoqEditing ? (
-                            <input
-                              value={item.description}
-                              onChange={(e) => handleBoqDraftChange(item.id, 'description', e.target.value)}
-                              className="w-full rounded-md border border-[#E7E5E4] px-2 py-1 text-sm"
-                            />
-                          ) : item.description}
-                        </div>
-                        {(item.sku || item.supplier || item.brand || item.productUrl || item.retailPriceInclVat) && (
-                          <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-[#78716C]">
-                            {item.sku && <span>SKU: {item.sku}</span>}
-                            {(item.brand || item.supplier) && (
-                              <span>{item.brand ? item.brand : item.supplier}{item.brand && item.supplier ? ` • ${item.supplier}` : ''}</span>
-                            )}
-                            {item.retailPriceInclVat != null && (
-                              <span>
-                                Supplier inc. VAT: £{formatCurrency(item.retailPriceInclVat)}
-                              </span>
-                            )}
-                            {item.productUrl && (
-                              <span>
-                                <a
-                                  href={item.productUrl}
-                                  target="_blank"
-                                  rel="noreferrer"
-                                  className="text-[#D4650A] hover:underline"
-                                >
-                                  View product
-                                </a>
-                              </span>
-                            )}
-                          </div>
-                        )}
-                        {isBoqEditing ? (
-                          <div className="mt-1">
-                            <input
-                              value={item.notes ?? ''}
-                              onChange={(e) => handleBoqDraftChange(item.id, 'notes', e.target.value)}
-                              placeholder="Notes"
-                              className="w-full rounded-md border border-[#E7E5E4] px-2 py-1 text-[11px]"
-                            />
-                          </div>
-                        ) : item.notes && <div className="text-[11px] text-[#78716C]">{item.notes}</div>}
-
-                        {!isBoqEditing && (
-                          <div className="mt-2 grid grid-cols-2 gap-1 text-[11px] text-[#57534E] md:hidden">
-                            <span>Qty: {item.quantity} {item.unit}</span>
-                            <span className="text-right">Labour: £{formatCurrencySafe(item.labourTotal)}</span>
-                            <span>Materials: £{formatCurrencySafe(item.materialTotal)}</span>
-                            <span className="text-right">Plant: £{formatCurrencySafe(item.plantTotal)}</span>
-                            <span className="col-span-2 text-right font-semibold text-[#1C1917]">
-                              Total: £{formatCurrencySafe(item.labourTotal + item.materialTotal + item.plantTotal)}
-                            </span>
-                          </div>
-                        )}
-                      </td>
-                      <td className="py-2.5 text-sm text-[#57534E] text-right whitespace-nowrap">
-                        {isBoqEditing ? (
-                          <input
-                            type="number"
-                            min={0}
-                            step="0.1"
-                            value={item.quantity}
-                            onChange={(e) => handleBoqDraftChange(item.id, 'quantity', e.target.value)}
-                            className="w-20 rounded-md border border-[#E7E5E4] px-2 py-1 text-right text-sm"
-                          />
-                        ) : <>{item.quantity} {item.unit}</>}
-                      </td>
-                      <td className="py-2.5 text-sm text-[#57534E] text-right whitespace-nowrap">
-                        {isBoqEditing ? (
-                          <input
-                            type="number"
-                            min={0}
-                            step="0.01"
-                            value={item.labourTotal}
-                            onChange={(e) => handleBoqDraftChange(item.id, 'labourTotal', e.target.value)}
-                            className="w-24 rounded-md border border-[#E7E5E4] px-2 py-1 text-right text-sm"
-                          />
-                        ) : <>£{formatCurrencySafe(item.labourTotal)}</>}
-                      </td>
-                      <td className="py-2.5 text-sm text-[#57534E] text-right whitespace-nowrap">
-                        {isBoqEditing ? (
-                          <input
-                            type="number"
-                            min={0}
-                            step="0.01"
-                            value={item.materialTotal}
-                            onChange={(e) => handleBoqDraftChange(item.id, 'materialTotal', e.target.value)}
-                            className="w-24 rounded-md border border-[#E7E5E4] px-2 py-1 text-right text-sm"
-                          />
-                        ) : <>£{formatCurrencySafe(item.materialTotal)}</>}
-                      </td>
-                      <td className="py-2.5 text-sm text-[#57534E] text-right whitespace-nowrap">
-                        {isBoqEditing ? (
-                          <input
-                            type="number"
-                            min={0}
-                            step="0.01"
-                            value={item.plantTotal}
-                            onChange={(e) => handleBoqDraftChange(item.id, 'plantTotal', e.target.value)}
-                            className="w-24 rounded-md border border-[#E7E5E4] px-2 py-1 text-right text-sm"
-                          />
-                        ) : <>£{formatCurrencySafe(item.plantTotal)}</>}
-                      </td>
-                      <td className="py-2.5 text-sm font-medium text-[#1C1917] text-right whitespace-nowrap">
-                        £{formatCurrencySafe(item.labourTotal + item.materialTotal + item.plantTotal)}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-              </div>
-              <div className="mt-4 pt-4 border-t border-[#F0EFEA] space-y-1">
-                <div className="flex justify-between text-sm text-[#57534E]"><span>Subtotal</span><span>£{formatCurrency(boq.subtotal)}</span></div>
-                <div className="flex justify-between text-sm text-[#57534E]"><span>VAT ({(boq.vatRate * 100).toFixed(0)}%)</span><span>£{formatCurrency(boq.vatAmount)}</span></div>
-                <div className="flex justify-between text-lg font-bold text-[#1C1917]"><span>Total</span><span>£{formatCurrency(boq.total)}</span></div>
-              </div>
-              {boq.warnings.length > 0 && (
-                <div className="mt-4 p-3 bg-[#FEF2F2] rounded-lg text-xs text-[#DC2626]">
-                  {boq.warnings.map((warning) => (
-                    <div key={warning}>• {warning}</div>
-                  ))}
-                </div>
-              )}
-            </div>
-          )}
-
           {/* AI Panel */}
           {quote.aiGenerated && (
             <div className="bg-[#F5F3FF] rounded-xl border border-[#EDE9FE] p-5">
-              <div className="flex items-center gap-2 mb-3">
+              <div className="flex items-center gap-2 mb-1">
                 <Sparkles className="w-4 h-4 text-[#7C3AED]" />
                 <span className="text-sm font-semibold text-[#7C3AED]">AI Generated</span>
               </div>
+              <p className="text-xs text-[#78716C] mb-3">
+                Guide prices generated by AI — review before sending.
+              </p>
+              {(quote.retrievalStatus === 'no_index' || quote.retrievalStatus === 'skipped_no_key') && (
+                <div className="mb-3 text-xs text-[#78716C]">
+                  Priced from AI knowledge (no catalogue match)
+                </div>
+              )}
               <div className="grid grid-cols-2 gap-3 text-xs">
-                <div><span className="text-[#78716C]">Confidence: </span><span className="font-semibold text-[#1C1917]">{quote.aiConfidenceScore}%</span></div>
-                <div><span className="text-[#78716C]">Model: </span><span className="font-semibold text-[#1C1917]">GPT-4o</span></div>
+                <div>
+                  <span className="text-[#78716C]">Confidence: </span>
+                  <span className="font-semibold text-[#1C1917]">
+                    {quote.aiConfidence != null ? `${Math.round(quote.aiConfidence * 100)}%` : '—'}
+                  </span>
+                </div>
                 <div><span className="text-[#78716C]">Generated: </span><span className="font-semibold text-[#1C1917]">{new Date(quote.createdAt).toLocaleString('en-GB')}</span></div>
-                <div><span className="text-[#78716C]">Validation: </span><span className="font-semibold text-[#16A34A]">All prices validated</span></div>
               </div>
-              <div className="mt-3 h-2 bg-white rounded-full overflow-hidden">
-                <div className="h-full bg-[#7C3AED] rounded-full transition-all" style={{ width: `${quote.aiConfidenceScore}%` }} />
+              {quote.aiConfidence != null && (
+                <div className="mt-3 h-2 bg-white rounded-full overflow-hidden">
+                  <div className="h-full bg-[#7C3AED] rounded-full transition-all" style={{ width: `${Math.round(quote.aiConfidence * 100)}%` }} />
+                </div>
+              )}
+              {quote.aiWarnings.length > 0 && (
+                <div className="mt-3 p-3 bg-[#FFFBEB] border border-[#FDE68A] rounded-lg">
+                  <div className="flex items-center gap-1.5 mb-1 text-xs font-semibold uppercase tracking-[0.05em] text-[#B45309]">
+                    <TriangleAlert className="w-3.5 h-3.5" /> Warnings
+                  </div>
+                  <ul className="space-y-1 text-xs text-[#92400E]">
+                    {quote.aiWarnings.map((warning) => (
+                      <li key={warning}>• {warning}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+              {quote.aiAssumptions.length > 0 && (
+                <div className="mt-3 p-3 bg-white/60 border border-[#EDE9FE] rounded-lg">
+                  <div className="mb-1 text-xs font-semibold uppercase tracking-[0.05em] text-[#78716C]">
+                    Assumptions
+                  </div>
+                  <ul className="space-y-1 text-xs text-[#57534E]">
+                    {quote.aiAssumptions.map((assumption) => (
+                      <li key={assumption}>• {assumption}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+              {quote.aiNotes && (
+                <p className="mt-3 text-xs text-[#57534E]">{quote.aiNotes}</p>
+              )}
+
+              {/* Refine with AI */}
+              <div className="mt-4 pt-4 border-t border-[#EDE9FE]">
+                <label htmlFor="refine-instructions" className="block text-[11px] font-semibold uppercase tracking-[0.05em] text-[#78716C] mb-1">
+                  Refine with AI
+                </label>
+                <textarea
+                  id="refine-instructions"
+                  value={refineInstructions}
+                  onChange={(e) => setRefineInstructions(e.target.value)}
+                  placeholder="e.g. Add 2 more double sockets in the kitchen"
+                  rows={2}
+                  className="w-full p-2 text-sm bg-white border border-[#E7E5E4] rounded-lg focus:outline-none focus:border-[#7C3AED] resize-none"
+                />
+                <button
+                  onClick={handleRefine}
+                  disabled={refineQuote.isPending || !refineInstructions.trim()}
+                  className="mt-2 h-8 px-3 flex items-center gap-2 rounded-md bg-[#7C3AED] text-white text-xs font-semibold uppercase tracking-[0.05em] hover:bg-[#6D28D9] transition-colors disabled:opacity-50"
+                >
+                  <Sparkles className="w-3.5 h-3.5" />
+                  {refineQuote.isPending ? 'Refining...' : 'Refine quote'}
+                </button>
               </div>
             </div>
           )}

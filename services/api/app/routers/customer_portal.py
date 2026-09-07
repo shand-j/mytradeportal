@@ -6,29 +6,85 @@ Auth is a bearer token with ``subject_type="customer"`` so it can never be used
 against the staff API.
 """
 
+from datetime import UTC, datetime
 from typing import Annotated
+from uuid import UUID
 
+import structlog
 from fastapi import APIRouter, Depends, HTTPException, Request, status
-from sqlalchemy import select
+from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.database import get_db
 from app.dependencies import CurrentCustomerDep
 from app.limiter import limiter
-from app.models import Contact, Customer, QuoteRequest, Tenant
+from app.models import Appointment, BillOfQuantities, Contact, Customer, Quote, QuoteRequest, Tenant
+from app.push import notify_staff
 from app.rls import bypass_rls_in_session, set_tenant_in_session
 from app.schemas import (
+    AppointmentCreate,
+    AppointmentRead,
     CustomerLogin,
     CustomerRead,
     CustomerRegister,
     CustomerTokenResponse,
+    QuoteRead,
     QuoteRequestRead,
 )
 from app.security import create_access_token, get_password_hash, verify_password
 
 router = APIRouter(prefix="/customer", tags=["Customer Portal"])
 DbDep = Annotated[AsyncSession, Depends(get_db)]
+logger = structlog.get_logger("api.customer_portal")
+
+
+def _phone_digits(value: str | None) -> str:
+    """Reduce a phone number to its digits so formatting differences match."""
+    return "".join(ch for ch in (value or "") if ch.isdigit())
+
+
+async def _link_quote_requests_by_contact(db: AsyncSession, customer: Customer) -> int:
+    """Link unclaimed quote requests whose contact matches this customer.
+
+    Matches within the tenant on the linked CRM contact's email
+    (case-insensitive) or phone (digits-only), so leads and quotes the
+    electrician captured manually become visible in the customer portal once
+    the homeowner registers or logs in with the same details. Only requests
+    with ``customer_id IS NULL`` are claimed. Returns the number linked.
+    """
+    conditions = []
+    if customer.email:
+        conditions.append(func.lower(Contact.email) == customer.email.lower())
+    digits = _phone_digits(customer.phone)
+    if digits:
+        conditions.append(
+            func.regexp_replace(func.coalesce(Contact.phone, ""), r"\D", "", "g") == digits
+        )
+    if not conditions:
+        return 0
+
+    result = await db.execute(
+        select(QuoteRequest)
+        .join(Contact, QuoteRequest.contact_id == Contact.id)
+        .where(
+            QuoteRequest.tenant_id == customer.tenant_id,
+            QuoteRequest.customer_id.is_(None),
+            or_(*conditions),
+        )
+    )
+    linked = list(result.scalars().all())
+    for quote_request in linked:
+        quote_request.customer_id = customer.id
+    if linked:
+        await db.flush()
+    logger.info(
+        "customer_linked_requests",
+        tenant_id=str(customer.tenant_id),
+        customer_id=str(customer.id),
+        count=len(linked),
+    )
+    return len(linked)
 
 
 async def _resolve_active_tenant(db: AsyncSession, slug: str) -> Tenant:
@@ -75,6 +131,7 @@ async def register_customer(
         name=data.full_name,
         email=str(data.email),
         phone=data.phone,
+        address=data.address,
     )
     db.add(contact)
     await db.flush()
@@ -87,9 +144,30 @@ async def register_customer(
         phone=data.phone,
         password_hash=get_password_hash(data.password),
         marketing_consent=data.marketing_consent,
+        preferred_contact_method=data.preferred_contact_method,
     )
     db.add(customer)
     await db.flush()
+
+    # If the customer arrived from a quote request, link the two records so
+    # their history and the in-app chat thread work immediately. Keep the
+    # customer's contact pointer in sync with the request's contact.
+    if data.quote_request_id is not None:
+        quote_request = await db.scalar(
+            select(QuoteRequest).where(
+                QuoteRequest.id == data.quote_request_id,
+                QuoteRequest.tenant_id == tenant.id,
+            )
+        )
+        if quote_request is not None:
+            quote_request.customer_id = customer.id
+            quote_request.contact_id = contact.id
+            customer.contact_id = contact.id
+
+    # Claim any leads the electrician captured earlier with the same
+    # email/phone so they show up in the customer's history immediately.
+    await _link_quote_requests_by_contact(db, customer)
+
     await db.refresh(customer)
     await db.commit()
 
@@ -122,6 +200,10 @@ async def login_customer(
     ):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid credentials")
 
+    # Claim any leads captured with the same email/phone since the last login.
+    if await _link_quote_requests_by_contact(db, customer):
+        await db.commit()
+
     return CustomerTokenResponse(
         access_token=_issue_token(customer),
         customer=CustomerRead.model_validate(customer),
@@ -139,11 +221,22 @@ async def list_my_quote_requests(
     customer: CurrentCustomerDep,
     db: DbDep,
 ) -> list[QuoteRequest]:
-    """List the authenticated customer's quote requests (their history)."""
+    """List the authenticated customer's quote requests (their history).
+
+    Each response includes the linked quote (with line items) when the request
+    has been converted to a quote, so the customer can view, accept or reject it.
+    """
     # The customer dependency already set the tenant RLS context.
     result = await db.execute(
         select(QuoteRequest)
-        .options(selectinload(QuoteRequest.contact))
+        .options(
+            selectinload(QuoteRequest.contact),
+            selectinload(QuoteRequest.quote).selectinload(Quote.line_items),
+            selectinload(QuoteRequest.quote).selectinload(Quote.contact),
+            selectinload(QuoteRequest.quote)
+            .selectinload(Quote.bill_of_quantities)
+            .selectinload(BillOfQuantities.line_items),
+        )
         .where(
             QuoteRequest.tenant_id == customer.tenant_id,
             QuoteRequest.customer_id == customer.id,
@@ -151,3 +244,144 @@ async def list_my_quote_requests(
         .order_by(QuoteRequest.created_at.desc())
     )
     return list(result.scalars().all())
+
+
+@router.get("/quotes", response_model=list[QuoteRead])
+async def list_my_quotes(
+    customer: CurrentCustomerDep,
+    db: DbDep,
+) -> list[Quote]:
+    """List quotes sent to the authenticated customer.
+
+    Matches quotes attached to the customer's own CRM contact plus quotes
+    generated from a lead that was linked to this customer account (the lead
+    keeps the electrician-created contact).
+    """
+    result = await db.execute(
+        select(Quote)
+        .options(
+            selectinload(Quote.line_items),
+            selectinload(Quote.contact),
+            selectinload(Quote.bill_of_quantities),
+        )
+        .where(
+            Quote.tenant_id == customer.tenant_id,
+            or_(
+                Quote.contact_id == customer.contact_id,
+                Quote.quote_request.has(QuoteRequest.customer_id == customer.id),
+            ),
+            Quote.status.in_(["sent", "approved", "rejected", "expired"]),
+        )
+        .order_by(Quote.created_at.desc())
+    )
+    return list(result.scalars().all())
+
+
+async def _get_customer_quote(db: AsyncSession, customer: Customer, quote_id: UUID) -> Quote:
+    quote = await db.scalar(
+        select(Quote)
+        .options(
+            selectinload(Quote.line_items),
+            selectinload(Quote.contact),
+            selectinload(Quote.bill_of_quantities).selectinload(BillOfQuantities.line_items),
+        )
+        .where(
+            Quote.tenant_id == customer.tenant_id,
+            Quote.id == quote_id,
+            or_(
+                Quote.contact_id == customer.contact_id,
+                Quote.quote_request.has(QuoteRequest.customer_id == customer.id),
+            ),
+        )
+    )
+    if quote is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Quote not found")
+    return quote
+
+
+@router.post("/quotes/{quote_id}/accept", response_model=QuoteRead)
+async def accept_quote(
+    quote_id: UUID,
+    customer: CurrentCustomerDep,
+    db: DbDep,
+) -> Quote:
+    """Customer accepts a sent quote."""
+    quote = await _get_customer_quote(db, customer, quote_id)
+    if quote.status != "sent":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Quote cannot be accepted",
+        )
+    quote.status = "approved"
+    quote.approved_at = datetime.utcnow()
+    await notify_staff(
+        db,
+        customer.tenant_id,
+        kind="quote_accepted",
+        title="Quote accepted",
+        body=f"{customer.full_name} accepted quote '{quote.title}'.",
+        link=f"/quote/{quote.id}",
+    )
+    await db.commit()
+    await db.refresh(quote)
+    return quote
+
+
+@router.post("/quotes/{quote_id}/reject", response_model=QuoteRead)
+async def reject_quote(
+    quote_id: UUID,
+    customer: CurrentCustomerDep,
+    db: DbDep,
+) -> Quote:
+    """Customer rejects a sent quote."""
+    quote = await _get_customer_quote(db, customer, quote_id)
+    if quote.status != "sent":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Quote cannot be rejected",
+        )
+    quote.status = "rejected"
+    quote.approved_at = None
+    await db.commit()
+    await db.refresh(quote)
+    return quote
+
+
+@router.get("/appointments", response_model=list[AppointmentRead])
+async def list_my_appointments(
+    customer: CurrentCustomerDep,
+    db: DbDep,
+) -> list[Appointment]:
+    """List appointments for the authenticated customer."""
+    result = await db.execute(
+        select(Appointment)
+        .where(
+            Appointment.tenant_id == customer.tenant_id,
+            Appointment.contact_id == customer.contact_id,
+        )
+        .order_by(Appointment.start_at.desc())
+    )
+    return list(result.scalars().all())
+
+
+@router.post("/appointments", status_code=status.HTTP_201_CREATED, response_model=AppointmentRead)
+async def create_customer_appointment(
+    data: AppointmentCreate,
+    customer: CurrentCustomerDep,
+    db: DbDep,
+) -> Appointment:
+    """Create an appointment for the authenticated customer."""
+    # The customer token identifies the contact; ignore any contact_id supplied
+    # by the client to prevent cross-customer bookings.
+    payload = data.model_dump()
+    payload["contact_id"] = customer.contact_id
+    # Appointments are stored as naive UTC datetimes; strip tzinfo from ISO inputs.
+    for key in ("start_at", "end_at"):
+        dt = payload[key]
+        if dt is not None and dt.tzinfo is not None:
+            payload[key] = dt.astimezone(UTC).replace(tzinfo=None)
+    appointment = Appointment(tenant_id=customer.tenant_id, **payload)
+    db.add(appointment)
+    await db.commit()
+    await db.refresh(appointment)
+    return appointment

@@ -4,10 +4,12 @@ from typing import Annotated, Any
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, status
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
 from app.dependencies import CurrentUserDep, TenantDep
+from app.models import BusinessService
 from app.rls import set_tenant_in_session
 from app.schemas import OnboardingStatusRead, OnboardingStepUpdate
 
@@ -47,6 +49,44 @@ async def get_onboarding_status(
     )
 
 
+async def _sync_business_services(db: AsyncSession, tenant_id: UUID, value: dict[str, Any]) -> None:
+    """Persist the services selected during onboarding as BusinessService rows.
+
+    These rows power the customer quote-request category list and can later be
+    enriched with pricing profiles per service.
+    """
+    services = value.get("services") or []
+    if not isinstance(services, list):
+        return
+
+    existing = {
+        row.category: row
+        for row in (
+            await db.scalars(select(BusinessService).where(BusinessService.tenant_id == tenant_id))
+        ).all()
+    }
+
+    selected = set(services)
+    for category in selected:
+        if category in existing:
+            existing[category].is_active = True
+            existing[category].is_launch_enabled = True
+        else:
+            db.add(
+                BusinessService(
+                    tenant_id=tenant_id,
+                    category=category,
+                    is_active=True,
+                    is_launch_enabled=True,
+                )
+            )
+
+    for category, row in existing.items():
+        if category not in selected:
+            row.is_active = False
+            row.is_launch_enabled = False
+
+
 @router.patch("/step/{step_name}", response_model=OnboardingStatusRead)
 async def update_onboarding_step(
     step_name: str,
@@ -63,6 +103,20 @@ async def update_onboarding_step(
     # would silently drop every step after the first.
     progress: dict[str, Any] = dict(tenant.onboarding_progress or {})
     progress[step_name] = {"completed": True, "value": data.value}
+
+    if step_name == "services":
+        await _sync_business_services(db, tenant.id, data.value)
+
+    # Workload metrics captured during onboarding (e.g. in the business
+    # identity step) are persisted into tenant.settings verbatim; the
+    # time-saved metric is computed client-side from them later.
+    metrics = {
+        key: int(data.value[key])
+        for key in ("quotes_per_week", "avg_minutes_per_quote")
+        if isinstance(data.value.get(key), int) and not isinstance(data.value.get(key), bool)
+    }
+    if metrics:
+        tenant.settings = {**(tenant.settings or {}), **metrics}
 
     required_steps = ["business_identity", "compliance", "services"]
     completed_steps = [s for s in required_steps if progress.get(s, {}).get("completed") is True]

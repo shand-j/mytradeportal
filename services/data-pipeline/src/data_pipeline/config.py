@@ -29,8 +29,12 @@ class Settings(BaseSettings):
     qdrant_collection_name: str = "cost_items"
     qdrant_knowledge_collection_name: str = "quoting_knowledge"
 
-    # Embeddings (mirrors OCERP configuration)
-    embedding_model: str = "text-embedding-3-small"
+    # Embeddings — configured independently of the chat LLM because Kimi has
+    # no embeddings API. Any OpenAI-compatible embeddings endpoint works; when
+    # left blank the legacy ``openai_api_key`` is used.
+    embedding_model: str = "text-embedding-3-large"
+    embedding_api_base: str = ""
+    embedding_api_key: str = ""
     openai_api_key: str = ""
     embedding_dimensions: int | None = None
 
@@ -73,6 +77,11 @@ class Settings(BaseSettings):
         password = quote(self.app_role_password, safe="")
         new_netloc = f"{self.app_role_name}:{password}@{host}{port}"
         return urlunparse(parsed._replace(netloc=new_netloc))
+
+    @property
+    def resolved_embedding_api_key(self) -> str:
+        """Embeddings key, falling back to ``openai_api_key`` for back-compat."""
+        return self.embedding_api_key or self.openai_api_key
 
 
 settings = Settings()

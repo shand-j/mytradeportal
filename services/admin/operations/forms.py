@@ -9,7 +9,10 @@ from operations.models import Tenant, User
 
 
 class TenantAdminForm(forms.ModelForm):
-    """Form that makes settings optional while preserving the JSONB default."""
+    """Form that makes the JSONB columns optional while preserving their
+    defaults, so tenants created in the admin panel satisfy the NOT NULL
+    constraints of the FastAPI-managed schema.
+    """
 
     class Meta:
         model = Tenant
@@ -17,8 +20,27 @@ class TenantAdminForm(forms.ModelForm):
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         super().__init__(*args, **kwargs)
-        self.fields["settings"].required = False
-        self.fields["settings"].initial = {}
+        for name in (
+            "settings",
+            "onboarding_progress",
+            "nations_served",
+            "quote_defaults",
+            "branding",
+        ):
+            self.fields[name].required = False
+
+    def clean(self) -> dict[str, Any]:
+        cleaned_data = super().clean()
+        for name in (
+            "settings",
+            "onboarding_progress",
+            "nations_served",
+            "quote_defaults",
+            "branding",
+        ):
+            if cleaned_data.get(name) is None:
+                cleaned_data[name] = Tenant._meta.get_field(name).get_default()
+        return cleaned_data
 
 
 class UserAdminForm(forms.ModelForm):

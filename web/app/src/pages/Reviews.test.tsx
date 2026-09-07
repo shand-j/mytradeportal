@@ -60,6 +60,32 @@ describe('Reviews', () => {
     expect(screen.getByText('David Smith')).toBeInTheDocument();
   });
 
+  it('renders a review without an embedded customer (API shape)', () => {
+    // GET /reviews returns no customer object; only reviewer/contact fields.
+    const apiReview = {
+      ...mockReviews[0],
+      customer: undefined,
+      reviewerName: 'Peter Okafor',
+    };
+    vi.mocked(useReviews).mockReturnValue({ data: [apiReview], isLoading: false, error: null });
+    renderPage(<Reviews />);
+    expect(screen.getByText('Peter Okafor')).toBeInTheDocument();
+    expect(screen.getByText('PO')).toBeInTheDocument();
+  });
+
+  it('falls back to a placeholder when neither customer nor reviewer name exists', () => {
+    const apiReview = {
+      ...mockReviews[0],
+      customer: undefined,
+      reviewerName: '',
+    };
+    vi.mocked(useReviews).mockReturnValue({ data: [apiReview], isLoading: false, error: null });
+    renderPage(<Reviews />);
+    // Table header is also "Customer"; the row must add a second occurrence.
+    expect(screen.getAllByText('Customer').length).toBeGreaterThanOrEqual(2);
+    expect(screen.getByText('C')).toBeInTheDocument();
+  });
+
   it('opens and closes the add review dialog', async () => {
     const user = userEvent.setup();
     renderPage(<Reviews />);

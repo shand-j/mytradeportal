@@ -4,6 +4,7 @@ import { Plus, Search, X } from 'lucide-react';
 import { useJobs, useCreateJob, useTransitionJobStatus } from '@/lib/api/hooks';
 import { useContacts } from '@/lib/api/hooks';
 import { useUiStore } from '@/stores/uiStore';
+import { formatGBP } from '@/lib/utils';
 import type { JobStatus } from '@/types';
 import { toast } from 'sonner';
 
@@ -114,7 +115,7 @@ export function JobsBoard() {
                     <Link to={`/jobs/${job.id}`}>
                       <div className="flex items-center justify-between mb-1">
                         <span className="font-mono text-[11px] text-[#A8A29E]">{job.reference}</span>
-                        <span className="text-sm font-semibold text-[#1C1917]">£{job.value.toLocaleString()}</span>
+                        <span className="text-sm font-semibold text-[#1C1917]">{formatGBP(job.value)}</span>
                       </div>
                       <div className="text-sm font-medium text-[#1C1917]">{job.customer.firstName} {job.customer.lastName}</div>
                       <div className="text-xs text-[#78716C] mt-0.5">{job.serviceType}</div>

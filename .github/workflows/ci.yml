@@ -1,5 +1,9 @@
 name: CI
-## FIXME: This workflow was a wrongful implementation of what shout have been dev only kimi agentic pen-test workflow. It is now deprecated and should be removed once the agentic-pen-test workflow is fully functional and tested.
+
+# Mobile-beta scope. Runs the Python + mobile TypeScript quality gates on every
+# PR/push, then deploys the api / admin / data-pipeline services (plus native
+# databases, qdrant, minio) via Railway IaC on push to main.
+
 on:
   push:
     branches: [main]
@@ -57,11 +61,11 @@ jobs:
       - name: Test with pytest
         run: pytest
 
-  typescript:
+  mobile:
     runs-on: ubuntu-latest
     defaults:
       run:
-        working-directory: web/app
+        working-directory: mobile
     steps:
       - uses: actions/checkout@v4
 
@@ -75,26 +79,20 @@ jobs:
         with:
           node-version: "22"
           cache: "pnpm"
-          cache-dependency-path: web/app/pnpm-lock.yaml
+          cache-dependency-path: mobile/pnpm-lock.yaml
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Lint
-        run: pnpm lint
-
-      - name: Test
-        run: pnpm test
-
-      - name: Build
-        run: pnpm build
+      - name: Type check
+        run: pnpm exec tsc --noEmit
 
   deploy-production:
-    # Deploy the production stack from the IaC in .railway/railway.ts.
+    # Deploy the mobile-beta stack from the IaC in .railway/railway.ts.
     # Requires the RAILWAY_TOKEN (project-scoped) GitHub secret and an
-    # existing Railway project wired to this repo. Runs only after both test
-    # jobs pass on main.
-    needs: [python, typescript]
+    # existing Railway project wired to this repo. Runs only after both
+    # quality-gate jobs pass on main.
+    needs: [python, mobile]
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     runs-on: ubuntu-latest
     environment: MyTradePortal/Production
@@ -108,14 +106,6 @@ jobs:
           cache: "npm"
           cache-dependency-path: .railway/package-lock.json
 
-      - name: Cache Railway CLI
-        uses: actions/cache@v4
-        with:
-          path: ~/.npm
-          key: railway-cli-${{ runner.os }}-${{ hashFiles('**/package.json') }}
-          restore-keys: |
-            railway-cli-${{ runner.os }}-
-
       - name: Install Railway CLI
         run: npm install -g @railway/cli
 
@@ -123,7 +113,7 @@ jobs:
         working-directory: .railway
         run: npm ci
 
-      - name: Set production secrets from GitHub secrets
+      - name: Rotate Django superuser password (optional)
         env:
           RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
           DJANGO_SUPERUSER_PASSWORD: ${{ secrets.DJANGO_SUPERUSER_PASSWORD }}
@@ -131,8 +121,7 @@ jobs:
           if [ -n "$DJANGO_SUPERUSER_PASSWORD" ]; then
             railway variable set DJANGO_SUPERUSER_PASSWORD="$DJANGO_SUPERUSER_PASSWORD" --service admin --environment production
           else
-            echo "WARNING: DJANGO_SUPERUSER_PASSWORD is not set in the MyTradePortal/Production environment."
-            echo "         The Django superuser will not be rotated on this deploy."
+            echo "DJANGO_SUPERUSER_PASSWORD not set in MyTradePortal/Production; superuser will not be rotated on this deploy."
           fi
 
       - name: Apply Railway configuration

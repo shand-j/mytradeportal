@@ -5,6 +5,7 @@ import { useInvoices, useCreateInvoice, useSendInvoice } from '@/lib/api/hooks';
 import { useContacts } from '@/lib/api/hooks';
 import { useUiStore } from '@/stores/uiStore';
 import { StatusPill } from '@/components/shared/StatusPill';
+import { formatGBP } from '@/lib/utils';
 import { toast } from 'sonner';
 
 export function InvoiceList() {
@@ -97,11 +98,11 @@ export function InvoiceList() {
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <div className="bg-white rounded-xl border border-[#E7E5E4] p-4 shadow-sm">
           <div className="text-[11px] font-semibold uppercase tracking-[0.05em] text-[#78716C] mb-1">Total Paid</div>
-          <div className="text-xl font-bold text-[#16A34A]">£{totalPaid.toLocaleString()}</div>
+          <div className="text-xl font-bold text-[#16A34A]">{formatGBP(totalPaid)}</div>
         </div>
         <div className="bg-white rounded-xl border border-[#E7E5E4] p-4 shadow-sm">
           <div className="text-[11px] font-semibold uppercase tracking-[0.05em] text-[#78716C] mb-1">Outstanding</div>
-          <div className="text-xl font-bold text-[#D4650A]">£{totalOutstanding.toLocaleString()}</div>
+          <div className="text-xl font-bold text-[#D4650A]">{formatGBP(totalOutstanding)}</div>
         </div>
         <div className={`rounded-xl border p-4 shadow-sm ${overdueCount > 0 ? 'bg-[#FEF2F2] border-[#FECACA]' : 'bg-white border-[#E7E5E4]'}`}>
           <div className="text-[11px] font-semibold uppercase tracking-[0.05em] text-[#78716C] mb-1">Overdue</div>
@@ -153,7 +154,7 @@ export function InvoiceList() {
                   <td className="px-4 py-3 text-sm text-[#1C1917]">{inv.customer.firstName} {inv.customer.lastName}</td>
                   <td className="px-4 py-3 text-xs text-[#78716C]">{new Date(inv.issueDate).toLocaleDateString('en-GB')}</td>
                   <td className="px-4 py-3 text-xs text-[#78716C]">{new Date(inv.dueDate).toLocaleDateString('en-GB')}</td>
-                  <td className="px-4 py-3 text-sm font-semibold text-[#1C1917] text-right">£{inv.total.toLocaleString()}</td>
+                  <td className="px-4 py-3 text-sm font-semibold text-[#1C1917] text-right">{formatGBP(inv.total)}</td>
                   <td className="px-4 py-3"><StatusPill status={inv.status} /></td>
                   <td className="px-4 py-3">
                     <div className="flex items-center justify-center">

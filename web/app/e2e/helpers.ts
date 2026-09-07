@@ -89,6 +89,22 @@ export async function ensureDefaultAdminSession(page: Page): Promise<void> {
   const isSecureContext = new URL(e2eBaseUrl).protocol === 'https:';
 
   let sessionCookie: string | null = null;
+
+  // Fast path: the shared storage state (from global setup) often already
+  // holds a valid session. Reusing it avoids every spec hammering the
+  // rate-limited (5/min) /auth/login endpoint when the suite runs in parallel.
+  try {
+    const meResponse = await page.request.get(`${apiBaseUrl}/auth/me`);
+    if (meResponse.ok()) {
+      await page.goto('/');
+      if (/\/($|dashboard)/.test(page.url())) {
+        return;
+      }
+    }
+  } catch {
+    // Fall through to the explicit login below.
+  }
+
   for (let attempt = 0; attempt < 10; attempt++) {
     try {
       const response = await page.request.post(`${apiBaseUrl}/auth/login`, {
@@ -431,15 +447,15 @@ export async function gotoQuotesAndAssertListLoads(page: Page): Promise<void> {
 }
 
 /**
- * Best-effort AI/BoQ quote generation so smoke exercises the Bill of Quantities
+ * Best-effort AI quote generation so smoke exercises the AI-quote
  * serialization path that manual quotes never touch.
  *
  * Upstream AI dependencies can be unavailable in some environments, so an
- * explicit service-unavailable response is tolerated (returns `false`). When a
- * BoQ-backed quote IS produced, returns `true` so callers can assert the quotes
- * list and detail still render.
+ * explicit service-unavailable response is tolerated (returns `false`). When
+ * an AI-backed quote IS produced, returns `true` so callers can assert the
+ * quotes list and detail still render.
  */
-export async function tryGenerateBoqQuote(page: Page, testId: string): Promise<boolean> {
+export async function tryGenerateAiQuote(page: Page, testId: string): Promise<boolean> {
   await page.goto('/quotes');
   const trigger = page.getByTestId('generate-ai-quote');
   if (!(await trigger.isVisible({ timeout: 15_000 }).catch(() => false))) {

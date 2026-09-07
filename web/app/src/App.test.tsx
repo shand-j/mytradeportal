@@ -131,7 +131,6 @@ vi.mock('@/lib/api/hooks', async (importOriginal) => {
     useRefineQuote: vi.fn(defaultMutation),
     useConvertQuoteToInvoice: vi.fn(defaultMutation),
     useDeleteQuote: vi.fn(defaultMutation),
-    useQuoteBoq: vi.fn(() => ({ data: null, isLoading: false, error: null })),
     useCreateJob: vi.fn(defaultMutation),
     useUpdateJob: vi.fn(defaultMutation),
     useTransitionJobStatus: vi.fn(defaultMutation),

@@ -5,7 +5,7 @@ import {
   createInvoice,
   createJob,
   gotoQuotesAndAssertListLoads,
-  tryGenerateBoqQuote,
+  tryGenerateAiQuote,
 } from './helpers';
 
 const djangoUsername = process.env.E2E_DJANGO_ADMIN_USERNAME ?? 'superadmin';
@@ -140,13 +140,13 @@ test.describe('production smoke test', () => {
     await gotoQuotesAndAssertListLoads(page);
     await expect(page.getByRole('link', { name: new RegExp(quoteRef, 'i') }).first()).toBeVisible();
 
-    // Exercise the Bill of Quantities serialization path that manual quotes
-    // never touch. A pre-existing tenant's quote page 500'd on persisted BoQ
-    // JSONB while this manual-only smoke stayed green. When AI/OCERP is
-    // available, generating a BoQ-backed quote and re-listing guards that path;
-    // when unavailable, the smoke gate still passes.
-    const boqQuoteCreated = await tryGenerateBoqQuote(page, tenantSlug);
-    if (boqQuoteCreated) {
+    // Exercise the AI-quote serialization path that manual quotes
+    // never touch. A pre-existing tenant's quote page 500'd on persisted
+    // generated-quote JSONB while this manual-only smoke stayed green. When AI
+    // is available, generating an AI-backed quote and re-listing guards that
+    // path; when unavailable, the smoke gate still passes.
+    const aiQuoteCreated = await tryGenerateAiQuote(page, tenantSlug);
+    if (aiQuoteCreated) {
       await gotoQuotesAndAssertListLoads(page);
     }
 

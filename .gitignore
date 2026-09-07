@@ -43,7 +43,7 @@ env/
 .claude/
 
 # Third-party reference material — not distributed (potential copyright)
-docs/bs7671_all_forms_a4.pdf
+bs7671_all_forms_a4.pdf
 
 # Node
 node_modules/
@@ -90,6 +90,8 @@ minio_data/
 
 # Agent/tooling local state
 .kimi-code/
+.kiro/
+.expo/
 
 # Django collected static files (generated at build/deploy time)
 services/admin/staticfiles/
@@ -104,5 +106,5 @@ secrets/
 !services/ocerp/ocerp/data/**
 
 # misc
-docs/example quotes/**
-docs/Eano\ Estimate\ Template\ -\ Electrical\ v1.1.xlsx
+example quotes/
+Eano Estimate Template - Electrical v1.1.xlsx

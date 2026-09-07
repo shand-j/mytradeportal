@@ -54,6 +54,10 @@ class Actions:
     QUOTE_BOQ_REGENERATED = "quote.boq_regenerated"
     QUOTE_CONVERTED_TO_INVOICE = "quote.converted_to_invoice"
 
+    QUOTE_REQUEST_CREATED = "quote_request.created"
+    QUOTE_REQUEST_UPDATED = "quote_request.updated"
+    QUOTE_REQUEST_INTERPRETED = "quote_request.interpreted"
+
     INVOICE_CREATED = "invoice.created"
     INVOICE_UPDATED = "invoice.updated"
     INVOICE_ISSUED = "invoice.issued"

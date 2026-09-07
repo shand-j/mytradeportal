@@ -46,6 +46,12 @@ async function globalSetup(config: FullConfig) {
         break;
       }
       loginError = `HTTP ${loginResponse.status()}: ${await loginResponse.text()}`;
+      // Login is rate-limited (5/min per IP); a 429 needs a long back-off or
+      // the retries just keep burning the same one-minute window.
+      if (loginResponse.status() === 429) {
+        await new Promise((resolve) => setTimeout(resolve, 20000));
+        continue;
+      }
     } catch (error) {
       loginError = error instanceof Error ? error.message : String(error);
     }

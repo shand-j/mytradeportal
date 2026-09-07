@@ -311,6 +311,73 @@ async def ai_insights(tenant: TenantDep, db: DbDep) -> AIInsights:
     average_value = _to_float(value_result.scalar())
 
     months = _last_6_months()
+
+    # AI quote usage: quotes with at least one AI-generated line item, grouped
+    # by month, plus acceptance (approved/invoiced) for those quotes.
+    ai_monthly_result = await db.execute(
+        select(
+            func.to_char(Quote.created_at, "YYYY-MM").label("month"),
+            func.count(func.distinct(Quote.id)).label("ai_quotes"),
+            func.count(func.distinct(Quote.id))
+            .filter(Quote.status.in_(["approved", "invoiced"]))
+            .label("ai_accepted"),
+        )
+        .join(QuoteLineItem, QuoteLineItem.quote_id == Quote.id)
+        .where(Quote.tenant_id == tenant.id, QuoteLineItem.ai_generated.is_(True))
+        .group_by("month")
+    )
+    ai_by_month = {row.month: row for row in ai_monthly_result.all()}
+
+    # extra_data payloads for AI-drafted quotes: generation timing and edit
+    # feedback. The cohort is keyed on the ai_draft snapshot rather than the
+    # per-line flag so a quote the electrician fully rewrote still counts
+    # towards edit-rate metrics.
+    ai_extra_result = await db.execute(
+        select(Quote.extra_data)
+        .where(Quote.tenant_id == tenant.id)
+        .where(Quote.extra_data.has_key("ai_draft"))
+    )
+    ai_extras = [row for row in ai_extra_result.scalars().all() if isinstance(row, dict)]
+
+    generation_times = [
+        float(rag["generation_seconds"])
+        for extra in ai_extras
+        if isinstance(rag := extra.get("rag"), dict) and rag.get("generation_seconds") is not None
+    ]
+    average_generation_time = (
+        round(sum(generation_times) / len(generation_times), 2) if generation_times else None
+    )
+
+    feedbacks = [
+        feedback for extra in ai_extras if isinstance(feedback := extra.get("ai_feedback"), dict)
+    ]
+    edit_rate = (
+        round(sum(1 for feedback in feedbacks if feedback.get("edited")) / len(feedbacks), 2)
+        if feedbacks
+        else None
+    )
+    price_drifts = [
+        float(feedback["price_drift_pct"])
+        for feedback in feedbacks
+        if feedback.get("price_drift_pct") is not None
+    ]
+    avg_price_drift_pct = round(sum(price_drifts) / len(price_drifts), 2) if price_drifts else None
+
+    # AI spend: token usage + estimated cost recorded per quote under
+    # extra_data["rag"]["llm_usage"].
+    llm_usages = [
+        rag["llm_usage"]
+        for extra in ai_extras
+        if isinstance(rag := extra.get("rag"), dict) and isinstance(rag.get("llm_usage"), dict)
+    ]
+    ai_quotes_with_usage = len(llm_usages)
+    ai_costs = [
+        float(usage["est_cost_usd"])
+        for usage in llm_usages
+        if usage.get("est_cost_usd") is not None
+    ]
+    total_ai_cost_usd = round(sum(ai_costs), 6) if ai_costs else None
+
     monthly_data: list[AiQuotePerformanceMonthlyData] = []
     for _, label, key in months:
         month_result = await db.execute(
@@ -320,14 +387,16 @@ async def ai_insights(tenant: TenantDep, db: DbDep) -> AIInsights:
             )
         )
         month_total = month_result.scalar() or 0
-        # No ai_generated flag yet, so report everything as manual for now.
+        ai_row = ai_by_month.get(key)
+        month_ai = int(ai_row.ai_quotes) if ai_row else 0
+        month_ai_accepted = int(ai_row.ai_accepted) if ai_row else 0
         monthly_data.append(
             AiQuotePerformanceMonthlyData(
                 month=label,
-                ai_quotes=0,
-                manual_quotes=month_total,
-                ai_acceptance=0,
-                manual_acceptance=month_total,
+                ai_quotes=month_ai,
+                manual_quotes=month_total - month_ai,
+                ai_acceptance=month_ai_accepted,
+                manual_acceptance=month_total - month_ai,
             )
         )
 
@@ -336,7 +405,11 @@ async def ai_insights(tenant: TenantDep, db: DbDep) -> AIInsights:
             total_generated=total_generated,
             acceptance_rate=round(acceptance_rate, 1),
             average_value=round(average_value, 2),
-            average_generation_time=12.5,
+            average_generation_time=average_generation_time,
+            edit_rate=edit_rate,
+            avg_price_drift_pct=avg_price_drift_pct,
+            total_ai_cost_usd=total_ai_cost_usd,
+            ai_quotes_with_usage=ai_quotes_with_usage,
             monthly_data=monthly_data,
         ),
         demand_forecast=None,

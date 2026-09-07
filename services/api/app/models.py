@@ -52,6 +52,9 @@ class Tenant(Base, TimestampMixin):
 
     id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
     slug: Mapped[str] = mapped_column(String(63), unique=True, nullable=False, index=True)
+    code: Mapped[str | None] = mapped_column(
+        String(6), unique=True, nullable=True, index=True
+    )  # 6-digit customer lookup code, generated on creation
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     status: Mapped[str] = mapped_column(
@@ -252,6 +255,9 @@ class Quote(TenantScopedBase):
     )
     bill_of_quantities: Mapped[BillOfQuantities | None] = relationship(
         "BillOfQuantities", back_populates="quote", uselist=False, cascade="all, delete-orphan"
+    )
+    quote_request: Mapped[QuoteRequest | None] = relationship(
+        "QuoteRequest", foreign_keys="Quote.quote_request_id"
     )
 
 
@@ -574,8 +580,69 @@ class Payment(Base, TimestampMixin):
     invoice: Mapped[Invoice] = relationship("Invoice", back_populates="payments")
 
 
+class Subscription(Base, TimestampMixin):
+    """A tenant's Paddle-billed subscription to the MTP platform.
+
+    Mirrors just enough of the Paddle subscription state to gate access and
+    render the billing screen without round-tripping the Paddle API. Webhooks
+    are the source of truth — the row is UPSERT-ed on ``paddle_subscription_id``
+    so at-least-once delivery is naturally idempotent.
+    """
+
+    __tablename__ = "subscriptions"
+
+    id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
+    # One live subscription per tenant for beta.
+    tenant_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("tenants.id", ondelete="CASCADE"),
+        nullable=False,
+        unique=True,
+        index=True,
+    )
+    plan_key: Mapped[str] = mapped_column(String(50), nullable=False)  # starter | pro | business
+    status: Mapped[str] = mapped_column(
+        String(50), default="incomplete", nullable=False
+    )  # incomplete | trialing | active | past_due | paused | canceled
+    paddle_subscription_id: Mapped[str | None] = mapped_column(
+        String(255), nullable=True, unique=True, index=True
+    )
+    paddle_customer_id: Mapped[str | None] = mapped_column(String(255), nullable=True, index=True)
+    paddle_transaction_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    paddle_price_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    paddle_product_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    trial_ends_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    current_period_start: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    current_period_end: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    scheduled_change_action: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    scheduled_change_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    canceled_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    provider_payload: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict, nullable=False)
+
+
+class ProcessedWebhook(Base, TimestampMixin):
+    """Ledger of Paddle event IDs already applied.
+
+    Paddle delivers webhooks at-least-once. Non-idempotent side effects (email
+    receipts, one-off credit grants) MUST dedupe on ``event_id`` before firing.
+    UPSERT-shaped handlers don't need this — see Subscription.
+    """
+
+    __tablename__ = "processed_webhooks"
+
+    id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
+    provider: Mapped[str] = mapped_column(String(50), default="paddle", nullable=False)
+    event_id: Mapped[str] = mapped_column(String(255), unique=True, nullable=False, index=True)
+    event_type: Mapped[str | None] = mapped_column(String(100), nullable=True)
+
+
 class Communication(TenantScopedBase):
-    """A logged message/email/SMS/call with a contact."""
+    """A logged message/email/SMS/call/chat message with a contact.
+
+    For the mobile in-app chat, ``quote_request_id`` threads messages around a
+    lead/quote request and ``sender_role`` distinguishes the customer, business
+    staff and the AI assistant.
+    """
 
     __tablename__ = "communications"
 
@@ -585,12 +652,26 @@ class Communication(TenantScopedBase):
         nullable=True,
         index=True,
     )
+    quote_request_id: Mapped[UUID | None] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("quote_requests.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
     channel: Mapped[str] = mapped_column(String(50), nullable=False)
     direction: Mapped[str] = mapped_column(String(10), default="outbound", nullable=False)
+    sender_role: Mapped[str] = mapped_column(
+        String(20), default="business", nullable=False
+    )  # customer | business | ai
     subject: Mapped[str | None] = mapped_column(String(255), nullable=True)
     body: Mapped[str | None] = mapped_column(Text, nullable=True)
     status: Mapped[str] = mapped_column(String(50), default="sent", nullable=False)
     provider_message_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    # AI follow-up metadata: confidence score, completion flag, and any extra
+    # structured data produced by the LLM (e.g. extracted facts from the reply).
+    ai_metadata: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict, nullable=False)
+
+    quote_request: Mapped[QuoteRequest | None] = relationship("QuoteRequest")
 
 
 class Review(TenantScopedBase):
@@ -815,6 +896,11 @@ class QuoteRequest(TenantScopedBase):
         JSONB, default=list, nullable=False
     )
     safety_review_required: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    # Set when the AI triage closes without reaching confidence: the electrician
+    # should call the customer to fill the remaining gaps before quoting.
+    requires_callback: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default="false", nullable=False
+    )
     ai_confidence: Mapped[Decimal | None] = mapped_column(Numeric(5, 4), nullable=True)
     reviewed_by: Mapped[UUID | None] = mapped_column(
         PGUUID(as_uuid=True),
@@ -827,6 +913,7 @@ class QuoteRequest(TenantScopedBase):
     # ORM-only relationship (no schema change): lets the leads list eager-load
     # the linked contact for the customer name/postcode shown on lead cards.
     contact: Mapped[Contact | None] = relationship("Contact")
+    quote: Mapped[Quote | None] = relationship("Quote", foreign_keys="QuoteRequest.quote_id")
 
 
 class MediaAsset(TenantScopedBase):
@@ -882,6 +969,61 @@ class Consent(TenantScopedBase):
     granted: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     ip_address: Mapped[str | None] = mapped_column(String(100), nullable=True)
     user_agent: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+
+class Notification(TenantScopedBase):
+    """A persistent in-app notification for staff users or customer accounts.
+
+    ``recipient_type`` distinguishes the audience: ``"staff"`` notifications
+    are surfaced in the back-office app, ``"customer"`` ones in the homeowner
+    app. A staff notification with ``recipient_id = None`` is addressed to
+    every staff user of the tenant; otherwise it targets a single user (staff)
+    or customer account (customer).
+    """
+
+    __tablename__ = "notifications"
+
+    recipient_type: Mapped[str] = mapped_column(
+        String(20), nullable=False, index=True
+    )  # staff | customer
+    # No FK: the recipient is a users.id for staff and a customers.id for
+    # customer recipients. NULL means "all tenant staff" (staff only).
+    recipient_id: Mapped[UUID | None] = mapped_column(
+        PGUUID(as_uuid=True), nullable=True, index=True
+    )
+    type: Mapped[str] = mapped_column(String(50), nullable=False)
+    title: Mapped[str] = mapped_column(String(255), nullable=False)
+    body: Mapped[str] = mapped_column(Text, nullable=False)
+    link: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    read_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+
+class PushToken(TenantScopedBase):
+    """An Expo push token registered by a staff or customer device."""
+
+    __tablename__ = "push_tokens"
+
+    owner_type: Mapped[str] = mapped_column(String(20), nullable=False)  # staff | customer
+    owner_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), nullable=False, index=True)
+    token: Mapped[str] = mapped_column(String(255), unique=True, nullable=False)
+    platform: Mapped[str] = mapped_column(String(50), nullable=False)  # ios | android | web
+
+
+class PasswordResetToken(TenantScopedBase):
+    """A single-use password-reset token issued via email.
+
+    ``owner_type`` distinguishes staff vs customer resets so the confirm
+    endpoint can locate the right row. Tokens are hashed at rest so a leaked
+    DB dump cannot be used to hijack accounts.
+    """
+
+    __tablename__ = "password_reset_tokens"
+
+    owner_type: Mapped[str] = mapped_column(String(20), nullable=False)  # staff | customer
+    owner_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), nullable=False, index=True)
+    token_hash: Mapped[str] = mapped_column(String(255), unique=True, nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    used_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
 
 class Event(TenantScopedBase):

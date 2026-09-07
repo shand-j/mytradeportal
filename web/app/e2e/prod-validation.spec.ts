@@ -222,7 +222,7 @@ test.describe('production validation', () => {
       await expect(page.getByText('AI Validation Customer')).toBeVisible();
       await expect(page.getByText(/£[0-9,]+/).first()).toBeVisible();
 
-      // Regression guard: once a BoQ-backed quote exists, the quotes list must
+      // Regression guard: once an AI-backed quote exists, the quotes list must
       // still serialize (HTTP 200). This is the exact path that 500'd in prod
       // for pre-existing tenants while manual-quote smoke stayed green.
       await gotoQuotesAndAssertListLoads(page);

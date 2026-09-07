@@ -4,6 +4,7 @@ import { Send, CheckCircle, FileDown, XCircle } from 'lucide-react';
 import { useInvoice, useSendInvoice, useMarkInvoicePaid, useCancelInvoice, useSettings } from '@/lib/api/hooks';
 import { useUiStore } from '@/stores/uiStore';
 import { StatusPill } from '@/components/shared/StatusPill';
+import { formatGBP } from '@/lib/utils';
 import { toast } from 'sonner';
 
 export function InvoiceDetail() {
@@ -92,19 +93,19 @@ export function InvoiceDetail() {
                   <tr key={item.id} className="border-b border-[#F0EFEA]">
                     <td className="py-2.5 text-sm text-[#1C1917]">{item.description}</td>
                     <td className="py-2.5 text-sm text-[#57534E] text-right">{item.quantity} {item.unit}</td>
-                    <td className="py-2.5 text-sm text-[#57534E] text-right">£{item.unitPrice.toLocaleString()}</td>
-                    <td className="py-2.5 text-sm font-medium text-[#1C1917] text-right">£{item.total.toLocaleString()}</td>
+                    <td className="py-2.5 text-sm text-[#57534E] text-right">{formatGBP(item.unitPrice)}</td>
+                    <td className="py-2.5 text-sm font-medium text-[#1C1917] text-right">{formatGBP(item.total)}</td>
                   </tr>
                 ))}
               </tbody>
             </table>
 
             <div className="space-y-1 max-w-xs ml-auto">
-              <div className="flex justify-between text-sm text-[#57534E]"><span>Subtotal</span><span>£{invoice.subtotal.toLocaleString()}</span></div>
-              <div className="flex justify-between text-sm text-[#57534E]"><span>VAT ({invoice.vatRate}%)</span><span>£{invoice.vatAmount.toLocaleString()}</span></div>
-              <div className="flex justify-between text-lg font-bold text-[#1C1917] pt-2 border-t border-[#F0EFEA]"><span>Total</span><span>£{invoice.total.toLocaleString()}</span></div>
-              {invoice.amountPaid > 0 && <div className="flex justify-between text-sm text-[#16A34A]"><span>Paid</span><span>£{invoice.amountPaid.toLocaleString()}</span></div>}
-              {invoice.amountDue > 0 && <div className="flex justify-between text-sm text-[#DC2626] font-semibold"><span>Amount Due</span><span>£{invoice.amountDue.toLocaleString()}</span></div>}
+              <div className="flex justify-between text-sm text-[#57534E]"><span>Subtotal</span><span>{formatGBP(invoice.subtotal)}</span></div>
+              <div className="flex justify-between text-sm text-[#57534E]"><span>VAT ({Math.round(invoice.vatRate * 100)}%)</span><span>{formatGBP(invoice.vatAmount)}</span></div>
+              <div className="flex justify-between text-lg font-bold text-[#1C1917] pt-2 border-t border-[#F0EFEA]"><span>Total</span><span>{formatGBP(invoice.total)}</span></div>
+              {invoice.amountPaid > 0 && <div className="flex justify-between text-sm text-[#16A34A]"><span>Paid</span><span>{formatGBP(invoice.amountPaid)}</span></div>}
+              {invoice.amountDue > 0 && <div className="flex justify-between text-sm text-[#DC2626] font-semibold"><span>Amount Due</span><span>{formatGBP(invoice.amountDue)}</span></div>}
             </div>
           </div>
         </div>

@@ -20,8 +20,12 @@ def run(script_name: str) -> None:
 
 if __name__ == "__main__":
     run("init_db.py")
-    run("seed_minimum_catalog.py")
+
+    seed_script = ROOT / "scripts" / "seed_minimum_catalog.py"
+    if seed_script.exists():
+        run("seed_minimum_catalog.py")
+        print("[init_api] Note: minimum catalogue seed applied; data-pipeline still enriches full pricing.")
+    else:
+        print("[init_api] Note: no seed_minimum_catalog.py found; skipping catalogue seed.")
+
     print("[init_api] Done")
-    print(
-        "[init_api] Note: minimum catalogue seed applied; data-pipeline still enriches full pricing."
-    )

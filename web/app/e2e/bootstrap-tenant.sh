@@ -110,8 +110,19 @@ if [ "${ENVIRONMENT:-development}" = "production" ]; then
   fi
 else
   echo "Running development seed script..."
-  docker compose ${COMPOSE_FILES} run --rm api \
-    python -m app.seed_admin_user
+  # seed_admin_user.py refuses to run without explicit SEED_* env vars (no
+  # baked-in credentials), so pass the E2E bootstrap values through. Supabase
+  # is explicitly disabled: local dev seeding uses password hashes and must
+  # not depend on an external Supabase instance being reachable.
+  docker compose ${COMPOSE_FILES} run --rm \
+    -e SEED_TENANT_SLUG="${BOOTSTRAP_SLUG}" \
+    -e SEED_TENANT_NAME="${BOOTSTRAP_NAME}" \
+    -e SEED_ADMIN_EMAIL="${ADMIN_EMAIL}" \
+    -e SEED_ADMIN_PASSWORD="${ADMIN_PASSWORD}" \
+    -e SEED_ADMIN_NAME="${ADMIN_NAME}" \
+    -e SUPABASE_URL= \
+    -e SUPABASE_SERVICE_ROLE_KEY= \
+    api python -m app.seed_admin_user
 fi
 
 wait_for_admin

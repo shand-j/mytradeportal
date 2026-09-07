@@ -56,7 +56,6 @@ dev = [
     "faker>=25.0.0",
     "ruff>=0.4.0",
     "mypy>=1.10.0,<2.2.0",
-    "pre-commit>=3.7.0",
     "types-passlib",
     "types-python-jose",
     "django-stubs[compatible-mypy]>=5.0",
@@ -138,6 +137,7 @@ testpaths = ["services", "packages", "evals", "security"]
 addopts = "-m 'not eval and not security' --cov=services --cov=packages --cov-report=term-missing"
 markers = [
     "eval: Golden-dataset end-to-end evaluation against the OCERP service",
+    "evals: Offline golden-set eval harness tests for the AI quote pipeline",
     "security: Security tests that require live target credentials and are not run by default",
 ]
 

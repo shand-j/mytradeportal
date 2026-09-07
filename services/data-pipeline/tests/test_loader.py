@@ -3,6 +3,7 @@
 from decimal import Decimal
 
 from data_pipeline.loader import (
+    _build_description,
     _category_to_cost_category,
     _extract_metre_length,
     deduplicate_products,
@@ -72,3 +73,43 @@ def test_deduplicate_products_keeps_first() -> None:
     assert len(unique) == 2
     assert unique[0].supplier == Supplier.SCREWFIX
     assert unique[1].supplier == Supplier.TOOLSTATION
+
+
+def test_build_description_deduplicates_brand_and_drops_supplier() -> None:
+    product = UnifiedProduct(
+        supplier=Supplier.SCREWFIX,
+        sku="X",
+        name="British General 13A 2-Gang Switched Socket",
+        brand="British General",
+        category=ProductCategory.SWITCHES_SOCKETS,
+        current_price=4.99,
+    )
+    desc = _build_description(product)
+    assert desc == "[Switches & Sockets] British General 13A 2-Gang Switched Socket"
+    assert "Supplier:" not in desc
+
+
+def test_build_description_prepends_brand_when_missing_from_name() -> None:
+    product = UnifiedProduct(
+        supplier=Supplier.SCREWFIX,
+        sku="Y",
+        name="6242Y Twin & Earth 2.5mm² 50m",
+        brand="Prysmian",
+        category=ProductCategory.CABLE,
+        current_price=42.99,
+    )
+    desc = _build_description(product)
+    assert desc.startswith("[Cable] Prysmian 6242Y Twin & Earth 2.5mm² 50m")
+
+
+def test_build_description_collapses_whitespace() -> None:
+    product = UnifiedProduct(
+        supplier=Supplier.SCREWFIX,
+        sku="Z",
+        name="  LED   Downlight   4W  ",
+        brand="",
+        category=ProductCategory.LIGHTING,
+        current_price=8.99,
+    )
+    desc = _build_description(product)
+    assert desc == "[Lighting] LED Downlight 4W"

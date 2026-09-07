@@ -8,7 +8,7 @@ and do not require an auth token.
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -16,6 +16,7 @@ from app.database import get_db
 from app.dependencies import _extract_token
 from app.limiter import limiter
 from app.models import BusinessService, Contact, Customer, QuoteRequest, Tenant
+from app.quote_automation import auto_draft_quote_for_request
 from app.rls import bypass_rls_in_session, set_tenant_in_session
 from app.schemas import (
     BusinessPublicConfig,
@@ -39,17 +40,31 @@ async def _resolve_active_tenant(db: AsyncSession, slug: str) -> Tenant:
     return tenant
 
 
-@router.get("/{slug}/public-config", response_model=BusinessPublicConfig)
-async def get_public_config(slug: str, db: DbDep) -> BusinessPublicConfig:
-    """Return the public white-label config for a business (no auth required).
+async def _resolve_active_tenant_by_code(db: AsyncSession, code: str) -> Tenant:
+    """Resolve an active tenant by its 6-digit customer lookup code."""
+    tenant = await db.scalar(select(Tenant).where(Tenant.code == code, Tenant.is_active.is_(True)))
+    if tenant is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Business not found",
+        )
+    return tenant
 
-    This is called by the iOS app before the customer or tradesperson has
-    logged in, so it intentionally bypasses RLS.
+
+@router.get("/by-code/{code}/public-config", response_model=BusinessPublicConfig)
+async def get_public_config_by_code(code: str, db: DbDep) -> BusinessPublicConfig:
+    """Return the public white-label config for a business by 6-digit code.
+
+    Called from the generic marketplace entry screen when a homeowner types in
+    the electrician's code instead of using a white-label build.
     """
     await bypass_rls_in_session(db)
+    tenant = await _resolve_active_tenant_by_code(db, code)
+    return await _build_public_config(db, tenant)
 
-    tenant = await _resolve_active_tenant(db, slug)
 
+async def _build_public_config(db: AsyncSession, tenant: Tenant) -> BusinessPublicConfig:
+    """Build the white-label public config for a resolved tenant."""
     service_rows = await db.scalars(
         select(BusinessService.category).where(
             BusinessService.tenant_id == tenant.id,
@@ -61,6 +76,7 @@ async def get_public_config(slug: str, db: DbDep) -> BusinessPublicConfig:
 
     return BusinessPublicConfig(
         slug=tenant.slug,
+        code=tenant.code,
         name=tenant.name,
         logo_url=tenant.logo_url,
         primary_color=tenant.primary_color,
@@ -69,6 +85,18 @@ async def get_public_config(slug: str, db: DbDep) -> BusinessPublicConfig:
         contact_phone=tenant.phone or None,
         address=tenant.address or None,
     )
+
+
+@router.get("/{slug}/public-config", response_model=BusinessPublicConfig)
+async def get_public_config(slug: str, db: DbDep) -> BusinessPublicConfig:
+    """Return the public white-label config for a business (no auth required).
+
+    This is called by the iOS app before the customer or tradesperson has
+    logged in, so it intentionally bypasses RLS.
+    """
+    await bypass_rls_in_session(db)
+    tenant = await _resolve_active_tenant(db, slug)
+    return await _build_public_config(db, tenant)
 
 
 @router.post(
@@ -81,13 +109,15 @@ async def submit_public_quote_request(
     slug: str,
     data: PublicQuoteRequestCreate,
     request: Request,
+    background_tasks: BackgroundTasks,
     db: DbDep,
 ) -> PublicQuoteRequestAck:
     """Create a quote request from a homeowner via the white-label app.
 
     Unauthenticated: the target business is identified by ``slug``. A CRM
     contact is created (or reused by email) and linked to the new request so it
-    shows up as a lead in the tradesperson's dashboard.
+    shows up as a lead in the tradesperson's dashboard. An AI draft quote is
+    generated in the background — the 201 ack never waits on the LLM.
     """
     tenant = await _resolve_active_tenant(db, slug)
     # Insert tenant-scoped rows under this tenant's RLS context.
@@ -153,7 +183,15 @@ async def submit_public_quote_request(
     )
     db.add(quote_request)
     await db.flush()
+    # Commit before scheduling the background auto-draft: background tasks run
+    # before the get_db dependency cleanup commits, and the worker opens its
+    # own session, so the new rows must already be durable.
+    await db.commit()
     await db.refresh(quote_request)
+
+    # Kick off AI quote generation in the background. Failures are logged by
+    # the worker and never affect this ack.
+    background_tasks.add_task(auto_draft_quote_for_request, tenant.id, quote_request.id)
 
     return PublicQuoteRequestAck(
         id=quote_request.id,

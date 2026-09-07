@@ -107,18 +107,31 @@ export function Reviews() {
               </tr>
             </thead>
             <tbody>
-              {(reviews ?? []).map(review => (
+              {(reviews ?? []).map(review => {
+                const customerName = review.customer
+                  ? `${review.customer.firstName} ${review.customer.lastName}`.trim()
+                  : '';
+                const displayName = customerName || review.reviewerName || 'Customer';
+                const initials =
+                  displayName
+                    .split(' ')
+                    .map(part => part[0])
+                    .filter(Boolean)
+                    .slice(0, 2)
+                    .join('')
+                    .toUpperCase() || '?';
+                return (
                 <tr key={review.id} className="border-t border-[#F0EFEA] hover:bg-[#F5F4F0] transition-colors">
                   <td className="px-4 py-3">
                     <div className="flex items-center gap-2">
-                      {review.customer.avatarUrl ? (
+                      {review.customer?.avatarUrl ? (
                         <img src={review.customer.avatarUrl} alt="" className="w-7 h-7 rounded-full object-cover" />
                       ) : (
                         <div className="w-7 h-7 rounded-full bg-[#F5F4F0] flex items-center justify-center text-[11px] font-semibold text-[#57534E]">
-                          {review.customer.firstName[0]}{review.customer.lastName[0]}
+                          {initials}
                         </div>
                       )}
-                      <div className="text-sm font-medium text-[#1C1917]">{review.customer.firstName} {review.customer.lastName}</div>
+                      <div className="text-sm font-medium text-[#1C1917]">{displayName}</div>
                     </div>
                   </td>
                   <td className="px-4 py-3">
@@ -131,7 +144,7 @@ export function Reviews() {
                   <td className="px-4 py-3 max-w-xs">
                     <div className="text-sm text-[#57534E] truncate">{review.reviewText}</div>
                   </td>
-                  <td className="px-4 py-3 text-xs text-[#78716C]">{new Date(review.reviewDate).toLocaleDateString('en-GB')}</td>
+                  <td className="px-4 py-3 text-xs text-[#78716C]">{review.reviewDate ? new Date(review.reviewDate).toLocaleDateString('en-GB') : '—'}</td>
                   <td className="px-4 py-3">
                     {review.responded ? (
                       <span className="inline-flex items-center gap-1 text-xs text-[#16A34A] font-medium">
@@ -144,7 +157,8 @@ export function Reviews() {
                     )}
                   </td>
                 </tr>
-              ))}
+                );
+              })}
             </tbody>
           </table>
         </div>
