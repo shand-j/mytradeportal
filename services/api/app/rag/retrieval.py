@@ -19,6 +19,7 @@ from qdrant_client.models import (
     MatchAny,
     MatchValue,
     NestedCondition,
+    SliceCondition,
 )
 from sqlalchemy import or_, select
 
@@ -34,6 +35,7 @@ FilterCondition = (
     | IsNullCondition
     | HasIdCondition
     | HasVectorCondition
+    | SliceCondition
     | NestedCondition
     | Filter
 )

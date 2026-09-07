@@ -21,8 +21,9 @@ dependencies = [
     # Cache / tasks
     "redis>=5.0.0",
     "celery>=5.4.0",
-    # Vector search
-    "qdrant-client>=1.9.0",
+    # Vector search (pinned to a minor: new minors extend typed unions like
+    # Filter conditions, which breaks mypy until the annotations catch up)
+    "qdrant-client~=1.19.0",
     # AI / LLM
     "litellm>=1.40.0",
     "openai>=1.30.0",
