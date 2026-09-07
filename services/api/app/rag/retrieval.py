@@ -350,9 +350,7 @@ async def search_knowledge_chunks(
 
     must_conditions: list[FieldCondition] = []
     if doc_types:
-        must_conditions.append(
-            FieldCondition(key="doc_type", match=MatchAny(any=list(doc_types)))
-        )
+        must_conditions.append(FieldCondition(key="doc_type", match=MatchAny(any=list(doc_types))))
 
     started = time.perf_counter()
     try:

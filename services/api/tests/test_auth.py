@@ -367,9 +367,7 @@ async def test_login_falls_back_to_bcrypt_when_supabase_unreachable(
 def deterministic_reset_token(monkeypatch: pytest.MonkeyPatch) -> str:
     """Patch ``secrets.token_urlsafe`` so tests know the token that will land."""
     token = "test-token-" + "x" * 40
-    monkeypatch.setattr(
-        "app.routers.auth.secrets.token_urlsafe", lambda _n: token
-    )
+    monkeypatch.setattr("app.routers.auth.secrets.token_urlsafe", lambda _n: token)
     return token
 
 

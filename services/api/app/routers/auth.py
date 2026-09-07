@@ -233,11 +233,7 @@ async def password_reset_request(
     so this endpoint cannot be used to enumerate accounts. When email delivery
     is not yet wired the token is logged for out-of-band delivery.
     """
-    generic = {
-        "detail": (
-            "If an account exists for that email, a reset link has been sent."
-        )
-    }
+    generic = {"detail": ("If an account exists for that email, a reset link has been sent.")}
 
     email = data.email.lower().strip()
     await bypass_rls_in_session(db)
@@ -280,9 +276,11 @@ async def password_reset_request(
 
     from app.config import settings as _settings
 
-    app_origin = _settings.app_public_url.rstrip("/") if _settings.app_public_url else str(
-        request.base_url
-    ).rstrip("/")
+    app_origin = (
+        _settings.app_public_url.rstrip("/")
+        if _settings.app_public_url
+        else str(request.base_url).rstrip("/")
+    )
     reset_url = f"{app_origin}/reset-password?token={raw}"
     subject, html, text = password_reset_template(name=display_name, reset_url=reset_url)
     tenant_row = await db.get(Tenant, tenant_id)

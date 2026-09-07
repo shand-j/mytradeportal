@@ -93,9 +93,7 @@ async def _send_via_smtp(
 ) -> dict[str, Any]:
     """SMTP fallback used by the local Mailpit dev stack."""
     message = EmailMessage()
-    message["From"] = formataddr(
-        (from_name or settings.smtp_from_name, settings.smtp_from_email)
-    )
+    message["From"] = formataddr((from_name or settings.smtp_from_name, settings.smtp_from_email))
     message["To"] = to_email
     message["Subject"] = subject
     if reply_to:

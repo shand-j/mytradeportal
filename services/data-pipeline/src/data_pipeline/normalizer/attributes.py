@@ -99,8 +99,11 @@ def _extract_cable(text: str) -> dict[str, Any]:
     swa_hit = bool(re.search(r"\bswa\b|steel wire armour|armoured", text))
     if swa_hit:
         attrs["cable_type"] = "swa"
-    elif "6242y" in text or "twin & earth" in text or "twin and earth" in text or re.search(
-        r"\bt&e\b", text
+    elif (
+        "6242y" in text
+        or "twin & earth" in text
+        or "twin and earth" in text
+        or re.search(r"\bt&e\b", text)
     ):
         attrs["cable_type"] = "twin_earth"
     elif "6491x" in text or ("singles" in text and "cable" in text):

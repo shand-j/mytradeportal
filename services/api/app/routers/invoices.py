@@ -132,7 +132,8 @@ async def create_invoice(
             ]
         else:
             invoice.line_items = [
-                InvoiceLineItem(tenant_id=tenant.id, **item.model_dump()) for item in data.line_items
+                InvoiceLineItem(tenant_id=tenant.id, **item.model_dump())
+                for item in data.line_items
             ]
         calculate_invoice_totals(invoice)
 

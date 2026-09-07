@@ -222,10 +222,12 @@ async def send_quote(
     contact = await db.get(Contact, quote.contact_id)
     tenant_row = await db.get(Tenant, tenant.id)
     if contact is not None and contact.email:
-        app_origin = (
-            settings.app_public_url.rstrip("/") if settings.app_public_url else ""
+        app_origin = settings.app_public_url.rstrip("/") if settings.app_public_url else ""
+        view_url = (
+            f"{app_origin}/customer/quote/{quote.id}"
+            if app_origin
+            else f"/customer/quote/{quote.id}"
         )
-        view_url = f"{app_origin}/customer/quote/{quote.id}" if app_origin else f"/customer/quote/{quote.id}"
         business_name = tenant_row.name if tenant_row is not None else "Your electrician"
         subject, html, text = quote_ready_template(
             customer_name=contact.name.split()[0] if contact.name else "there",
@@ -241,7 +243,9 @@ async def send_quote(
                 html_body=html,
                 text_body=text,
                 from_name=business_name,
-                reply_to=(tenant_row.email if tenant_row is not None and tenant_row.email else None),
+                reply_to=(
+                    tenant_row.email if tenant_row is not None and tenant_row.email else None
+                ),
             )
         except Exception as exc:
             logger.warning(
@@ -749,9 +753,7 @@ def _intake_completeness(
     bedrooms = (
         property_info.get("bedrooms") or ai_extracted.get("bedrooms") or survey.get("bedrooms")
     )
-    access_info = any(
-        questionnaire.get(key) or ai_extracted.get(key) for key in _ACCESS_INFO_KEYS
-    )
+    access_info = any(questionnaire.get(key) or ai_extracted.get(key) for key in _ACCESS_INFO_KEYS)
     urgency = quote_request.urgency if quote_request is not None else None
     job_specificity = any(ai_extracted.get(key) for key in _JOB_SPECIFICITY_KEYS)
     # Count non-empty extracted facts, capped at 4. 4+ facts = full richness

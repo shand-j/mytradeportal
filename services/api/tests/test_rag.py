@@ -197,8 +197,7 @@ async def test_generate_quote_from_prompt_renders_knowledge_chunks() -> None:
     knowledge = [
         {
             "text": (
-                "Labour norm: Install additional double socket\n"
-                "Typical hours: 1 (range 0.5-2)"
+                "Labour norm: Install additional double socket\nTypical hours: 1 (range 0.5-2)"
             ),
             "source": "labour_norms_uk",
             "doc_type": "labour_norm",
@@ -1291,9 +1290,7 @@ def test_intake_completeness_signal_scoring() -> None:
             },
         },
     )
-    assert (
-        _intake_completeness("Fuse board keeps tripping", quote_request=fully_populated) == 1.0
-    )
+    assert _intake_completeness("Fuse board keeps tripping", quote_request=fully_populated) == 1.0
 
     # Lead form only (no AI chat): description + property_type + bedrooms + urgency.
     sparse_request = QuoteRequest(
@@ -1309,9 +1306,9 @@ def test_intake_completeness_signal_scoring() -> None:
         + _INTAKE_WEIGHTS["bedrooms"]
         + _INTAKE_WEIGHTS["urgency"]
     )
-    assert _intake_completeness(
-        "Fuse board keeps tripping", quote_request=sparse_request
-    ) == round(expected_sparse, 2)
+    assert _intake_completeness("Fuse board keeps tripping", quote_request=sparse_request) == round(
+        expected_sparse, 2
+    )
 
 
 def test_intake_completeness_ai_chat_meaningfully_raises_score() -> None:

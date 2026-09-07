@@ -656,9 +656,7 @@ async def seed_tenant(session: AsyncSession, spec: dict[str, Any]) -> dict[str, 
                 channel="in_app_chat",
                 direction="inbound",
                 sender_role="customer",
-                body=(
-                    "It's a 3-bed semi-detached house and yes, the shower is electric."
-                ),
+                body=("It's a 3-bed semi-detached house and yes, the shower is electric."),
                 status="sent",
                 created_at=NOW - timedelta(hours=19, minutes=42),
             ),

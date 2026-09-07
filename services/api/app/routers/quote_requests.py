@@ -141,9 +141,7 @@ async def update_quote_request(
         .where(QuoteRequest.id == quote_request_id, QuoteRequest.tenant_id == tenant.id)
     )
     if quote_request is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Quote request not found"
-        )
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Quote request not found")
 
     update_data = data.model_dump(exclude_unset=True)
     changed_fields: list[str] = []

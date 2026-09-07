@@ -42,12 +42,8 @@ def _price_id_for_plan(plan_key: str) -> str:
     return price_id
 
 
-async def _get_or_create_subscription(
-    db: AsyncSession, tenant_id, plan_key: str
-) -> Subscription:
-    existing = await db.scalar(
-        select(Subscription).where(Subscription.tenant_id == tenant_id)
-    )
+async def _get_or_create_subscription(db: AsyncSession, tenant_id, plan_key: str) -> Subscription:
+    existing = await db.scalar(select(Subscription).where(Subscription.tenant_id == tenant_id))
     if existing is None:
         existing = Subscription(tenant_id=tenant_id, plan_key=plan_key, status="incomplete")
         db.add(existing)

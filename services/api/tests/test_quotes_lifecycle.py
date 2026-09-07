@@ -320,9 +320,7 @@ async def test_refine_drops_duplicated_manual_lines(client: AsyncClient) -> None
     body = response.json()
     manual_desc = manual_line["description"]
     assert [li["description"] for li in body["line_items"]].count(manual_desc) == 1
-    assert any(
-        "duplicate" in w.lower() for w in body["ai_warnings"]
-    ), body["ai_warnings"]
+    assert any("duplicate" in w.lower() for w in body["ai_warnings"]), body["ai_warnings"]
 
 
 async def test_update_quote_preserves_ai_generated_flags(client: AsyncClient) -> None:

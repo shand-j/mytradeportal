@@ -33,9 +33,7 @@ class _FakeAsyncClient:
     async def __aexit__(self, *_: Any) -> None:
         return None
 
-    async def post(
-        self, url: str, json: dict[str, Any], headers: dict[str, str]
-    ) -> _FakeResponse:
+    async def post(self, url: str, json: dict[str, Any], headers: dict[str, str]) -> _FakeResponse:
         self.posts.append((url, json, headers))
         return self._response
 

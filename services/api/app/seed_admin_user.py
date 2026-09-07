@@ -67,7 +67,9 @@ async def seed() -> None:
             session.add(tenant)
             await session.flush()
             await session.refresh(tenant)
-            print(f"Created tenant: {tenant.name} ({tenant.slug}) — code={tenant.code} — id={tenant.id}")
+            print(
+                f"Created tenant: {tenant.name} ({tenant.slug}) — code={tenant.code} — id={tenant.id}"
+            )
         else:
             print(f"Tenant already exists: {tenant.slug}")
 

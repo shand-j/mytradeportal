@@ -57,9 +57,7 @@ async def test_checkout_applies_beta_discount_when_configured(
 ) -> None:
     """When PADDLE_BETA_DISCOUNT_ID is set, every checkout auto-applies it."""
     monkeypatch.setattr("app.routers.billing.settings.paddle_price_id_pro", "pri_test_pro")
-    monkeypatch.setattr(
-        "app.routers.billing.settings.paddle_beta_discount_id", "dsc_test_beta"
-    )
+    monkeypatch.setattr("app.routers.billing.settings.paddle_beta_discount_id", "dsc_test_beta")
 
     fake = AsyncMock(
         return_value={"transaction_id": "txn_test_beta", "checkout_url": "https://pay.paddle.com/x"}
@@ -154,7 +152,11 @@ async def test_repeat_checkout_reuses_subscription_row(
 
     tenant_id = admin_client.headers["X-Tenant-ID"]
     rows = (
-        await db.execute(select(Subscription).where(Subscription.tenant_id == tenant_id))  # type: ignore[arg-type]
-    ).scalars().all()
+        (
+            await db.execute(select(Subscription).where(Subscription.tenant_id == tenant_id))  # type: ignore[arg-type]
+        )
+        .scalars()
+        .all()
+    )
     assert len(rows) == 1
     assert rows[0].plan_key == "pro"
