@@ -34,9 +34,7 @@ async def test_checkout_returns_paddle_url(
     # An incomplete subscription row must be pre-created so the webhook can
     # find and hydrate it.
     tenant_id = admin_client.headers["X-Tenant-ID"]
-    sub = await db.scalar(
-        select(Subscription).where(Subscription.tenant_id == tenant_id)  # type: ignore[arg-type]
-    )
+    sub = await db.scalar(select(Subscription).where(Subscription.tenant_id == tenant_id))
     assert sub is not None
     assert sub.plan_key == "pro"
     assert sub.status == "incomplete"
@@ -152,9 +150,7 @@ async def test_repeat_checkout_reuses_subscription_row(
 
     tenant_id = admin_client.headers["X-Tenant-ID"]
     rows = (
-        (
-            await db.execute(select(Subscription).where(Subscription.tenant_id == tenant_id))  # type: ignore[arg-type]
-        )
+        (await db.execute(select(Subscription).where(Subscription.tenant_id == tenant_id)))
         .scalars()
         .all()
     )

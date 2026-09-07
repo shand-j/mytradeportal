@@ -9,7 +9,17 @@ import httpx
 import structlog
 from litellm import aembedding
 from openai import APIError
-from qdrant_client.models import FieldCondition, Filter, MatchAny, MatchValue
+from qdrant_client.models import (
+    FieldCondition,
+    Filter,
+    HasIdCondition,
+    HasVectorCondition,
+    IsEmptyCondition,
+    IsNullCondition,
+    MatchAny,
+    MatchValue,
+    NestedCondition,
+)
 from sqlalchemy import or_, select
 
 from app.config import settings
@@ -17,6 +27,16 @@ from app.database import get_db_session
 from app.models import CostItem
 from app.qdrant import ensure_collection, get_qdrant_client
 from app.rag.intent import extract_query_intent
+
+FilterCondition = (
+    FieldCondition
+    | IsEmptyCondition
+    | IsNullCondition
+    | HasIdCondition
+    | HasVectorCondition
+    | NestedCondition
+    | Filter
+)
 
 logger = structlog.get_logger("api.rag")
 
@@ -348,7 +368,7 @@ async def search_knowledge_chunks(
         )
         return []
 
-    must_conditions: list[FieldCondition] = []
+    must_conditions: list[FilterCondition] = []
     if doc_types:
         must_conditions.append(FieldCondition(key="doc_type", match=MatchAny(any=list(doc_types))))
 

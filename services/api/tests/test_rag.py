@@ -1116,7 +1116,7 @@ def test_auto_ground_attaches_matching_catalogue_code() -> None:
         ],
         "notes": "",
     }
-    retrieved = [
+    retrieved: list[dict[str, Any]] = [
         {
             "code": "ELEC-SOCKET-ADD",
             "description": "Install one additional double socket",

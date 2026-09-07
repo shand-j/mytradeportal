@@ -14,7 +14,7 @@ pytestmark = pytest.mark.asyncio
 
 async def _seed_notification(db: AsyncSession, tenant_id: UUID, **kwargs: object) -> Notification:
     await set_tenant_in_session(db, tenant_id)
-    notification = Notification(tenant_id=tenant_id, **kwargs)  # type: ignore[arg-type]
+    notification = Notification(tenant_id=tenant_id, **kwargs)
     db.add(notification)
     await db.flush()
     return notification

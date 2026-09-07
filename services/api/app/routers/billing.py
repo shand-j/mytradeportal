@@ -8,6 +8,7 @@ subscription read model; state mutations happen exclusively via webhooks
 
 from datetime import datetime
 from typing import Annotated
+from uuid import UUID
 
 import structlog
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -42,7 +43,9 @@ def _price_id_for_plan(plan_key: str) -> str:
     return price_id
 
 
-async def _get_or_create_subscription(db: AsyncSession, tenant_id, plan_key: str) -> Subscription:
+async def _get_or_create_subscription(
+    db: AsyncSession, tenant_id: UUID, plan_key: str
+) -> Subscription:
     existing = await db.scalar(select(Subscription).where(Subscription.tenant_id == tenant_id))
     if existing is None:
         existing = Subscription(tenant_id=tenant_id, plan_key=plan_key, status="incomplete")
@@ -67,6 +70,11 @@ async def create_checkout(
     completion. Subscription state is written by the webhook, not here.
     """
     price_id = _price_id_for_plan(data.plan_key)
+    if current_user is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authentication required",
+        )
     await set_tenant_in_session(db, tenant.id)
 
     subscription = await _get_or_create_subscription(db, tenant.id, data.plan_key)

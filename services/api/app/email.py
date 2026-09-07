@@ -10,11 +10,11 @@ from email.message import EmailMessage
 from email.utils import formataddr
 from typing import Any
 
-import aiosmtplib
-import httpx
+import aiosmtplib as aiosmtplib
+import httpx as httpx
 import structlog
 
-from app.config import settings
+from app.config import settings as settings
 
 logger = structlog.get_logger("api.email")
 

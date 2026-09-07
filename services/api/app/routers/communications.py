@@ -8,7 +8,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.config import settings
+from app.config import settings as settings
 from app.database import get_db
 from app.dependencies import TenantDep, _extract_token
 from app.models import Communication, Contact, Customer, QuoteRequest, User
@@ -193,7 +193,7 @@ async def create_communication(
     # staff-authored messages don't produce a notification (staff are already
     # in the app).
     if resolved_role == "customer" and data.quote_request_id:
-        await _notify_staff_customer_reply(db, tenant.id, quote_request, data.body)
+        await _notify_staff_customer_reply(db, tenant.id, quote_request, data.body or "")
     await db.commit()
     await db.refresh(communication)
     return communication

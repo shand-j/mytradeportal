@@ -85,6 +85,11 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Build shared TS tokens
+        # @mtp/shared-ts types resolve to dist/, which only exists after a build.
+        working-directory: packages/shared/ts
+        run: pnpm build
+
       - name: Type check
         run: pnpm exec tsc --noEmit
 
