@@ -151,7 +151,7 @@ async def test_register_with_quote_request_id_links_request(
     # The lead exists but is not yet linked to a customer account.
     staff_before = await client.get("/quote-requests", headers={"X-Tenant-ID": str(tenant.id)})
     assert staff_before.status_code == 200
-    lead_before = [lead for lead in staff_before.json() if lead["id"] == quote_request_id][0]
+    lead_before = next(lead for lead in staff_before.json() if lead["id"] == quote_request_id)
     assert lead_before["customer_id"] is None
 
     # Register with the quote request id.
@@ -166,7 +166,7 @@ async def test_register_with_quote_request_id_links_request(
     # Staff sees the lead linked to the new customer.
     staff_after = await client.get("/quote-requests", headers={"X-Tenant-ID": str(tenant.id)})
     assert staff_after.status_code == 200
-    lead_after = [lead for lead in staff_after.json() if lead["id"] == quote_request_id][0]
+    lead_after = next(lead for lead in staff_after.json() if lead["id"] == quote_request_id)
     assert lead_after["customer_id"] == customer_id
 
     # The quote request now belongs to the customer.
