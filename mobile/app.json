@@ -10,7 +10,6 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.mytradeportal.mobile",
-      "newArchEnabled": false,
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false
       }
@@ -47,12 +46,21 @@
           "locationWhenInUsePermission": "Allow My Trade Portal to use your location so tradespeople can see job areas and plan visits."
         }
       ],
-      "expo-notifications"
+      "expo-notifications",
+      "expo-font",
+      "expo-router",
+      "expo-image"
     ],
     "extra": {
       "eas": {
         "projectId": "9a36899b-76df-4faa-9067-8d6e3e8a5e76"
       }
+    },
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
+    "updates": {
+      "url": "https://u.expo.dev/9a36899b-76df-4faa-9067-8d6e3e8a5e76"
     },
     "owner": "mytradeportal"
   }

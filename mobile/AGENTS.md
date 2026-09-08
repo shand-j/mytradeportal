@@ -40,3 +40,13 @@ pnpm lint         # tsc --noEmit
 - White-label branding is fetched live from the backend (`fetchPublicConfig` in `src/api/businesses.ts`) for the target business slug; there is no offline demo/mock mode.
 - Use shared theme tokens (`@mtp/shared-ts`) for colors, spacing, and typography.
 - The old React Navigation navigators and `App.tsx` entry point were removed; the app now boots from `expo-router/entry` via `app/_layout.tsx`.
+- **No Expo Go.** Development uses a dev-client build (`expo-dev-client` is a
+  devDependency; `eas.json` has `development` / `development-simulator` /
+  `preview` / `production` profiles). OTA hot fixes go through EAS Update
+  (`eas update --branch production`).
+- pnpm: the repo root `.npmrc` pins `node-linker=hoisted` (required by Metro/Babel
+  preset resolution — do not reintroduce an isolated linker or a `mobile/.npmrc`).
+  Packages used by `babel.config.js` must be declared in `package.json`
+  (e.g. `babel-preset-expo`).
+- `react-native-gesture-handler` is pinned at 3.2.1, one major above SDK 57's
+  expected ~2.32.0. Intentional — verify on device before downgrading.

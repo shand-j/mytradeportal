@@ -285,7 +285,7 @@ declared in `mobile/package.json` (e.g. `babel-preset-expo`).
 ```bash
 cd mobile
 
-# Start the Expo dev server
+# Start the Expo dev server (dev-client mode — there is no Expo Go)
 pnpm start
 
 # Run on iOS Simulator (macOS + Xcode required)
@@ -299,6 +299,21 @@ pnpm e2e:install
 
 # Run connected-mode E2E against a live backend
 pnpm test:e2e
+```
+
+Distribution via EAS (profiles in `mobile/eas.json`):
+
+```bash
+# Production build → TestFlight
+npx eas-cli build --platform ios --profile production
+npx eas-cli submit --platform ios --profile production
+
+# Dev-client build for the simulator / QA device
+npx eas-cli build --platform ios --profile development-simulator   # simulator
+npx eas-cli build --platform ios --profile preview                 # device QA (internal)
+
+# OTA hot fix (JS-only; no store resubmission)
+npx eas-cli update --branch production --message "fix: ..."
 ```
 
 Runtime modes:

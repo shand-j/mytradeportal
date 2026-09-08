@@ -11,9 +11,16 @@ pnpm install
 
 ## Run
 
+The app does not use Expo Go. Day-to-day development runs against a
+development-client build (which includes the app's own native modules):
+
 ```bash
-pnpm start   # Expo dev server
-pnpm ios     # iOS simulator (requires macOS + full Xcode)
+# One-time: install the dev-client build on your simulator
+npx eas-cli build --platform ios --profile development-simulator
+# (download the .app from the link EAS prints, then drag onto the simulator)
+
+pnpm start   # Expo dev server (dev-client mode)
+pnpm ios     # local debug build via Xcode (requires macOS + full Xcode)
 ```
 
 ### Build & run in Xcode
@@ -27,8 +34,30 @@ open ios/MyTradePortal.xcworkspace        # open in Xcode (use the .xcworkspace)
 pnpm start                                # Metro must run for Debug builds
 ```
 
-Full step-by-step, command-line build, and troubleshooting:
-[`../../docs/runbooks/ios-xcode.md`](../../docs/runbooks/ios-xcode.md).
+## EAS builds, submit & OTA
+
+Profiles in `eas.json`:
+
+| Profile | Purpose | Distribution |
+|---|---|---|
+| `development` | Dev client on a physical device | Internal (QR install) |
+| `development-simulator` | Dev client on the iOS Simulator | Internal |
+| `preview` | Release-mode QA build | Internal (QR install) |
+| `production` | App Store / TestFlight | Store |
+
+```bash
+# Production build + TestFlight submit
+npx eas-cli build --platform ios --profile production
+npx eas-cli submit --platform ios --profile production
+
+# OTA hot fix (JS-only changes; no resubmission needed)
+npx eas-cli update --branch production --message "fix: ..."
+```
+
+App version/build numbers are managed remotely by EAS
+(`appVersionSource: "remote"`, `autoIncrement`); OTA updates use
+`runtimeVersion: appVersion` policy, so bump `expo.version` in `app.json` when
+native code changes between OTA updates.
 
 ## Backend connection (connected mode)
 
@@ -95,7 +124,8 @@ Notes:
   Chromium runs with web security disabled.
 - The trade and white-label suites use different `EXPO_PUBLIC_*` builds, so they
   run sequentially on the same port (never concurrently).
-- CI runs this via `.github/workflows/pwa-e2e.yml`.
+- Known issue: `e2e/run.sh` and `e2e/start-stack.sh` still reference the old
+  `services/pwa` paths and need updating before the suite runs.
 
 ## Structure
 
