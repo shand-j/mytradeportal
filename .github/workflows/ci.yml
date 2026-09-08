@@ -71,8 +71,7 @@ jobs:
 
       - name: Set up pnpm
         uses: pnpm/action-setup@v4
-        with:
-          version: 10
+        # Version comes from the root package.json "packageManager" field.
 
       - name: Set up Node
         uses: actions/setup-node@v4
