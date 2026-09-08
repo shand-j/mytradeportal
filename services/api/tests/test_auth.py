@@ -142,6 +142,26 @@ async def test_token_with_bare_domain_falls_back_to_email_lookup(
     assert data["user"]["email"] == user.email
 
 
+async def test_token_bare_domain_with_no_tenant_context(
+    client: AsyncClient, db: AsyncSession
+) -> None:
+    """Regression: the bare-domain email lookup ran under RLS with no tenant
+    set, so the users table read as empty and mobile logins 401'd whenever the
+    request context had no tenant (i.e. always, in production). Clear the
+    tenant context before the request to simulate a fresh pooled connection."""
+    from app.rls import clear_rls_session
+
+    tenant, user, password = await _create_admin_user(db)
+    await clear_rls_session(db)
+    response = await client.post(
+        "/auth/token",
+        headers={"host": "localhost:8000"},
+        json={"email": user.email, "password": password},
+    )
+    assert response.status_code == 200
+    assert response.json()["tenant_slug"] == tenant.slug
+
+
 async def test_login_with_explicit_tenant_slug(client: AsyncClient, db: AsyncSession) -> None:
     """An explicit tenant_slug authenticates a non-default tenant's user even
     when the Host header carries no tenant subdomain (bare domain)."""

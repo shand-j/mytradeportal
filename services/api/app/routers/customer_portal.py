@@ -21,7 +21,7 @@ from app.dependencies import CurrentCustomerDep
 from app.limiter import limiter
 from app.models import Appointment, BillOfQuantities, Contact, Customer, Quote, QuoteRequest, Tenant
 from app.push import notify_staff
-from app.rls import bypass_rls_in_session, set_tenant_in_session
+from app.rls import bypass_rls_for_transaction, set_tenant_in_session
 from app.schemas import (
     AppointmentCreate,
     AppointmentRead,
@@ -113,7 +113,7 @@ async def register_customer(
 ) -> CustomerTokenResponse:
     """Register a homeowner against a business and return a bearer token."""
     # tenants is a global table; look it up before entering the tenant's RLS.
-    await bypass_rls_in_session(db)
+    await bypass_rls_for_transaction(db)
     tenant = await _resolve_active_tenant(db, data.slug)
     await set_tenant_in_session(db, tenant.id)
 
@@ -185,7 +185,7 @@ async def login_customer(
     db: DbDep,
 ) -> CustomerTokenResponse:
     """Authenticate a homeowner and return a bearer token."""
-    await bypass_rls_in_session(db)
+    await bypass_rls_for_transaction(db)
     tenant = await _resolve_active_tenant(db, data.slug)
     await set_tenant_in_session(db, tenant.id)
 

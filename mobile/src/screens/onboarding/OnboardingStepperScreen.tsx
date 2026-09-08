@@ -1,13 +1,17 @@
 import { useEffect, useRef, useState } from "react";
 import { KeyboardAvoidingView, Platform, ScrollView, StyleSheet, View } from "react-native";
-import { useRouter } from "expo-router";
+import { useLocalSearchParams, useRouter } from "expo-router";
 import { Header } from "../../components/ui/Header";
 import { Screen } from "../../components/ui/Screen";
 import { Text } from "../../components/ui/Text";
 import { useAuth } from "../../contexts/AuthContext";
 import { useBusiness } from "../../theme/ThemeProvider";
 import { ApiError } from "../../lib/apiClient";
-import { RegisterBusinessInput } from "../../api/onboarding";
+import {
+  RegisterBusinessInput,
+  completeOnboardingSteps,
+  getOnboardingStatus,
+} from "../../api/onboarding";
 import { AccountStep } from "./steps/AccountStep";
 import { AddressServiceAreaStep } from "./steps/AddressServiceAreaStep";
 import { BrandingStep } from "./steps/BrandingStep";
@@ -63,13 +67,49 @@ export function OnboardingStepperScreen() {
   const { business } = useBusiness();
   const { logout, finishRegistration, loading } = useAuth();
   const router = useRouter();
-  const [stepIndex, setStepIndex] = useState(0);
+  const { resume } = useLocalSearchParams<{ resume?: string }>();
+  // Resume mode: user logged back in with a tenant that never finished
+  // onboarding. The tenant already exists, so skip straight to the review
+  // step and re-record the server-side steps instead of re-registering.
+  const isResume = resume === "1";
+  const [stepIndex, setStepIndex] = useState(() =>
+    isResume ? STEPS.findIndex((s) => s.key === "review") : 0
+  );
   const [data, setData] = useState<Record<string, unknown>>({});
   const [error, setError] = useState<string | null>(null);
   // The tenant is registered when leaving the review step, so the plan step's
   // Paddle checkout call (/billing/checkout) runs with an authenticated tenant.
-  const [registered, setRegistered] = useState(false);
+  const [registered, setRegistered] = useState(isResume);
   const scrollRef = useRef<ScrollView>(null);
+
+  // Prefill the wizard from the server-side onboarding progress so the review
+  // summary (and any back-navigation) shows what was already captured.
+  useEffect(() => {
+    if (!isResume) return;
+    void (async () => {
+      try {
+        const status = await getOnboardingStatus();
+        const progress = status.onboardingProgress ?? {};
+        const keyMap: Record<string, string> = {
+          business_identity: "identity",
+          compliance: "compliance",
+          services: "services",
+          branding: "branding",
+          plan: "plan",
+        };
+        const prefill: Record<string, unknown> = {};
+        for (const [backendKey, wizardKey] of Object.entries(keyMap)) {
+          const entry = progress[backendKey];
+          if (entry?.value) prefill[wizardKey] = entry.value;
+        }
+        if (Object.keys(prefill).length > 0) {
+          setData((prev) => ({ ...prefill, ...prev }));
+        }
+      } catch {
+        // Prefill is best-effort; the wizard works from empty data too.
+      }
+    })();
+  }, [isResume]);
 
   // Step transitions must reset scroll — the outer ScrollView is the actual
   // scroller (inner step ScrollViews size to content), and remounting the step
@@ -87,10 +127,14 @@ export function OnboardingStepperScreen() {
     if (stepData) {
       setData(merged);
     }
-    if (!registered && STEPS[stepIndex].key === "review") {
+    if (STEPS[stepIndex].key === "review") {
       setError(null);
       try {
-        await finishRegistration(buildRegisterInput(merged));
+        if (!registered) {
+          await finishRegistration(buildRegisterInput(merged));
+        } else if (isResume) {
+          await completeOnboardingSteps(merged);
+        }
         setRegistered(true);
       } catch (err) {
         const message =

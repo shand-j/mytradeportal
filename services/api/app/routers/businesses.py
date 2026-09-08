@@ -17,7 +17,7 @@ from app.dependencies import _extract_token
 from app.limiter import limiter
 from app.models import BusinessService, Contact, Customer, QuoteRequest, Tenant
 from app.quote_automation import auto_draft_quote_for_request
-from app.rls import bypass_rls_in_session, set_tenant_in_session
+from app.rls import bypass_rls_for_transaction, set_tenant_in_session
 from app.schemas import (
     BusinessPublicConfig,
     PublicQuoteRequestAck,
@@ -58,7 +58,7 @@ async def get_public_config_by_code(code: str, db: DbDep) -> BusinessPublicConfi
     Called from the generic marketplace entry screen when a homeowner types in
     the electrician's code instead of using a white-label build.
     """
-    await bypass_rls_in_session(db)
+    await bypass_rls_for_transaction(db)
     tenant = await _resolve_active_tenant_by_code(db, code)
     return await _build_public_config(db, tenant)
 
@@ -94,7 +94,7 @@ async def get_public_config(slug: str, db: DbDep) -> BusinessPublicConfig:
     This is called by the iOS app before the customer or tradesperson has
     logged in, so it intentionally bypasses RLS.
     """
-    await bypass_rls_in_session(db)
+    await bypass_rls_for_transaction(db)
     tenant = await _resolve_active_tenant(db, slug)
     return await _build_public_config(db, tenant)
 

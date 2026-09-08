@@ -10,10 +10,26 @@ import {
   ApiUser,
 } from "../api/auth";
 import { fetchCurrentTenant } from "../api/businesses";
-import { registerBusiness, RegisterBusinessInput } from "../api/onboarding";
+import {
+  registerBusiness,
+  RegisterBusinessInput,
+  getOnboardingStatus,
+} from "../api/onboarding";
 import { ApiError, NetworkError } from "../lib/apiClient";
 import { tokenStorage } from "../lib/tokenStorage";
 import { useBusinessStore } from "./businessStore";
+
+/** A tenant is fully onboarded once the backend marks it active (launched). */
+async function fetchOnboardingComplete(): Promise<boolean> {
+  try {
+    const status = await getOnboardingStatus();
+    return status.status === "active";
+  } catch {
+    // Status fetch failed (offline, pre-tenant) — don't trap the user in the
+    // wizard on a transient error.
+    return true;
+  }
+}
 
 type AuthState = {
   role: AppRole;
@@ -77,10 +93,11 @@ export const useAuthStore = create<AuthState>((set) => ({
           // Login succeeded but tenant branding could not be loaded; the user
           // can still use the app with default theming.
         }
+        const onboardingComplete = await fetchOnboardingComplete();
         set({
           user: mapApiUser(apiUser),
           role: "trade",
-          onboardingComplete: true,
+          onboardingComplete,
           isRegistering: false,
           loading: false,
         });
@@ -192,10 +209,11 @@ export const useAuthStore = create<AuthState>((set) => ({
       } catch {
         // Session restored but tenant branding could not be loaded.
       }
+      const onboardingComplete = await fetchOnboardingComplete();
       set({
         user: mapApiUser(apiUser),
         role: "trade",
-        onboardingComplete: true,
+        onboardingComplete,
         isRegistering: false,
         loading: false,
       });

@@ -20,7 +20,7 @@ from app.email import send_email
 from app.email_templates import password_reset as password_reset_template
 from app.limiter import limiter
 from app.models import Customer, PasswordResetToken, Tenant, User
-from app.rls import bypass_rls_in_session, set_tenant_in_session
+from app.rls import bypass_rls_for_transaction, set_tenant_in_session
 from app.schemas import (
     PasswordResetConfirm,
     PasswordResetRequest,
@@ -85,8 +85,18 @@ async def _resolve_login_tenant(
         return await get_current_tenant(request, db=db), None
 
     # Bare-domain fallback: locate the user by email, then derive the tenant.
-    user_result = await db.execute(select(User).where(User.email == data.email))
-    user = user_result.scalar_one_or_none()
+    # This lookup runs before any tenant context exists, so it must bypass RLS
+    # — otherwise the users table reads as empty and every bare-domain login
+    # (e.g. the mobile app, which doesn't know the tenant slug yet) 401s.
+    # Transaction-scoped bypass (no connection leak). No enumeration risk: the
+    # response is the same 401 whether or not the email exists, and the caller
+    # still has to present a valid password. Duplicates (repeat onboarding
+    # attempts) resolve to the newest account.
+    await bypass_rls_for_transaction(db)
+    user_result = await db.execute(
+        select(User).where(User.email == data.email).order_by(User.created_at.desc())
+    )
+    user = user_result.scalars().first()
     if user is not None:
         tenant = await db.get(Tenant, user.tenant_id)
         if tenant is not None and tenant.is_active:
@@ -236,7 +246,7 @@ async def password_reset_request(
     generic = {"detail": ("If an account exists for that email, a reset link has been sent.")}
 
     email = data.email.lower().strip()
-    await bypass_rls_in_session(db)
+    await bypass_rls_for_transaction(db)
     user = await db.scalar(select(User).where(User.email == email, User.is_active.is_(True)))
     customer = None
     owner_type = "staff"
@@ -323,7 +333,7 @@ async def password_reset_confirm(
     db: DbDep,
 ) -> dict[str, str]:
     """Set a new password using the token issued by ``/password-reset/request``."""
-    await bypass_rls_in_session(db)
+    await bypass_rls_for_transaction(db)
     token_hash = _hash_reset_token(data.token)
     record = await db.scalar(
         select(PasswordResetToken).where(PasswordResetToken.token_hash == token_hash)

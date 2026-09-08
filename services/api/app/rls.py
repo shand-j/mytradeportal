@@ -179,9 +179,22 @@ async def bypass_rls_in_session(session: AsyncSession) -> None:
     Only call this from trusted server-side scripts that explicitly need
     cross-tenant access (seed bootstrap, scheduled cleanup jobs). The setting
     is connection-scoped and will leak across requests if used inside a
-    pooled FastAPI handler.
+    pooled FastAPI handler — handlers must use bypass_rls_for_transaction.
     """
     await session.execute(text("SELECT set_config('app.bypass_rls', 'on', false)"))
+
+
+async def bypass_rls_for_transaction(session: AsyncSession) -> None:
+    """Disable RLS for the current transaction only (request handlers).
+
+    ``set_config(..., true)`` is transaction-local: when the session's
+    transaction ends (commit/rollback on request completion), the bypass
+    reverts, so it cannot leak to the next request that checks out this
+    pooled connection. Use this — never bypass_rls_in_session — inside
+    FastAPI handlers that legitimately need a pre-tenant cross-tenant read
+    (login email lookup, password reset).
+    """
+    await session.execute(text("SELECT set_config('app.bypass_rls', 'on', true)"))
 
 
 async def clear_rls_session(session: AsyncSession) -> None:

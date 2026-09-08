@@ -48,6 +48,40 @@ async function completeStep(step: string, value: Record<string, unknown>): Promi
   await api.patch(`/onboarding/step/${step}`, { step, value });
 }
 
+export type OnboardingStatus = {
+  status: string;
+  onboardingProgress: Record<string, { completed: boolean; value: Record<string, unknown> }>;
+  launchEnabled: boolean;
+  pendingSteps: string[];
+};
+
+export async function getOnboardingStatus(): Promise<OnboardingStatus> {
+  return api.get<OnboardingStatus>("/onboarding/status");
+}
+
+/**
+ * Resume path for users whose tenant already exists but whose onboarding
+ * never completed (e.g. registration partially failed): re-record the wizard
+ * steps and launch. Idempotent — the step endpoint overwrites.
+ */
+export async function completeOnboardingSteps(
+  data: Record<string, unknown>
+): Promise<void> {
+  const identity = (data.identity ?? {}) as Record<string, unknown>;
+  const compliance = (data.compliance ?? {}) as Record<string, unknown>;
+  const services = (data.services ?? {}) as Record<string, unknown>;
+  const branding = (data.branding ?? {}) as Record<string, unknown>;
+  await completeStep("business_identity", identity);
+  await completeStep("compliance", compliance);
+  await completeStep("services", {
+    services: (services.services as string[] | undefined) ?? [],
+  });
+  if (!branding.skipped && Object.keys(branding).length > 0) {
+    await completeStep("branding", branding);
+  }
+  await api.post("/onboarding/launch");
+}
+
 /**
  * Provision a real business from the wizard: create the tenant + admin user,
  * authenticate, record the launch-gate onboarding steps, then launch.

@@ -28,7 +28,8 @@ export default function Index() {
     }
     if (isAuthenticated && role !== "guest") {
       if (role === "trade" && !onboardingComplete) {
-        router.replace("/onboarding");
+        // Registered but never finished onboarding: resume at the right step.
+        router.replace("/onboarding?resume=1");
       } else if (role === "trade") {
         router.replace("/(trade)/dashboard");
       } else if (role === "customer") {
