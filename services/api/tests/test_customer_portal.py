@@ -306,3 +306,43 @@ async def test_register_does_not_link_other_tenants_lead(
 
     await db.refresh(foreign_lead)
     assert foreign_lead.customer_id is None
+
+
+async def test_register_does_not_poach_lead_whose_email_is_another_customer(
+    client: AsyncClient, db: AsyncSession
+) -> None:
+    """A lead whose contact email is a registered customer's must not be
+    claimed by a different account on phone match alone (repeat registration
+    with a new email + same phone was surfacing the earlier quote request in
+    the new account)."""
+    slug = f"cust-{uuid4().hex[:8]}"
+    tenant = await _create_tenant(db, slug)
+
+    email_a = f"alice-{uuid4().hex[:6]}@example.com"
+    payload_a = _register_payload(slug, email_a)
+    payload_a["phone"] = "07700 900111"
+    reg_a = await client.post("/customer/register", json=payload_a)
+    assert reg_a.status_code == 201, reg_a.text
+
+    # Lead captured with A's email but a phone that B will register with.
+    _, lead = await _seed_lead(db, tenant, contact_email=email_a, contact_phone="07700 900222")
+
+    email_b = f"bob-{uuid4().hex[:6]}@example.com"
+    payload_b = _register_payload(slug, email_b)
+    payload_b["phone"] = "07700 900222"
+    reg_b = await client.post("/customer/register", json=payload_b)
+    assert reg_b.status_code == 201, reg_b.text
+
+    await db.refresh(lead)
+    # Phone matches B but the email belongs to A — B must not see it.
+    assert lead.customer_id is None
+
+    # A claims it on login via the email match.
+    login_a = await client.post(
+        "/customer/login",
+        json={"slug": slug, "email": email_a, "password": "homeowner-pass-123"},
+    )
+    assert login_a.status_code == 200, login_a.text
+    await set_tenant_in_session(db, tenant.id)
+    await db.refresh(lead)
+    assert str(lead.customer_id) == reg_a.json()["customer"]["id"]

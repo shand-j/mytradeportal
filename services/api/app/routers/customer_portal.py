@@ -64,6 +64,19 @@ async def _link_quote_requests_by_contact(db: AsyncSession, customer: Customer) 
     if not conditions:
         return 0
 
+    # Never poach a request whose contact email is registered to a different
+    # customer account — it belongs to that account even if the phone matches
+    # (e.g. a retried registration with a new email but the same phone).
+    email_owned_by_another_customer = (
+        select(Customer.id)
+        .where(
+            Customer.tenant_id == customer.tenant_id,
+            Customer.id != customer.id,
+            func.lower(Customer.email) == func.lower(Contact.email),
+        )
+        .exists()
+    )
+
     result = await db.execute(
         select(QuoteRequest)
         .join(Contact, QuoteRequest.contact_id == Contact.id)
@@ -71,6 +84,7 @@ async def _link_quote_requests_by_contact(db: AsyncSession, customer: Customer) 
             QuoteRequest.tenant_id == customer.tenant_id,
             QuoteRequest.customer_id.is_(None),
             or_(*conditions),
+            ~email_owned_by_another_customer,
         )
     )
     linked = list(result.scalars().all())
