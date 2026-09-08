@@ -269,6 +269,13 @@ mytradeportal/
 pnpm install
 ```
 
+The root `.npmrc` pins `node-linker=hoisted` — Expo's recommended pnpm layout.
+Metro and Babel resolve presets/plugins by walking up from `mobile/`, which
+breaks under pnpm's default isolated linker (EAS's Xcode bundling phase fails
+with `Cannot find module 'babel-preset-expo'` → `'transformFile' undefined`).
+Because of this, babel packages used by `mobile/babel.config.js` must be
+declared in `mobile/package.json` (e.g. `babel-preset-expo`).
+
 ### Mobile app (`mobile/`)
 
 > **Note:** the app was recently moved from `services/pwa` to `mobile/`. Several
