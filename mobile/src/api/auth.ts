@@ -76,6 +76,10 @@ export type ApiCustomer = {
   email: string;
   fullName: string;
   phone: string | null;
+  address?: string | null;
+  postcode?: string | null;
+  /** Persisted property details, used to pre-fill repeat quote requests. */
+  propertyProfile?: Record<string, unknown>;
   preferredContactMethod?: string | null;
   marketingConsent?: boolean;
 };
@@ -95,6 +99,7 @@ export async function registerCustomer(
     phone?: string;
     password: string;
     address?: string;
+    postcode?: string;
     preferredContactMethod?: string;
     quoteRequestId?: string;
   }

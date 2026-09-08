@@ -19,6 +19,7 @@ export type AuthContextValue = {
     phone: string;
     password: string;
     address?: string;
+    postcode?: string;
     preferredContactMethod?: string;
     marketingConsent?: boolean;
     quoteRequestId?: string;

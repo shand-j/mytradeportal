@@ -68,6 +68,46 @@ class Contact(models.Model):
         return self.name
 
 
+class Customer(models.Model):
+    """A homeowner account that can log in to the customer portal."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tenant = models.ForeignKey(
+        Tenant,
+        db_column="tenant_id",
+        on_delete=models.DO_NOTHING,
+        related_name="+",
+    )
+    contact = models.ForeignKey(
+        Contact,
+        db_column="contact_id",
+        on_delete=models.DO_NOTHING,
+        related_name="+",
+        null=True,
+        blank=True,
+    )
+    email = models.EmailField()
+    full_name = models.CharField(max_length=255)
+    phone = models.CharField(max_length=50, null=True, blank=True)
+    password_hash = models.CharField(max_length=255, null=True, blank=True)
+    address = models.TextField(null=True, blank=True)
+    postcode = models.CharField(max_length=20, null=True, blank=True)
+    property_profile = models.JSONField(default=dict, blank=True)
+    is_active = models.BooleanField(default=True)
+    marketing_consent = models.BooleanField(default=False)
+    preferred_contact_method = models.CharField(max_length=50, null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        managed = False
+        db_table = "customers"
+        ordering = ["-created_at"]
+
+    def __str__(self) -> str:
+        return f"{self.full_name} <{self.email}>"
+
+
 class User(models.Model):
     """A staff member belonging to a tenant."""
 

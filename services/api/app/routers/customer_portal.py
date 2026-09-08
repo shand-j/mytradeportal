@@ -146,6 +146,7 @@ async def register_customer(
         email=str(data.email),
         phone=data.phone,
         address=data.address,
+        postcode=data.postcode,
     )
     db.add(contact)
     await db.flush()
@@ -156,6 +157,8 @@ async def register_customer(
         email=str(data.email),
         full_name=data.full_name,
         phone=data.phone,
+        address=data.address,
+        postcode=data.postcode,
         password_hash=get_password_hash(data.password),
         marketing_consent=data.marketing_consent,
         preferred_contact_method=data.preferred_contact_method,
@@ -177,6 +180,11 @@ async def register_customer(
             quote_request.customer_id = customer.id
             quote_request.contact_id = contact.id
             customer.contact_id = contact.id
+            # Carry the property profile forward so repeat quotes pre-fill it.
+            if not customer.property_profile:
+                prop = (quote_request.structured_data or {}).get("property")
+                if isinstance(prop, dict) and prop:
+                    customer.property_profile = prop
 
     # Claim any leads the electrician captured earlier with the same
     # email/phone so they show up in the customer's history immediately.

@@ -819,6 +819,11 @@ class Customer(TenantScopedBase):
     full_name: Mapped[str] = mapped_column(String(255), nullable=False)
     phone: Mapped[str | None] = mapped_column(String(50), nullable=True)
     password_hash: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    # Address/postcode and property profile live on the customer account (not
+    # only the CRM contact) so repeat quote requests can pre-fill them.
+    address: Mapped[str | None] = mapped_column(Text, nullable=True)
+    postcode: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    property_profile: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict, nullable=False)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     magic_link_token: Mapped[str | None] = mapped_column(String(255), nullable=True, index=True)
     magic_link_expires_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)

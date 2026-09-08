@@ -54,6 +54,7 @@ export function AccountCreationStep({
         fullName: customerName,
         email: customerEmail,
         phone: customerPhone,
+        postcode: formData.postcode || undefined,
         password,
         preferredContactMethod: contact.preferredContact,
         quoteRequestId,

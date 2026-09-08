@@ -1,6 +1,6 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { KeyboardAvoidingView, Linking, Platform, ScrollView, StyleSheet, View } from "react-native";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Header } from "../../components/ui/Header";
 import { Icon } from "../../components/ui/Icon";
 import { Screen } from "../../components/ui/Screen";
@@ -8,6 +8,7 @@ import { Text } from "../../components/ui/Text";
 import { useAuth } from "../../contexts/AuthContext";
 import { useBusiness } from "../../theme/ThemeProvider";
 import { submitPublicQuoteRequest, PublicQuoteRequestAck } from "../../api/quoteRequests";
+import { fetchCustomerMe } from "../../api/auth";
 import { AccountCreationStep } from "./quote-steps/AccountCreationStep";
 import { BudgetContextStep } from "./quote-steps/BudgetContextStep";
 import { ConfirmationStep } from "./quote-steps/ConfirmationStep";
@@ -26,6 +27,7 @@ import { UrgencyTriageStep } from "./quote-steps/UrgencyTriageStep";
 import {
   evaluateTriage,
   INITIAL_FORM_DATA,
+  PropertyProfile,
   QuoteFormData,
   TriageLevel,
 } from "./quote-steps/types";
@@ -66,6 +68,31 @@ export function CustomerQuoteRequestFlow({
   const [showEmergency, setShowEmergency] = useState(false);
   const [serviceAreaError, setServiceAreaError] = useState<string | null>(null);
   const [submittedAck, setSubmittedAck] = useState<PublicQuoteRequestAck | null>(null);
+  const prefilledRef = useRef(false);
+
+  // Logged-in customers get their saved details pre-filled (still editable) so
+  // repeat quote requests don't re-ask for postcode, contact or property info.
+  const { data: me } = useQuery({
+    queryKey: ["customer-me"],
+    queryFn: fetchCustomerMe,
+    enabled: role === "customer",
+  });
+  useEffect(() => {
+    if (!me || prefilledRef.current) return;
+    prefilledRef.current = true;
+    const saved = (me.propertyProfile ?? {}) as Partial<PropertyProfile>;
+    setFormData((prev) => ({
+      ...prev,
+      postcode: me.postcode || prev.postcode,
+      contact: {
+        ...prev.contact,
+        name: me.fullName || prev.contact.name,
+        email: me.email || prev.contact.email,
+        mobile: me.phone || prev.contact.mobile,
+      },
+      property: { ...prev.property, ...saved },
+    }));
+  }, [me]);
 
   const needsAccount = role !== "customer";
   const steps = useMemo<StepDef[]>(() => {

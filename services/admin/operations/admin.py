@@ -11,6 +11,7 @@ from operations.models import (
     Communication,
     Contact,
     CostItem,
+    Customer,
     Invoice,
     InvoiceLineItem,
     Job,
@@ -75,6 +76,18 @@ class ContactAdmin(TenantScopedAdminMixin, admin.ModelAdmin):
     list_filter = ("tenant",)
     search_fields = ("name", "email", "phone", "postcode")
     readonly_fields = ("id", "created_at", "updated_at")
+
+
+@admin.register(Customer)
+class CustomerAdmin(TenantScopedAdminMixin, admin.ModelAdmin):
+    """Admin for homeowner accounts (logins for the customer portal)."""
+
+    list_display = ("full_name", "email", "phone", "postcode", "tenant", "is_active")
+    list_filter = ("tenant", "is_active")
+    search_fields = ("full_name", "email", "phone", "postcode")
+    # The hash is shown so it's obvious a credential exists; it is one-way —
+    # the plaintext is never stored or recoverable.
+    readonly_fields = ("id", "password_hash", "created_at", "updated_at")
 
 
 @admin.register(User)

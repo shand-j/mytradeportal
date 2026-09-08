@@ -161,6 +161,25 @@ async def submit_public_quote_request(
         )
         db.add(contact)
         await db.flush()
+    else:
+        # Reused contact: refresh details the homeowner just re-entered.
+        if data.contact.phone:
+            contact.phone = data.contact.phone
+        if data.contact.postcode:
+            contact.postcode = data.contact.postcode
+        if data.contact.name:
+            contact.name = data.contact.name
+
+    # Logged-in customer: keep their account details current so repeat quote
+    # requests pre-fill (postcode/phone + property profile).
+    if customer is not None:
+        if data.contact.postcode:
+            customer.postcode = data.contact.postcode
+        if data.contact.phone:
+            customer.phone = data.contact.phone
+        prop = (data.structured_data or {}).get("property")
+        if isinstance(prop, dict) and prop:
+            customer.property_profile = prop
 
     structured_data = {
         **data.structured_data,

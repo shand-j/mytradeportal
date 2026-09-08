@@ -1106,6 +1106,9 @@ class CustomerRead(BaseModel):
     email: str
     full_name: str
     phone: str | None
+    address: str | None
+    postcode: str | None
+    property_profile: dict[str, Any] = Field(default_factory=dict)
     is_active: bool
     marketing_consent: bool
     preferred_contact_method: str | None
@@ -1123,6 +1126,7 @@ class CustomerRegister(BaseModel):
     password: str = Field(..., min_length=8, max_length=128)
     marketing_consent: bool = False
     address: str | None = Field(default=None, max_length=2000)
+    postcode: str | None = Field(default=None, max_length=20)
     preferred_contact_method: str | None = Field(default=None, max_length=50)
     quote_request_id: UUID | None = Field(
         default=None,
