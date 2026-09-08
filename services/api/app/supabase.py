@@ -65,3 +65,26 @@ def admin_create_user(email: str, password: str) -> dict[str, Any]:
                 f"Failed to create Supabase user: {response.status_code} {response.text}"
             )
         return cast("dict[str, Any]", response.json())
+
+
+def admin_update_password(supabase_uid: str, password: str) -> None:
+    """Update a Supabase Auth user's password with the service role key.
+
+    Raises RuntimeError if the update fails.
+    """
+    if not is_supabase_configured():
+        raise RuntimeError("Supabase is not configured")
+    with httpx.Client() as client:
+        response = client.put(
+            f"{_auth_url()}/admin/users/{supabase_uid}",
+            headers={
+                "apikey": settings.supabase_service_role_key,
+                "Authorization": f"Bearer {settings.supabase_service_role_key}",
+                "Content-Type": "application/json",
+            },
+            json={"password": password},
+        )
+        if response.status_code not in (200, 201):
+            raise RuntimeError(
+                f"Failed to update Supabase user password: {response.status_code} {response.text}"
+            )

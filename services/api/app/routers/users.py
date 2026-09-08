@@ -2,6 +2,7 @@
 
 from uuid import UUID
 
+import structlog
 from fastapi import APIRouter, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -16,8 +17,10 @@ from app.models import User
 from app.rls import set_tenant_in_session
 from app.schemas import UserCreate, UserRead, UserUpdate
 from app.security import get_password_hash
+from app.supabase import admin_create_user, is_supabase_configured
 
 router = APIRouter(prefix="/users", tags=["Users"])
+logger = structlog.get_logger("api.users")
 
 
 async def _set_user_tenant(db: AsyncSession, user: User) -> None:
@@ -54,13 +57,31 @@ async def create_user(
             detail="A user with this email already exists",
         )
 
+    password_hash: str | None = None
+    supabase_uid: str | None = None
+    if is_supabase_configured():
+        # Same provisioning as tenant bootstrap: the hosted account is created
+        # with the password the admin set, so the invitee can sign in at once.
+        # Supabase emails are global per project — if this email already has a
+        # hosted account (e.g. another tenant), fall back to local auth; the
+        # login-time migration will link them when possible.
+        try:
+            sb_user = admin_create_user(data.email, data.password)
+            supabase_uid = sb_user.get("id")
+        except Exception:
+            logger.warning("supabase_invite_provision_failed")
+            password_hash = get_password_hash(data.password)
+    else:
+        password_hash = get_password_hash(data.password)
+
     user = User(
         tenant_id=current_user.tenant_id,
         email=data.email,
         full_name=data.full_name,
         role=data.role,
         phone=data.phone,
-        password_hash=get_password_hash(data.password),
+        password_hash=password_hash,
+        supabase_uid=supabase_uid,
     )
     db.add(user)
     await db.commit()

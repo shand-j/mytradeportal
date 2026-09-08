@@ -162,6 +162,11 @@ export default defineRailway(() => {
       // RESEND_API_KEY is unset (there is no SMTP host in prod).
       RESEND_API_KEY: preserve(),
       RESEND_FROM_EMAIL: preserve(),
+      // Supabase Auth (staff identity). New-style keys: sb_publishable_ →
+      // ANON, sb_secret_ → SERVICE_ROLE. Blank URL = local bcrypt auth.
+      SUPABASE_URL: preserve(),
+      SUPABASE_ANON_KEY: preserve(),
+      SUPABASE_SERVICE_ROLE_KEY: preserve(),
       // Public URL the reset-password + quote links resolve to. Update to
       // the App Store / landing page domain once available.
       APP_PUBLIC_URL: preserve(),

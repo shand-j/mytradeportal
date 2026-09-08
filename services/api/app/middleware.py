@@ -16,6 +16,7 @@ import time
 import uuid
 from collections.abc import Awaitable, Callable
 from contextlib import asynccontextmanager
+from typing import cast
 from uuid import UUID
 
 import structlog
@@ -157,13 +158,15 @@ class SubscriptionPaywallMiddleware(BaseHTTPMiddleware):
             override = request.app.dependency_overrides.get(get_db)
             if override is not None:
                 async with asynccontextmanager(override)() as db:
-                    return await db.scalar(
+                    result = await db.scalar(
                         select(Subscription).where(Subscription.tenant_id == tenant_id)
                     )
+                    return cast("Subscription | None", result)
             async with get_db_session() as db:
-                return await db.scalar(
+                result = await db.scalar(
                     select(Subscription).where(Subscription.tenant_id == tenant_id)
                 )
+                return cast("Subscription | None", result)
 
         subscription = await _read_subscription()
         if subscription is not None and not is_subscription_active(subscription):
