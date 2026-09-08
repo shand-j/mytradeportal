@@ -3,3 +3,9 @@ packages:
   - 'packages/**/*'
   - 'mobile'
   - 'web/app'
+
+overrides:
+  react-dom: 19.2.3
+
+onlyBuiltDependencies:
+  - supabase

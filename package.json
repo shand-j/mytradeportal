@@ -2,12 +2,7 @@
   "name": "mytradeportal-root",
   "version": "1.0.0",
   "private": true,
-  "pnpm": {
-    "onlyBuiltDependencies": ["supabase"],
-    "overrides": {
-      "react-dom": "19.2.3"
-    }
-  },
+  "packageManager": "pnpm@10.13.1",
   "devDependencies": {
     "supabase": "^1.226.4"
   },
