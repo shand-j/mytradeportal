@@ -150,6 +150,9 @@ export const useAuthStore = create<AuthState>((set) => ({
     } catch (err) {
       set({ loading: false });
       if (err instanceof NetworkError) throw err;
+      // ApiError carries the server's detail (e.g. 409 email-already-exists);
+      // let the screen show it instead of a generic failure.
+      if (err instanceof ApiError) throw err;
       return false;
     }
   },

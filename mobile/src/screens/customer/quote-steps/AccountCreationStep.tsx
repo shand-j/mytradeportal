@@ -1,10 +1,12 @@
 import { useMemo, useState } from "react";
 import { ActivityIndicator, ScrollView, View } from "react-native";
+import { useRouter } from "expo-router";
 import { Button } from "../../../components/ui/Button";
 import { Text } from "../../../components/ui/Text";
 import { FormField } from "../../../components/ui/FormField";
 import { useBusiness } from "../../../theme/ThemeProvider";
 import { useAuth } from "../../../contexts/AuthContext";
+import { ApiError } from "../../../lib/apiClient";
 import { StepPropsWithBusiness } from "./types";
 
 export type AccountCreationStepProps = StepPropsWithBusiness & {
@@ -20,6 +22,8 @@ export function AccountCreationStep({
 }: AccountCreationStepProps) {
   const { business } = useBusiness();
   const { registerCustomerAccount } = useAuth();
+  const router = useRouter();
+  const [emailTaken, setEmailTaken] = useState(false);
   const businessName = business?.name ?? "Your electrician";
 
   const [password, setPassword] = useState("");
@@ -59,8 +63,13 @@ export function AccountCreationStep({
       } else {
         setError("Could not create account. Please check your details and try again.");
       }
-    } catch {
-      setError("Something went wrong. Please try again.");
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 409) {
+        setEmailTaken(true);
+        setError("An account with this email already exists. Log in to continue.");
+      } else {
+        setError("Something went wrong. Please try again.");
+      }
     } finally {
       setSubmitting(false);
     }
@@ -121,6 +130,15 @@ export function AccountCreationStep({
 
       {submitting ? (
         <ActivityIndicator />
+      ) : emailTaken ? (
+        <>
+          <Button
+            testID="account-login-instead"
+            title="Log in instead"
+            onPress={() => router.replace("/customer-login")}
+          />
+          <Button title="Back" variant="outline" onPress={onBack} />
+        </>
       ) : (
         <>
           <Button testID="account-create" title="Create account & track my quote" onPress={handleCreateAccount} disabled={!passwordValid} />
