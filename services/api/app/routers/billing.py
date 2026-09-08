@@ -29,7 +29,7 @@ logger = structlog.get_logger("api.billing")
 
 
 def _price_id_for_plan(plan_key: str) -> str:
-    mapping = {
+    mapping: dict[str, str] = {
         "starter": settings.paddle_price_id_starter,
         "pro": settings.paddle_price_id_pro,
         "business": settings.paddle_price_id_business,

@@ -9,7 +9,7 @@ type PricingSetupStepProps = {
 
 export function PricingSetupStep({ onNext }: PricingSetupStepProps) {
   return (
-    <ScrollView className="flex-1">
+    <ScrollView className="flex-1" keyboardShouldPersistTaps="handled">
       <View className="gap-4 pb-6">
         <Text variant="title" weight="bold">
           Pricing setup

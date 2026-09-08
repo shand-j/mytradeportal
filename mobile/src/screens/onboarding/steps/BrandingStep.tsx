@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Pressable, ScrollView, View } from "react-native";
 import { Button } from "../../../components/ui/Button";
-import { FileUploadPlaceholder } from "../../../components/ui/FileUploadPlaceholder";
+import { FormField } from "../../../components/ui/FormField";
 import { Text } from "../../../components/ui/Text";
 
 type BrandingStepProps = {
@@ -13,37 +13,70 @@ type BrandingStepProps = {
 const BRAND_COLOURS = [
   "#2563EB", // blue
   "#0EA5E9", // sky
-  "#4F46E5", // indigo
   "#059669", // emerald
   "#D97706", // amber
   "#DC2626", // red
-  "#DB2777", // pink
   "#111827", // slate
 ];
+
+const HEX_RE = /^#?([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/;
+
+/** Normalise #RGB/#RRGGBB (any case, # optional) to uppercase #RRGGBB, or null. */
+function normaliseHex(raw: string): string | null {
+  const match = raw.trim().match(HEX_RE);
+  if (!match) return null;
+  let digits = match[1];
+  if (digits.length === 3) {
+    digits = digits
+      .split("")
+      .map((c) => c + c)
+      .join("");
+  }
+  return `#${digits.toUpperCase()}`;
+}
 
 export function BrandingStep({ data, onNext }: BrandingStepProps) {
   const [primaryColor, setPrimaryColor] = useState(
     (data?.primaryColor as string) ?? BRAND_COLOURS[0]
   );
+  const [hexInput, setHexInput] = useState(primaryColor.toUpperCase());
+  const [hexError, setHexError] = useState<string | null>(null);
+
+  const pickPreset = (colour: string) => {
+    setPrimaryColor(colour);
+    setHexInput(colour.toUpperCase());
+    setHexError(null);
+  };
+
+  const onHexChange = (raw: string) => {
+    setHexInput(raw);
+    const hex = normaliseHex(raw);
+    if (hex) {
+      setPrimaryColor(hex);
+      setHexError(null);
+    } else if (raw.trim().length > 0) {
+      setHexError("Enter a valid hex colour, e.g. #2563EB");
+    } else {
+      setHexError(null);
+    }
+  };
 
   return (
-    <ScrollView className="flex-1">
+    <ScrollView className="flex-1" keyboardShouldPersistTaps="handled">
       <View className="gap-4 pb-6">
         <Text variant="title" weight="bold">
           Branding
         </Text>
         <Text variant="body" color="secondary">
-          Logo, brand colour, email blurb, and quote PDF template. These make the customer portal look like your business.
+          Brand colour, email blurb, and quote PDF template. These make the customer portal look like your business.
         </Text>
-
-        <FileUploadPlaceholder label="Upload logo" />
 
         <View className="rounded-2xl bg-slate-100 p-4 gap-3">
           <Text variant="body" weight="semibold">
             Brand colour
           </Text>
           <Text variant="caption" color="secondary">
-            Used across your customer app, quotes, and emails. You can change it from Settings later.
+            Pick a preset or type your own hex code. Used across your customer app, quotes, and emails — changeable later in Settings.
           </Text>
           <View className="flex-row flex-wrap gap-3">
             {BRAND_COLOURS.map((colour) => {
@@ -52,7 +85,7 @@ export function BrandingStep({ data, onNext }: BrandingStepProps) {
                 <Pressable
                   key={colour}
                   testID={`brand-colour-${colour.slice(1).toLowerCase()}`}
-                  onPress={() => setPrimaryColor(colour)}
+                  onPress={() => pickPreset(colour)}
                   accessibilityLabel={`Brand colour ${colour}`}
                 >
                   <View
@@ -66,12 +99,19 @@ export function BrandingStep({ data, onNext }: BrandingStepProps) {
           <View className="flex-row items-center gap-3">
             <View
               testID="brand-colour-preview"
-              className="h-12 flex-1 rounded-xl"
+              className="h-10 w-10 rounded-full border border-slate-300"
               style={{ backgroundColor: primaryColor }}
             />
-            <Text variant="body" weight="semibold">
-              {primaryColor.toUpperCase()}
-            </Text>
+            <View className="flex-1">
+              <FormField
+                label="Custom hex colour"
+                value={hexInput}
+                onChangeText={onHexChange}
+                placeholder="#2563EB"
+                autoCapitalize="characters"
+                error={hexError}
+              />
+            </View>
           </View>
         </View>
 

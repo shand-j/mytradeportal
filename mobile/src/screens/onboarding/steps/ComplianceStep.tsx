@@ -3,9 +3,7 @@ import { Pressable, ScrollView, View } from "react-native";
 import DateTimePicker from "@react-native-community/datetimepicker";
 import { Button } from "../../../components/ui/Button";
 import { FormField } from "../../../components/ui/FormField";
-import { FileUploadPlaceholder } from "../../../components/ui/FileUploadPlaceholder";
 import { Text } from "../../../components/ui/Text";
-import { VerificationBadge } from "../../../components/ui/VerificationBadge";
 
 type ComplianceStepProps = {
   data?: Record<string, unknown>;
@@ -50,9 +48,7 @@ const COVER_LEVELS = [
 export function ComplianceStep({ data, onNext }: ComplianceStepProps) {
   const [scheme, setScheme] = useState((data?.scheme as string) ?? "");
   const [membership, setMembership] = useState((data?.membership as string) ?? "");
-  const [cpsStatus, setCpsStatus] = useState<"self_declared" | "verified" | "pending">(
-    (data?.cpsStatus as "self_declared" | "verified" | "pending") ?? "self_declared"
-  );
+  const cpsStatus = (data?.cpsStatus as "self_declared" | "verified" | "pending") ?? "self_declared";
   const [bs7671, setBs7671] = useState((data?.bs7671 as boolean) ?? false);
   const [inspection, setInspection] = useState((data?.inspection as boolean) ?? false);
   const [insurer, setInsurer] = useState((data?.insurer as string) ?? "");
@@ -70,10 +66,8 @@ export function ComplianceStep({ data, onNext }: ComplianceStepProps) {
     setShowDatePicker(false);
   };
 
-  const schemeLabel = SCHEMES.find((s) => s.key === scheme)?.label ?? scheme;
-
   return (
-    <ScrollView className="flex-1">
+    <ScrollView className="flex-1" keyboardShouldPersistTaps="handled">
       <View className="gap-4 pb-6">
         <Text variant="title" weight="bold">
           Compliance & credentials
@@ -81,16 +75,6 @@ export function ComplianceStep({ data, onNext }: ComplianceStepProps) {
         <Text variant="body" color="secondary">
           These build trust with customers and unlock customer-facing badges.
         </Text>
-
-        <View className="rounded-2xl bg-slate-100 p-4">
-          <Text variant="body" weight="semibold">
-            Badges so far
-          </Text>
-          <View className="mt-2 flex-row flex-wrap gap-2">
-            <VerificationBadge status={cpsStatus} label={`CPS ${schemeLabel}`} />
-            <VerificationBadge status={bs7671 ? "verified" : "self_declared"} label="18th Edition" />
-          </View>
-        </View>
 
         <Text variant="body" weight="semibold">
           Competent Person Scheme
@@ -106,24 +90,15 @@ export function ComplianceStep({ data, onNext }: ComplianceStepProps) {
           ))}
         </View>
 
-        {scheme !== "none_yet" ? (
-          <View className="gap-3">
-            <FormField
-              label="Membership number"
-              value={membership}
-              onChangeText={setMembership}
-              placeholder="e.g. NE12345"
-            />
-            <Button
-              title="Verify membership"
-              variant="outline"
-              disabled={!membership}
-            />
-            <Text variant="caption" color="secondary">
-              Online CPS verification is not yet implemented.
-            </Text>
-          </View>
-        ) : (
+        {scheme !== "none_yet" && scheme !== "" && (
+          <FormField
+            label="Membership number"
+            value={membership}
+            onChangeText={setMembership}
+            placeholder="e.g. NE12345"
+          />
+        )}
+        {scheme === "none_yet" && (
           <View className="rounded-2xl bg-amber-50 p-4">
             <Text variant="body" weight="semibold" color="warning">
               Provisional status
@@ -149,7 +124,6 @@ export function ComplianceStep({ data, onNext }: ComplianceStepProps) {
             onPress={() => setInspection((prev) => !prev)}
           />
         </View>
-        <FileUploadPlaceholder label="Upload 18th Edition certificate" />
 
         <Text variant="body" weight="semibold">
           Public liability insurance
@@ -194,12 +168,11 @@ export function ComplianceStep({ data, onNext }: ComplianceStepProps) {
           <DateTimePicker
             value={parseUkDate(expiry) ?? new Date()}
             mode="date"
-            display="default"
+            display="spinner"
             onValueChange={onDateValueChange}
             onDismiss={onDateDismiss}
           />
         )}
-        <FileUploadPlaceholder label="Upload insurance certificate" />
 
         <Button
           title="Continue"

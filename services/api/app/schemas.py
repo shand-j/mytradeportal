@@ -29,7 +29,7 @@ class TenantCreate(BaseModel):
     # fields must be provided together; when omitted only the tenant is
     # created (used by tests and seed scripts).
     admin_email: EmailStr | None = None
-    admin_password: str | None = Field(default=None, min_length=12, max_length=128)
+    admin_password: str | None = Field(default=None, min_length=8, max_length=128)
     admin_name: str | None = Field(default=None, min_length=1, max_length=255)
 
     @model_validator(mode="after")

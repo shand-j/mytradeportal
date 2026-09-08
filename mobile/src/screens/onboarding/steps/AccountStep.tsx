@@ -25,14 +25,14 @@ export function AccountStep({ data, onNext }: AccountStepProps) {
   const [termsAccepted, setTermsAccepted] = useState((data?.termsAccepted as boolean) ?? false);
   const [showPassword, setShowPassword] = useState(false);
 
-  const canContinue = fullName.trim().length >= 2 && email.includes("@") && password.length >= 12 && termsAccepted;
+  const canContinue = fullName.trim().length >= 2 && email.includes("@") && password.length >= 8 && termsAccepted;
 
   const strength = password.length === 0 ? 0 : password.length < 8 ? 1 : password.length < 12 ? 2 : 3;
   const strengthLabels = ["", "Weak", "Good", "Strong"];
   const strengthColors = ["bg-slate-200", "bg-red-400", "bg-amber-400", "bg-emerald-500"];
 
   return (
-    <ScrollView className="flex-1">
+    <ScrollView className="flex-1" keyboardShouldPersistTaps="handled">
       <View className="gap-4 pb-6">
         <Text variant="title" weight="bold">
           Create your account
@@ -63,7 +63,7 @@ export function AccountStep({ data, onNext }: AccountStepProps) {
             label="Password"
             value={password}
             onChangeText={setPassword}
-            placeholder="At least 12 characters"
+            placeholder="At least 8 characters"
             secureTextEntry={!showPassword}
           />
           <View className="flex-row items-center gap-2">

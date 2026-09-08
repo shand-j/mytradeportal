@@ -36,7 +36,7 @@ export function BusinessIdentityStep({ data, onNext }: BusinessIdentityStepProps
   const isLtd = structure === "ltd" || structure === "llp";
 
   return (
-    <ScrollView className="flex-1">
+    <ScrollView className="flex-1" keyboardShouldPersistTaps="handled">
       <View className="gap-4 pb-6">
         <Text variant="title" weight="bold">
           Business identity
@@ -87,14 +87,6 @@ export function BusinessIdentityStep({ data, onNext }: BusinessIdentityStepProps
               keyboardType="number-pad"
               maxLength={8}
             />
-            <Button
-              title="Verify with Companies House"
-              variant="outline"
-              disabled={chNumber.length !== 8}
-            />
-            <Text variant="caption" color="secondary">
-              Online Companies House verification is not yet implemented.
-            </Text>
             <VerificationBadge status={chStatus} />
           </View>
         )}

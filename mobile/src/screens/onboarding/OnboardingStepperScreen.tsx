@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { ScrollView, StyleSheet, View } from "react-native";
+import { KeyboardAvoidingView, Platform, ScrollView, StyleSheet, View } from "react-native";
 import { useRouter } from "expo-router";
 import { Header } from "../../components/ui/Header";
 import { Screen } from "../../components/ui/Screen";
@@ -66,6 +66,9 @@ export function OnboardingStepperScreen() {
   const [stepIndex, setStepIndex] = useState(0);
   const [data, setData] = useState<Record<string, unknown>>({});
   const [error, setError] = useState<string | null>(null);
+  // The tenant is registered when leaving the review step, so the plan step's
+  // Paddle checkout call (/billing/checkout) runs with an authenticated tenant.
+  const [registered, setRegistered] = useState(false);
 
   const StepComponent = STEPS[stepIndex].component;
   const isFirst = stepIndex === 0;
@@ -76,13 +79,11 @@ export function OnboardingStepperScreen() {
     if (stepData) {
       setData(merged);
     }
-    if (isLast) {
+    if (!registered && STEPS[stepIndex].key === "review") {
       setError(null);
       try {
         await finishRegistration(buildRegisterInput(merged));
-        // Completion happens on this route, so navigate to the dashboard
-        // explicitly (the root router effect only runs on the entry screen).
-        router.replace("/(trade)/dashboard");
+        setRegistered(true);
       } catch (err) {
         const message =
           err instanceof ApiError
@@ -91,7 +92,12 @@ export function OnboardingStepperScreen() {
               ? err.message
               : "We couldn't create your business account. Please try again.";
         setError(message);
+        return;
       }
+    }
+    if (isLast) {
+      // Already registered at the review step; plan checkout opened by the step.
+      router.replace("/(trade)/dashboard");
     } else {
       setStepIndex((i) => i + 1);
     }
@@ -141,15 +147,24 @@ export function OnboardingStepperScreen() {
         </Text>
       )}
 
-      <ScrollView style={styles.scroll} contentContainerStyle={styles.content}>
-        <StepComponent
-          key={stepIndex}
-          data={data[STEPS[stepIndex].key] as Record<string, unknown>}
-          onNext={(stepData?: Record<string, unknown>) => {
-            void goNext(stepData);
-          }}
-        />
-      </ScrollView>
+      <KeyboardAvoidingView
+        style={styles.keyboardAvoider}
+        behavior={Platform.OS === "ios" ? "padding" : undefined}
+      >
+        <ScrollView
+          style={styles.scroll}
+          contentContainerStyle={styles.content}
+          keyboardShouldPersistTaps="handled"
+        >
+          <StepComponent
+            key={stepIndex}
+            data={data[STEPS[stepIndex].key] as Record<string, unknown>}
+            onNext={(stepData?: Record<string, unknown>) => {
+              void goNext(stepData);
+            }}
+          />
+        </ScrollView>
+      </KeyboardAvoidingView>
     </Screen>
   );
 }
@@ -173,6 +188,9 @@ const styles = StyleSheet.create({
     opacity: 0.6,
   },
   scroll: {
+    flex: 1,
+  },
+  keyboardAvoider: {
     flex: 1,
   },
   content: {

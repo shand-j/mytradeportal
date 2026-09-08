@@ -89,7 +89,7 @@ async def test_bootstrap_accepts_valid_setup_token(
 async def test_bootstrap_rejects_short_admin_password(client: AsyncClient) -> None:
     slug = f"short-{uuid4().hex[:8]}"
     payload = _bootstrap_payload(slug)
-    payload["admin_password"] = "too-short"
+    payload["admin_password"] = "2-short"
     response = await client.post("/tenants", json=payload)
     assert response.status_code == 422
 
