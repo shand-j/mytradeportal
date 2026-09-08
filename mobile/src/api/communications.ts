@@ -108,6 +108,11 @@ export function useCommunications(
     queryKey: ["communications", quoteRequestId],
     queryFn: () => fetchCommunications(quoteRequestId as string),
     enabled: !!quoteRequestId,
+    // Poll while the thread is open: the AI follow-up takes up to ~60s and its
+    // message is persisted server-side — if the client request is interrupted
+    // (app backgrounded, network drop), polling still brings the reply in, and
+    // business replies appear live too.
+    refetchInterval: 4000,
   });
 
   const qc = useQueryClient();

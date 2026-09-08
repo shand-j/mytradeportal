@@ -478,6 +478,7 @@ async def generate_followup(
         "response_format": {"type": "json_object"},
         "timeout": settings.llm_timeout_seconds,
         "num_retries": settings.llm_max_retries,
+        "max_tokens": settings.llm_followup_max_tokens,
     }
     if settings.llm_temperature is not None and _model_allows_custom_temperature(
         settings.llm_model
