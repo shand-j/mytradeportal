@@ -1,6 +1,7 @@
 import { Pressable, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter, usePathname } from "expo-router";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Text } from "../ui/Text";
 import { useTheme } from "../../theme/ThemeProvider";
 
@@ -17,6 +18,7 @@ const TRADE_TABS: TabItem[] = [
   { key: "quotes", label: "Quotes", icon: "document-text", path: "/(trade)/quotes", testID: "tab-quotes" },
   { key: "customers", label: "Customers", icon: "people", path: "/(trade)/customers", testID: "tab-customers" },
   { key: "calendar", label: "Calendar", icon: "calendar", path: "/(trade)/calendar", testID: "tab-calendar" },
+  { key: "messages", label: "Messages", icon: "chatbubble", path: "/(trade)/leads", testID: "tab-messages" },
 ];
 
 const CUSTOMER_TABS: TabItem[] = [
@@ -34,10 +36,14 @@ export function BottomTabBar({ variant }: BottomTabBarProps) {
   const router = useRouter();
   const pathname = usePathname();
   const { colors } = useTheme();
+  const insets = useSafeAreaInsets();
   const tabs = variant === "trade" ? TRADE_TABS : CUSTOMER_TABS;
 
   return (
-    <View className="flex-row border-t border-gray-200 bg-white pb-2 pt-2">
+    <View
+      className="flex-row border-t border-gray-200 bg-white pt-2"
+      style={{ paddingBottom: insets.bottom + 8 }}
+    >
       {tabs.map((tab) => {
         const isActive = pathname === tab.path;
         return (

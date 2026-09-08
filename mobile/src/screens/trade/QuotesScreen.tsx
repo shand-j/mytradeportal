@@ -7,6 +7,7 @@ import { Screen } from "../../components/ui/Screen";
 import { Text } from "../../components/ui/Text";
 import { LeadCard } from "../../components/trade/LeadCard";
 import { GeneratingQuoteBanner } from "../../components/trade/GeneratingQuoteBanner";
+import { SettingsMenuButton } from "../../components/ui/SettingsMenuButton";
 import { useQuotesList } from "../../api/quotes";
 import { useLeadsList } from "../../api/quoteRequests";
 import { Quote, QuoteStatus } from "../../types";
@@ -111,14 +112,17 @@ export function QuotesScreen(_props: QuotesScreenProps) {
       <Header
         title="Quotes / Leads"
         rightAction={
-          !isLoading ? (
-            <View className="flex-row items-center gap-1 rounded-full bg-green-100 px-2 py-0.5">
-              <View className="h-1.5 w-1.5 rounded-full bg-green-600" />
-              <Text variant="caption" style={{ color: "#15803D", fontSize: 9 }}>
-                LIVE
-              </Text>
-            </View>
-          ) : undefined
+          <View className="flex-row items-center gap-1">
+            {!isLoading && (
+              <View className="flex-row items-center gap-1 rounded-full bg-green-100 px-2 py-0.5">
+                <View className="h-1.5 w-1.5 rounded-full bg-green-600" />
+                <Text variant="caption" style={{ color: "#15803D", fontSize: 9 }}>
+                  LIVE
+                </Text>
+              </View>
+            )}
+            <SettingsMenuButton />
+          </View>
         }
       />
       <ScrollView className="flex-1" contentContainerStyle={{ paddingBottom: 24, gap: 16 }}>

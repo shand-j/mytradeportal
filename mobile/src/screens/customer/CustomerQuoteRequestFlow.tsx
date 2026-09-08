@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { Linking, ScrollView, StyleSheet, View } from "react-native";
+import { KeyboardAvoidingView, Linking, Platform, ScrollView, StyleSheet, View } from "react-native";
 import { useQueryClient } from "@tanstack/react-query";
 import { Header } from "../../components/ui/Header";
 import { Icon } from "../../components/ui/Icon";
@@ -266,12 +266,18 @@ export function CustomerQuoteRequestFlow({
         Step {activeIndex + 1} of {progressDotCount}: {step.label}
       </Text>
 
-      <ScrollView
-        style={styles.scroll}
-        contentContainerStyle={styles.scrollContent}
+      <KeyboardAvoidingView
+        style={styles.keyboardAvoider}
+        behavior={Platform.OS === "ios" ? "padding" : undefined}
       >
-        {renderStep()}
-      </ScrollView>
+        <ScrollView
+          style={styles.scroll}
+          contentContainerStyle={styles.scrollContent}
+          keyboardShouldPersistTaps="handled"
+        >
+          {renderStep()}
+        </ScrollView>
+      </KeyboardAvoidingView>
     </Screen>
   );
 }
@@ -294,6 +300,9 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   scroll: {
+    flex: 1,
+  },
+  keyboardAvoider: {
     flex: 1,
   },
   scrollContent: {

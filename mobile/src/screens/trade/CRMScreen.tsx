@@ -9,6 +9,7 @@ import { Text } from "../../components/ui/Text";
 import { Contact, useContactsList } from "../../api/contacts";
 import { ApiQuote, fetchQuotes } from "../../api/quotes";
 import { ApiQuoteRequest, fetchLeads } from "../../api/quoteRequests";
+import { SettingsMenuButton } from "../../components/ui/SettingsMenuButton";
 import { formatDateUK } from "../../lib/format";
 
 export type CRMScreenProps = {
@@ -38,7 +39,7 @@ export function CRMScreen(_props: CRMScreenProps) {
 
   return (
     <Screen>
-      <Header title="Customers" />
+      <Header title="Customers" rightAction={<SettingsMenuButton />} />
       <ScrollView
         className="flex-1"
         style={{ minHeight: 0 }}

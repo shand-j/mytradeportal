@@ -91,11 +91,11 @@ class Settings(BaseSettings):
     # backoff; 3 keeps p99 latency reasonable while covering typical blips.
     llm_max_retries: int = Field(default=3)
 
-    # Cap follow-up chat generation: the response is a small JSON turn
-    # (message + extracted facts + quick replies), and uncapped generation on
-    # Kimi runs 25-55s. 2000 leaves ample room for the model's reasoning
-    # tokens plus content while bounding the worst case.
-    llm_followup_max_tokens: int = Field(default=2000)
+    # Cap follow-up chat generation to bound runaway responses. Must stay
+    # generous: kimi-k2.6 spends reasoning tokens before content, and a tight
+    # cap truncates the completion to empty content (finish_reason=length),
+    # which surfaces as the generic fallback question on repeat.
+    llm_followup_max_tokens: int = Field(default=8000)
 
     # Embeddings are provider-specific and Kimi has no embeddings API, so the
     # embedder is configured independently of the chat LLM. It defaults to

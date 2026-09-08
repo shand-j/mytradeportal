@@ -19,6 +19,7 @@ and swallow + log every failure so the scheduling request is never affected.
 """
 
 import time
+from typing import Any
 from uuid import UUID
 
 import structlog
@@ -163,6 +164,7 @@ async def auto_draft_quote_for_request(tenant_id: UUID, quote_request_id: UUID) 
     Reuses :func:`app.routers.quotes._generate_quote_impl` so the resulting
     quote is identical in shape to an electrician-generated one (linked
     ``quote_request_id``, AI flags, rag metadata, title from the lead).
+    Low-confidence drafts automatically open AI triage with the customer.
     """
     try:
         async with get_db_session() as db:
@@ -181,6 +183,8 @@ async def auto_draft_quote_for_request(tenant_id: UUID, quote_request_id: UUID) 
                 quote_id=str(quote.id),
                 total=str(quote.total),
             )
+            if quote.ai_confidence is not None and quote.ai_confidence < 0.8:
+                await start_ai_triage(db, tenant, quote_request_id, float(quote.ai_confidence))
     except Exception as exc:
         logger.error(
             "auto_draft_quote_failed",
@@ -189,6 +193,133 @@ async def auto_draft_quote_for_request(tenant_id: UUID, quote_request_id: UUID) 
             error=str(exc),
             error_type=type(exc).__name__,
         )
+
+
+async def start_ai_triage(
+    db: AsyncSession,
+    tenant: Tenant,
+    quote_request_id: UUID,
+    quote_confidence: float,
+) -> None:
+    """Open AI triage with the customer when the first draft is low confidence.
+
+    Generates the first clarifying message, persists it to the chat thread and
+    notifies the customer with a link into the chat. Event-triggered from
+    ``auto_draft_quote_for_request`` so the customer does not have to find the
+    chat themselves.
+    """
+    from app.models import Communication
+    from app.push import notify_customer
+    from app.rag import generate_followup
+
+    quote_request = await db.get(QuoteRequest, quote_request_id)
+    if quote_request is None:
+        return
+
+    description = build_triage_description(quote_request)
+    try:
+        result = await generate_followup(description, [])
+    except RuntimeError as exc:
+        logger.warning(
+            "auto_triage_followup_failed",
+            tenant_id=str(tenant.id),
+            quote_request_id=str(quote_request_id),
+            error=str(exc)[:200],
+        )
+        return
+
+    confidence = int(result.get("confidence", 0))
+    complete = bool(result.get("complete", False)) or confidence >= 80
+    if complete:
+        # First turn already confident — nothing to ask, no reason to notify.
+        return
+
+    body = result.get("message") or (
+        "Could you share any other details that might help with the quote?"
+    )
+    ai_metadata: dict[str, Any] = {"complete": False, "confidence": confidence}
+    options = result.get("options") or []
+    if options:
+        ai_metadata["options"] = options
+
+    db.add(
+        Communication(
+            tenant_id=tenant.id,
+            contact_id=quote_request.contact_id,
+            quote_request_id=quote_request_id,
+            channel="in_app_chat",
+            direction="outbound",
+            sender_role="ai",
+            body=body,
+            status="sent",
+            ai_metadata=ai_metadata,
+        )
+    )
+
+    if quote_request.customer_id is not None:
+        await notify_customer(
+            db,
+            tenant.id,
+            quote_request.customer_id,
+            kind="chat_reply",
+            title=f"{tenant.name} has a question about your quote request",
+            body=body[:120] + ("…" if len(body) > 120 else ""),
+            link=f"/chat/{quote_request_id}",
+        )
+    await db.commit()
+    logger.info(
+        "auto_triage_started",
+        tenant_id=str(tenant.id),
+        quote_request_id=str(quote_request_id),
+        quote_confidence=quote_confidence,
+        triage_confidence=confidence,
+    )
+
+
+def build_triage_description(quote_request: QuoteRequest) -> str:
+    """Assemble the LLM triage context from a quote request (shared by the
+    ai-followup endpoint and the low-confidence auto-triage trigger)."""
+    sd = quote_request.structured_data or {}
+    parts: list[str] = []
+
+    problem_parts: list[str] = []
+    title = sd.get("title") or ""
+    category = sd.get("category")
+    if title:
+        problem_parts.append(str(title))
+    if category and category != title:
+        problem_parts.append(f"[{category}]")
+    problem = " ".join(problem_parts)
+    if quote_request.raw_text:
+        problem = f"{problem} — {quote_request.raw_text}" if problem else quote_request.raw_text
+    if problem:
+        parts.append(f"Customer's stated problem: {problem}")
+
+    property_profile = sd.get("property") or {}
+    if property_profile:
+        prop_parts = []
+        for key in ("type", "age", "bedrooms", "parking", "tenure"):
+            value = property_profile.get(key)
+            if value is not None and value != "":
+                prop_parts.append(f"{key}: {value}")
+        if prop_parts:
+            parts.append("Property: " + ", ".join(prop_parts))
+
+    questionnaire = sd.get("questionnaire") or {}
+    if questionnaire:
+        for section, answers in questionnaire.items():
+            if isinstance(answers, dict):
+                q_parts = []
+                for key, value in answers.items():
+                    if value is not None and value != "":
+                        q_parts.append(f"{key}: {value}")
+                if q_parts:
+                    parts.append(f"{section}: " + ", ".join(q_parts))
+
+    if quote_request.urgency:
+        parts.append(f"Urgency: {quote_request.urgency}")
+
+    return "\n".join(parts) or "Electrical work requested by a customer."
 
 
 async def requote_after_triage_close(tenant_id: UUID, quote_request_id: UUID) -> None:

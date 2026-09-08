@@ -512,6 +512,7 @@ async def generate_followup(
         logger.warning(
             "llm_followup_empty",
             model=settings.llm_model,
+            finish_reason=getattr(response.choices[0], "finish_reason", None),
             duration_ms=round((time.perf_counter() - started) * 1000, 2),
         )
         return FOLLOWUP_FALLBACK

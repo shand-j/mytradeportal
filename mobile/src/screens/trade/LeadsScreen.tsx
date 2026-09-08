@@ -6,6 +6,7 @@ import { Header } from "../../components/ui/Header";
 import { Screen } from "../../components/ui/Screen";
 import { Text } from "../../components/ui/Text";
 import { LeadCard } from "../../components/trade/LeadCard";
+import { SettingsMenuButton } from "../../components/ui/SettingsMenuButton";
 import { useLeadsList } from "../../api/quoteRequests";
 import { useQuotesList } from "../../api/quotes";
 import { Lead, Quote, QuoteStatus } from "../../types";
@@ -116,7 +117,7 @@ export function LeadsScreen({ onBack, initialFilter }: LeadsScreenProps) {
 
   return (
     <Screen>
-      <Header title="Leads" onBack={onBack} />
+      <Header title="Leads" onBack={onBack} rightAction={<SettingsMenuButton />} />
       <ScrollView className="flex-1" contentContainerStyle={{ paddingBottom: 24, gap: 16 }}>
         <Text variant="body" color="secondary">
           Live leads and quotes from your connected account, sorted by urgency.

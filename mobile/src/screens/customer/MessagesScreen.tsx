@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Pressable, ScrollView, TextInput, View } from "react-native";
+import { KeyboardAvoidingView, Platform, Pressable, ScrollView, TextInput, View } from "react-native";
 import { Button } from "../../components/ui/Button";
 import { Header } from "../../components/ui/Header";
 import { Icon } from "../../components/ui/Icon";
@@ -147,12 +147,16 @@ export function ChatThread({
       : [];
 
   return (
-    <>
+    <KeyboardAvoidingView
+      style={{ flex: 1 }}
+      behavior={Platform.OS === "ios" ? "padding" : undefined}
+    >
       <ScrollView
         ref={scrollRef}
         className="flex-1"
         contentContainerStyle={{ gap: 12, paddingBottom: 16 }}
         onContentSizeChange={() => scrollRef.current?.scrollToEnd({ animated: true })}
+        keyboardShouldPersistTaps="handled"
       >
         {!hideBanner && (
           <View className="flex-row items-center gap-2 rounded-2xl border border-indigo-100 bg-indigo-50 p-3">
@@ -271,7 +275,7 @@ export function ChatThread({
           disabled={!text.trim() || isSending || isLoading || !isConnected}
         />
       </View>
-    </>
+    </KeyboardAvoidingView>
   );
 }
 

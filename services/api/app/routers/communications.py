@@ -13,7 +13,7 @@ from app.database import get_db
 from app.dependencies import TenantDep, _extract_token
 from app.models import Communication, Contact, Customer, QuoteRequest, User
 from app.push import notify_staff
-from app.quote_automation import requote_after_triage_close
+from app.quote_automation import build_triage_description, requote_after_triage_close
 from app.rag import generate_followup
 from app.rls import set_tenant_in_session
 from app.schemas import CommunicationCreate, CommunicationRead
@@ -110,7 +110,7 @@ async def _notify_staff_customer_reply(
         kind="chat_reply",
         title="Customer replied",
         body=snippet or "Customer sent a new chat message.",
-        link=f"/lead/{quote_request.id}",
+        link=f"/chat/{quote_request.id}",
     )
 
 
@@ -257,49 +257,7 @@ async def ai_followup(
     max_followup_turns = settings.max_followup_turns
     ai_turn_count = sum(1 for comm in prior_records if comm.sender_role == "ai")
 
-    sd = quote_request.structured_data or {}
-    parts: list[str] = []
-
-    # Foreground the customer's stated problem so the first AI message can
-    # acknowledge it before asking anything.
-    problem_parts: list[str] = []
-    title = sd.get("title") or ""
-    category = sd.get("category")
-    if title:
-        problem_parts.append(str(title))
-    if category and category != title:
-        problem_parts.append(f"[{category}]")
-    problem = " ".join(problem_parts)
-    if quote_request.raw_text:
-        problem = f"{problem} — {quote_request.raw_text}" if problem else quote_request.raw_text
-    if problem:
-        parts.append(f"Customer's stated problem: {problem}")
-
-    property_profile = sd.get("property") or {}
-    if property_profile:
-        prop_parts = []
-        for key in ("type", "age", "bedrooms", "parking", "tenure"):
-            value = property_profile.get(key)
-            if value is not None and value != "":
-                prop_parts.append(f"{key}: {value}")
-        if prop_parts:
-            parts.append("Property: " + ", ".join(prop_parts))
-
-    questionnaire = sd.get("questionnaire") or {}
-    if questionnaire:
-        for section, answers in questionnaire.items():
-            if isinstance(answers, dict):
-                q_parts = []
-                for key, value in answers.items():
-                    if value is not None and value != "":
-                        q_parts.append(f"{key}: {value}")
-                if q_parts:
-                    parts.append(f"{section}: " + ", ".join(q_parts))
-
-    if quote_request.urgency:
-        parts.append(f"Urgency: {quote_request.urgency}")
-
-    description = "\n".join(parts) or "Electrical work requested by a customer."
+    description = build_triage_description(quote_request)
 
     try:
         result = await generate_followup(

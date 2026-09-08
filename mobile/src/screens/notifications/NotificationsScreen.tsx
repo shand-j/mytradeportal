@@ -38,6 +38,13 @@ export function NotificationsScreen({ role, onBack }: NotificationsScreenProps) 
       markRead.mutate(notification.id);
     }
     const quoteId = quoteIdFromLink(notification.link);
+    const chatMatch = notification.link?.match(/\/chat\/([0-9a-f-]+)/i);
+    if (chatMatch) {
+      // Chat links open the thread directly on either side.
+      const path = role === "trade" ? "/(trade)/messages" : "/(customer)/messages";
+      router.push({ pathname: path, params: { quoteRequestId: chatMatch[1] } });
+      return;
+    }
     if (role === "trade") {
       if (quoteId) {
         router.push(`/(trade)/quote/${quoteId}`);
