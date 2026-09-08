@@ -118,6 +118,13 @@ async def update_onboarding_step(
     if metrics:
         tenant.settings = {**(tenant.settings or {}), **metrics}
 
+    if step_name == "branding":
+        # Branding captured in onboarding must land in tenant.settings — that
+        # is what Tenant.primary_color and the white-label public config read.
+        colour = data.value.get("primary_color")
+        if isinstance(colour, str) and colour:
+            tenant.settings = {**(tenant.settings or {}), "primary_color": colour}
+
     required_steps = ["business_identity", "compliance", "services"]
     completed_steps = [s for s in required_steps if progress.get(s, {}).get("completed") is True]
     pending_steps = [s for s in required_steps if s not in completed_steps]

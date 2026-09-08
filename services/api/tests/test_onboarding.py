@@ -71,6 +71,17 @@ async def test_onboarding_metrics_persist_to_tenant_settings(
     assert settings["avg_minutes_per_quote"] == 45
 
 
+async def test_onboarding_branding_persists_primary_color(admin_client: AsyncClient) -> None:
+    """The branding step's primary_color lands in tenant.settings so the
+    white-label public config (Tenant.primary_color) picks it up."""
+    await _complete_step(admin_client, "branding", {"primary_color": "#123ABC"})
+
+    tenant = await admin_client.get("/tenants/me")
+    assert tenant.status_code == 200
+    assert tenant.json()["settings"]["primary_color"] == "#123ABC"
+    assert tenant.json()["primaryColor"] == "#123ABC"
+
+
 async def test_onboarding_metrics_via_tenant_update(admin_client: AsyncClient) -> None:
     """The same fields are accepted by PATCH /tenants/me (camelCase aliases)."""
     response = await admin_client.patch(

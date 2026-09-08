@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Pressable, ScrollView, View } from "react-native";
+import { Modal, Pressable, ScrollView, View } from "react-native";
 import DateTimePicker from "@react-native-community/datetimepicker";
 import { Button } from "../../../components/ui/Button";
 import { FormField } from "../../../components/ui/FormField";
@@ -56,13 +56,23 @@ export function ComplianceStep({ data, onNext }: ComplianceStepProps) {
   const [cover, setCover] = useState((data?.cover as string) ?? "");
   const [expiry, setExpiry] = useState((data?.expiry as string) ?? "");
   const [showDatePicker, setShowDatePicker] = useState(false);
+  const [pendingDate, setPendingDate] = useState<Date>(new Date());
 
-  const onDateValueChange = (_event: unknown, selectedDate: Date) => {
-    setShowDatePicker(false);
-    setExpiry(formatUkDate(selectedDate));
+  const openDatePicker = () => {
+    setPendingDate(parseUkDate(expiry) ?? new Date());
+    setShowDatePicker(true);
   };
 
-  const onDateDismiss = () => {
+  // Spinner pickers fire on every drum tick — stage into pendingDate and only
+  // commit on Done, otherwise the sheet would close on the first scroll.
+  const onDateValueChange = (_event: unknown, selectedDate?: Date) => {
+    if (selectedDate) {
+      setPendingDate(selectedDate);
+    }
+  };
+
+  const confirmDate = () => {
+    setExpiry(formatUkDate(pendingDate));
     setShowDatePicker(false);
   };
 
@@ -156,7 +166,7 @@ export function ComplianceStep({ data, onNext }: ComplianceStepProps) {
         <Text variant="body" weight="semibold">
           Expiry date
         </Text>
-        <Pressable onPress={() => setShowDatePicker(true)}>
+        <Pressable onPress={() => openDatePicker()}>
           <View className="rounded-xl border border-slate-200 bg-white px-4 py-3">
             <Text variant="body">{expiry || "DD-MM-YYYY"}</Text>
           </View>
@@ -164,15 +174,36 @@ export function ComplianceStep({ data, onNext }: ComplianceStepProps) {
         <Text variant="caption" color="secondary">
           Renewal reminder shown 30 days before expiry.
         </Text>
-        {showDatePicker && (
-          <DateTimePicker
-            value={parseUkDate(expiry) ?? new Date()}
-            mode="date"
-            display="spinner"
-            onValueChange={onDateValueChange}
-            onDismiss={onDateDismiss}
-          />
-        )}
+        <Modal
+          visible={showDatePicker}
+          transparent
+          animationType="slide"
+          onRequestClose={() => setShowDatePicker(false)}
+        >
+          <Pressable
+            className="flex-1 justify-end bg-black/40"
+            onPress={() => setShowDatePicker(false)}
+          >
+            <Pressable className="rounded-t-3xl bg-white pb-8" onPress={() => {}}>
+              <View className="flex-row items-center justify-between px-4 py-3">
+                <Text variant="body" weight="semibold">
+                  Insurance expiry date
+                </Text>
+                <Pressable onPress={confirmDate}>
+                  <Text variant="body" weight="semibold" color="primary">
+                    Done
+                  </Text>
+                </Pressable>
+              </View>
+              <DateTimePicker
+                value={pendingDate}
+                mode="date"
+                display="spinner"
+                onValueChange={onDateValueChange}
+              />
+            </Pressable>
+          </Pressable>
+        </Modal>
 
         <Button
           title="Continue"

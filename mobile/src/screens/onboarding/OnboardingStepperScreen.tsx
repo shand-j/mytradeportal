@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { KeyboardAvoidingView, Platform, ScrollView, StyleSheet, View } from "react-native";
 import { useRouter } from "expo-router";
 import { Header } from "../../components/ui/Header";
@@ -69,6 +69,14 @@ export function OnboardingStepperScreen() {
   // The tenant is registered when leaving the review step, so the plan step's
   // Paddle checkout call (/billing/checkout) runs with an authenticated tenant.
   const [registered, setRegistered] = useState(false);
+  const scrollRef = useRef<ScrollView>(null);
+
+  // Step transitions must reset scroll — the outer ScrollView is the actual
+  // scroller (inner step ScrollViews size to content), and remounting the step
+  // alone doesn't reset it.
+  useEffect(() => {
+    scrollRef.current?.scrollTo({ y: 0, animated: false });
+  }, [stepIndex]);
 
   const StepComponent = STEPS[stepIndex].component;
   const isFirst = stepIndex === 0;
@@ -152,6 +160,7 @@ export function OnboardingStepperScreen() {
         behavior={Platform.OS === "ios" ? "padding" : undefined}
       >
         <ScrollView
+          ref={scrollRef}
           style={styles.scroll}
           contentContainerStyle={styles.content}
           keyboardShouldPersistTaps="handled"
