@@ -92,7 +92,10 @@ Deleted from the working tree but still referenced in config:
 ### Active/inherited shared code
 
 - **`packages/shared/ts`** — theme tokens (`colors`, `spacing`, `radii`, `typography`).
-Built with `tsc`; imported by `mobile/` as `@mtp/shared-ts`.
+Imported by `mobile/` as `@mtp/shared-ts` directly from `src/` (no build step —
+Metro/tsc consume the TypeScript source; `dist/` is gitignored, so EAS builds
+would fail if the package pointed at built output). `pnpm build` in the package
+still emits `dist/` if a compiled artifact is ever needed.
 - **`packages/shared/py`** — `mtp_shared` Python package with Pydantic settings,
 tenancy, logging, and OCERP contract models. Installed via `pyproject.toml`.
 
