@@ -1,6 +1,7 @@
 import { config } from "./config";
 import { camelizeKeys, snakeizeKeys } from "./case";
 import { tokenStorage } from "./tokenStorage";
+import { usePaywallStore } from "../stores/paywallStore";
 
 export class ApiError extends Error {
   status: number;
@@ -111,6 +112,12 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
       payload && typeof payload === "object" && "detail" in payload
         ? String((payload as { detail: unknown }).detail)
         : response.statusText;
+    // 402 subscription_required: flag globally so the app routes staff to the
+    // paywall. The billing endpoints themselves are exempt server-side, so
+    // this only fires for genuinely gated data endpoints.
+    if (response.status === 402) {
+      usePaywallStore.getState().setRequired(true);
+    }
     throw new ApiError(response.status, detail);
   }
 

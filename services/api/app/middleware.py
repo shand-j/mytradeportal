@@ -15,11 +15,15 @@ do not drown out real traffic.
 import time
 import uuid
 from collections.abc import Awaitable, Callable
+from contextlib import asynccontextmanager
+from uuid import UUID
 
 import structlog
+from fastapi import status
+from sqlalchemy import select
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
-from starlette.responses import Response
+from starlette.responses import JSONResponse, Response
 
 logger = structlog.get_logger("api.http")
 
@@ -86,3 +90,92 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
 
         response.headers["X-Request-ID"] = request_id
         return response
+
+
+class SubscriptionPaywallMiddleware(BaseHTTPMiddleware):
+    """Block staff API access when the tenant's subscription is inactive.
+
+    Beta semantics: tenants with NO subscription row are allowed (beta is
+    free; legacy/seed tenants predate billing). A row exists once the tenant
+    reached the plan step; from then on the subscription must be in a live
+    state (trialing/active/past_due grace) — an abandoned or lapsed checkout
+    gets 402 ``subscription_required`` and the app shows the paywall.
+
+    Post-beta flip: treat "no row" as gated too, then route all new tenants
+    through checkout before the dashboard.
+    """
+
+    _EXEMPT_PREFIXES = (
+        "/auth",  # login/logout/me must work so the app can load the session
+        "/billing",  # checkout creation + subscription read are the escape hatch
+        "/onboarding",
+        "/customer",
+        "/businesses",  # public white-label config + quote requests
+        "/webhooks",  # Paddle lifecycle events are how subscriptions activate
+        "/tenants",  # bootstrap + /tenants/me branding
+        "/health",
+        "/ready",
+        "/docs",
+        "/openapi.json",
+    )
+
+    async def dispatch(
+        self,
+        request: Request,
+        call_next: Callable[[Request], Awaitable[Response]],
+    ) -> Response:
+        path = request.url.path
+        if request.method == "OPTIONS" or any(
+            path == p or path.startswith(f"{p}/") for p in self._EXEMPT_PREFIXES
+        ):
+            return await call_next(request)
+
+        from app.dependencies import _extract_token
+        from app.security import decode_access_token
+
+        token = _extract_token(request)
+        claims = decode_access_token(token) if token else None
+        if not claims or claims.get("subject_type") == "customer":
+            return await call_next(request)
+
+        tenant_id_raw = claims.get("tenant_id")
+        if not tenant_id_raw:
+            return await call_next(request)
+
+        from app.database import get_db, get_db_session
+        from app.models import Subscription
+        from app.routers.billing import is_subscription_active
+
+        try:
+            tenant_id = UUID(str(tenant_id_raw))
+        except (ValueError, TypeError):
+            return await call_next(request)
+
+        async def _read_subscription() -> Subscription | None:
+            # Honour dependency_overrides so tests (and any embedded host) get
+            # their own session factory; production uses the pooled one.
+            override = request.app.dependency_overrides.get(get_db)
+            if override is not None:
+                async with asynccontextmanager(override)() as db:
+                    return await db.scalar(
+                        select(Subscription).where(Subscription.tenant_id == tenant_id)
+                    )
+            async with get_db_session() as db:
+                return await db.scalar(
+                    select(Subscription).where(Subscription.tenant_id == tenant_id)
+                )
+
+        subscription = await _read_subscription()
+        if subscription is not None and not is_subscription_active(subscription):
+            logger.info(
+                "paywall_blocked",
+                method=request.method,
+                path=path,
+                tenant_id=str(tenant_id),
+                subscription_status=subscription.status,
+            )
+            return JSONResponse(
+                {"detail": "subscription_required"},
+                status_code=status.HTTP_402_PAYMENT_REQUIRED,
+            )
+        return await call_next(request)

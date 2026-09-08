@@ -15,7 +15,7 @@ from app.config import settings
 from app.database import engine
 from app.limiter import limiter
 from app.logging import configure_logging
-from app.middleware import RequestLoggingMiddleware
+from app.middleware import RequestLoggingMiddleware, SubscriptionPaywallMiddleware
 from app.models import Base
 from app.rls import apply_tenant_rls_sync
 from app.routers import (
@@ -130,6 +130,9 @@ app.add_middleware(
 # Request IDs + structured access logs. Added last so it runs outermost and
 # sees every request, including CORS preflights and rate-limit rejections.
 app.add_middleware(RequestLoggingMiddleware)
+# Subscription gate for staff API access (402 on inactive subscriptions).
+# Sits inside the logging middleware so blocked requests are still logged.
+app.add_middleware(SubscriptionPaywallMiddleware)
 
 app.include_router(health.router)
 app.include_router(feature_flags.router)

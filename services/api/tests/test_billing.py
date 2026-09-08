@@ -156,3 +156,34 @@ async def test_repeat_checkout_reuses_subscription_row(
     )
     assert len(rows) == 1
     assert rows[0].plan_key == "pro"
+
+
+async def test_paywall_blocks_gated_endpoints_on_incomplete_subscription(
+    admin_client: AsyncClient, db: AsyncSession
+) -> None:
+    """A tenant with a subscription row in a non-live state gets 402 on staff
+    endpoints, while auth and billing escape hatches stay open."""
+    tenant_id = admin_client.headers["X-Tenant-ID"]
+    db.add(Subscription(tenant_id=tenant_id, plan_key="pro", status="incomplete"))
+    await db.commit()
+
+    blocked = await admin_client.get("/quotes")
+    assert blocked.status_code == 402
+    assert blocked.json()["detail"] == "subscription_required"
+
+    # Escape hatches stay open: session bootstrap and billing endpoints.
+    assert (await admin_client.get("/auth/me")).status_code == 200
+    assert (await admin_client.get("/billing/subscription")).status_code == 200
+
+    sub = await db.scalar(select(Subscription).where(Subscription.tenant_id == tenant_id))
+    assert sub is not None
+    sub.status = "trialing"
+    await db.commit()
+
+    assert (await admin_client.get("/quotes")).status_code == 200
+
+
+async def test_paywall_allows_tenant_without_subscription_row(admin_client: AsyncClient) -> None:
+    """Beta semantics: no subscription row (legacy/seed tenants) = allowed."""
+    response = await admin_client.get("/quotes")
+    assert response.status_code == 200
