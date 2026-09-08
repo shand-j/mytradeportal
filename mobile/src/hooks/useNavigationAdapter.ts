@@ -7,7 +7,7 @@ const ROUTE_MAP: Record<string, (params?: NavigationParams) => string> = {
   Quotes: () => "/(trade)/quotes",
   Customers: () => "/(trade)/customers",
   Calendar: () => "/(trade)/calendar",
-  Leads: () => "/(trade)/leads",
+  Leads: () => "/(trade)/quotes",
   Settings: () => "/(trade)/settings",
   Analytics: () => "/(trade)/analytics",
   Branding: () => "/(trade)/branding",

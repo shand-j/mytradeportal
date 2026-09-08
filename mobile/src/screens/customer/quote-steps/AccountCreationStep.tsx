@@ -7,6 +7,7 @@ import { FormField } from "../../../components/ui/FormField";
 import { useBusiness } from "../../../theme/ThemeProvider";
 import { useAuth } from "../../../contexts/AuthContext";
 import { ApiError } from "../../../lib/apiClient";
+import { stagedPhotosFromMedia, uploadCustomerPhotos } from "../../../api/uploads";
 import { StepPropsWithBusiness } from "./types";
 
 export type AccountCreationStepProps = StepPropsWithBusiness & {
@@ -60,6 +61,9 @@ export function AccountCreationStep({
         quoteRequestId,
       });
       if (ok) {
+        // The new account now holds a token and owns the quote request, so the
+        // staged photos can be attached. Best-effort — never blocks the flow.
+        void uploadCustomerPhotos(quoteRequestId, stagedPhotosFromMedia(formData.media));
         onNext();
       } else {
         setError("Could not create account. Please check your details and try again.");

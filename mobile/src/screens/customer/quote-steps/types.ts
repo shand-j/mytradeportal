@@ -4,6 +4,11 @@ export type MediaItem = {
   id: string;
   label: string;
   type: "image" | "video";
+  /** On-device staging info for a picked photo; uploaded after the request is submitted. */
+  localUri?: string;
+  fileName?: string;
+  mimeType?: string;
+  sizeBytes?: number;
 };
 
 export type ContactDetails = {
@@ -23,7 +28,6 @@ export type PropertyProfile = {
   tenure: "owner" | "tenant" | "landlord" | "housing_assoc";
   flatAccess: boolean | null;
   parking: boolean | null;
-  consumerUnitPhoto: string | null;
   fuseBoardStyle: string;
   knownIssues: string[];
 };
@@ -78,7 +82,6 @@ export const INITIAL_FORM_DATA: QuoteFormData = {
     tenure: "owner",
     flatAccess: null,
     parking: null,
-    consumerUnitPhoto: null,
     fuseBoardStyle: "",
     knownIssues: [],
   },

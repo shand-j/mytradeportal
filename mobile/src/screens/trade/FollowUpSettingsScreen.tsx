@@ -5,23 +5,16 @@ import { FormField } from "../../components/ui/FormField";
 import { Header } from "../../components/ui/Header";
 import { Screen } from "../../components/ui/Screen";
 import { Text } from "../../components/ui/Text";
-import { FollowUpChannel } from "../../types";
 
 export type FollowUpSettingsScreenProps = {
   onClose: () => void;
 };
-
-const CHANNELS: { key: FollowUpChannel; label: string }[] = [
-  { key: "email", label: "Email" },
-  { key: "sms", label: "SMS" },
-];
 
 export function FollowUpSettingsScreen({ onClose }: FollowUpSettingsScreenProps) {
   const [quoteReminderEnabled, setQuoteReminderEnabled] = useState(true);
   const [invoiceReminderEnabled, setInvoiceReminderEnabled] = useState(true);
   const [quoteDelay, setQuoteDelay] = useState("3");
   const [invoiceDelay, setInvoiceDelay] = useState("7");
-  const [channel, setChannel] = useState<FollowUpChannel>("email");
 
   return (
     <Screen>
@@ -44,16 +37,9 @@ export function FollowUpSettingsScreen({ onClose }: FollowUpSettingsScreenProps)
           <Text variant="body" weight="semibold">
             Channel
           </Text>
-          <View className="flex-row flex-wrap gap-2">
-            {CHANNELS.map((c) => (
-              <Button
-                key={c.key}
-                title={c.label}
-                variant={channel === c.key ? "primary" : "outline"}
-                onPress={() => setChannel(c.key)}
-              />
-            ))}
-          </View>
+          <Text variant="caption" color="secondary">
+            Reminders are sent by email.
+          </Text>
         </View>
 
         <View className="rounded-2xl bg-slate-100 p-4 gap-4">

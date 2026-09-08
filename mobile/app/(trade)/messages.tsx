@@ -10,7 +10,7 @@ export default function TradeMessagesRoute() {
     if (router.canGoBack()) {
       router.back();
     } else {
-      router.replace("/(trade)/leads");
+      router.replace("/(trade)/inbox");
     }
   };
 

@@ -8,6 +8,7 @@ import { Text } from "../../components/ui/Text";
 import { useAuth } from "../../contexts/AuthContext";
 import { useBusiness } from "../../theme/ThemeProvider";
 import { useSubscription } from "../../api/billing";
+import { api, ApiError } from "../../lib/apiClient";
 
 function SubscriptionCard() {
   const { data, isLoading } = useSubscription();
@@ -102,7 +103,25 @@ export function SettingsScreen() {
   const router = useRouter();
   const { user, logout } = useAuth();
   const { business, setBusiness } = useBusiness();
-  const [appleCalendarSync, setAppleCalendarSync] = useState(false);
+  const [calendarLinkLoading, setCalendarLinkLoading] = useState(false);
+  const [calendarLinkError, setCalendarLinkError] = useState<string | null>(null);
+
+  const handleCalendarSubscription = async () => {
+    setCalendarLinkError(null);
+    setCalendarLinkLoading(true);
+    try {
+      const { url } = await api.get<{ url: string }>("/calendar/feed-link");
+      await Share.share({ message: url });
+    } catch (error) {
+      setCalendarLinkError(
+        error instanceof ApiError && error.status === 402
+          ? "Complete your plan checkout to enable calendar sync."
+          : "Could not load your calendar link. Please try again."
+      );
+    } finally {
+      setCalendarLinkLoading(false);
+    }
+  };
 
   const handleLogout = () => {
     setBusiness(null);
@@ -118,11 +137,6 @@ export function SettingsScreen() {
   };
 
   const sections = [
-    {
-      title: "Certificates",
-      subtitle: "EICR, EIC & Minor Works — BS 7671 validated",
-      onPress: () => router.push("/(trade)/certificates"),
-    },
     {
       title: "Revenue & costs",
       subtitle: "Paid revenue, outstanding, profit",
@@ -144,11 +158,6 @@ export function SettingsScreen() {
       title: "Follow-up settings",
       subtitle: "Quote & invoice reminders",
       onPress: () => router.push("/(trade)/follow-ups"),
-    },
-    {
-      title: "Integrations",
-      subtitle: "Apple Calendar, payments, accounting",
-      onPress: () => {},
     },
   ];
 
@@ -211,26 +220,23 @@ export function SettingsScreen() {
           ))}
         </View>
 
-        <Pressable onPress={() => setAppleCalendarSync((v) => !v)}>
-          <View className="rounded-2xl bg-slate-100 p-4 gap-3">
-            <View className="flex-row items-center justify-between">
-              <Text variant="body" weight="semibold">
-                Apple Calendar sync
-              </Text>
-              <View
-                className={`w-12 h-7 rounded-full px-0.5 justify-center ${
-                  appleCalendarSync ? "bg-blue-600" : "bg-slate-200"
-                }`}
-              >
-                <View
-                  className="w-6 h-6 rounded-full bg-white"
-                  style={{ transform: [{ translateX: appleCalendarSync ? 20 : 0 }] }}
-                />
-              </View>
-            </View>
-            <Text variant="caption" color="secondary">
-              Push booked jobs to your Apple Calendar (EventKit integration in Beta).
+        <Pressable
+          testID="settings-calendar-subscription"
+          disabled={calendarLinkLoading}
+          onPress={handleCalendarSubscription}
+        >
+          <View className="rounded-2xl bg-slate-100 p-4 gap-2">
+            <Text variant="body" weight="semibold">
+              {calendarLinkLoading ? "Loading…" : "Calendar subscription"}
             </Text>
+            <Text variant="caption" color="secondary">
+              Subscribe from Apple or Google Calendar to see booked jobs in your calendar app.
+            </Text>
+            {calendarLinkError && (
+              <Text variant="caption" color="warning">
+                {calendarLinkError}
+              </Text>
+            )}
           </View>
         </Pressable>
 

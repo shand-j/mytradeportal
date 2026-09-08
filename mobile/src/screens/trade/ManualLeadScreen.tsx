@@ -12,8 +12,6 @@ import { ApiError } from "../../lib/apiClient";
 import { LeadSource } from "../../types";
 
 const SOURCES: { key: LeadSource; label: string }[] = [
-  { key: "whatsapp", label: "WhatsApp" },
-  { key: "sms", label: "SMS" },
   { key: "phone", label: "Phone" },
   { key: "manual", label: "Manual" },
 ];
@@ -100,7 +98,7 @@ export function ManualLeadScreen({ onClose }: ManualLeadScreenProps) {
             className="h-32 rounded-xl border border-slate-200 bg-white px-4 pt-3 text-base text-slate-900"
             value={customerMessage}
             onChangeText={setCustomerMessage}
-            placeholder="Paste WhatsApp, SMS, email or voice transcript..."
+            placeholder="Paste an email or message transcript..."
             multiline
             textAlignVertical="top"
           />

@@ -1,5 +1,6 @@
-import { useMemo, useState } from "react";
-import { Linking, ScrollView, View } from "react-native";
+import { useMemo } from "react";
+import { ScrollView, View } from "react-native";
+import { useRouter } from "expo-router";
 import { Button } from "../../components/ui/Button";
 import { Header } from "../../components/ui/Header";
 import { Screen } from "../../components/ui/Screen";
@@ -13,27 +14,12 @@ export type RequestInfoScreenProps = {
   onClose: () => void;
 };
 
-function ExternalContact({ lead, onClose }: { lead: Lead; onClose: () => void }) {
-  const [sent, setSent] = useState(false);
-  const channel = lead.preferredChannel ?? "sms";
+function ExternalContact({ lead }: { lead: Lead }) {
+  const router = useRouter();
   const phone = lead.customerPhone ?? "";
-  const message = encodeURIComponent(
-    `Hi ${lead.customerName}, it's ${lead.title.toLowerCase()}. Could I grab a bit more info before quoting?`
-  );
 
-  const openSms = async () => {
-    const url = `sms:${phone.replace(/\s/g, "")}?body=${message}`;
-    const can = await Linking.canOpenURL(url);
-    if (can) await Linking.openURL(url);
-    setSent(true);
-  };
-
-  const openWhatsApp = async () => {
-    const cleaned = phone.replace(/\D/g, "").replace(/^0/, "44");
-    const url = `https://wa.me/${cleaned}?text=${message}`;
-    const can = await Linking.canOpenURL(url);
-    if (can) await Linking.openURL(url);
-    setSent(true);
+  const openChat = () => {
+    router.push({ pathname: "/(trade)/messages", params: { quoteRequestId: lead.id } });
   };
 
   return (
@@ -49,36 +35,15 @@ function ExternalContact({ lead, onClose }: { lead: Lead; onClose: () => void })
 
       <View className="rounded-2xl bg-slate-100 p-4 gap-2">
         <Text variant="body" weight="semibold">
-          {lead.preferredChannel ? "Customer preference" : "Choose a channel"}
+          Ask for more info
         </Text>
         <Text variant="body" color="secondary">
-          {lead.preferredChannel
-            ? `This customer normally contacts you via ${channel.toUpperCase()}.`
-            : "This customer is not registered. Send your request by SMS or WhatsApp."}
+          Message this customer in an online chat thread. They are notified by email and
+          can reply in the app.
         </Text>
       </View>
 
-      <Button
-        testID="request-info-sms"
-        title="Send SMS request"
-        variant={channel === "sms" ? "primary" : "outline"}
-        onPress={openSms}
-      />
-      <Button
-        testID="request-info-whatsapp"
-        title="Open WhatsApp request"
-        variant={channel === "whatsapp" ? "primary" : "outline"}
-        onPress={openWhatsApp}
-      />
-
-      {sent && (
-        <View className="rounded-2xl bg-green-100 p-4">
-          <Text variant="body" color="secondary" align="center">
-            Handoff opened. In a real build this would launch your messaging app with a pre-filled
-            request.
-          </Text>
-        </View>
-      )}
+      <Button testID="request-info-chat" title="Message customer" onPress={openChat} />
     </ScrollView>
   );
 }
@@ -116,7 +81,7 @@ export function RequestInfoScreen({ lead, quote, onClose }: RequestInfoScreenPro
           />
         </>
       ) : (
-        <ExternalContact lead={lead} onClose={onClose} />
+        <ExternalContact lead={lead} />
       )}
     </Screen>
   );

@@ -1,7 +1,6 @@
 import { useState } from "react";
 import { StyleSheet, TextInput, View } from "react-native";
 import { Button } from "../../../components/ui/Button";
-import { FileUploadPlaceholder } from "../../../components/ui/FileUploadPlaceholder";
 import { Text } from "../../../components/ui/Text";
 import { StepPropsWithBusiness } from "./types";
 
@@ -48,11 +47,6 @@ export function OtherQuestionnaire({ formData, updateFormData, onNext }: StepPro
           Please add a bit more detail so we can prepare an accurate quote.
         </Text>
       ) : null}
-
-      <Text variant="body" weight="semibold">
-        Required photos
-      </Text>
-      <FileUploadPlaceholder label="Upload a photo of the area" testID="quote-other-photo" />
 
       <Text variant="caption" color="secondary">
         This request will always be reviewed by an electrician before a quote is sent.

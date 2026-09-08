@@ -43,6 +43,7 @@ function buildRegisterInput(data: Record<string, unknown>): RegisterBusinessInpu
   const compliance = (data.compliance ?? {}) as Record<string, unknown>;
   const services = (data.services ?? {}) as Record<string, unknown>;
   const branding = (data.branding ?? {}) as Record<string, unknown>;
+  const address = (data.address ?? {}) as Record<string, unknown>;
 
   const email = account.email as string | undefined;
   const password = account.password as string | undefined;
@@ -56,6 +57,8 @@ function buildRegisterInput(data: Record<string, unknown>): RegisterBusinessInpu
     phone: account.phone as string | undefined,
     role: account.role as string | undefined,
     tradingName: (identity.tradingName as string | undefined) ?? "My Electrical Business",
+    address: (address.address as string | undefined) ?? undefined,
+    postcode: (address.postcode as string | undefined) ?? undefined,
     identity,
     compliance,
     services: (services.services as string[] | undefined) ?? [],

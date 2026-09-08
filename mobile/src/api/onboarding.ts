@@ -10,6 +10,9 @@ export type RegisterBusinessInput = {
   phone?: string;
   role?: string;
   tradingName: string;
+  /** Trading address/postcode captured in onboarding; persisted on the tenant. */
+  address?: string;
+  postcode?: string;
   identity?: Record<string, unknown>;
   compliance?: Record<string, unknown>;
   services?: string[];
@@ -39,6 +42,9 @@ async function createTenant(slug: string, input: RegisterBusinessInput): Promise
       adminEmail: input.email,
       adminName: input.fullName,
       adminPassword: input.password,
+      phone: input.phone,
+      address: input.address,
+      postcode: input.postcode,
     },
     { auth: false, headers: { "X-Setup-Token": config.setupToken } }
   );

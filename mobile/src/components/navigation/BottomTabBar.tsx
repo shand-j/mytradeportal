@@ -18,7 +18,7 @@ const TRADE_TABS: TabItem[] = [
   { key: "quotes", label: "Quotes", icon: "document-text", path: "/(trade)/quotes", testID: "tab-quotes" },
   { key: "customers", label: "Customers", icon: "people", path: "/(trade)/customers", testID: "tab-customers" },
   { key: "calendar", label: "Calendar", icon: "calendar", path: "/(trade)/calendar", testID: "tab-calendar" },
-  { key: "messages", label: "Messages", icon: "chatbubble", path: "/(trade)/leads", testID: "tab-messages" },
+  { key: "messages", label: "Messages", icon: "chatbubble", path: "/(trade)/inbox", testID: "tab-messages" },
 ];
 
 const CUSTOMER_TABS: TabItem[] = [

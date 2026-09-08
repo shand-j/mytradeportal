@@ -19,7 +19,16 @@ from sqlalchemy.orm import selectinload
 from app.database import get_db
 from app.dependencies import CurrentCustomerDep
 from app.limiter import limiter
-from app.models import Appointment, BillOfQuantities, Contact, Customer, Quote, QuoteRequest, Tenant
+from app.models import (
+    Appointment,
+    BillOfQuantities,
+    Contact,
+    Customer,
+    MediaAsset,
+    Quote,
+    QuoteRequest,
+    Tenant,
+)
 from app.push import notify_staff
 from app.rls import bypass_rls_for_transaction, set_tenant_in_session
 from app.schemas import (
@@ -29,7 +38,10 @@ from app.schemas import (
     CustomerRead,
     CustomerRegister,
     CustomerTokenResponse,
+    PresignedUploadRequest,
+    PresignedUploadResponse,
     QuoteRead,
+    QuoteRequestMediaCreate,
     QuoteRequestRead,
 )
 from app.security import create_access_token, get_password_hash, verify_password
@@ -266,6 +278,65 @@ async def list_my_quote_requests(
         .order_by(QuoteRequest.created_at.desc())
     )
     return list(result.scalars().all())
+
+
+@router.post("/files/presigned-upload", response_model=PresignedUploadResponse)
+async def customer_presigned_upload(
+    data: PresignedUploadRequest,
+    customer: CurrentCustomerDep,
+) -> PresignedUploadResponse:
+    """Customer-scoped presigned upload (photos on quote requests)."""
+    import uuid as _uuid
+
+    from app.config import settings
+    from app.routers.files import _s3_client
+
+    key = f"tenants/{customer.tenant_id}/{_uuid.uuid4()}/{data.filename}"
+    try:
+        presigned = _s3_client().generate_presigned_post(
+            Bucket=settings.minio_bucket,
+            Key=key,
+            Fields={"Content-Type": data.content_type or "application/octet-stream"},
+            Conditions=[["starts-with", "$Content-Type", ""]],
+            ExpiresIn=300,
+        )
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=f"Could not generate presigned upload URL: {exc}",
+        ) from exc
+    return PresignedUploadResponse(url=presigned["url"], fields=presigned["fields"], key=key)
+
+
+@router.post("/quote-requests/{quote_request_id}/media", status_code=status.HTTP_201_CREATED)
+async def customer_attach_media(
+    quote_request_id: UUID,
+    data: QuoteRequestMediaCreate,
+    customer: CurrentCustomerDep,
+    db: DbDep,
+) -> dict[str, str]:
+    """Attach an uploaded photo to the customer's own quote request."""
+    await set_tenant_in_session(db, customer.tenant_id)
+    quote_request = await db.get(QuoteRequest, quote_request_id)
+    if (
+        quote_request is None
+        or quote_request.tenant_id != customer.tenant_id
+        or quote_request.customer_id != customer.id
+    ):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Quote request not found")
+
+    asset = MediaAsset(
+        tenant_id=customer.tenant_id,
+        quote_request_id=quote_request_id,
+        file_url=data.file_url,
+        file_key=data.file_key,
+        mime_type=data.mime_type,
+        size_bytes=data.size_bytes,
+        source=data.source,
+    )
+    db.add(asset)
+    await db.commit()
+    return {"id": str(asset.id), "file_url": data.file_url}
 
 
 @router.get("/quotes", response_model=list[QuoteRead])

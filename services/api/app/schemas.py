@@ -24,6 +24,11 @@ from pydantic import (
 class TenantCreate(BaseModel):
     slug: str = Field(..., min_length=2, max_length=63)
     name: str = Field(..., min_length=1, max_length=255)
+    # Business contact details captured in onboarding; persisted on the tenant
+    # so Settings shows them (previously dropped at registration).
+    phone: str | None = Field(default=None, max_length=50)
+    address: str | None = Field(default=None, max_length=2000)
+    postcode: str | None = Field(default=None, max_length=20)
 
     # Optional atomic bootstrap of the tenant's first admin user. All three
     # fields must be provided together; when omitted only the tenant is
@@ -49,6 +54,7 @@ class TenantUpdate(BaseModel):
     phone: str | None = Field(default=None, alias="phone")
     website: str | None = Field(default=None, alias="website")
     address: str | None = Field(default=None, alias="address")
+    postcode: str | None = Field(default=None, alias="postcode")
 
     # Branding
     logo_url: str | None = Field(default=None, alias="logoUrl")
@@ -94,6 +100,7 @@ class TenantRead(BaseModel):
     phone: str = Field(default="", serialization_alias="phone")
     website: str | None = Field(default=None, serialization_alias="website")
     address: str = Field(default="", serialization_alias="address")
+    postcode: str | None = Field(default=None, serialization_alias="postcode")
 
     # Branding
     logo_url: str | None = Field(default=None, serialization_alias="logoUrl")

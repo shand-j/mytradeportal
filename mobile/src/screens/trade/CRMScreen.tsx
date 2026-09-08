@@ -48,6 +48,11 @@ export function CRMScreen(_props: CRMScreenProps) {
         <Text variant="body" color="secondary">
           Search contacts, view history, and add notes.
         </Text>
+        <Button
+          testID="customers-new-customer"
+          title="New Customer"
+          onPress={() => router.push("/(trade)/manual-lead")}
+        />
         <TextInput
           testID="customers-search"
           className="h-12 rounded-xl border border-gray-200 bg-white px-4 text-base text-gray-900"

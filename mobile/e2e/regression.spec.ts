@@ -82,7 +82,7 @@ test.describe.serial("B — Customer quote request + account creation", () => {
     await fill(page, "quote-name-input", "E2E Jane Homeowner");
     await fill(page, "quote-phone-input", "07700 900123");
     await fill(page, "quote-email-input", "jane-homeowner@e2e.example.com");
-    await tapText(page, "In-app Chat");
+    await tapText(page, "Online chat");
     await tap(page, "quote-contact-continue");
 
     // Property profile

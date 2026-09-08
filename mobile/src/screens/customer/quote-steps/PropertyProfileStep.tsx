@@ -1,7 +1,6 @@
 import { useState } from "react";
 import { Pressable, StyleSheet, TextInput, View } from "react-native";
 import { Button } from "../../../components/ui/Button";
-import { FileUploadPlaceholder } from "../../../components/ui/FileUploadPlaceholder";
 import { Icon } from "../../../components/ui/Icon";
 import { Text } from "../../../components/ui/Text";
 import { StepPropsWithBusiness } from "./types";
@@ -220,14 +219,6 @@ export function PropertyProfileStep({ formData, updateFormData, onNext }: StepPr
           onPress={() => setProperty((prev) => ({ ...prev, parking: false }))}
         />
       </View>
-
-      <Text variant="body" weight="semibold">
-        Consumer unit photo
-      </Text>
-      <FileUploadPlaceholder
-        label={property.consumerUnitPhoto ? "Consumer unit photo added" : "Upload consumer unit photo"}
-        testID="quote-consumer-unit-photo"
-      />
 
       <Text variant="body" weight="semibold">
         Fuse board style

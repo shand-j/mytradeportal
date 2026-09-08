@@ -73,8 +73,8 @@ function buildRawText(form: QuoteFormData): { title: string; rawText: string | n
 
 /**
  * Submit a homeowner's quote request to a business (no auth required). Maps the
- * captured wizard form into the public payload. Media uploads are not yet
- * implemented, so only structured data is sent.
+ * captured wizard form into the public payload. Photos staged in the media step
+ * are uploaded separately (see api/uploads.ts) once the request exists.
  */
 export async function submitPublicQuoteRequest(
   slug: string,

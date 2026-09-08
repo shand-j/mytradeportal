@@ -80,9 +80,9 @@ async function main() {
   await sleep(700);
   await h.tap(page, "quote-check-area", 700);
 
-  log("Customer: contact details (In-app Chat)");
+  log("Customer: contact details (Online chat)");
   await sleep(500);
-  await h.tapText(page, "In-app Chat", 500);
+  await h.tapText(page, "Online chat", 500);
   await sleep(600);
   await h.tap(page, "quote-contact-continue", 700);
 

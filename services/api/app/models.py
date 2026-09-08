@@ -96,6 +96,10 @@ class Tenant(Base, TimestampMixin):
         return self.settings.get("address", "") if self.settings else ""
 
     @property
+    def postcode(self) -> str | None:
+        return self.settings.get("postcode") if self.settings else None
+
+    @property
     def logo_url(self) -> str | None:
         return self.settings.get("logo_url") if self.settings else None
 

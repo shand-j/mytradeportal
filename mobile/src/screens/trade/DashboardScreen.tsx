@@ -147,7 +147,7 @@ export function DashboardScreen(_props: DashboardScreenProps) {
         {newCustomerLeads.length > 0 && (
           <Pressable
             testID="dashboard-new-lead-banner"
-            onPress={() => router.push("/(trade)/leads?filter=new")}
+            onPress={() => router.push("/(trade)/quotes")}
           >
             <View className="flex-row items-center gap-3 rounded-2xl border border-blue-200 bg-blue-50 p-4">
               <View className="h-9 w-9 items-center justify-center rounded-full bg-blue-600">
@@ -182,23 +182,6 @@ export function DashboardScreen(_props: DashboardScreenProps) {
           ) : (
             <View className="mt-1 h-5 w-32 rounded bg-neutral-200" />
           )}
-        </View>
-
-        <View className="flex-row gap-3">
-          <Pressable
-            testID="dashboard-new-cert"
-            className="flex-1"
-            onPress={() => router.push("/(trade)/certificates")}
-          >
-            <View className="items-center gap-2 rounded-2xl border border-emerald-200 bg-emerald-50 p-4">
-              <View className="h-10 w-10 items-center justify-center rounded-full bg-emerald-600">
-                <Icon name="shield" size={20} color="#FFFFFF" />
-              </View>
-              <Text variant="caption" weight="semibold" align="center">
-                New EICR
-              </Text>
-            </View>
-          </Pressable>
         </View>
 
         <View className="flex-row gap-3">

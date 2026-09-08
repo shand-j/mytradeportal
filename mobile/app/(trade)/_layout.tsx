@@ -14,7 +14,7 @@ export default function TradeLayout() {
         <Stack.Screen name="quotes" />
         <Stack.Screen name="customers" />
         <Stack.Screen name="calendar" />
-        <Stack.Screen name="leads" />
+        <Stack.Screen name="inbox" />
         <Stack.Screen name="lead/[id]" />
         <Stack.Screen name="quote/[id]" />
         <Stack.Screen name="quote-intake" />

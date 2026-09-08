@@ -8,6 +8,7 @@ import { Text } from "../../components/ui/Text";
 import { useAuth } from "../../contexts/AuthContext";
 import { useBusiness } from "../../theme/ThemeProvider";
 import { submitPublicQuoteRequest, PublicQuoteRequestAck } from "../../api/quoteRequests";
+import { stagedPhotosFromMedia, uploadCustomerPhotos } from "../../api/uploads";
 import { fetchCustomerMe } from "../../api/auth";
 import { AccountCreationStep } from "./quote-steps/AccountCreationStep";
 import { BudgetContextStep } from "./quote-steps/BudgetContextStep";
@@ -122,6 +123,12 @@ export function CustomerQuoteRequestFlow({
     try {
       const ack = await submitPublicQuoteRequest(business.slug, formData);
       setSubmittedAck(ack);
+      // Logged-in customers already hold a token (and the request is linked to
+      // their account), so staged photos can go up right away. Guests upload
+      // after account creation in AccountCreationStep instead.
+      if (role === "customer") {
+        void uploadCustomerPhotos(ack.id, stagedPhotosFromMedia(formData.media));
+      }
       // Refresh the customer's history and the trade leads list so the new
       // request appears on both sides immediately.
       queryClient.invalidateQueries({ queryKey: ["my-requests"] });

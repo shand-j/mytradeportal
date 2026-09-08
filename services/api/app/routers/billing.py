@@ -40,11 +40,15 @@ _CHECKOUT_PAGE = """<!doctype html>
   body { font-family: -apple-system, Segoe UI, Roboto, sans-serif; color: #0f172a;
          max-width: 560px; margin: 0 auto; padding: 24px; text-align: center; }
   .muted { color: #64748b; font-size: 14px; }
+  .return-btn { display: none; margin: 24px auto 0; padding: 14px 28px;
+    background: #2563EB; color: #fff; border-radius: 10px; text-decoration: none;
+    font-weight: 600; font-size: 16px; }
 </style>
 </head>
 <body>
 <h1 id="status">Loading secure checkout…</h1>
 <p class="muted" id="hint">Secure payment processed by Paddle.</p>
+<a class="return-btn" id="return-btn" href="mtp://">Return to the app</a>
 <script>
   var PADDLE_TOKEN = "__PADDLE_CLIENT_TOKEN__";
   var PADDLE_ENV = "__PADDLE_ENV__";
@@ -64,7 +68,11 @@ _CHECKOUT_PAGE = """<!doctype html>
         if (event.name === "checkout.completed") {
           document.getElementById("status").textContent = "You're all set!";
           document.getElementById("hint").textContent =
-            "Your plan is active. You can close this page and return to the app.";
+            "Your plan is active.";
+          // Deep-link back into the app (mtp:// scheme) so the user lands on
+          // the dashboard instead of being stranded in the browser.
+          document.getElementById("return-btn").style.display = "inline-block";
+          window.location.href = "mtp://";
         } else if (event.name === "checkout.error") {
           fail("Checkout couldn't load. Please try again.");
         }

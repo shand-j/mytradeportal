@@ -25,6 +25,7 @@ from app.routers import (
     auth,
     billing,
     businesses,
+    calendar,
     communications,
     contacts,
     customer_portal,
@@ -150,6 +151,7 @@ app.include_router(address_lookup.router)
 app.include_router(quotes.router)
 app.include_router(jobs.router)
 app.include_router(appointments.router)
+app.include_router(calendar.router)
 app.include_router(invoices.router)
 app.include_router(payments.router)
 app.include_router(billing.router)

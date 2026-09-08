@@ -110,7 +110,7 @@ export function QuotesScreen(_props: QuotesScreenProps) {
   return (
     <Screen>
       <Header
-        title="Quotes / Leads"
+        title="Leads"
         rightAction={
           <View className="flex-row items-center gap-1">
             {!isLoading && (
@@ -175,22 +175,11 @@ export function QuotesScreen(_props: QuotesScreenProps) {
           </View>
         )}
 
-        <View className="flex-row gap-3">
-          <View className="flex-1">
-            <Button
-              title="+ New lead"
-              variant="outline"
-              onPress={() => router.push("/(trade)/manual-lead")}
-            />
-          </View>
-          <View className="flex-1">
-            <Button
-              testID="quotes-new-quote"
-              title="+ New quote"
-              onPress={() => router.push("/(trade)/quote-intake")}
-            />
-          </View>
-        </View>
+        <Button
+          testID="quotes-new-quote"
+          title="+ New quote"
+          onPress={() => router.push("/(trade)/quote-intake")}
+        />
       </ScrollView>
     </Screen>
   );

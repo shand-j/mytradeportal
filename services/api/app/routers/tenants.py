@@ -1,6 +1,6 @@
 """Tenant management endpoints."""
 
-from typing import Annotated
+from typing import Annotated, Any
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Header, HTTPException, status
@@ -89,6 +89,16 @@ async def create_tenant(
 
     tenant_code = await generate_unique_tenant_code(db)
     tenant = Tenant(slug=data.slug, code=tenant_code, name=data.name)
+    tenant_settings: dict[str, Any] = {}
+    for key, value in (
+        ("phone", data.phone),
+        ("address", data.address),
+        ("postcode", data.postcode),
+    ):
+        if value:
+            tenant_settings[key] = value
+    if tenant_settings:
+        tenant.settings = tenant_settings
     db.add(tenant)
     await db.flush()
 
@@ -166,6 +176,7 @@ async def update_current_tenant(
         "phone",
         "website",
         "address",
+        "postcode",
         "logo_url",
         "primary_color",
         "secondary_color",
