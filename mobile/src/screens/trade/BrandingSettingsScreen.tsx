@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { ScrollView, View } from "react-native";
+import { Pressable, ScrollView, View } from "react-native";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button } from "../../components/ui/Button";
 import { FormField } from "../../components/ui/FormField";
@@ -14,6 +14,31 @@ export type BrandingSettingsScreenProps = {
   onClose: () => void;
 };
 
+const BRAND_COLOURS = [
+  "#2563EB", // blue
+  "#0EA5E9", // sky
+  "#059669", // emerald
+  "#D97706", // amber
+  "#DC2626", // red
+  "#111827", // slate
+];
+
+const HEX_RE = /^#?([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/;
+
+/** Normalise #RGB/#RRGGBB (any case, # optional) to uppercase #RRGGBB, or null. */
+function normaliseHex(raw: string): string | null {
+  const match = raw.trim().match(HEX_RE);
+  if (!match) return null;
+  let digits = match[1];
+  if (digits.length === 3) {
+    digits = digits
+      .split("")
+      .map((c) => c + c)
+      .join("");
+  }
+  return `#${digits.toUpperCase()}`;
+}
+
 export function BrandingSettingsScreen({ onClose }: BrandingSettingsScreenProps) {
   const { business, setBusiness } = useBusiness();
   const queryClient = useQueryClient();
@@ -26,13 +51,37 @@ export function BrandingSettingsScreen({ onClose }: BrandingSettingsScreenProps)
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
   const [address, setAddress] = useState("");
+  const [primaryColor, setPrimaryColor] = useState("");
+  const [hexInput, setHexInput] = useState("");
+  const [hexError, setHexError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  const pickPreset = (colour: string) => {
+    setPrimaryColor(colour);
+    setHexInput(colour.toUpperCase());
+    setHexError(null);
+  };
+
+  const onHexChange = (raw: string) => {
+    setHexInput(raw);
+    const hex = normaliseHex(raw);
+    if (hex) {
+      setPrimaryColor(hex);
+      setHexError(null);
+    } else if (raw.trim().length > 0) {
+      setHexError("Enter a valid hex colour, e.g. #2563EB");
+    } else {
+      setHexError(null);
+    }
+  };
 
   useEffect(() => {
     if (!tenant) return;
     setName((prev) => prev || tenant.name || "");
     setPhone((prev) => prev || tenant.contactPhone || "");
     setAddress((prev) => prev || tenant.address || "");
+    setPrimaryColor((prev) => prev || tenant.primaryColor || "");
+    setHexInput((prev) => prev || (tenant.primaryColor ?? "").toUpperCase());
   }, [tenant]);
 
   const saveMutation = useMutation({
@@ -55,10 +104,12 @@ export function BrandingSettingsScreen({ onClose }: BrandingSettingsScreenProps)
 
   const save = () => {
     setError(null);
+    if (hexError) return;
     saveMutation.mutate({
       name: name.trim() || undefined,
       phone: phone.trim() || undefined,
       address: address.trim() || undefined,
+      primaryColor: primaryColor || undefined,
     });
   };
 
@@ -70,6 +121,7 @@ export function BrandingSettingsScreen({ onClose }: BrandingSettingsScreenProps)
         className="flex-1"
         style={{ minHeight: 0 }}
         contentContainerClassName="gap-4 pb-6"
+        keyboardShouldPersistTaps="handled"
       >
         <View className="rounded-2xl bg-slate-100 p-4 gap-3">
           <FormField label="Business name" value={name} onChangeText={setName} placeholder="Business name" />
@@ -88,9 +140,38 @@ export function BrandingSettingsScreen({ onClose }: BrandingSettingsScreenProps)
             Primary colour
           </Text>
           <Text variant="caption" color="secondary">
-            White-label colour preview:
+            White-label colour across your customer app, quotes, and emails.
           </Text>
-          <View className="h-12 rounded-xl" style={{ backgroundColor: tenant?.primaryColor ?? "#2563EB" }} />
+          <View className="flex-row flex-wrap gap-3">
+            {BRAND_COLOURS.map((colour) => (
+              <Pressable
+                key={colour}
+                onPress={() => pickPreset(colour)}
+                accessibilityLabel={`Brand colour ${colour}`}
+              >
+                <View
+                  className={`h-10 w-10 rounded-full ${primaryColor === colour ? "border-2 border-slate-900" : ""}`}
+                  style={{ backgroundColor: colour }}
+                />
+              </Pressable>
+            ))}
+          </View>
+          <View className="flex-row items-center gap-3">
+            <View
+              className="h-10 w-10 rounded-full border border-slate-300"
+              style={{ backgroundColor: primaryColor || tenant?.primaryColor || "#2563EB" }}
+            />
+            <View className="flex-1">
+              <FormField
+                label="Custom hex colour"
+                value={hexInput}
+                onChangeText={onHexChange}
+                placeholder="#2563EB"
+                autoCapitalize="characters"
+                error={hexError}
+              />
+            </View>
+          </View>
         </View>
 
         {error && (

@@ -93,6 +93,7 @@ export type UpdateTenantInput = {
   name?: string;
   phone?: string;
   address?: string;
+  primaryColor?: string;
 };
 
 /** Persist branding/business details for the authenticated user's tenant. */
