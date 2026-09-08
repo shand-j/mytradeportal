@@ -138,11 +138,13 @@ export function OnboardingStepperScreen() {
         setRegistered(true);
       } catch (err) {
         const message =
-          err instanceof ApiError
-            ? err.detail
-            : err instanceof Error
-              ? err.message
-              : "We couldn't create your business account. Please try again.";
+          err instanceof ApiError && err.status === 409
+            ? `${err.detail} Log in from the home screen instead — onboarding will resume where you left off.`
+            : err instanceof ApiError
+              ? err.detail
+              : err instanceof Error
+                ? err.message
+                : "We couldn't create your business account. Please try again.";
         setError(message);
         return;
       }

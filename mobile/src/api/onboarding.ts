@@ -95,8 +95,14 @@ export async function registerBusiness(input: RegisterBusinessInput): Promise<Ap
       await createTenant(slug, input);
       break;
     } catch (err) {
-      // Retry only on slug collision; surface everything else.
-      if (err instanceof ApiError && err.status === 409 && attempt < 2) {
+      // Retry only on slug collision; an email conflict means the account
+      // already exists and the user should log in, not mint another tenant.
+      if (
+        err instanceof ApiError &&
+        err.status === 409 &&
+        err.detail.toLowerCase().includes("slug") &&
+        attempt < 2
+      ) {
         slug = `${slugify(input.tradingName)}-${randomSuffix()}`;
         continue;
       }

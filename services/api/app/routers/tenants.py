@@ -12,7 +12,7 @@ from app.audit import Actions, write_audit_log
 from app.database import get_db
 from app.dependencies import ActiveUserDep, TenantDep
 from app.models import Tenant, User
-from app.rls import set_tenant_in_session
+from app.rls import bypass_rls_for_transaction, set_tenant_in_session
 from app.schemas import TenantBootstrapRead, TenantCreate, TenantRead, TenantUpdate, UserRead
 from app.security import get_password_hash
 from app.supabase import admin_create_user, is_supabase_configured
@@ -74,6 +74,19 @@ async def create_tenant(
             status_code=status.HTTP_409_CONFLICT,
             detail="Tenant slug already exists",
         )
+
+    # One account per staff email: onboarding retries used to mint a fresh
+    # tenant per attempt (random slug), stacking duplicate businesses for the
+    # same person. The app guides the user to log in + resume instead.
+    if data.admin_email:
+        await bypass_rls_for_transaction(db)
+        existing_user = await db.scalar(select(User).where(User.email == data.admin_email))
+        if existing_user is not None:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="An account with this email already exists",
+            )
+
     tenant_code = await generate_unique_tenant_code(db)
     tenant = Tenant(slug=data.slug, code=tenant_code, name=data.name)
     db.add(tenant)

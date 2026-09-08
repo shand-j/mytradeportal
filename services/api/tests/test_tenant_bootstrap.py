@@ -94,6 +94,22 @@ async def test_bootstrap_rejects_short_admin_password(client: AsyncClient) -> No
     assert response.status_code == 422
 
 
+async def test_bootstrap_rejects_duplicate_admin_email(client: AsyncClient) -> None:
+    """One account per staff email: a second tenant for the same admin email
+    409s instead of stacking a duplicate business (onboarding retries)."""
+    email = f"dup-{uuid4().hex[:8]}@example.com"
+    first = _bootstrap_payload(f"dup-a-{uuid4().hex[:6]}")
+    first["admin_email"] = email
+    second = _bootstrap_payload(f"dup-b-{uuid4().hex[:6]}")
+    second["admin_email"] = email
+
+    response_a = await client.post("/tenants", json=first)
+    assert response_a.status_code == 201, response_a.text
+    response_b = await client.post("/tenants", json=second)
+    assert response_b.status_code == 409
+    assert "email" in response_b.json()["detail"].lower()
+
+
 async def test_bootstrap_rejects_invalid_admin_email(client: AsyncClient) -> None:
     slug = f"email-{uuid4().hex[:8]}"
     payload = _bootstrap_payload(slug)
