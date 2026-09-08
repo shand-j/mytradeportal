@@ -1,9 +1,10 @@
-"""Create a Django superuser on first production deploy if one is configured.
+"""Create or sync the Django superuser on production deploys.
 
 The admin service uses this as part of its preDeployCommand. It is safe to run
-on every deploy: it only creates the superuser when the env vars are set and
-no matching user exists yet. If the password var is not configured, it exits
-quietly so the container can still boot.
+on every deploy: it creates the superuser when none exists, and when one does
+exist it re-syncs the password to DJANGO_SUPERUSER_PASSWORD (so rotating the
+variable actually takes effect on the next deploy). If the password var is not
+configured, it exits quietly so the container can still boot.
 """
 
 import os
@@ -36,7 +37,16 @@ if not username or not email:
     sys.exit(1)
 
 if User.objects.filter(username=username).exists():
-    print(f"[ensure_superuser] Superuser already exists: {username}")
+    user = User.objects.get(username=username)
+    if user.check_password(password):
+        print(f"[ensure_superuser] Superuser already up to date: {username}")
+    else:
+        user.set_password(password)
+        user.is_staff = True
+        user.is_superuser = True
+        user.is_active = True
+        user.save()
+        print(f"[ensure_superuser] Synced password for existing superuser: {username}")
 else:
     User.objects.create_superuser(username=username, email=email, password=password)
     print(f"[ensure_superuser] Created superuser: {username}")
