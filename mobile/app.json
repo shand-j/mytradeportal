@@ -10,8 +10,10 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.mytradeportal.mobile",
-      "buildNumber": "1",
-      "newArchEnabled": false
+      "newArchEnabled": false,
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false
+      }
     },
     "android": {
       "package": "com.mytradeportal.mobile",
