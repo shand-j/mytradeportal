@@ -4,6 +4,7 @@ import { Button } from "../../../components/ui/Button";
 import { Icon } from "../../../components/ui/Icon";
 import { Text } from "../../../components/ui/Text";
 import { createBillingCheckout, type PlanKey } from "../../../api/billing";
+import { config } from "../../../lib/config";
 import { NetworkError } from "../../../lib/apiClient";
 
 type Plan = {
@@ -67,11 +68,14 @@ export function PlanPaymentStep({ data, onNext }: PlanPaymentStepProps) {
     setLoading(true);
     void (async () => {
       try {
-        const { checkoutUrl } = await createBillingCheckout(plan.key);
+        // Paddle Billing has no fully hosted checkout: the transaction's
+        // checkout.url is <our page>?_ptxn=<txn>, and that page must run
+        // Paddle.js. The API serves one at /billing/checkout-page.
+        const checkoutPageUrl = `${config.apiBaseUrl}/billing/checkout-page`;
+        const { checkoutUrl } = await createBillingCheckout(plan.key, checkoutPageUrl);
         onNext({ plan: plan.key, checkoutStarted: true });
-        // Kick the user out to the Paddle-hosted checkout. The tenant returns
-        // via the app scheme when Paddle redirects to success_url — beta uses
-        // Paddle's default post-purchase screen.
+        // Kick the user out to the checkout page; Paddle.js renders the
+        // overlay there and shows a return-to-app message on completion.
         const opened = await Linking.canOpenURL(checkoutUrl);
         if (opened) {
           await Linking.openURL(checkoutUrl);

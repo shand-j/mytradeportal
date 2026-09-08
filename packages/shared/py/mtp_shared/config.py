@@ -50,6 +50,9 @@ class Settings(BaseSettings):
     # Payments (Paddle merchant of record)
     paddle_api_key: str = Field(default="")
     paddle_webhook_secret: str = Field(default="")
+    # Client-side token (test_.../live_...) used by Paddle.js on the hosted
+    # checkout page the mobile app opens. Public by design.
+    paddle_client_token: str = Field(default="")
     paddle_sandbox: bool = Field(default=True)
     paddle_default_currency_code: str = Field(default="GBP")
     # Paddle Billing price IDs for the three MTP plans (created in the Paddle

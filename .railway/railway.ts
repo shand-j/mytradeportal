@@ -183,6 +183,9 @@ export default defineRailway(() => {
       // Payments are wired in code but out of alpha scope; set when enabling.
       PADDLE_API_KEY: preserve(),
       PADDLE_WEBHOOK_SECRET: preserve(),
+      // Client-side token (test_.../live_...) for the hosted Paddle.js
+      // checkout page served at /billing/checkout-page. Public by design.
+      PADDLE_CLIENT_TOKEN: preserve(),
       PADDLE_SANDBOX: "true",
       // Paddle Billing catalog IDs. Created via the paddle-sandbox MCP; wire
       // once, keep in the dashboard, IaC picks them up via preserve().
