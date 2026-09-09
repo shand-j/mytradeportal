@@ -105,12 +105,16 @@ Respond with valid JSON in exactly this shape:
 {
   "line_items": [
     {"description": "Consumer unit replacement (labour)", "kind": "labour", \
-"quantity": 1, "unit": "job", "unit_price": 320.00, "catalogue_ref": null, \
+"quantity": 4, "unit": "hour", "unit_price": 80.00, "catalogue_ref": null, \
 "reason": "brief justification"}
   ],
   "assumptions": ["Any assumptions you made"],
   "notes": "Any warnings or clarifications for the electrician"
 }
+
+Units must be real billing units: "hour" or "day" for labour, "ea" for \
+individual items, "m" for cable/containment by length, "job" only for a \
+genuine fixed-price whole-job line. Never default every line to "job".
 """
 
 

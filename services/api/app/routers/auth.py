@@ -150,7 +150,13 @@ async def _authenticate(request: Request, data: UserLogin, db: DbDep) -> tuple[T
         authenticated = verify_password(data.password, user.password_hash)
         if authenticated and supabase_enabled and not user.supabase_uid:
             try:
-                sb_user = admin_create_user(user.email, data.password)
+                sb_user = admin_create_user(
+                    user.email,
+                    data.password,
+                    full_name=user.full_name,
+                    role=user.role,
+                    tenant_id=str(user.tenant_id),
+                )
                 user.supabase_uid = sb_user.get("id")
                 await db.commit()
                 logger.info("supabase_user_migrated", user_id=str(user.id))

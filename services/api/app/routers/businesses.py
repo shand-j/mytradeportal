@@ -157,6 +157,7 @@ async def submit_public_quote_request(
             name=data.contact.name,
             email=str(data.contact.email) if data.contact.email else None,
             phone=data.contact.phone,
+            address=data.contact.address,
             postcode=data.contact.postcode,
         )
         db.add(contact)
@@ -165,6 +166,8 @@ async def submit_public_quote_request(
         # Reused contact: refresh details the homeowner just re-entered.
         if data.contact.phone:
             contact.phone = data.contact.phone
+        if data.contact.address:
+            contact.address = data.contact.address
         if data.contact.postcode:
             contact.postcode = data.contact.postcode
         if data.contact.name:
@@ -177,6 +180,8 @@ async def submit_public_quote_request(
             customer.postcode = data.contact.postcode
         if data.contact.phone:
             customer.phone = data.contact.phone
+        if data.contact.address:
+            customer.address = data.contact.address
         prop = (data.structured_data or {}).get("property")
         if isinstance(prop, dict) and prop:
             customer.property_profile = prop

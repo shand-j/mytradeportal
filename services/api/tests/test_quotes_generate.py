@@ -9,11 +9,12 @@ from uuid import UUID, uuid4
 
 import pytest
 from app.config import settings
-from app.models import Contact, Customer, Notification, Quote, QuoteLineItem, QuoteRequest
+from app.models import Contact, Customer, Notification, Quote, QuoteLineItem, QuoteRequest, Tenant
 from app.rls import set_tenant_in_session
 from httpx import AsyncClient
 from mtp_shared import BoQGenerateResponse, BoQLineItem
 from sqlalchemy import select
+from sqlalchemy import update as sa_update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 
@@ -21,6 +22,14 @@ async def _create_tenant(client: AsyncClient, slug: str) -> dict[str, Any]:
     response = await client.post("/tenants", json={"slug": slug, "name": f"{slug} Ltd"})
     assert response.status_code == 201
     return response.json()  # type: ignore[no-any-return]
+
+
+async def _mark_vat_registered(db: AsyncSession, tenant_id: str) -> None:
+    """Fixture tenants are VAT-registered businesses (quotes carry 20% VAT)."""
+    await db.execute(
+        sa_update(Tenant).where(Tenant.id == UUID(tenant_id)).values(vat_registered=True)
+    )
+    await db.commit()
 
 
 async def _create_contact(client: AsyncClient, tenant_id: str, name: str) -> dict[str, Any]:
@@ -34,8 +43,61 @@ async def _create_contact(client: AsyncClient, tenant_id: str, name: str) -> dic
 
 
 @pytest.mark.asyncio
-async def test_generate_quote_creates_draft_quote(client: AsyncClient) -> None:
+async def test_generate_quote_applies_zero_vat_for_unregistered_tenant(
+    client: AsyncClient, db: AsyncSession
+) -> None:
+    """Onboarding VAT answer drives quote VAT: not registered → 0% (total ==
+    subtotal), not the hardcoded 20% default."""
+    tenant = await _create_tenant(client, f"novat-{uuid4().hex[:8]}")
+    contact = await _create_contact(client, tenant["id"], "No VAT Customer")
+
+    retrieved = [
+        {
+            "code": "ELEC-SOCKET-ADD",
+            "description": "Install one additional double socket",
+            "unit": "each",
+            "unit_price": "85.00",
+            "category": "Sockets",
+        }
+    ]
+    generated = {
+        "line_items": [{"code": "ELEC-SOCKET-ADD", "quantity": 2, "reason": "two sockets"}],
+        "notes": "",
+    }
+
+    with (
+        patch(
+            "app.routers.quotes.search_cost_items_with_status",
+            new=AsyncMock(return_value=(retrieved, "grounded")),
+        ),
+        patch(
+            "app.routers.quotes.generate_quote_from_prompt", new=AsyncMock(return_value=generated)
+        ),
+    ):
+        response = await client.post(
+            "/quotes/generate",
+            headers={"X-Tenant-ID": tenant["id"]},
+            json={
+                "description": "Add two sockets",
+                "customer_id": None,
+                "contact_id": contact["id"],
+                "customer_name": None,
+                "customer_email": None,
+                "customer_phone": None,
+            },
+        )
+
+    assert response.status_code == 201, response.text
+    body = response.json()
+    assert Decimal(body["subtotal"]) == Decimal("170.00")
+    assert Decimal(body["vat_amount"]) == Decimal("0.00")
+    assert Decimal(body["total"]) == Decimal("170.00")
+
+
+@pytest.mark.asyncio
+async def test_generate_quote_creates_draft_quote(client: AsyncClient, db: AsyncSession) -> None:
     tenant = await _create_tenant(client, f"sparky-{uuid4().hex[:8]}")
+    await _mark_vat_registered(db, tenant["id"])
     contact = await _create_contact(client, tenant["id"], "AI Customer")
 
     retrieved = [
@@ -163,8 +225,11 @@ async def test_generate_quote_from_lead_links_back(client: AsyncClient) -> None:
 
 
 @pytest.mark.asyncio
-async def test_generate_quote_creates_contact_when_not_provided(client: AsyncClient) -> None:
+async def test_generate_quote_creates_contact_when_not_provided(
+    client: AsyncClient, db: AsyncSession
+) -> None:
     tenant = await _create_tenant(client, f"sparky-{uuid4().hex[:8]}")
+    await _mark_vat_registered(db, tenant["id"])
 
     retrieved = [
         {
@@ -237,6 +302,7 @@ async def test_refine_quote_replaces_ai_lines_and_keeps_manual_lines(
     """Refining a quote regenerates only the AI-drafted line items; lines the
     electrician owns (ai_generated=False) are preserved."""
     tenant = await _create_tenant(client, f"sparky-{uuid4().hex[:8]}")
+    await _mark_vat_registered(db, tenant["id"])
     contact = await _create_contact(client, tenant["id"], "Refine Customer")
 
     generated_v1 = {
@@ -349,8 +415,9 @@ async def test_refine_quote_replaces_ai_lines_and_keeps_manual_lines(
 
 
 @pytest.mark.asyncio
-async def test_refine_quote_validates_instructions(client: AsyncClient) -> None:
+async def test_refine_quote_validates_instructions(client: AsyncClient, db: AsyncSession) -> None:
     tenant = await _create_tenant(client, f"sparky-{uuid4().hex[:8]}")
+    await _mark_vat_registered(db, tenant["id"])
     contact = await _create_contact(client, tenant["id"], "Refine Customer")
     created = await client.post(
         "/quotes",

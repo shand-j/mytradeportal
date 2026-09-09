@@ -184,6 +184,7 @@ class QuoteLineItemCreate(BaseModel):
     description: str
     quantity: Decimal = Decimal("1.00")
     unit_price: Decimal = Decimal("0.00")
+    unit: str = "ea"
     # Clients must round-trip this flag when editing line items, otherwise an
     # edit silently strips the AI lineage and refine/analytics misbehave.
     ai_generated: bool = False
@@ -196,6 +197,7 @@ class QuoteLineItemRead(BaseModel):
     description: str
     quantity: Decimal
     unit_price: Decimal
+    unit: str = "ea"
     total: Decimal
     ai_generated: bool = False
 
@@ -1065,6 +1067,7 @@ class PublicContactInput(BaseModel):
     name: str = Field(..., min_length=1, max_length=255)
     email: EmailStr | None = None
     phone: str | None = Field(default=None, max_length=50)
+    address: str | None = Field(default=None, max_length=2000)
     postcode: str | None = Field(default=None, max_length=20)
 
 
@@ -1143,7 +1146,9 @@ class CustomerRegister(BaseModel):
 
 
 class CustomerLogin(BaseModel):
-    slug: str = Field(..., min_length=2, max_length=63)
+    # Optional: when omitted, the account is located by email across tenants
+    # (mobile is tenant-agnostic at login; tenants were a web-subdomain hangover).
+    slug: str | None = Field(default=None, min_length=2, max_length=63)
     email: EmailStr
     password: str = Field(..., min_length=1, max_length=128)
 

@@ -1,6 +1,7 @@
 import { ReactNode, useState } from "react";
 import { Alert, Linking, ScrollView, View } from "react-native";
 import { useQuery } from "@tanstack/react-query";
+import { useRouter } from "expo-router";
 import { Button } from "../../components/ui/Button";
 import { Header } from "../../components/ui/Header";
 import { Screen } from "../../components/ui/Screen";
@@ -87,7 +88,6 @@ export type LeadDetailScreenProps = {
   lead: Lead;
   onBack: () => void;
   onGenerateQuote: (lead: Lead) => void;
-  onRequestSiteVisit: (lead: Lead) => void;
   onOpenChat?: (lead: Lead) => void;
   onMarkDead?: (lead: Lead) => void;
 };
@@ -96,10 +96,10 @@ export function LeadDetailScreen({
   lead,
   onBack,
   onGenerateQuote,
-  onRequestSiteVisit,
   onOpenChat,
   onMarkDead,
 }: LeadDetailScreenProps) {
+  const router = useRouter();
   const [dead, setDead] = useState(false);
   const { business } = useBusiness();
 
@@ -287,7 +287,10 @@ export function LeadDetailScreen({
             testID="lead-request-info"
             title="Request more info"
             variant="outline"
-            onPress={() => onRequestSiteVisit(lead)}
+            onPress={() =>
+              // The lead id is the quote request id, so it opens the customer thread.
+              router.push({ pathname: "/(trade)/messages", params: { quoteRequestId: lead.id } })
+            }
           />
           <Button title="Mark as dead" variant="outline" onPress={handleMarkDead} />
         </View>

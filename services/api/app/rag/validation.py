@@ -279,6 +279,9 @@ def validate_generated_quote(
                 "description": description,
                 "quantity": quantity,
                 "unit_price": unit_price,
+                # Kept on the line so QuoteLineItem.unit is real, not the
+                # client's old "job" default.
+                "unit": unit or ("hour" if kind == "labour" else "ea"),
                 "kind": kind,
                 "code": code if code in retrieved_by_code else None,
                 "reason": raw.get("reason", ""),
@@ -293,6 +296,7 @@ def validate_generated_quote(
                 "description": "Minimum charge adjustment",
                 "quantity": Decimal("1"),
                 "unit_price": difference,
+                "unit": "ea",
                 "kind": None,
                 "code": None,
                 "reason": f"Raised to the tenant minimum charge of {minimum_charge}",
@@ -358,6 +362,7 @@ def build_quote_from_validation(
                 description=line["description"],
                 quantity=line["quantity"],
                 unit_price=line["unit_price"],
+                unit=line.get("unit") or "ea",
                 ai_generated=True,
             )
         )

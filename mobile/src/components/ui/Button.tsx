@@ -44,6 +44,7 @@ export function Button({
     <Pressable
       testID={testID}
       disabled={disabled}
+      hitSlop={8}
       style={[styles.base, containerStyle]}
       {...props}
     >
@@ -58,6 +59,7 @@ export function Button({
 
 const styles = StyleSheet.create({
   base: {
+    alignSelf: "stretch",
     alignItems: "center",
     justifyContent: "center",
   },

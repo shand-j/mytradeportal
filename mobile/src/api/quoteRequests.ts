@@ -88,6 +88,7 @@ export async function submitPublicQuoteRequest(
         name: form.contact.name,
         email: form.contact.email || null,
         phone: form.contact.mobile || null,
+        address: form.contact.address || null,
         postcode: form.postcode || null,
       },
       category: form.category,

@@ -3,10 +3,29 @@
 from datetime import datetime
 from decimal import Decimal
 
-from app.models import Invoice, InvoiceLineItem, Quote
+from app.models import Invoice, InvoiceLineItem, Quote, Tenant
 
 LINE_PRECISION = Decimal("0.0001")
 TOTAL_PRECISION = Decimal("0.01")
+DEFAULT_VAT_RATE = Decimal("0.20")
+
+
+def tenant_vat_rate(tenant: Tenant) -> Decimal:
+    """The VAT rate to apply to new quotes/invoices for this tenant.
+
+    Non-VAT-registered businesses charge 0% — the onboarding Tax step captures
+    ``vat_registered`` and this is where it takes effect. Registered businesses
+    use their configured rate (settings.vat_rate) or the UK standard 20%.
+    """
+    if not tenant.vat_registered:
+        return Decimal("0")
+    raw = (tenant.settings or {}).get("vat_rate")
+    if raw is None:
+        return DEFAULT_VAT_RATE
+    try:
+        return Decimal(str(raw))
+    except ArithmeticError:
+        return DEFAULT_VAT_RATE
 
 
 def calculate_quote_totals(quote: Quote) -> None:

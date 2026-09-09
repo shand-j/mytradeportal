@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { ScrollView, TextInput, View } from "react-native";
+import { KeyboardAvoidingView, Platform, ScrollView, TextInput, View } from "react-native";
 import { Button } from "../../components/ui/Button";
 import { Header } from "../../components/ui/Header";
 import { PhotoAsset, PhotoPicker } from "../../components/ui/PhotoPicker";
@@ -256,7 +256,15 @@ export function QuoteIntakeScreen({ lead, contact, onBack, onComplete }: QuoteIn
     <Screen>
       <Header testID="intake-back" title="Quote intake" onBack={onBack} />
 
-      <ScrollView className="flex-1" contentContainerClassName="gap-3 pb-4">
+      <KeyboardAvoidingView
+        style={{ flex: 1 }}
+        behavior={Platform.OS === "ios" ? "padding" : undefined}
+      >
+        <ScrollView
+          className="flex-1"
+          contentContainerClassName="gap-3 pb-4"
+          keyboardShouldPersistTaps="handled"
+        >
         {lead ? (
           <View className="rounded-2xl bg-slate-100 p-4 gap-2">
             <Text variant="body" weight="semibold">
@@ -382,16 +390,17 @@ export function QuoteIntakeScreen({ lead, contact, onBack, onComplete }: QuoteIn
             </Text>
           </View>
         )}
-      </ScrollView>
+        </ScrollView>
 
-      <View className="border-t border-slate-200 bg-white pt-4 pb-2 gap-3">
-        <Button
-          testID="intake-generate-quote"
-          title={submitting ? "Starting…" : "Generate AI quote"}
-          onPress={handleComplete}
-          disabled={!canComplete || submitting}
-        />
-      </View>
+        <View className="border-t border-slate-200 bg-white pt-4 pb-2 gap-3">
+          <Button
+            testID="intake-generate-quote"
+            title={submitting ? "Starting…" : "Generate AI quote"}
+            onPress={handleComplete}
+            disabled={!canComplete || submitting}
+          />
+        </View>
+      </KeyboardAvoidingView>
     </Screen>
   );
 }

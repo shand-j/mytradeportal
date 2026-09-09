@@ -6,6 +6,10 @@ import * as SecureStore from "expo-secure-store";
  *
  * The system prompts (notifications + location) are shown at most once per
  * install — a flag is persisted in the iOS Keychain (localStorage on web).
+ * Push-token registration is NOT gated by that flag: it runs on every call
+ * once notification permission is granted, so a token that failed to register
+ * on a previous launch (e.g. backend unreachable) is retried. The backend
+ * upserts, so re-registering is idempotent.
  * Everything here is best-effort: the simulator has no push capability and
  * denied permissions are fine, so failures are logged and swallowed.
  */
@@ -52,8 +56,8 @@ export async function setupNotificationHandler(): Promise<void> {
       handleNotification: async () => ({
         shouldShowBanner: true,
         shouldShowList: true,
-        shouldPlaySound: false,
-        shouldSetBadge: false,
+        shouldPlaySound: true,
+        shouldSetBadge: true,
       }),
     });
   } catch (err) {
@@ -70,33 +74,40 @@ async function postPushToken(role: "trade" | "customer", token: string): Promise
 
 /**
  * On first launch after login, request notification + location permissions
- * (once per install) and register the Expo push token with the backend.
- * Safe to call on every screen mount — it no-ops after the first run.
+ * (once per install). On every call — including later launches — register the
+ * Expo push token with the backend whenever notification permission is
+ * granted, so a registration that previously failed is retried.
+ * Safe to call on every screen mount.
  */
 export async function requestFirstLaunchPermissions(role: "trade" | "customer"): Promise<void> {
   if (isWeb) return;
   try {
     const prompted = await getFlag(PROMPTED_KEY);
-    if (prompted) return;
 
     const [Notifications, Location] = await Promise.all([
       import("expo-notifications"),
       import("expo-location"),
     ]);
 
-    await Notifications.requestPermissionsAsync().catch((err) => {
-      console.log("Notification permission request failed:", err);
-    });
-    await Location.requestForegroundPermissionsAsync().catch((err) => {
-      console.log("Location permission request failed:", err);
-    });
+    if (!prompted) {
+      await Notifications.requestPermissionsAsync().catch((err) => {
+        console.log("Notification permission request failed:", err);
+      });
+      await Location.requestForegroundPermissionsAsync().catch((err) => {
+        console.log("Location permission request failed:", err);
+      });
 
-    await setFlag(PROMPTED_KEY, "1");
+      await setFlag(PROMPTED_KEY, "1");
+    }
 
-    // Register the push token; simulators can't produce one — log and move on.
+    // Register the push token on every launch while permission is granted;
+    // simulators can't produce one — log and move on.
     try {
-      const token = await Notifications.getExpoPushTokenAsync();
-      await postPushToken(role, token.data);
+      const permissions = await Notifications.getPermissionsAsync();
+      if (permissions.granted) {
+        const token = await Notifications.getExpoPushTokenAsync();
+        await postPushToken(role, token.data);
+      }
     } catch (err) {
       console.log("Push token registration failed (expected on simulator):", err);
     }

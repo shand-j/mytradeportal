@@ -22,10 +22,11 @@ from unittest.mock import AsyncMock, patch
 from uuid import UUID, uuid4
 
 import pytest
-from app.models import Communication, Contact, Quote, QuoteLineItem, QuoteRequest
+from app.models import Communication, Contact, Quote, QuoteLineItem, QuoteRequest, Tenant
 from app.rls import set_tenant_in_session
 from httpx import AsyncClient
 from sqlalchemy import select
+from sqlalchemy import update as sa_update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 
@@ -83,6 +84,11 @@ async def test_public_submission_auto_drafts_quote(client: AsyncClient, db: Asyn
     """A public submission returns 201 immediately and a linked AI draft quote
     appears in the background, identical in shape to /quotes/generate output."""
     tenant = await _create_tenant(client, f"auto-{uuid4().hex[:8]}")
+    # Fixture tenant is a VAT-registered business (quote totals carry 20% VAT).
+    await db.execute(
+        sa_update(Tenant).where(Tenant.id == UUID(tenant["id"])).values(vat_registered=True)
+    )
+    await db.commit()
     generated = {"line_items": [{"code": "ELEC-CU-UPGRADE", "quantity": 1}], "notes": ""}
 
     retrieval_patch, generation_patch = _llm_patches(generated)

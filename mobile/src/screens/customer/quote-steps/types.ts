@@ -15,6 +15,7 @@ export type ContactDetails = {
   name: string;
   mobile: string;
   email: string;
+  address: string;
   preferredContact: "in_app_chat" | "phone" | "sms" | "whatsapp" | "email";
   bestTimeToCall: string[];
 };
@@ -70,6 +71,7 @@ export const INITIAL_FORM_DATA: QuoteFormData = {
     name: "",
     mobile: "",
     email: "",
+    address: "",
     preferredContact: "in_app_chat",
     bestTimeToCall: [],
   },

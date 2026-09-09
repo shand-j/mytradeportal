@@ -15,7 +15,6 @@ export default function LeadDetailRoute() {
       lead={realLead}
       onBack={() => router.back()}
       onGenerateQuote={() => router.push(`/(trade)/quote-intake?leadId=${realLead.id}`)}
-      onRequestSiteVisit={() => router.push(`/(trade)/request-info?leadId=${realLead.id}`)}
       onOpenChat={(l) => router.push(`/(trade)/messages?quoteRequestId=${l.id}`)}
       onMarkDead={() => router.back()}
     />

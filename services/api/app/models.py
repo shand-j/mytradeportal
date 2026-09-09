@@ -297,6 +297,9 @@ class QuoteLineItem(Base, TimestampMixin):
     )
     description: Mapped[str] = mapped_column(Text, nullable=False)
     quantity: Mapped[Decimal] = mapped_column(Numeric(10, 2), default=Decimal("1.00"))
+    # Billing unit (ea, hour, day, m, ...). Older rows show the default; the
+    # client previously hardcoded "job".
+    unit: Mapped[str] = mapped_column(String(50), default="ea", nullable=False)
     unit_price: Mapped[Decimal] = mapped_column(Numeric(12, 4), default=Decimal("0.0000"))
     total: Mapped[Decimal] = mapped_column(Numeric(12, 4), default=Decimal("0.0000"))
     ai_generated: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)

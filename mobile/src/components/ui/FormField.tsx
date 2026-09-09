@@ -29,6 +29,7 @@ export function FormField({
   error,
   helper,
   testID,
+  secureTextEntry,
   ...inputProps
 }: FormFieldProps) {
   return (
@@ -45,6 +46,10 @@ export function FormField({
         onChangeText={onChangeText}
         placeholder={placeholder}
         placeholderTextColor="#94A3B8"
+        // Keep iOS strong-password autofill away from secure fields: tapping
+        // into a filled password box would otherwise wipe it on the next key.
+        {...(secureTextEntry ? { textContentType: "none" as const, autoComplete: "off" as const } : {})}
+        secureTextEntry={secureTextEntry}
         {...inputProps}
       />
       {error ? (

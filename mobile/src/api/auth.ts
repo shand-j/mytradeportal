@@ -113,15 +113,20 @@ export async function registerCustomer(
   return data.customer;
 }
 
-/** Authenticate a homeowner and persist the token + tenant id. */
+/**
+ * Authenticate a homeowner and persist the token + tenant id.
+ * The slug is optional: when omitted, the backend locates the account by
+ * email across tenants (newest wins). The tenant is identified from the
+ * returned token/customer either way.
+ */
 export async function loginCustomer(
-  slug: string,
+  slug: string | undefined,
   email: string,
   password: string
 ): Promise<ApiCustomer> {
   const data = await api.post<CustomerTokenResponse>(
     "/customer/login",
-    { slug, email, password },
+    { ...(slug ? { slug } : {}), email, password },
     { auth: false }
   );
   await tokenStorage.save(data.accessToken, data.customer.tenantId);

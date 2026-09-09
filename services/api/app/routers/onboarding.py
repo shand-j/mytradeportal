@@ -125,6 +125,26 @@ async def update_onboarding_step(
         if isinstance(colour, str) and colour:
             tenant.settings = {**(tenant.settings or {}), "primary_color": colour}
 
+    if step_name == "tax":
+        # VAT answers drive quote/invoice VAT rates (calculations.tenant_vat_rate).
+        if "vat_registered" in data.value:
+            tenant.vat_registered = bool(data.value["vat_registered"])
+        if data.value.get("vat_number"):
+            tenant.vat_number = str(data.value["vat_number"])[:12]
+        if data.value.get("vat_scheme"):
+            tenant.vat_scheme = str(data.value["vat_scheme"])[:50]
+
+    if step_name == "compliance":
+        # CPS scheme + membership also land on tenant.settings so they are
+        # visible beyond the onboarding_progress blob (admin, profile, quotes).
+        compliance_settings = {
+            key: data.value[key]
+            for key in ("scheme", "membership", "cps_status")
+            if data.value.get(key)
+        }
+        if compliance_settings:
+            tenant.settings = {**(tenant.settings or {}), **compliance_settings}
+
     required_steps = ["business_identity", "compliance", "services"]
     completed_steps = [s for s in required_steps if progress.get(s, {}).get("completed") is True]
     pending_steps = [s for s in required_steps if s not in completed_steps]

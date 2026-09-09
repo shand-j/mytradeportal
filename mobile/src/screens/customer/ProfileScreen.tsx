@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
-import { Pressable, ScrollView, TextInput, View } from "react-native";
+import { KeyboardAvoidingView, Platform, Pressable, ScrollView, TextInput, View } from "react-native";
+import { useRouter } from "expo-router";
 import { Button } from "../../components/ui/Button";
 import { FormField } from "../../components/ui/FormField";
 import { Header } from "../../components/ui/Header";
@@ -53,6 +54,7 @@ export type ProfileScreenProps = {
 };
 
 export function ProfileScreen({ navigation }: ProfileScreenProps) {
+  const router = useRouter();
   const { user, logout } = useAuth();
   const { business, setBusiness } = useBusiness();
   const { customer, isLoading: customerLoading } = useCustomerMe();
@@ -86,11 +88,27 @@ export function ProfileScreen({ navigation }: ProfileScreenProps) {
     setTimeout(() => setSaved(false), 2000);
   };
 
+  const handleBack = () => {
+    if (router.canGoBack()) {
+      router.back();
+    } else {
+      router.replace("/(customer)/requests");
+    }
+  };
+
   return (
     <Screen>
-      <Header title="Profile" />
+      <Header title="Profile" onBack={handleBack} />
 
-      <ScrollView className="flex-1" contentContainerStyle={{ gap: 16, paddingBottom: 40 }}>
+      <KeyboardAvoidingView
+        style={{ flex: 1 }}
+        behavior={Platform.OS === "ios" ? "padding" : undefined}
+      >
+        <ScrollView
+          className="flex-1"
+          contentContainerStyle={{ gap: 16, paddingBottom: 40 }}
+          keyboardShouldPersistTaps="handled"
+        >
         <Text variant="body" color="secondary">
           Your contact details, properties, and preferences for{" "}
           {business?.name ?? "your electrician"}.
@@ -216,7 +234,8 @@ export function ProfileScreen({ navigation }: ProfileScreenProps) {
             navigation.navigate("Entry");
           }}
         />
-      </ScrollView>
+        </ScrollView>
+      </KeyboardAvoidingView>
     </Screen>
   );
 }

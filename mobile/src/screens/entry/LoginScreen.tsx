@@ -132,7 +132,9 @@ export function LoginScreen({ role, mode = "login", onBack }: LoginScreenProps) 
     password &&
     (!isRegister || (name.trim() && phone.trim() && password.length >= 8));
 
-  const showNoBusinessWarning = !business && role !== "trade";
+  // Login is tenant-agnostic (the account is located by email); only
+  // registration still targets a specific business.
+  const showNoBusinessWarning = !business && role !== "trade" && isRegister;
 
   return (
     <Screen style={styles.container}>

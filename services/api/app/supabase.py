@@ -43,13 +43,24 @@ async def sign_in_with_password(email: str, password: str) -> dict[str, Any] | N
         return cast("dict[str, Any]", response.json())
 
 
-def admin_create_user(email: str, password: str) -> dict[str, Any]:
+def admin_create_user(
+    email: str,
+    password: str,
+    *,
+    full_name: str | None = None,
+    role: str | None = None,
+    tenant_id: str | None = None,
+) -> dict[str, Any]:
     """Create a Supabase Auth user with the service role key.
 
-    Raises RuntimeError if creation fails.
+    Raises RuntimeError if creation fails. Identity metadata (name, role,
+    tenant) rides along so the hosted user record isn't just an email.
     """
     if not is_supabase_configured():
         raise RuntimeError("Supabase is not configured")
+    user_metadata = {
+        k: v for k, v in {"full_name": full_name, "role": role, "tenant_id": tenant_id}.items() if v
+    }
     with httpx.Client() as client:
         response = client.post(
             f"{_auth_url()}/admin/users",
@@ -58,7 +69,12 @@ def admin_create_user(email: str, password: str) -> dict[str, Any]:
                 "Authorization": f"Bearer {settings.supabase_service_role_key}",
                 "Content-Type": "application/json",
             },
-            json={"email": email, "password": password, "email_confirm": True},
+            json={
+                "email": email,
+                "password": password,
+                "email_confirm": True,
+                "user_metadata": user_metadata,
+            },
         )
         if response.status_code not in (200, 201):
             raise RuntimeError(

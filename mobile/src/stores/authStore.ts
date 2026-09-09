@@ -103,10 +103,8 @@ export const useAuthStore = create<AuthState>((set) => ({
           loading: false,
         });
       } else {
-        if (!slug) {
-          set({ loading: false });
-          return false;
-        }
+        // Customer login is tenant-agnostic: the backend locates the account
+        // by email across tenants when no slug is supplied.
         const customer = await loginCustomer(slug, email, password);
         set({
           user: { id: customer.id, email: customer.email, fullName: customer.fullName, role: "owner" },

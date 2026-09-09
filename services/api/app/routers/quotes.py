@@ -17,7 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.audit import Actions, write_audit_log
-from app.calculations import build_invoice_from_quote, calculate_quote_totals
+from app.calculations import build_invoice_from_quote, calculate_quote_totals, tenant_vat_rate
 from app.config import settings
 from app.database import get_db
 from app.dependencies import CurrentUserDep, TenantDep
@@ -28,10 +28,12 @@ from app.models import (
     BillOfQuantities,
     Communication,
     Contact,
+    Event,
     Quote,
     QuoteLineItem,
     QuoteRequest,
     Tenant,
+    User,
 )
 from app.push import notify_customer
 from app.rag import (
@@ -114,7 +116,7 @@ async def create_quote(
         contact_id=data.contact_id,
         title=data.title,
         description=data.description,
-        vat_rate=data.vat_rate,
+        vat_rate=data.vat_rate if data.vat_rate is not None else tenant_vat_rate(tenant),
         valid_until=data.valid_until,
     )
     quote.line_items = [
@@ -156,6 +158,9 @@ async def update_quote(
     quote = await _get_quote(db, tenant.id, quote_id)
     update_data = data.model_dump(exclude_unset=True)
 
+    # Snapshot before mutating so the training event keeps the pre-edit state.
+    lines_before = _line_items_snapshot(quote) if "line_items" in update_data else None
+
     if "line_items" in update_data:
         new_items = update_data.pop("line_items")
         for item in list(quote.line_items):
@@ -168,6 +173,10 @@ async def update_quote(
 
     _refresh_ai_feedback(quote)
     await db.flush()
+    if lines_before is not None:
+        _record_quote_training_event(
+            db, tenant.id, quote, "quote_lines_edited", current_user, lines_before
+        )
     await write_audit_log(
         db,
         tenant_id=tenant.id,
@@ -332,6 +341,9 @@ async def refine_quote(
     """
     quote = await _get_quote(db, tenant.id, quote_id)
 
+    # Snapshot pre-refine so the training event keeps the pre-edit state.
+    lines_before = _line_items_snapshot(quote)
+
     ai_items = [li for li in quote.line_items if li.ai_generated]
     manual_items = [li for li in quote.line_items if not li.ai_generated]
 
@@ -387,10 +399,13 @@ async def refine_quote(
 
     # Dedupe safety: even with prompt guidance the model sometimes re-emits a
     # preserved manual line — drop exact duplicates (same description + price).
-    manual_keys = {(li.description.strip().lower(), str(li.unit_price)) for li in manual_items}
+    manual_keys = {(li.description.strip().lower(), li.unit_price) for li in manual_items}
     kept_lines = []
     for line in validated["line_items"]:
-        key = (str(line["description"]).strip().lower(), str(line["unit_price"]))
+        # Compare numerically: Decimal("100.00") == Decimal("100.0000") but the
+        # string forms differ depending on whether the price came back from the
+        # DB (Numeric(12,4)) or is still in memory — the old str() keys flaked.
+        key = (str(line["description"]).strip().lower(), line["unit_price"])
         if key in manual_keys:
             validated["warnings"].append(
                 f"Dropped duplicate of manual line '{line['description']}' from the AI regeneration"
@@ -410,13 +425,20 @@ async def refine_quote(
                 description=line["description"],
                 quantity=line["quantity"],
                 unit_price=line["unit_price"],
+                unit=line.get("unit") or "ea",
                 ai_generated=True,
             )
         )
     calculate_quote_totals(quote)
-
-    # Capture the previous rag metadata before it is replaced so the AI spend
-    # accumulates across the whole generate → refine → re-quote flow.
+    _record_quote_training_event(
+        db,
+        tenant.id,
+        quote,
+        "quote_refined",
+        current_user,
+        lines_before,
+        extra={"instructions": data.instructions},
+    )
     previous_rag = (quote.extra_data or {}).get("rag")
     quote.extra_data = {
         **(quote.extra_data or {}),
@@ -497,6 +519,52 @@ def _snapshot_ai_draft(quote: Quote) -> None:
             "total": str(quote.total),
         },
     }
+
+
+def _line_items_snapshot(quote: Quote) -> list[dict[str, Any]]:
+    """Full-fidelity line-item snapshot for the fine-tuning dataset."""
+    return [
+        {
+            "description": li.description,
+            "quantity": str(li.quantity),
+            "unit": li.unit,
+            "unit_price": str(li.unit_price),
+            "ai_generated": li.ai_generated,
+        }
+        for li in quote.line_items
+    ]
+
+
+def _record_quote_training_event(
+    db: AsyncSession,
+    tenant_id: UUID,
+    quote: Quote,
+    event_type: str,
+    actor: User | None,
+    before: list[dict[str, Any]],
+    extra: dict[str, Any] | None = None,
+) -> None:
+    """Capture an electrician edit/refine as a training event.
+
+    Every quote mutation records before/after line-item snapshots so we can
+    build a fine-tuning dataset (prompt context -> AI draft -> human edit).
+    """
+    db.add(
+        Event(
+            tenant_id=tenant_id,
+            actor_type="user" if actor is not None else "system",
+            actor_id=actor.id if actor is not None else None,
+            event_type=event_type,
+            entity_type="quote",
+            entity_id=quote.id,
+            payload={
+                "title": quote.title,
+                "before": before,
+                "after": _line_items_snapshot(quote),
+                **(extra or {}),
+            },
+        )
+    )
 
 
 def _refresh_ai_feedback(quote: Quote) -> None:
@@ -995,6 +1063,7 @@ async def _generate_quote_impl(
         contact_id=contact.id,
         title=str(lead_title or data.description)[:80].strip() or "AI-drafted quote",
         description=data.description,
+        vat_rate=tenant_vat_rate(tenant),
     )
 
     try:

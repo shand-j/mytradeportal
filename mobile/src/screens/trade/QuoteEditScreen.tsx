@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Alert, Platform, ScrollView, TextInput, View } from "react-native";
+import { Alert, Animated, Platform, ScrollView, StyleProp, TextInput, View, ViewStyle } from "react-native";
 import { useQueryClient } from "@tanstack/react-query";
+import { useRouter } from "expo-router";
 import { Button } from "../../components/ui/Button";
 import { Header } from "../../components/ui/Header";
 import { Icon } from "../../components/ui/Icon";
@@ -11,7 +12,6 @@ import { Lead, Quote, QuoteLineItem } from "../../types";
 import { updateQuote, useRefineQuote, useSendQuote, useUpdateQuote } from "../../api/quotes";
 import { ApiError } from "../../lib/apiClient";
 import { formatMoneyGBP } from "../../lib/format";
-import { RequestInfoScreen } from "./RequestInfoScreen";
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -34,12 +34,63 @@ function buildItems(seed: Quote | undefined): QuoteLineItem[] {
   );
 }
 
+/** Pulsing slate-200 block used by the refine skeleton placeholder. */
+function PulseBlock({ style }: { style?: StyleProp<ViewStyle> }) {
+  const opacity = useRef(new Animated.Value(1)).current;
+  useEffect(() => {
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(opacity, { toValue: 0.4, duration: 700, useNativeDriver: true }),
+        Animated.timing(opacity, { toValue: 1, duration: 700, useNativeDriver: true }),
+      ])
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [opacity]);
+  return (
+    <Animated.View
+      style={[{ backgroundColor: "#E2E8F0", borderRadius: 8 }, style, { opacity }]}
+    />
+  );
+}
+
+/** Skeleton rows shown in place of the line items while an AI refine runs. */
+function RefineSkeleton() {
+  return (
+    <View testID="refine-skeleton" className="gap-3">
+      <View
+        testID="refine-banner"
+        className="rounded-xl border border-blue-100 bg-blue-50 p-3"
+      >
+        <Text variant="caption" color="secondary" align="center">
+          Regenerating… You can leave this page — you'll get a notification when the quote is ready.
+        </Text>
+      </View>
+
+      <PulseBlock style={{ height: 56 }} />
+
+      {[0, 1, 2].map((row) => (
+        <View
+          key={row}
+          className="rounded-2xl border border-slate-200 bg-white p-3 gap-2"
+        >
+          <PulseBlock style={{ height: 12, width: "30%" }} />
+          <PulseBlock style={{ height: 40 }} />
+          <View className="flex-row gap-2">
+            <PulseBlock style={{ height: 36, flex: 1 }} />
+            <PulseBlock style={{ height: 36, flex: 1 }} />
+            <PulseBlock style={{ height: 36, flex: 1.5 }} />
+          </View>
+        </View>
+      ))}
+    </View>
+  );
+}
+
 export type QuoteEditScreenProps = {
   lead?: Lead;
   seed?: Quote;
   onClose: () => void;
-  /** Open the real-time chat thread for this lead (connected mode). */
-  onRequestMoreInfo?: (lead: Lead) => void;
   /** Connected mode: convert an approved/sent quote into an invoice. */
   onConvertToInvoice?: () => Promise<void>;
 };
@@ -48,16 +99,15 @@ export function QuoteEditScreen({
   lead,
   seed,
   onClose,
-  onRequestMoreInfo,
   onConvertToInvoice,
 }: QuoteEditScreenProps) {
+  const router = useRouter();
   const seedQuote = seed;
   const resolvedLead = lead;
 
   const sendQuoteMutation = useSendQuote();
   const updateQuoteMutation = useUpdateQuote();
   const [items, setItems] = useState<QuoteLineItem[]>(() => buildItems(seedQuote));
-  const [showRequestInfo, setShowRequestInfo] = useState(false);
   const [converting, setConverting] = useState(false);
   const refineQuoteMutation = useRefineQuote();
   const [refineInstructions, setRefineInstructions] = useState("");
@@ -222,9 +272,8 @@ export function QuoteEditScreen({
 
   const isSent = seedQuote?.status === "sent";
 
-  if (showRequestInfo && resolvedLead) {
-    return <RequestInfoScreen lead={resolvedLead} quote={seedQuote} onClose={() => setShowRequestInfo(false)} />;
-  }
+  const quoteRequestId = seedQuote?.quoteRequestId ?? resolvedLead?.id;
+  const isRefining = refineQuoteMutation.isPending;
 
   return (
     <Screen>
@@ -252,6 +301,10 @@ export function QuoteEditScreen({
           )}
         </View>
 
+        {isRefining ? (
+          <RefineSkeleton />
+        ) : (
+          <>
         {showAiDetails && (
           <View className="rounded-xl bg-amber-50 p-3 gap-2">
             {aiWarnings.map((warning) => (
@@ -337,6 +390,8 @@ export function QuoteEditScreen({
         ))}
 
         <Button title="+ Add line item" variant="outline" onPress={addLine} />
+          </>
+        )}
 
         {seedQuote?.aiGenerated && isRealQuote && (
           <View className="rounded-2xl border border-slate-200 bg-white p-3 gap-2">
@@ -396,6 +451,10 @@ export function QuoteEditScreen({
           </View>
         )}
         <View className="flex-row items-end justify-between gap-3">
+          {isRefining ? (
+            <PulseBlock style={{ height: 40, flex: 1 }} />
+          ) : (
+            <>
           <View>
             <Text variant="caption" color="secondary">
               Subtotal
@@ -420,6 +479,8 @@ export function QuoteEditScreen({
               {formatMoneyGBP(totals.total)}
             </Text>
           </View>
+            </>
+          )}
         </View>
 
         <Button
@@ -441,16 +502,17 @@ export function QuoteEditScreen({
           testID="quote-request-info"
           title={isSent ? "Send follow-up" : "Request more info"}
           variant="outline"
+          disabled={!quoteRequestId}
           onPress={() => {
-            if (resolvedLead && onRequestMoreInfo) {
-              onRequestMoreInfo(resolvedLead);
-            } else if (resolvedLead) {
-              setShowRequestInfo(true);
-            } else {
-              onClose();
-            }
+            if (!quoteRequestId) return;
+            router.push({ pathname: "/(trade)/messages", params: { quoteRequestId } });
           }}
         />
+        {!quoteRequestId && (
+          <Text testID="quote-request-info-empty" variant="caption" color="secondary" align="center">
+            No linked customer conversation
+          </Text>
+        )}
 
         {onConvertToInvoice && seedQuote?.status !== "draft" && (
           <Button

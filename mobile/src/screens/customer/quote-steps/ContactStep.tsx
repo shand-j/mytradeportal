@@ -63,6 +63,13 @@ export function ContactStep({ formData, updateFormData, onNext }: StepPropsWithB
         testID="quote-phone-input"
       />
       <FormField
+        label="Address"
+        value={contact.address}
+        onChangeText={(text) => setContact((prev) => ({ ...prev, address: text }))}
+        multiline
+        testID="quote-address-input"
+      />
+      <FormField
         label="Email"
         value={contact.email}
         onChangeText={(text) => setContact((prev) => ({ ...prev, email: text }))}

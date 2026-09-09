@@ -408,7 +408,7 @@ async def test_login_migrates_bcrypt_user_to_supabase(
     new_uid = str(uuid4())
     created: list[tuple[str, str]] = []
 
-    def _admin_create(email: str, password: str) -> dict[str, Any]:
+    def _admin_create(email: str, password: str, **kwargs: Any) -> dict[str, Any]:
         created.append((email, password))
         return {"id": new_uid}
 
@@ -437,7 +437,7 @@ async def test_login_migration_failure_does_not_block_login(
     """If Supabase provisioning fails mid-migration, the valid login stands."""
     monkeypatch.setattr("app.routers.auth.is_supabase_configured", lambda: True)
 
-    def _admin_create(email: str, password: str) -> dict[str, Any]:
+    def _admin_create(email: str, password: str, **kwargs: Any) -> dict[str, Any]:
         raise RuntimeError("supabase down mid-write")
 
     monkeypatch.setattr("app.routers.auth.admin_create_user", _admin_create)

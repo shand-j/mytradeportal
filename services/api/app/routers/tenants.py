@@ -111,7 +111,13 @@ async def create_tenant(
         password_hash: str | None = None
         supabase_uid: str | None = None
         if is_supabase_configured():
-            sb_user = admin_create_user(data.admin_email, data.admin_password)
+            sb_user = admin_create_user(
+                data.admin_email,
+                data.admin_password,
+                full_name=data.admin_name,
+                role="admin",
+                tenant_id=str(tenant.id),
+            )
             supabase_uid = sb_user.get("id")
         else:
             password_hash = get_password_hash(data.admin_password)

@@ -88,6 +88,25 @@ class CustomerAdmin(TenantScopedAdminMixin, admin.ModelAdmin):
     # The hash is shown so it's obvious a credential exists; it is one-way —
     # the plaintext is never stored or recoverable.
     readonly_fields = ("id", "password_hash", "created_at", "updated_at")
+    actions = ("reset_password",)
+
+    @admin.action(description="Reset password to a temporary value (shown once)")
+    def reset_password(self, request, queryset):
+        import secrets
+
+        import bcrypt
+
+        for customer in queryset:
+            temporary = secrets.token_urlsafe(10)
+            customer.password_hash = bcrypt.hashpw(
+                temporary.encode("utf-8"), bcrypt.gensalt()
+            ).decode("utf-8")
+            customer.save(update_fields=["password_hash"])
+            self.message_user(
+                request,
+                f"{customer.email}: temporary password '{temporary}' — shown once, "
+                "ask the customer to change it after logging in.",
+            )
 
 
 @admin.register(User)

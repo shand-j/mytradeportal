@@ -18,6 +18,8 @@ export type RegisterBusinessInput = {
   services?: string[];
   /** Branding choices (primaryColor is snakeized to primary_color on the wire). */
   branding?: Record<string, unknown>;
+  /** Tax step answers (vatRegistered etc.) — drive quote/invoice VAT rates. */
+  tax?: Record<string, unknown>;
 };
 
 function slugify(name: string): string {
@@ -77,6 +79,7 @@ export async function completeOnboardingSteps(
   const compliance = (data.compliance ?? {}) as Record<string, unknown>;
   const services = (data.services ?? {}) as Record<string, unknown>;
   const branding = (data.branding ?? {}) as Record<string, unknown>;
+  const tax = (data.tax ?? {}) as Record<string, unknown>;
   await completeStep("business_identity", identity);
   await completeStep("compliance", compliance);
   await completeStep("services", {
@@ -84,6 +87,9 @@ export async function completeOnboardingSteps(
   });
   if (!branding.skipped && Object.keys(branding).length > 0) {
     await completeStep("branding", branding);
+  }
+  if (Object.keys(tax).length > 0) {
+    await completeStep("tax", tax);
   }
   await api.post("/onboarding/launch");
 }
@@ -123,6 +129,9 @@ export async function registerBusiness(input: RegisterBusinessInput): Promise<Ap
   await completeStep("services", { services: input.services ?? [] });
   if (input.branding) {
     await completeStep("branding", input.branding);
+  }
+  if (input.tax) {
+    await completeStep("tax", input.tax);
   }
   await api.post("/onboarding/launch");
 

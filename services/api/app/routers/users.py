@@ -66,7 +66,13 @@ async def create_user(
         # hosted account (e.g. another tenant), fall back to local auth; the
         # login-time migration will link them when possible.
         try:
-            sb_user = admin_create_user(data.email, data.password)
+            sb_user = admin_create_user(
+                data.email,
+                data.password,
+                full_name=data.full_name,
+                role=data.role,
+                tenant_id=str(current_user.tenant_id),
+            )
             supabase_uid = sb_user.get("id")
         except Exception:
             logger.warning("supabase_invite_provision_failed")

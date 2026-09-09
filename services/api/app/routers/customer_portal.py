@@ -218,14 +218,47 @@ async def login_customer(
     request: Request,
     db: DbDep,
 ) -> CustomerTokenResponse:
-    """Authenticate a homeowner and return a bearer token."""
-    await bypass_rls_for_transaction(db)
-    tenant = await _resolve_active_tenant(db, data.slug)
-    await set_tenant_in_session(db, tenant.id)
+    """Authenticate a homeowner and return a bearer token.
 
-    customer = await db.scalar(
-        select(Customer).where(Customer.tenant_id == tenant.id, Customer.email == str(data.email))
-    )
+    Tenant-agnostic: customers no longer pick a business at login (a hangover
+    from the per-tenant-subdomain web approach). With a slug, resolution is
+    direct; without one, the account is located by email across tenants and
+    the tenant is derived from it (newest account wins on duplicates).
+    """
+    await bypass_rls_for_transaction(db)
+
+    if data.slug:
+        tenant = await _resolve_active_tenant(db, data.slug)
+        customer = await db.scalar(
+            select(Customer).where(
+                Customer.tenant_id == tenant.id,
+                func.lower(Customer.email) == str(data.email).lower(),
+            )
+        )
+    else:
+        customer = (
+            (
+                await db.execute(
+                    select(Customer)
+                    .where(func.lower(Customer.email) == str(data.email).lower())
+                    .order_by(Customer.created_at.desc())
+                )
+            )
+            .scalars()
+            .first()
+        )
+        if customer is None:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid credentials"
+            )
+        resolved_tenant = await db.get(Tenant, customer.tenant_id)
+        if resolved_tenant is None or not resolved_tenant.is_active:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid credentials"
+            )
+        tenant = resolved_tenant
+
+    await set_tenant_in_session(db, tenant.id)
     if (
         customer is None
         or not customer.is_active

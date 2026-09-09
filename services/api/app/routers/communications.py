@@ -4,7 +4,7 @@ from typing import Annotated, Any
 from uuid import UUID
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Request, status
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -127,13 +127,19 @@ async def _notify_staff_triage_closed(
     else:
         title = "Triage complete — quote refreshing"
         body = "The AI chat gathered enough info; the draft quote is being refreshed."
+    # Land on the linked quote when one exists; otherwise the chat thread.
+    link = (
+        f"/quotes/{quote_request.quote_id}"
+        if quote_request.quote_id is not None
+        else f"/chat/{quote_request.id}"
+    )
     await notify_staff(
         db,
         tenant_id,
         kind="triage_closed",
         title=title,
         body=body,
-        link=f"/lead/{quote_request.id}",
+        link=link,
     )
 
 
@@ -180,6 +186,10 @@ async def create_communication(
     if data.quote_request_id:
         quote_request = await _get_quote_request(db, tenant.id, data.quote_request_id)
         _ensure_actor_can_access_quote_request(actor, quote_request)
+        # Thread messages inherit the lead's contact so CRM views and exports
+        # can attribute them (customer chat previously stored NULL).
+        if data.contact_id is None and quote_request.contact_id is not None:
+            data.contact_id = quote_request.contact_id
 
     # Derive the sender role from the authenticated actor so a customer token
     # cannot impersonate business staff (and vice versa).
@@ -188,12 +198,22 @@ async def create_communication(
         tenant_id=tenant.id, **data.model_dump(exclude={"sender_role"}), sender_role=resolved_role
     )
     db.add(communication)
-    # When the sender is a customer replying inside a lead's chat thread,
-    # notify staff so they see the reply on their bell + push. Business /
-    # staff-authored messages don't produce a notification (staff are already
-    # in the app).
+    # Notify staff on a customer reply only once AI triage has closed — while
+    # the triage assistant is mid-conversation the electrician doesn't need a
+    # bell for every interim answer.
     if resolved_role == "customer" and data.quote_request_id:
-        await _notify_staff_customer_reply(db, tenant.id, quote_request, data.body or "")
+        triage_closed = await db.scalar(
+            select(func.count())
+            .select_from(Communication)
+            .where(
+                Communication.tenant_id == tenant.id,
+                Communication.quote_request_id == data.quote_request_id,
+                Communication.sender_role == "ai",
+                Communication.ai_metadata["complete"].astext == "true",
+            )
+        )
+        if triage_closed:
+            await _notify_staff_customer_reply(db, tenant.id, quote_request, data.body or "")
     await db.commit()
     await db.refresh(communication)
     return communication

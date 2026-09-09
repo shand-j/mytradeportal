@@ -11,7 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.audit import Actions, write_audit_log
-from app.calculations import build_invoice_from_quote, calculate_invoice_totals
+from app.calculations import build_invoice_from_quote, calculate_invoice_totals, tenant_vat_rate
 from app.database import get_db
 from app.dependencies import CurrentUserDep, TenantDep
 from app.models import Contact, Invoice, InvoiceLineItem, Job, Quote
@@ -115,7 +115,7 @@ async def create_invoice(
             quote_id=data.quote_id,
             invoice_number=invoice_number,
             due_date=due_date,
-            vat_rate=data.vat_rate,
+            vat_rate=data.vat_rate if data.vat_rate is not None else tenant_vat_rate(tenant),
         )
         # When the caller did not supply line items, derive a sensible default from
         # the source record so the invoice is not empty. This happens when the

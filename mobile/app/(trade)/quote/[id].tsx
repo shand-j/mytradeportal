@@ -20,11 +20,6 @@ export default function QuoteDetailRoute() {
     <QuoteEditScreen
       seed={realQuote}
       onClose={() => router.back()}
-      onRequestMoreInfo={
-        realQuote.quoteRequestId
-          ? () => router.push(`/(trade)/messages?quoteRequestId=${realQuote.quoteRequestId}`)
-          : undefined
-      }
       onConvertToInvoice={handleConvertToInvoice}
     />
   );

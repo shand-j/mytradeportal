@@ -59,6 +59,7 @@ function buildRegisterInput(data: Record<string, unknown>): RegisterBusinessInpu
     tradingName: (identity.tradingName as string | undefined) ?? "My Electrical Business",
     address: (address.address as string | undefined) ?? undefined,
     postcode: (address.postcode as string | undefined) ?? undefined,
+    tax: data.tax as Record<string, unknown> | undefined,
     identity,
     compliance,
     services: (services.services as string[] | undefined) ?? [],

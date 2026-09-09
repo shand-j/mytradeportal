@@ -315,6 +315,10 @@ def build_triage_description(quote_request: QuoteRequest) -> str:
                         q_parts.append(f"{key}: {value}")
                 if q_parts:
                     parts.append(f"{section}: " + ", ".join(q_parts))
+            elif answers is not None and answers != "" and not isinstance(answers, bool):
+                # Flat questionnaire shape (e.g. fault-finding's free-text
+                # other_description) — the key is the question label.
+                parts.append(f"{section.replace('_', ' ')}: {answers}")
 
     if quote_request.urgency:
         parts.append(f"Urgency: {quote_request.urgency}")
