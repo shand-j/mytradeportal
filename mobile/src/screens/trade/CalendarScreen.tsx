@@ -116,6 +116,13 @@ export function CalendarScreen(_props: CalendarScreenProps) {
                 </Text>
               </View>
             )}
+            <Button
+              testID="calendar-new-job"
+              title="+ New job"
+              size="sm"
+              variant="outline"
+              onPress={() => router.push("/(trade)/job/new")}
+            />
             <IconButton
               testID="calendar-more"
               icon="more"

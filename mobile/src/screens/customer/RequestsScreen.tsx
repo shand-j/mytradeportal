@@ -77,10 +77,13 @@ function StatusBadge({ status }: { status: CustomerQuoteStatus }) {
 
 function BookDateView({
   quote,
+  acceptanceNote,
   onBack,
   onConfirmBooking,
 }: {
   quote: Quote;
+  /** Post-acceptance assurance line, shown under the "Quote accepted" card. */
+  acceptanceNote?: string | null;
   onBack: () => void;
   onConfirmBooking: (date: string, timeSlot: string) => Promise<void>;
 }) {
@@ -126,6 +129,11 @@ function BookDateView({
           <Text variant="title" weight="bold" color="primary">
             £{total.toFixed(2)}
           </Text>
+          {acceptanceNote ? (
+            <Text variant="caption" color="secondary">
+              {acceptanceNote}
+            </Text>
+          ) : null}
         </View>
 
         <View className="gap-3 rounded-2xl border border-slate-200 bg-white p-4">
@@ -259,6 +267,8 @@ function RejectQuoteView({
 function CustomerQuoteView({
   quote,
   status,
+  preferredDates,
+  acceptanceNote,
   onBack,
   onAccept,
   onReject,
@@ -267,13 +277,19 @@ function CustomerQuoteView({
 }: {
   quote: Quote;
   status: CustomerQuoteStatus;
+  /** Preferred visit dates from the source quote request (empty when none). */
+  preferredDates: string[];
+  /** Post-acceptance assurance line, shown in the accepted card. */
+  acceptanceNote: string | null;
   onBack: () => void;
-  onAccept: () => void;
+  onAccept: (preferredDates?: string[]) => void;
   onReject: () => void;
   onRequestChanges: () => void;
   onBook: () => void;
 }) {
   const { business } = useBusiness();
+  const [confirmingDates, setConfirmingDates] = useState(false);
+  const [selectedDates, setSelectedDates] = useState<string[]>([]);
   const subtotal = useMemo(
     () =>
       quote.lineItems.reduce((sum, item) => {
@@ -290,6 +306,12 @@ function CustomerQuoteView({
   const isRejected = status === "rejected";
   const isAwaiting = status === "awaiting_review";
   const isExpired = status === "expired";
+
+  const toggleDate = (date: string) => {
+    setSelectedDates((prev) =>
+      prev.includes(date) ? prev.filter((d) => d !== date) : [...prev, date]
+    );
+  };
 
   return (
     <Screen>
@@ -361,9 +383,77 @@ function CustomerQuoteView({
         </View>
 
         <View className="gap-2">
+          {isOpen && preferredDates.length > 0 && confirmingDates && (
+            <View
+              testID="quote-reconfirm-dates"
+              className="gap-3 rounded-2xl border border-slate-200 bg-white p-4"
+            >
+              <Text variant="body" weight="semibold">
+                Confirm your preferred dates — the electrician will try to accommodate them.
+              </Text>
+              <Text variant="caption" color="secondary">
+                Tap any date that no longer works to deselect it.
+              </Text>
+              <View className="flex-row flex-wrap gap-2">
+                {preferredDates.map((date, index) => {
+                  const active = selectedDates.includes(date);
+                  return (
+                    <Pressable
+                      key={date}
+                      testID={`reconfirm-date-${index}`}
+                      onPress={() => toggleDate(date)}
+                    >
+                      <View
+                        className="rounded-xl border px-4 py-2"
+                        style={{
+                          backgroundColor: active ? "#EFF6FF" : "#F8FAFC",
+                          borderColor: active ? "#2563EB" : "#E2E8F0",
+                        }}
+                      >
+                        <Text
+                          variant="caption"
+                          weight={active ? "semibold" : "normal"}
+                          color={active ? "primary" : "secondary"}
+                        >
+                          {date}
+                        </Text>
+                      </View>
+                    </Pressable>
+                  );
+                })}
+              </View>
+            </View>
+          )}
+
           {isOpen && (
             <>
-              <Button testID="quote-accept" title="Accept quote" onPress={onAccept} />
+              {preferredDates.length > 0 ? (
+                confirmingDates ? (
+                  <>
+                    <Button
+                      testID="quote-confirm-accept"
+                      title="Confirm acceptance"
+                      onPress={() => onAccept(selectedDates)}
+                    />
+                    <Button
+                      title="Back"
+                      variant="ghost"
+                      onPress={() => setConfirmingDates(false)}
+                    />
+                  </>
+                ) : (
+                  <Button
+                    testID="quote-accept"
+                    title="Accept quote"
+                    onPress={() => {
+                      setSelectedDates(preferredDates);
+                      setConfirmingDates(true);
+                    }}
+                  />
+                )
+              ) : (
+                <Button testID="quote-accept" title="Accept quote" onPress={() => onAccept()} />
+              )}
               <Button title="Reject quote" variant="outline" onPress={onReject} />
               <Button title="Request changes" variant="ghost" onPress={onRequestChanges} />
             </>
@@ -374,6 +464,11 @@ function CustomerQuoteView({
               <Text variant="body" weight="semibold" color="success">
                 Quote accepted
               </Text>
+              {acceptanceNote ? (
+                <Text variant="body" color="secondary">
+                  {acceptanceNote}
+                </Text>
+              ) : null}
               <Text variant="body" color="secondary">
                 Choose a date and time for the work.
               </Text>
@@ -540,6 +635,8 @@ export function RequestsScreen({ navigation }: RequestsScreenProps) {
   const [requesting, setRequesting] = useState(false);
   const [view, setView] = useState<"list" | "detail" | "reject" | "booking">("list");
   const [selectedQuoteId, setSelectedQuoteId] = useState<string | null>(null);
+  /** Assurance line shown right after an acceptance in this session. */
+  const [acceptanceNote, setAcceptanceNote] = useState<string | null>(null);
 
   // Linked quotes from quote requests are the primary customer-facing view.
   const linkedQuotes = useMemo(
@@ -571,8 +668,20 @@ export function RequestsScreen({ navigation }: RequestsScreenProps) {
     return req?.id ?? null;
   }, [liveRequests, selectedQuoteId]);
 
-  const handleAccept = async (quote: Quote) => {
-    await acceptMutation.mutateAsync(quote.id);
+  const selectedPreferredDates = useMemo(() => {
+    if (!selectedQuoteId) return [];
+    return (
+      liveRequests.find((r) => r.quote?.id === selectedQuoteId)?.preferredDates ?? []
+    );
+  }, [liveRequests, selectedQuoteId]);
+
+  const handleAccept = async (quote: Quote, preferredDates?: string[]) => {
+    await acceptMutation.mutateAsync({ id: quote.id, preferredDates });
+    setAcceptanceNote(
+      preferredDates && preferredDates.length > 0
+        ? "Thanks — the electrician will try to accommodate your preferred dates."
+        : "Your electrician will try to accommodate your preferred dates."
+    );
     setView("booking");
   };
 
@@ -620,8 +729,10 @@ export function RequestsScreen({ navigation }: RequestsScreenProps) {
       <CustomerQuoteView
         quote={selectedQuote}
         status={effectiveStatus(selectedQuote)}
+        preferredDates={selectedPreferredDates}
+        acceptanceNote={acceptanceNote}
         onBack={() => setView("list")}
-        onAccept={() => void handleAccept(selectedQuote)}
+        onAccept={(dates) => void handleAccept(selectedQuote, dates)}
         onReject={() => setView("reject")}
         onRequestChanges={() => {
           const requestId = selectedRequestId ?? liveRequests.find((r) => r.quote?.id === selectedQuoteId)?.id;
@@ -646,6 +757,7 @@ export function RequestsScreen({ navigation }: RequestsScreenProps) {
     return (
       <BookDateView
         quote={selectedQuote}
+        acceptanceNote={acceptanceNote}
         onBack={() => setView("detail")}
         onConfirmBooking={(date, timeSlot) => handleConfirmBooking(selectedQuote, date, timeSlot)}
       />
@@ -716,6 +828,7 @@ export function RequestsScreen({ navigation }: RequestsScreenProps) {
                 quote={req.quote}
                 status={effectiveStatus(req.quote)}
                 onPress={() => {
+                  setAcceptanceNote(null);
                   setSelectedQuoteId(req.quote!.id);
                   setView("detail");
                 }}

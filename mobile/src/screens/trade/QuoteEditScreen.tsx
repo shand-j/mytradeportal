@@ -93,6 +93,12 @@ export type QuoteEditScreenProps = {
   onClose: () => void;
   /** Connected mode: convert an approved/sent quote into an invoice. */
   onConvertToInvoice?: () => Promise<void>;
+  /** Connected mode: convert an accepted quote into a scheduled job. */
+  onConvertToJob?: () => Promise<void>;
+  /** Id of the job already created from this quote, when one exists. */
+  existingJobId?: string | null;
+  /** True after convert-to-job 409'd without a resolvable job (legacy quote). */
+  jobConvertFailed?: boolean;
 };
 
 export function QuoteEditScreen({
@@ -100,6 +106,9 @@ export function QuoteEditScreen({
   seed,
   onClose,
   onConvertToInvoice,
+  onConvertToJob,
+  existingJobId,
+  jobConvertFailed,
 }: QuoteEditScreenProps) {
   const router = useRouter();
   const seedQuote = seed;
@@ -211,6 +220,16 @@ export function QuoteEditScreen({
     }
   };
 
+  const handleConvertToJob = async () => {
+    if (!onConvertToJob) return;
+    setConverting(true);
+    try {
+      await onConvertToJob();
+    } finally {
+      setConverting(false);
+    }
+  };
+
   const handleRefine = async () => {
     if (!seedQuote) return;
     setRefineError(null);
@@ -271,6 +290,18 @@ export function QuoteEditScreen({
     aiWarnings.length > 0 || aiAssumptions.length > 0 || aiNotes != null || isCatalogueMiss;
 
   const isSent = seedQuote?.status === "sent";
+  const isAccepted = seedQuote?.status === "accepted";
+  const acceptedDates = seedQuote?.acceptedDates ?? [];
+  // Convert-to-invoice stays reachable for quotes that predate the
+  // quote → job → invoice flow (sent quotes, or accepted quotes whose
+  // convert-to-job hit a 409 without a resolvable job).
+  const showConvertToInvoice =
+    !!onConvertToInvoice &&
+    seedQuote?.status !== "draft" &&
+    !existingJobId &&
+    (!isAccepted || !!jobConvertFailed);
+  const showConvertToJob =
+    !!onConvertToJob && isAccepted && !existingJobId && !jobConvertFailed;
 
   const quoteRequestId = seedQuote?.quoteRequestId ?? resolvedLead?.id;
   const isRefining = refineQuoteMutation.isPending;
@@ -300,6 +331,20 @@ export function QuoteEditScreen({
             </View>
           )}
         </View>
+
+        {acceptedDates.length > 0 && (
+          <View
+            testID="quote-accepted-dates"
+            className="rounded-xl border border-green-100 bg-green-50 p-3 gap-1"
+          >
+            <Text variant="caption" weight="semibold" color="secondary">
+              Customer's confirmed dates
+            </Text>
+            <Text variant="caption" color="secondary">
+              {acceptedDates.join(", ")}
+            </Text>
+          </View>
+        )}
 
         {isRefining ? (
           <RefineSkeleton />
@@ -514,7 +559,23 @@ export function QuoteEditScreen({
           </Text>
         )}
 
-        {onConvertToInvoice && seedQuote?.status !== "draft" && (
+        {existingJobId && (
+          <Button
+            testID="quote-view-job"
+            title="View job"
+            variant="outline"
+            onPress={() => router.push(`/(trade)/job/${existingJobId}`)}
+          />
+        )}
+        {showConvertToJob && (
+          <Button
+            testID="quote-convert-job"
+            title={converting ? "Converting…" : "Convert to job"}
+            disabled={converting}
+            onPress={handleConvertToJob}
+          />
+        )}
+        {showConvertToInvoice && (
           <Button
             testID="quote-convert-invoice"
             title={converting ? "Converting…" : "Convert to invoice"}

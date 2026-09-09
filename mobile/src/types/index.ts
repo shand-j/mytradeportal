@@ -96,6 +96,8 @@ export type Quote = {
   retrievalStatus: string | null;
   sentAt?: string;
   expiresAt?: string;
+  /** Customer-reconfirmed visit dates captured at acceptance. */
+  acceptedDates: string[];
   vatRate: number;
 };
 

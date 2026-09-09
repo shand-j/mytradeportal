@@ -34,6 +34,10 @@ type JobDetailScreenProps = {
   /** Persist status transitions on the backend. */
   onStart?: () => Promise<void>;
   onComplete?: () => Promise<void>;
+  /** Id of the invoice already created for this job's quote, when one exists. */
+  existingInvoiceId?: string | null;
+  /** Navigate to the existing invoice. */
+  onViewInvoice?: () => void;
   busy?: boolean;
 };
 
@@ -43,6 +47,8 @@ export function JobDetailScreen({
   onSubmitInvoice,
   onStart,
   onComplete,
+  existingInvoiceId,
+  onViewInvoice,
   busy,
 }: JobDetailScreenProps) {
   const [status, setStatus] = useState<JobStatus>(job.status);
@@ -185,6 +191,16 @@ export function JobDetailScreen({
               />
             </View>
 
+            {existingInvoiceId ? (
+              <View className="rounded-2xl bg-slate-100 p-4 gap-2">
+                <Text variant="body" weight="semibold">
+                  Invoice
+                </Text>
+                <Text variant="caption" color="secondary">
+                  An invoice already exists for this job's quote.
+                </Text>
+              </View>
+            ) : (
             <View className="rounded-2xl bg-slate-100 p-4 gap-3">
               <View className="flex-row items-center justify-between">
                 <Text variant="body" weight="semibold">
@@ -248,6 +264,7 @@ export function JobDetailScreen({
                 </Text>
               </View>
             </View>
+            )}
           </>
         ) : (
           <View className="rounded-2xl bg-slate-100 p-4 gap-2">
@@ -280,16 +297,25 @@ export function JobDetailScreen({
         )}
         {status === "completed" && (
           <>
-            <Button
-              testID="job-create-invoice"
-              title={
-                submitting
-                  ? "Creating invoice…"
-                  : `Create & send invoice · £${totals.total.toFixed(2)}`
-              }
-              disabled={submitting}
-              onPress={handleSubmitInvoice}
-            />
+            {existingInvoiceId ? (
+              <Button
+                testID="job-view-invoice"
+                title="View invoice"
+                variant="outline"
+                onPress={onViewInvoice}
+              />
+            ) : (
+              <Button
+                testID="job-create-invoice"
+                title={
+                  submitting
+                    ? "Creating invoice…"
+                    : `Create & send invoice · £${totals.total.toFixed(2)}`
+                }
+                disabled={submitting}
+                onPress={handleSubmitInvoice}
+              />
+            )}
             <Button title="Close" variant="outline" onPress={onClose} />
           </>
         )}

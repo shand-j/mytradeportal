@@ -25,6 +25,38 @@ export async function fetchJob(id: string): Promise<ApiJob> {
   return api.get<ApiJob>(`/jobs/${id}`);
 }
 
+export type CreateJobInput = {
+  contactId: string;
+  quoteId?: string;
+  title: string;
+  description?: string;
+  /** ISO datetimes; snakeized to scheduled_start/scheduled_end on the wire. */
+  scheduledStart?: string;
+  scheduledEnd?: string;
+};
+
+/** Create a standalone job (POST /jobs). */
+export async function createJob(input: CreateJobInput): Promise<ApiJob> {
+  return api.post<ApiJob>("/jobs", input);
+}
+
+export type ConvertToJobSchedule = {
+  scheduledStart?: string;
+  scheduledEnd?: string;
+  notes?: string;
+};
+
+/**
+ * Convert an approved quote into a job (POST /quotes/{id}/convert-to-job).
+ * Throws ApiError(409) when the quote already has a job.
+ */
+export async function convertQuoteToJob(
+  quoteId: string,
+  schedule?: ConvertToJobSchedule
+): Promise<ApiJob> {
+  return api.post<ApiJob>(`/quotes/${quoteId}/convert-to-job`, schedule ?? {});
+}
+
 export async function startJob(id: string): Promise<ApiJob> {
   return api.post<ApiJob>(`/jobs/${id}/start`);
 }
@@ -116,4 +148,35 @@ export function useJobActions(id: string | undefined) {
     onSuccess: invalidate,
   });
   return { start, complete };
+}
+
+/** Mutation: create a standalone job and refresh the jobs caches. */
+export function useCreateJob() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: CreateJobInput) => createJob(input),
+    onSuccess: (job) => {
+      qc.invalidateQueries({ queryKey: ["jobs"] });
+      qc.invalidateQueries({ queryKey: ["job", job.id] });
+    },
+  });
+}
+
+/** Mutation: convert an approved quote into a job and refresh jobs/quotes caches. */
+export function useConvertQuoteToJob() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      quoteId,
+      schedule,
+    }: {
+      quoteId: string;
+      schedule?: ConvertToJobSchedule;
+    }) => convertQuoteToJob(quoteId, schedule),
+    onSuccess: (_job, { quoteId }) => {
+      qc.invalidateQueries({ queryKey: ["jobs"] });
+      qc.invalidateQueries({ queryKey: ["quotes"] });
+      qc.invalidateQueries({ queryKey: ["quote", quoteId] });
+    },
+  });
 }

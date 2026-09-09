@@ -405,6 +405,7 @@ class QuoteRead(BaseModel):
     valid_until: datetime | None
     approved_at: datetime | None
     sent_at: datetime | None
+    accepted_dates: list[str] = Field(default_factory=list)
     line_items: list[QuoteLineItemRead]
     bill_of_quantities: BillOfQuantitiesRead | None
     quote_request_id: UUID | None
@@ -560,6 +561,14 @@ class JobCreate(BaseModel):
     description: str | None = None
     scheduled_start: datetime | None = None
     scheduled_end: datetime | None = None
+
+
+class JobConvertRequest(BaseModel):
+    """Optional scheduling for quote → job conversion."""
+
+    scheduled_start: datetime | None = None
+    scheduled_end: datetime | None = None
+    notes: str | None = None
 
 
 class JobUpdate(BaseModel):
@@ -1143,6 +1152,12 @@ class CustomerRegister(BaseModel):
         validation_alias=AliasChoices("quote_request_id", "quoteRequestId"),
         serialization_alias="quoteRequestId",
     )
+
+
+class CustomerQuoteAccept(BaseModel):
+    """Acceptance payload: the customer reconfirms preferred visit dates."""
+
+    preferred_dates: list[str] | None = None
 
 
 class CustomerLogin(BaseModel):

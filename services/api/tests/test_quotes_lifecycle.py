@@ -3,7 +3,7 @@
 from decimal import Decimal
 from typing import Any
 from unittest.mock import AsyncMock, patch
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import pytest
 from app.models import BillOfQuantities, Quote
@@ -348,3 +348,51 @@ async def test_update_quote_preserves_ai_generated_flags(client: AsyncClient) ->
     body = response.json()
     assert body["line_items"][0]["ai_generated"] is True
     assert body["ai_generated"] is True
+
+
+async def test_convert_approved_quote_to_job(client: AsyncClient, db: AsyncSession) -> None:
+    """quote → job: approved quotes convert once, carrying the customer's
+    reconfirmed dates into the job notes."""
+    tenant = await _create_tenant(client, f"quote-{uuid4().hex[:8]}")
+    contact = await _create_contact(client, tenant["id"], "Job Convert")
+    quote = await _create_quote(client, tenant["id"], contact["id"])
+
+    # Not approved yet → 400.
+    early = await client.post(
+        f"/quotes/{quote['id']}/convert-to-job", headers={"X-Tenant-ID": tenant["id"]}
+    )
+    assert early.status_code == 400
+
+    patched = await client.post(
+        f"/quotes/{quote['id']}/approve",
+        headers={"X-Tenant-ID": tenant["id"]},
+        json={},
+    )
+    assert patched.status_code == 200, patched.text
+    # Simulate the customer's reconfirmed dates landing on acceptance.
+    from app.models import Quote as QuoteModel
+    from sqlalchemy import update as sa_update
+
+    await db.execute(
+        sa_update(QuoteModel)
+        .where(QuoteModel.id == UUID(quote["id"]))
+        .values(accepted_dates=["Fri 12 Sep", "Mon 15 Sep"])
+    )
+    await db.commit()
+
+    response = await client.post(
+        f"/quotes/{quote['id']}/convert-to-job",
+        headers={"X-Tenant-ID": tenant["id"]},
+        json={"scheduled_start": "2026-09-12T09:00:00", "scheduled_end": "2026-09-12T17:00:00"},
+    )
+    assert response.status_code == 201, response.text
+    job = response.json()
+    assert job["quote_id"] == quote["id"]
+    assert job["status"] == "scheduled"
+    assert "Fri 12 Sep" in (job["notes"] or "")
+
+    # Second conversion → 409.
+    again = await client.post(
+        f"/quotes/{quote['id']}/convert-to-job", headers={"X-Tenant-ID": tenant["id"]}
+    )
+    assert again.status_code == 409

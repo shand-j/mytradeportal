@@ -346,3 +346,41 @@ async def test_register_does_not_poach_lead_whose_email_is_another_customer(
     await set_tenant_in_session(db, tenant.id)
     await db.refresh(lead)
     assert str(lead.customer_id) == reg_a.json()["customer"]["id"]
+
+
+async def test_accept_quote_reconfirms_preferred_dates(
+    client: AsyncClient, db: AsyncSession
+) -> None:
+    """Acceptance with preferred_dates persists them on the quote so the
+    electrician sees them at job conversion."""
+    slug = f"cust-{uuid4().hex[:8]}"
+    tenant = await _create_tenant(db, slug)
+    contact, lead = await _seed_lead(
+        db, tenant, contact_email="pat@example.com", contact_phone=None
+    )
+    quote = Quote(
+        tenant_id=tenant.id,
+        contact_id=contact.id,
+        title="Recessed lighting",
+        status="sent",
+        quote_request_id=lead.id,
+        subtotal=Decimal("400.00"),
+        vat_amount=Decimal("80.00"),
+        total=Decimal("480.00"),
+    )
+    db.add(quote)
+    await db.flush()
+
+    reg = await client.post("/customer/register", json=_register_payload(slug, "pat@example.com"))
+    assert reg.status_code == 201, reg.text
+    auth = {"Authorization": f"Bearer {reg.json()['accessToken']}"}
+
+    response = await client.post(
+        f"/customer/quotes/{quote.id}/accept",
+        headers=auth,
+        json={"preferred_dates": ["Fri 12 Sep", "Mon 15 Sep"]},
+    )
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["status"] == "approved"
+    assert body["accepted_dates"] == ["Fri 12 Sep", "Mon 15 Sep"]

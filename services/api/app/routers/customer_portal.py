@@ -35,6 +35,7 @@ from app.schemas import (
     AppointmentCreate,
     AppointmentRead,
     CustomerLogin,
+    CustomerQuoteAccept,
     CustomerRead,
     CustomerRegister,
     CustomerTokenResponse,
@@ -431,8 +432,9 @@ async def accept_quote(
     quote_id: UUID,
     customer: CurrentCustomerDep,
     db: DbDep,
+    data: CustomerQuoteAccept | None = None,
 ) -> Quote:
-    """Customer accepts a sent quote."""
+    """Customer accepts a sent quote, reconfirming preferred visit dates."""
     quote = await _get_customer_quote(db, customer, quote_id)
     if quote.status != "sent":
         raise HTTPException(
@@ -441,17 +443,25 @@ async def accept_quote(
         )
     quote.status = "approved"
     quote.approved_at = datetime.utcnow()
+    # The customer's reconfirmed dates ride on the quote so they surface when
+    # the electrician converts it to a job.
+    if data is not None and data.preferred_dates is not None:
+        quote.accepted_dates = data.preferred_dates
+    dates_note = ""
+    if quote.accepted_dates:
+        dates_note = f" Customer confirmed preferred dates: {', '.join(quote.accepted_dates)}."
     await notify_staff(
         db,
         customer.tenant_id,
         kind="quote_accepted",
         title="Quote accepted",
-        body=f"{customer.full_name} accepted quote '{quote.title}'.",
+        body=f"{customer.full_name} accepted quote '{quote.title}'.{dates_note}",
         link=f"/quote/{quote.id}",
     )
     await db.commit()
-    await db.refresh(quote)
-    return quote
+    # Re-fetch with relationships eager-loaded: QuoteRead serialises
+    # line_items/contact, which are expired on the committed object.
+    return await _get_customer_quote(db, customer, quote_id)
 
 
 @router.post("/quotes/{quote_id}/reject", response_model=QuoteRead)

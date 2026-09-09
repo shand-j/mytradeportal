@@ -238,6 +238,9 @@ class Quote(TenantScopedBase):
     valid_until: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     approved_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     sent_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    # Dates the customer reconfirmed at acceptance; surfaced when the
+    # electrician converts the quote to a job.
+    accepted_dates: Mapped[list[str]] = mapped_column(JSONB, default=list, nullable=False)
     quote_request_id: Mapped[UUID | None] = mapped_column(
         PGUUID(as_uuid=True),
         ForeignKey("quote_requests.id", ondelete="SET NULL"),

@@ -19,6 +19,8 @@ export type ApiQuoteRequest = {
   /** Linked customer (homeowner) account id, when the contact has one. */
   customerId?: string | null;
   createdAt: string;
+  /** Preferred visit dates as submitted (camelized list of `{ date }` dicts). */
+  preferredDates?: Array<Record<string, unknown>>;
   customer: ApiContact | null;
   quote: ApiQuote | null;
 };
@@ -182,6 +184,8 @@ export type CustomerRequest = {
   quoteId?: string;
   quoteStatus?: "sent" | "approved" | "rejected" | "expired";
   quote?: Quote;
+  /** Preferred visit dates the customer picked when requesting the quote. */
+  preferredDates: string[];
 };
 
 const CUSTOMER_STATUS_MAP: Record<string, CustomerRequestStatus> = {
@@ -204,6 +208,9 @@ function mapCustomerRequest(qr: ApiQuoteRequest): CustomerRequest {
     quoteId: quote?.id,
     quoteStatus: (quote?.status as CustomerRequest["quoteStatus"]) ?? undefined,
     quote: quote ? mapApiQuote(quote) : undefined,
+    preferredDates: (qr.preferredDates ?? [])
+      .map((entry) => (typeof entry?.date === "string" ? entry.date : null))
+      .filter((date): date is string => Boolean(date)),
   };
 }
 

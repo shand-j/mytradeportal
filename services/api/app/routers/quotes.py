@@ -29,6 +29,7 @@ from app.models import (
     Communication,
     Contact,
     Event,
+    Job,
     Quote,
     QuoteLineItem,
     QuoteRequest,
@@ -47,6 +48,8 @@ from app.rls import set_tenant_in_session
 from app.routers.invoices import _get_invoice, generate_invoice_number
 from app.schemas import (
     InvoiceRead,
+    JobConvertRequest,
+    JobRead,
     QuoteApprove,
     QuoteConvertToInvoice,
     QuoteCreate,
@@ -1219,6 +1222,69 @@ async def regenerate_quote_boq(
         status_code=status.HTTP_501_NOT_IMPLEMENTED,
         detail="BoQ endpoints are parked for the mobile-pivot MVP.",
     )
+
+
+@router.post("/{quote_id}/convert-to-job", status_code=status.HTTP_201_CREATED)
+async def convert_quote_to_job(
+    quote_id: UUID,
+    tenant: TenantDep,
+    current_user: CurrentUserDep,
+    db: DbDep,
+    data: JobConvertRequest | None = None,
+) -> JobRead:
+    """Convert an approved quote into a scheduled job (quote → job → invoice).
+
+    The customer's reconfirmed visit dates (accepted_dates) ride along into
+    the job notes so they survive onto the electrician's calendar.
+    """
+    quote = await _get_quote(db, tenant.id, quote_id)
+    if quote.status != "approved":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Only approved quotes can be converted to a job",
+        )
+
+    existing = await db.scalar(
+        select(Job).where(Job.quote_id == quote.id, Job.tenant_id == tenant.id)
+    )
+    if existing is not None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="This quote already has a job",
+        )
+
+    schedule = data or JobConvertRequest()
+    dates_note = ""
+    if quote.accepted_dates:
+        dates_note = "Customer confirmed preferred dates: " + ", ".join(quote.accepted_dates)
+    notes_parts = [p for p in [schedule.notes, dates_note] if p]
+
+    job = Job(
+        tenant_id=tenant.id,
+        contact_id=quote.contact_id,
+        quote_id=quote.id,
+        title=quote.title,
+        description=quote.description,
+        scheduled_start=schedule.scheduled_start,
+        scheduled_end=schedule.scheduled_end,
+        notes="\n\n".join(notes_parts) or None,
+    )
+    db.add(job)
+    await db.flush()
+    await write_audit_log(
+        db,
+        tenant_id=tenant.id,
+        actor=current_user,
+        action=Actions.QUOTE_CONVERTED_TO_JOB,
+        entity_type="quote",
+        entity_id=quote.id,
+        payload={"job_id": str(job.id)},
+    )
+    await db.commit()
+    refreshed = await db.scalar(
+        select(Job).options(selectinload(Job.contact)).where(Job.id == job.id)
+    )
+    return JobRead.model_validate(refreshed)
 
 
 @router.post(

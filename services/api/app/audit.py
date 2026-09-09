@@ -53,6 +53,7 @@ class Actions:
     QUOTE_GENERATED = "quote.generated"
     QUOTE_BOQ_REGENERATED = "quote.boq_regenerated"
     QUOTE_CONVERTED_TO_INVOICE = "quote.converted_to_invoice"
+    QUOTE_CONVERTED_TO_JOB = "quote.converted_to_job"
 
     QUOTE_REQUEST_CREATED = "quote_request.created"
     QUOTE_REQUEST_UPDATED = "quote_request.updated"

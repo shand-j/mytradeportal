@@ -20,6 +20,7 @@ export default function TradeLayout() {
         <Stack.Screen name="quote-intake" />
         <Stack.Screen name="request-info" />
         <Stack.Screen name="job/[id]" />
+        <Stack.Screen name="job/new" />
         <Stack.Screen name="invoice/[id]" />
         <Stack.Screen name="analytics" />
         <Stack.Screen name="invoices" />

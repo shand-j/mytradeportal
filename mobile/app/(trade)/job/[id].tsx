@@ -1,14 +1,25 @@
+import { useMemo } from "react";
 import { useLocalSearchParams, useRouter } from "expo-router";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { JobDetailScreen } from "../../../src/screens/trade/JobDetailScreen";
 import { useJobDetail, useJobActions } from "../../../src/api/jobs";
-import { createAndSendInvoice } from "../../../src/api/invoices";
+import { createAndSendInvoice, fetchInvoices } from "../../../src/api/invoices";
 
 export default function JobDetailRoute() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
-
+  const queryClient = useQueryClient();
   const { job: realJob, raw } = useJobDetail(id);
   const { start, complete } = useJobActions(id);
+  const invoicesQuery = useQuery({ queryKey: ["invoices"], queryFn: fetchInvoices });
+
+  const existingInvoiceId = useMemo(
+    () =>
+      invoicesQuery.data?.find(
+        (inv) => inv.jobId === id || (raw?.quoteId != null && inv.quoteId === raw.quoteId)
+      )?.id ?? null,
+    [invoicesQuery.data, id, raw?.quoteId]
+  );
 
   if (!realJob || !raw) return null;
 
@@ -25,6 +36,7 @@ export default function JobDetailRoute() {
         unitPrice: li.amount,
       })),
     });
+    queryClient.invalidateQueries({ queryKey: ["invoices"] });
     router.push(`/(trade)/invoice/${invoice.id}`);
   };
 
@@ -36,6 +48,12 @@ export default function JobDetailRoute() {
       onComplete={() => complete.mutateAsync().then(() => undefined)}
       busy={start.isPending || complete.isPending}
       onSubmitInvoice={handleSubmitInvoice}
+      existingInvoiceId={existingInvoiceId}
+      onViewInvoice={
+        existingInvoiceId
+          ? () => router.push(`/(trade)/invoice/${existingInvoiceId}`)
+          : undefined
+      }
     />
   );
 }

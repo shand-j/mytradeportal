@@ -32,6 +32,8 @@ export type ApiQuote = {
   total: string;
   validUntil: string | null;
   sentAt: string | null;
+  /** Customer-reconfirmed visit dates captured at acceptance (free-text strings). */
+  acceptedDates?: string[];
   lineItems: ApiQuoteLineItem[];
   quoteRequestId: string | null;
   customer: ApiContact;
@@ -186,9 +188,20 @@ export async function setQuoteApproval(id: string, approved: boolean): Promise<A
   return api.post<ApiQuote>(`/quotes/${id}/approve`, { approved });
 }
 
-/** Customer accepts a sent quote (POST /customer/quotes/{id}/accept). */
-export async function acceptCustomerQuote(id: string): Promise<ApiQuote> {
-  return api.post<ApiQuote>(`/customer/quotes/${id}/accept`);
+/**
+ * Customer accepts a sent quote (POST /customer/quotes/{id}/accept).
+ * When `preferredDates` is provided it is sent as the JSON body so the backend
+ * persists the customer's reconfirmed visit dates on the quote; otherwise the
+ * request keeps its legacy body-less form.
+ */
+export async function acceptCustomerQuote(
+  id: string,
+  preferredDates?: string[]
+): Promise<ApiQuote> {
+  return api.post<ApiQuote>(
+    `/customer/quotes/${id}/accept`,
+    preferredDates !== undefined ? { preferredDates } : undefined
+  );
 }
 
 /** Customer rejects a sent quote (POST /customer/quotes/{id}/reject). */
@@ -293,6 +306,7 @@ export function mapQuote(q: ApiQuote): Quote {
     retrievalStatus: q.retrievalStatus ?? null,
     sentAt: q.sentAt ?? undefined,
     expiresAt: q.validUntil ?? undefined,
+    acceptedDates: q.acceptedDates ?? [],
     vatRate: parseFloat(q.vatRate) || 0.2,
   };
 }
@@ -376,7 +390,8 @@ export function useMyQuotes() {
 export function useAcceptCustomerQuote() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (id: string) => acceptCustomerQuote(id),
+    mutationFn: ({ id, preferredDates }: { id: string; preferredDates?: string[] }) =>
+      acceptCustomerQuote(id, preferredDates),
     onSuccess: (_data, id) => {
       qc.invalidateQueries({ queryKey: ["my-quotes"] });
       qc.invalidateQueries({ queryKey: ["quote", id] });
