@@ -13,9 +13,9 @@ def _fake_s3(store: dict[str, bytes]) -> MagicMock:
     client = MagicMock()
 
     def put_object(**kwargs: object) -> None:
-        store[kwargs["Key"]] = kwargs["Body"]  # type: ignore[index]
+        store[kwargs["Key"]] = kwargs["Body"]  # type: ignore[index, assignment]
 
-    def get_object(**kwargs: object) -> dict:
+    def get_object(**kwargs: object) -> dict[str, object]:
         body = MagicMock()
         body.iter_chunks.return_value = iter([store[kwargs["Key"]]])  # type: ignore[index]
         return {"Body": body, "ContentType": "text/plain"}
