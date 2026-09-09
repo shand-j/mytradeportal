@@ -36,6 +36,8 @@ type JobDetailScreenProps = {
   onComplete?: () => Promise<void>;
   /** Id of the invoice already created for this job's quote, when one exists. */
   existingInvoiceId?: string | null;
+  /** VAT rate applied to ad-hoc invoice previews (from the source quote). */
+  vatRate?: number;
   /** Navigate to the existing invoice. */
   onViewInvoice?: () => void;
   busy?: boolean;
@@ -48,6 +50,7 @@ export function JobDetailScreen({
   onStart,
   onComplete,
   existingInvoiceId,
+  vatRate,
   onViewInvoice,
   busy,
 }: JobDetailScreenProps) {
@@ -58,9 +61,9 @@ export function JobDetailScreen({
 
   const totals = useMemo(() => {
     const subtotal = items.reduce((sum, i) => sum + i.amount, 0);
-    const vat = subtotal * 0.2;
+    const vat = subtotal * (vatRate ?? 0.2);
     return { subtotal, vat, total: subtotal + vat };
-  }, [items]);
+  }, [items, vatRate]);
 
   const handleStart = async () => {
     if (onStart) {

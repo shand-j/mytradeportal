@@ -4,6 +4,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { JobDetailScreen } from "../../../src/screens/trade/JobDetailScreen";
 import { useJobDetail, useJobActions } from "../../../src/api/jobs";
 import { createAndSendInvoice, fetchInvoices } from "../../../src/api/invoices";
+import { useQuote } from "../../../src/api/quotes";
 
 export default function JobDetailRoute() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -12,6 +13,9 @@ export default function JobDetailRoute() {
   const { job: realJob, raw } = useJobDetail(id);
   const { start, complete } = useJobActions(id);
   const invoicesQuery = useQuery({ queryKey: ["invoices"], queryFn: fetchInvoices });
+  // The job's invoice inherits the source quote's VAT rate server-side; the
+  // preview must show the same rate (0% for non-VAT-registered tenants).
+  const { quote: sourceQuote } = useQuote(raw?.quoteId ?? undefined);
 
   const existingInvoiceId = useMemo(
     () =>
@@ -49,6 +53,7 @@ export default function JobDetailRoute() {
       busy={start.isPending || complete.isPending}
       onSubmitInvoice={handleSubmitInvoice}
       existingInvoiceId={existingInvoiceId}
+      vatRate={sourceQuote?.vatRate}
       onViewInvoice={
         existingInvoiceId
           ? () => router.push(`/(trade)/invoice/${existingInvoiceId}`)

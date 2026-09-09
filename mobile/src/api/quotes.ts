@@ -308,7 +308,7 @@ export function mapQuote(q: ApiQuote): Quote {
     sentAt: q.sentAt ?? undefined,
     expiresAt: q.validUntil ?? undefined,
     acceptedDates: q.acceptedDates ?? [],
-    vatRate: parseFloat(q.vatRate) || 0.2,
+    vatRate: Number.isFinite(parseFloat(q.vatRate)) ? parseFloat(q.vatRate) : 0.2,
   };
 }
 

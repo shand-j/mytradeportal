@@ -484,7 +484,7 @@ function CustomerQuoteView({
               <Text variant="body" color="secondary">
                 Let your electrician know if your plans change.
               </Text>
-              <Button title="Request a revised quote" variant="outline" onPress={() => {}} />
+              <Button title="Request a revised quote" variant="outline" onPress={onRequestChanges} />
             </View>
           )}
 
@@ -508,7 +508,7 @@ function CustomerQuoteView({
               <Text variant="body" color="secondary">
                 This quote is no longer valid. Request a new quote if you still need the work.
               </Text>
-              <Button title="Request a revised quote" variant="outline" onPress={() => {}} />
+              <Button title="Request a revised quote" variant="outline" onPress={onRequestChanges} />
             </View>
           )}
         </View>
@@ -632,6 +632,9 @@ export function RequestsScreen({ navigation }: RequestsScreenProps) {
   const rejectMutation = useRejectCustomerQuote();
   const createAppointmentMutation = useCreateCustomerAppointment();
 
+  const effectiveStatus = (quote: Quote): CustomerQuoteStatus => {
+    return STATUS_MAP[quote.status] ?? "open";
+  };
   const [requesting, setRequesting] = useState(false);
   const [view, setView] = useState<"list" | "detail" | "reject" | "booking">("list");
   const [selectedQuoteId, setSelectedQuoteId] = useState<string | null>(null);
@@ -647,9 +650,14 @@ export function RequestsScreen({ navigation }: RequestsScreenProps) {
     [liveRequests]
   );
 
-  const effectiveStatus = (quote: Quote): CustomerQuoteStatus => {
-    return STATUS_MAP[quote.status] ?? "open";
-  };
+  /** Quotes still being generated or awaiting the electrician's review. */
+  const generatingCount = useMemo(
+    () =>
+      liveRequests.filter(
+        (req) => !req.quote || effectiveStatus(req.quote) === "awaiting_review"
+      ).length,
+    [liveRequests]
+  );
 
   const selectedQuote = selectedQuoteId
     ? linkedQuotes.find((q) => q.id === selectedQuoteId) ?? null
@@ -850,13 +858,24 @@ export function RequestsScreen({ navigation }: RequestsScreenProps) {
           </View>
         )}
 
-        {!isConnected && (
+        {!isConnected && generatingCount > 0 && (
           <View className="gap-2 rounded-2xl border border-slate-200 bg-white p-4">
             <Text variant="body" weight="semibold">
-              Not connected
+              {generatingCount} {generatingCount === 1 ? "quote" : "quotes"} generating
             </Text>
             <Text variant="caption" color="secondary">
-              Check your connection to view quotes and requests.
+              We'll notify you if we need anything else.
+            </Text>
+          </View>
+        )}
+
+        {!isConnected && generatingCount === 0 && (
+          <View className="gap-2 rounded-2xl border border-slate-200 bg-white p-4">
+            <Text variant="body" weight="semibold">
+              You're offline
+            </Text>
+            <Text variant="caption" color="secondary">
+              We'll refresh your quotes automatically when you're back.
             </Text>
           </View>
         )}

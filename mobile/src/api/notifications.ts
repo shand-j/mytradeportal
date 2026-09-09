@@ -55,6 +55,14 @@ export async function registerPushToken(
   await api.post(`${basePath(role)}/push-token`, { token, platform });
 }
 
+/** Report a device-side diagnostic line to the server log pipeline. */
+export async function reportClientLog(
+  message: string,
+  context: Record<string, unknown> = {}
+): Promise<void> {
+  await api.post("/diagnostics/client-log", { message, context });
+}
+
 /** Default poll interval for notification queries. */
 export const NOTIFICATIONS_POLL_MS = 30_000;
 /** Faster poll while an async quote generation is in flight. */
@@ -108,6 +116,32 @@ export function quoteIdFromLink(link: string | null | undefined): string | null 
   if (!link) return null;
   const match = link.match(/\/quotes\/([0-9a-f-]+)/i);
   return match ? match[1] : null;
+}
+
+/** In-app route for a notification link, per role (null when unmapped). */
+export function routeForNotificationLink(
+  role: NotificationRole,
+  link: string | null | undefined
+): { pathname: string; params?: Record<string, string> } | null {
+  const chatMatch = link?.match(/\/chat\/([0-9a-f-]+)/i);
+  if (chatMatch) {
+    // Chat links open the thread directly on either side (the customer chat
+    // link is `/customer/chat/{quoteRequestId}` — same tail match).
+    const pathname = role === "trade" ? "/(trade)/messages" : "/(customer)/messages";
+    return { pathname, params: { quoteRequestId: chatMatch[1] } };
+  }
+  if (role === "trade") {
+    const quoteId = quoteIdFromLink(link);
+    if (quoteId) return { pathname: `/(trade)/quote/${quoteId}` };
+    const leadMatch = link?.match(/\/quote-requests\/([0-9a-f-]+)/i);
+    if (leadMatch) return { pathname: `/(trade)/lead/${leadMatch[1]}` };
+    return null;
+  }
+  // Customer quotes are reviewed inline on the requests screen.
+  if (quoteIdFromLink(link) || link?.startsWith("/quotes")) {
+    return { pathname: "/(customer)/requests" };
+  }
+  return null;
 }
 
 /**

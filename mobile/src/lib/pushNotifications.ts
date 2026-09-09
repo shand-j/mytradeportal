@@ -72,6 +72,16 @@ async function postPushToken(role: "trade" | "customer", token: string): Promise
   await registerPushToken(role, token, Platform.OS);
 }
 
+/** Send a device-side diagnostic line to the server logs; never throws. */
+async function reportDiagnostic(message: string, context: Record<string, unknown>): Promise<void> {
+  try {
+    const { reportClientLog } = await import("../api/notifications");
+    await reportClientLog(message, context);
+  } catch {
+    // Diagnostics are best-effort on top of an already-failing path.
+  }
+}
+
 /**
  * On first launch after login, request notification + location permissions
  * (once per install). On every call — including later launches — register the
@@ -100,16 +110,38 @@ export async function requestFirstLaunchPermissions(role: "trade" | "customer"):
       await setFlag(PROMPTED_KEY, "1");
     }
 
-    // Register the push token on every launch while permission is granted;
-    // simulators can't produce one — log and move on.
+    // Re-ask whenever permission is not yet granted: iOS shows the system
+    // prompt only while the decision is undetermined and returns the current
+    // decision otherwise, so this recovers prompts interrupted on first
+    // launch — it cannot re-prompt a user who already tapped "Don't Allow".
+    let permissions = await Notifications.getPermissionsAsync();
+    if (!permissions.granted) {
+      permissions =
+        (await Notifications.requestPermissionsAsync().catch((err) => {
+          console.log("Notification permission request failed:", err);
+          return null;
+        })) ?? permissions;
+    }
+
+    if (!permissions.granted) {
+      console.log(`Push registration skipped: permission '${permissions.status}'`);
+      await reportDiagnostic("push_registration_skipped", {
+        role,
+        status: permissions.status,
+        canAskAgain: permissions.canAskAgain,
+        iosStatus: permissions.ios?.status ?? null,
+      });
+      return;
+    }
+
     try {
-      const permissions = await Notifications.getPermissionsAsync();
-      if (permissions.granted) {
-        const token = await Notifications.getExpoPushTokenAsync();
-        await postPushToken(role, token.data);
-      }
+      const token = await Notifications.getExpoPushTokenAsync();
+      await postPushToken(role, token.data);
+      console.log("Push token registered with backend");
     } catch (err) {
-      console.log("Push token registration failed (expected on simulator):", err);
+      const detail = err instanceof Error ? err.message : String(err);
+      console.log("Push token registration failed:", err);
+      await reportDiagnostic("push_registration_failed", { role, error: detail });
     }
   } catch (err) {
     console.log("First-launch permission flow failed:", err);
