@@ -12,8 +12,19 @@ from sqlalchemy.ext.asyncio import AsyncSession
 pytestmark = pytest.mark.asyncio
 
 
+@pytest.fixture
+def paddle_customer(monkeypatch: pytest.MonkeyPatch) -> AsyncMock:
+    """Stub Paddle customer binding; returns the mock for call assertions."""
+    fake = AsyncMock(return_value="ctm_test_1")
+    monkeypatch.setattr("app.routers.billing.get_or_create_customer", fake)
+    return fake
+
+
 async def test_checkout_returns_paddle_url(
-    admin_client: AsyncClient, db: AsyncSession, monkeypatch: pytest.MonkeyPatch
+    admin_client: AsyncClient,
+    db: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+    paddle_customer: AsyncMock,
 ) -> None:
     """POST /billing/checkout hands back a Paddle-hosted URL for the plan."""
     monkeypatch.setattr("app.routers.billing.settings.paddle_price_id_pro", "pri_test_pro")
@@ -48,10 +59,14 @@ async def test_checkout_returns_paddle_url(
     assert kwargs["tenant_id"] == tenant_id
     assert kwargs["price_id"] == "pri_test_pro"
     assert kwargs["discount_id"] is None
+    # The checkout is bound to the account's Paddle customer so the hosted
+    # page prefills the email and keeps it non-editable.
+    assert kwargs["customer_id"] == "ctm_test_1"
+    assert paddle_customer.call_args.args[0] == "admin@test.local"
 
 
 async def test_checkout_applies_beta_discount_when_configured(
-    admin_client: AsyncClient, monkeypatch: pytest.MonkeyPatch
+    admin_client: AsyncClient, monkeypatch: pytest.MonkeyPatch, paddle_customer: AsyncMock
 ) -> None:
     """When PADDLE_BETA_DISCOUNT_ID is set, every checkout auto-applies it."""
     monkeypatch.setattr("app.routers.billing.settings.paddle_price_id_pro", "pri_test_pro")
@@ -85,7 +100,7 @@ async def test_checkout_rejects_unconfigured_plan(
 
 
 async def test_checkout_bubbles_paddle_failure_as_502(
-    admin_client: AsyncClient, monkeypatch: pytest.MonkeyPatch
+    admin_client: AsyncClient, monkeypatch: pytest.MonkeyPatch, paddle_customer: AsyncMock
 ) -> None:
     """Paddle client raising surfaces as 502 (Bad Gateway)."""
     monkeypatch.setattr("app.routers.billing.settings.paddle_price_id_pro", "pri_test_pro")
@@ -135,7 +150,10 @@ async def test_get_subscription_returns_state_when_present(
 
 
 async def test_repeat_checkout_reuses_subscription_row(
-    admin_client: AsyncClient, db: AsyncSession, monkeypatch: pytest.MonkeyPatch
+    admin_client: AsyncClient,
+    db: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+    paddle_customer: AsyncMock,
 ) -> None:
     """Second /billing/checkout call updates the same row (no duplicates)."""
     monkeypatch.setattr("app.routers.billing.settings.paddle_price_id_starter", "pri_test_starter")

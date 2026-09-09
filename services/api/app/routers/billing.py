@@ -20,7 +20,7 @@ from app.config import settings
 from app.database import get_db
 from app.dependencies import CurrentUserDep, TenantDep
 from app.models import Subscription, Tenant
-from app.paddle_client import create_subscription_transaction
+from app.paddle_client import create_subscription_transaction, get_or_create_customer
 from app.rls import set_tenant_in_session
 from app.schemas import BillingCheckoutCreate, BillingCheckoutRead, SubscriptionRead
 
@@ -162,6 +162,11 @@ async def create_checkout(
     customer_email = tenant_row.email if tenant_row and tenant_row.email else current_user.email
 
     try:
+        # Bind the checkout to a Paddle customer so the hosted page prefills
+        # the account email and keeps it non-editable.
+        customer_id = await get_or_create_customer(
+            customer_email, name=current_user.full_name or None
+        )
         checkout = await create_subscription_transaction(
             price_id=price_id,
             tenant_id=str(tenant.id),
@@ -169,6 +174,7 @@ async def create_checkout(
             customer_email=customer_email,
             success_url=data.success_url,
             discount_id=settings.paddle_beta_discount_id or None,
+            customer_id=customer_id,
         )
     except Exception as exc:
         logger.error(
