@@ -109,3 +109,21 @@ async def test_brand_colours_persist_via_tenant_update(admin_client: AsyncClient
     settings = tenant.json()["settings"]
     assert settings["primary_color"] == "#112233"
     assert settings["secondary_color"] == "#445566"
+
+
+async def test_tenant_update_accepts_snake_case_field_names(admin_client: AsyncClient) -> None:
+    """The mobile app PATCHes snake_case (snakeizeKeys); aliases alone dropped it.
+
+    Regression: without populate_by_name, Pydantic validated only the camelCase
+    alias, so the app's primary_color / address / phone updates were silently
+    ignored and branding changes never persisted.
+    """
+    response = await admin_client.patch(
+        "/tenants/me",
+        json={"primary_color": "#A1B2C3", "address": "1 Test Way", "phone": "07123456789"},
+    )
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["primaryColor"] == "#A1B2C3"
+    assert body["settings"]["address"] == "1 Test Way"
+    assert body["settings"]["phone"] == "07123456789"

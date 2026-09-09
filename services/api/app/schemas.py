@@ -46,6 +46,10 @@ class TenantCreate(BaseModel):
 
 
 class TenantUpdate(BaseModel):
+    # Accept both snake_case (what the mobile app sends) and camelCase
+    # aliases (legacy web client) for every field.
+    model_config = ConfigDict(populate_by_name=True)
+
     name: str | None = Field(default=None, min_length=1, max_length=255)
     settings: dict[str, Any] | None = None
 
