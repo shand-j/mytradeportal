@@ -3,6 +3,8 @@
 from typing import ClassVar
 
 from django.contrib import admin
+from django.db.models import QuerySet
+from django.http import HttpRequest
 
 from operations.forms import TenantAdminForm, UserAdminForm
 from operations.models import (
@@ -91,7 +93,7 @@ class CustomerAdmin(TenantScopedAdminMixin, admin.ModelAdmin):
     actions = ("reset_password",)
 
     @admin.action(description="Reset password to a temporary value (shown once)")
-    def reset_password(self, request, queryset):
+    def reset_password(self, request: HttpRequest, queryset: QuerySet) -> None:
         import secrets
 
         import bcrypt
