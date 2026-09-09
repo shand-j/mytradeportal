@@ -453,15 +453,23 @@ async def search_cost_items_with_status(
             query, trade=trade, region=region, top_k=top_k
         )
 
-    vector = await embed_text(query)
+    try:
+        vector = await embed_text(query)
+    except Exception as exc:
+        # Embedding provider blip (DNS/connection) must not 500 quote
+        # generation — degrade to the Postgres lexical search instead.
+        logger.warning(
+            "retrieval_fallback",
+            reason="embedding_error",
+            mode="lexical",
+            error_type=type(exc).__name__,
+        )
+        return await _lexical_search_cost_items_with_status(
+            query, trade=trade, region=region, top_k=top_k
+        )
     limit = top_k or settings.rag_top_k
 
     qdrant = get_qdrant_client()
-    await ensure_collection(
-        qdrant,
-        settings.qdrant_collection_name,
-        vector_size=get_embedding_dimension(),
-    )
 
     active_sources = sources if sources is not None else ["domestic_pipeline"]
     must_conditions: list[Any] = [
@@ -490,6 +498,11 @@ async def search_cost_items_with_status(
 
     started = time.perf_counter()
     try:
+        await ensure_collection(
+            qdrant,
+            settings.qdrant_collection_name,
+            vector_size=get_embedding_dimension(),
+        )
         response = await qdrant.query_points(
             collection_name=settings.qdrant_collection_name,
             query=vector,
@@ -498,13 +511,19 @@ async def search_cost_items_with_status(
             with_payload=True,
         )
     except Exception as exc:
-        logger.error(
-            "retrieval_error",
+        # Qdrant/DNS blips are transient and must not 500 quote generation —
+        # degrade to the Postgres lexical search so quotes still generate.
+        logger.warning(
+            "retrieval_fallback",
+            reason="qdrant_error",
+            mode="lexical",
             collection=settings.qdrant_collection_name,
             duration_ms=round((time.perf_counter() - started) * 1000, 2),
             error_type=type(exc).__name__,
         )
-        raise
+        return await _lexical_search_cost_items_with_status(
+            query, trade=trade, region=region, top_k=top_k
+        )
 
     items = [
         {

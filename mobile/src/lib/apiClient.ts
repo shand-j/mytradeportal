@@ -105,7 +105,16 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
   }
 
   const text = await response.text();
-  const payload = text ? JSON.parse(text) : null;
+  let payload = null;
+  if (text) {
+    try {
+      payload = JSON.parse(text);
+    } catch {
+      // Non-JSON error bodies (e.g. an edge proxy's HTML 500 page) must not
+      // crash the caller with a JSON parse error — treat as no payload.
+      payload = null;
+    }
+  }
 
   if (!response.ok) {
     const detail =
