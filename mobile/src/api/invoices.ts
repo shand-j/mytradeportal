@@ -3,7 +3,7 @@ import { api } from "../lib/apiClient";
 import { Invoice, InvoiceStatus } from "../types";
 import { ApiContact } from "./quotes";
 
-type ApiInvoiceLineItem = {
+export type ApiInvoiceLineItem = {
   id: string;
   description: string;
   quantity: string;
@@ -86,6 +86,23 @@ export async function markInvoicePaid(id: string): Promise<ApiInvoice> {
   return api.post<ApiInvoice>(`/invoices/${id}/mark-paid`);
 }
 
+/** Mark an invoice sent and notify/email the customer (also used for reminders). */
+export async function sendInvoice(id: string): Promise<ApiInvoice> {
+  return api.post<ApiInvoice>(`/invoices/${id}/send`);
+}
+
+export type UpdateInvoiceInput = {
+  lineItems?: { description: string; quantity: number; unitPrice: number }[];
+  dueDate?: string;
+  notes?: string;
+  status?: string;
+};
+
+/** Update an invoice; the backend replaces line items and recalculates totals. */
+export async function updateInvoice(id: string, input: UpdateInvoiceInput): Promise<ApiInvoice> {
+  return api.patch<ApiInvoice>(`/invoices/${id}`, input);
+}
+
 /** Invoices list for the trade Invoices screen. */
 export function useInvoicesList() {
   const query = useQuery({
@@ -110,6 +127,8 @@ export function useInvoice(id: string | undefined) {
 
   return {
     invoice: query.data ? mapInvoice(query.data) : undefined,
+    /** Raw API invoice (line items, VAT amounts) for edit flows. */
+    apiInvoice: query.data,
     isConnected: query.isSuccess,
     isLoading: !!id && query.isLoading,
   };
@@ -121,6 +140,33 @@ export function useMarkInvoicePaid() {
   return useMutation({
     mutationFn: (id: string) => markInvoicePaid(id),
     onSuccess: (_data, id) => {
+      qc.invalidateQueries({ queryKey: ["invoices"] });
+      qc.invalidateQueries({ queryKey: ["invoice", id] });
+      qc.invalidateQueries({ queryKey: ["dashboard"] });
+    },
+  });
+}
+
+/** Mutation: send (or re-send/remind) an invoice and refresh the caches. */
+export function useSendInvoice() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => sendInvoice(id),
+    onSuccess: (_data, id) => {
+      qc.invalidateQueries({ queryKey: ["invoices"] });
+      qc.invalidateQueries({ queryKey: ["invoice", id] });
+      qc.invalidateQueries({ queryKey: ["dashboard"] });
+    },
+  });
+}
+
+/** Mutation: update an invoice's line items and refresh the caches. */
+export function useUpdateInvoice() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, input }: { id: string; input: UpdateInvoiceInput }) =>
+      updateInvoice(id, input),
+    onSuccess: (_data, { id }) => {
       qc.invalidateQueries({ queryKey: ["invoices"] });
       qc.invalidateQueries({ queryKey: ["invoice", id] });
       qc.invalidateQueries({ queryKey: ["dashboard"] });

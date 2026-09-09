@@ -672,6 +672,8 @@ class InvoiceUpdate(BaseModel):
     due_date: datetime | None = None
     notes: str | None = None
     status: str | None = None
+    # Full replacement when provided (same semantics as QuoteUpdate).
+    line_items: list[InvoiceLineItemCreate] | None = None
 
 
 class QuoteConvertToInvoice(BaseModel):

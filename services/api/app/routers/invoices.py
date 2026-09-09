@@ -5,6 +5,7 @@ from decimal import Decimal
 from typing import Annotated
 from uuid import UUID
 
+import structlog
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -14,12 +15,15 @@ from app.audit import Actions, write_audit_log
 from app.calculations import build_invoice_from_quote, calculate_invoice_totals, tenant_vat_rate
 from app.database import get_db
 from app.dependencies import CurrentUserDep, TenantDep
-from app.models import Contact, Invoice, InvoiceLineItem, Job, Quote
-from app.push import notify_staff
+from app.email import send_email
+from app.email_templates import invoice_sent as invoice_sent_template
+from app.models import Contact, Invoice, InvoiceLineItem, Job, Quote, QuoteRequest, Tenant
+from app.push import notify_customer, notify_staff
 from app.rls import set_tenant_in_session
 from app.schemas import InvoiceCreate, InvoiceRead, InvoiceUpdate
 
 router = APIRouter(prefix="/invoices", tags=["Invoices"])
+logger = structlog.get_logger("api.invoices")
 DbDep = Annotated[AsyncSession, Depends(get_db)]
 
 
@@ -171,9 +175,18 @@ async def update_invoice(
     current_user: CurrentUserDep,
     db: DbDep,
 ) -> InvoiceRead:
-    """Update an invoice's due date, notes, or status."""
+    """Update an invoice's due date, notes, status, or line items."""
     invoice = await _get_invoice(db, tenant.id, invoice_id)
     changed = data.model_dump(exclude_unset=True)
+
+    if "line_items" in changed:
+        # Full replacement, mirroring update_quote; totals recalculated.
+        new_items = changed.pop("line_items")
+        for item in list(invoice.line_items):
+            await db.delete(item)
+        invoice.line_items = [InvoiceLineItem(tenant_id=tenant.id, **item) for item in new_items]
+        calculate_invoice_totals(invoice)
+
     for key, value in changed.items():
         setattr(invoice, key, value)
     await db.flush()
@@ -220,7 +233,7 @@ async def send_invoice(
     current_user: CurrentUserDep,
     db: DbDep,
 ) -> InvoiceRead:
-    """Mark an invoice as sent to the customer."""
+    """Mark an invoice as sent to the customer (in-app + email notification)."""
     invoice = await _get_invoice(db, tenant.id, invoice_id)
     invoice.status = "sent"
     await db.flush()
@@ -232,6 +245,47 @@ async def send_invoice(
         entity_type="invoice",
         entity_id=invoice.id,
     )
+
+    # Notify the linked customer (in-app + push) and email the contact.
+    customer_id = None
+    if invoice.quote_id is not None:
+        linked_request = await db.scalar(
+            select(QuoteRequest).where(QuoteRequest.quote_id == invoice.quote_id)
+        )
+        if linked_request is not None:
+            customer_id = linked_request.customer_id
+    if customer_id is not None:
+        await notify_customer(
+            db,
+            tenant.id,
+            customer_id,
+            kind="invoice_sent",
+            title="Invoice ready",
+            body=f"Invoice {invoice.invoice_number} is ready — £{invoice.total}.",
+            link=f"/customer/invoice/{invoice.id}",
+        )
+    contact = await db.get(Contact, invoice.contact_id)
+    tenant_row = await db.get(Tenant, tenant.id)
+    if contact is not None and contact.email:
+        business_name = tenant_row.name if tenant_row is not None else "Your electrician"
+        subject, html, text = invoice_sent_template(
+            customer_name=contact.name.split()[0] if contact.name else "there",
+            business_name=business_name,
+            invoice_number=invoice.invoice_number,
+            invoice_total=f"£{invoice.total}",
+        )
+        try:
+            await send_email(
+                to_email=contact.email,
+                subject=subject,
+                html_body=html,
+                text_body=text,
+                from_name=business_name,
+                reply_to=tenant_row.email if tenant_row is not None and tenant_row.email else None,
+            )
+        except Exception:
+            logger.warning("invoice_email_failed", invoice_id=str(invoice.id))
+
     await db.commit()
     return InvoiceRead.model_validate(await _get_invoice(db, tenant.id, invoice.id))
 

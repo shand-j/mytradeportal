@@ -17,6 +17,7 @@ type ApiQuoteLineItem = {
   description: string;
   quantity: string;
   unitPrice: string;
+  unit?: string;
   total: string;
   aiGenerated?: boolean;
 };
@@ -293,7 +294,7 @@ export function mapQuote(q: ApiQuote): Quote {
       kind: "labour" as const,
       description: li.description,
       qty: String(li.quantity),
-      unit: "job",
+      unit: li.unit ?? "ea",
       unitPrice: String(li.unitPrice),
       aiGenerated: li.aiGenerated ?? false,
     })),

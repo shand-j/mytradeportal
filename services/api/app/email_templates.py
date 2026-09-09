@@ -72,3 +72,35 @@ def quote_ready(
 </html>
 """
     return subject, html, text
+
+
+def invoice_sent(
+    *,
+    customer_name: str,
+    business_name: str,
+    invoice_number: str,
+    invoice_total: str,
+) -> tuple[str, str, str]:
+    """Invoice-issued email. (subject, html, text)."""
+    subject = f"Invoice {invoice_number} from {business_name}"
+    text = (
+        f"Hi {customer_name},\n\n"
+        f"{business_name} has sent you invoice {invoice_number}.\n"
+        f"Total due: {invoice_total}\n\n"
+        "Open the app to view and pay.\n\n"
+        "— My Trade Portal"
+    )
+    html = f"""\
+<!doctype html>
+<html>
+  <body style="font-family:-apple-system,Segoe UI,Roboto,sans-serif;color:#0f172a;max-width:560px;margin:0 auto;padding:24px;">
+    <h1 style="font-size:22px;margin:0 0 12px;">Invoice {invoice_number}</h1>
+    <p>Hi {customer_name},</p>
+    <p><strong>{business_name}</strong> has sent you an invoice.</p>
+    <p style="font-size:20px;font-weight:700;margin:16px 0;">Total due: {invoice_total}</p>
+    <p>Open the app to view and pay.</p>
+    <p style="color:#64748b;font-size:13px;margin-top:32px;">— My Trade Portal</p>
+  </body>
+</html>
+"""
+    return subject, html, text
