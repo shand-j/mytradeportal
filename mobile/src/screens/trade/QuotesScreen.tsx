@@ -110,7 +110,7 @@ export function QuotesScreen(_props: QuotesScreenProps) {
   return (
     <Screen>
       <Header
-        title="Leads"
+        title="Quotes"
         rightAction={
           <View className="flex-row items-center gap-1">
             {!isLoading && (
@@ -129,7 +129,7 @@ export function QuotesScreen(_props: QuotesScreenProps) {
         <GeneratingQuoteBanner />
 
         <Text variant="body" color="secondary">
-          All leads and quotes in one place, sorted by urgency.
+          All quotes in one place, sorted by urgency.
         </Text>
 
         <View className="flex-row flex-wrap gap-2">
