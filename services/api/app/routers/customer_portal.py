@@ -11,7 +11,7 @@ from typing import Annotated
 from uuid import UUID
 
 import structlog
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, UploadFile, status
 from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -38,8 +38,6 @@ from app.schemas import (
     CustomerRead,
     CustomerRegister,
     CustomerTokenResponse,
-    PresignedUploadRequest,
-    PresignedUploadResponse,
     QuoteRead,
     QuoteRequestMediaCreate,
     QuoteRequestRead,
@@ -313,32 +311,35 @@ async def list_my_quote_requests(
     return list(result.scalars().all())
 
 
-@router.post("/files/presigned-upload", response_model=PresignedUploadResponse)
-async def customer_presigned_upload(
-    data: PresignedUploadRequest,
+@router.post("/files/upload")
+async def customer_upload_file(
+    file: UploadFile,
     customer: CurrentCustomerDep,
-) -> PresignedUploadResponse:
-    """Customer-scoped presigned upload (photos on quote requests)."""
-    import uuid as _uuid
+) -> dict[str, str]:
+    """Customer-scoped upload (photos on quote requests). Proxied through the
+    API because MinIO is private-network-only."""
+    from app.routers.files import _MAX_UPLOAD_BYTES, store_upload
 
-    from app.config import settings
-    from app.routers.files import _s3_client
-
-    key = f"tenants/{customer.tenant_id}/{_uuid.uuid4()}/{data.filename}"
-    try:
-        presigned = _s3_client().generate_presigned_post(
-            Bucket=settings.minio_bucket,
-            Key=key,
-            Fields={"Content-Type": data.content_type or "application/octet-stream"},
-            Conditions=[["starts-with", "$Content-Type", ""]],
-            ExpiresIn=300,
+    content = await file.read()
+    if len(content) > _MAX_UPLOAD_BYTES:
+        raise HTTPException(
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, detail="File too large"
         )
+    try:
+        return store_upload(customer.tenant_id, file, content)
     except Exception as exc:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail=f"Could not generate presigned upload URL: {exc}",
+            detail=f"Could not store file: {exc}",
         ) from exc
-    return PresignedUploadResponse(url=presigned["url"], fields=presigned["fields"], key=key)
+
+
+@router.get("/files/download")
+async def customer_download_file(key: str, customer: CurrentCustomerDep) -> Response:
+    """Stream a stored file back to the customer (tenant-prefix enforced)."""
+    from app.routers.files import stream_download
+
+    return stream_download(customer.tenant_id, key)
 
 
 @router.post("/quote-requests/{quote_request_id}/media", status_code=status.HTTP_201_CREATED)

@@ -4,7 +4,7 @@ import * as ImagePicker from "expo-image-picker";
 import { Image } from "expo-image";
 import { Icon } from "./Icon";
 import { Text } from "./Text";
-import { api } from "../../lib/apiClient";
+import { uploadFileToApi } from "../../api/uploads";
 
 type PhotoAsset = {
   url: string;
@@ -18,33 +18,12 @@ type PhotoPickerProps = {
   testID?: string;
 };
 
-type PresignedUploadResponse = {
-  url: string;
-  fields: Record<string, string>;
-  key: string;
-};
-
-async function uploadToPresigned(asset: ImagePicker.ImagePickerAsset): Promise<PhotoAsset> {
+async function uploadPhoto(asset: ImagePicker.ImagePickerAsset): Promise<PhotoAsset> {
   const filename = asset.fileName ?? `photo-${Date.now()}.jpg`;
   const contentType = asset.mimeType ?? "image/jpeg";
-  const presigned = await api.post<PresignedUploadResponse>("/files/presigned-upload", {
-    filename,
-    content_type: contentType,
-  });
-  const form = new FormData();
-  Object.entries(presigned.fields).forEach(([key, value]) => form.append(key, value));
-  // React Native and web File / Blob shapes differ; both are accepted by
-  // FormData under `any` here without runtime pain.
-  const file =
-    typeof File !== "undefined"
-      ? await fetch(asset.uri).then((r) => r.blob()).then((blob) => blob)
-      : ({ uri: asset.uri, name: filename, type: contentType } as unknown as Blob);
-  form.append("file", file as Blob, filename);
-  const response = await fetch(presigned.url, { method: "POST", body: form });
-  if (!response.ok) {
-    throw new Error(`Upload failed (${response.status})`);
-  }
-  return { url: `${presigned.url}/${presigned.key}`, key: presigned.key };
+  // MinIO is private-network-only: uploads go through the API, which returns
+  // the storage key + API-proxied download URL.
+  return uploadFileToApi("/files/upload", { uri: asset.uri, name: filename, type: contentType });
 }
 
 export function PhotoPicker({ photos, onChange, maxPhotos = 5, testID }: PhotoPickerProps) {
@@ -67,7 +46,7 @@ export function PhotoPicker({ photos, onChange, maxPhotos = 5, testID }: PhotoPi
     if (result.canceled || result.assets.length === 0) return;
     setUploading(true);
     try {
-      const uploaded = await uploadToPresigned(result.assets[0]);
+      const uploaded = await uploadPhoto(result.assets[0]);
       onChange([...photos, uploaded]);
     } catch (err) {
       setError((err as Error).message);

@@ -17,8 +17,9 @@
  *
  * Things this file CANNOT do (Railway IaC beta limitations):
  *   - Generate public service domains. After the first apply, generate domains
- *     in the dashboard for: api, admin, minio (target port 9000). Until
- *     then the `*_RAILWAY_PUBLIC_DOMAIN` references below stay empty.
+ *     in the dashboard for: api, admin. (MinIO is deliberately private-only;
+ *     devices never talk to it — file traffic is proxied through the API.)
+ *     Until then the `*_RAILWAY_PUBLIC_DOMAIN` references below stay empty.
  *   - Register custom domains (dashboard only, then `railway config pull`).
  *
  * Secrets use preserve(): they are set once in the dashboard and are never
@@ -137,10 +138,12 @@ export default defineRailway(() => {
       QDRANT_COLLECTION_NAME: "cost_items",
       QDRANT_KNOWLEDGE_COLLECTION_NAME: "quoting_knowledge",
       // OCERP_URL,
-      // Presigned upload URLs are fetched by the browser, so MinIO must be
-      // reached via its PUBLIC domain over HTTPS (MINIO_USE_SSL=true).
-      MINIO_ENDPOINT: minio.env.RAILWAY_PUBLIC_DOMAIN,
-      MINIO_USE_SSL: "true",
+      // MinIO is private-network-only (no public domain — avoids egress fees
+      // and public exposure). All file traffic from devices is proxied through
+      // the API (POST /files/upload, GET /files/download), which reaches MinIO
+      // over the private network. Never hand MinIO URLs to clients.
+      MINIO_ENDPOINT: "minio.railway.internal",
+      MINIO_USE_SSL: "false",
       MINIO_BUCKET: "mtp-uploads",
       // These secrets are required for production startup. They are set as
       // environment-level variables in Railway, but IaC must reference them with
