@@ -12,7 +12,7 @@ from app.config import settings as settings
 from app.database import get_db
 from app.dependencies import TenantDep, _extract_token
 from app.models import Communication, Contact, Customer, QuoteRequest, User
-from app.push import notify_staff
+from app.push import notify_customer, notify_staff
 from app.quote_automation import build_triage_description, requote_after_triage_close
 from app.rag import generate_followup
 from app.rls import set_tenant_in_session
@@ -192,10 +192,16 @@ async def create_communication(
             data.contact_id = quote_request.contact_id
 
     # Derive the sender role from the authenticated actor so a customer token
-    # cannot impersonate business staff (and vice versa).
+    # cannot impersonate business staff (and vice versa). Direction is
+    # overridden the same way: it is always from the tenant's perspective, so
+    # customer-authored messages are inbound regardless of client payload.
     resolved_role = "customer" if isinstance(actor, Customer) else "business"
+    direction = "inbound" if isinstance(actor, Customer) else "outbound"
     communication = Communication(
-        tenant_id=tenant.id, **data.model_dump(exclude={"sender_role"}), sender_role=resolved_role
+        tenant_id=tenant.id,
+        **data.model_dump(exclude={"sender_role", "direction"}),
+        sender_role=resolved_role,
+        direction=direction,
     )
     db.add(communication)
     # Notify staff on a customer reply only once AI triage has closed — while
@@ -358,6 +364,19 @@ async def ai_followup(
         ai_metadata=ai_metadata,
     )
     db.add(assistant_message)
+    # Surface the AI's reply to the customer: persistent in-app notification
+    # plus a push, so they don't have to stumble onto the chat banner.
+    if quote_request.customer_id is not None:
+        snippet = body[:80] + ("…" if len(body) > 80 else "")
+        await notify_customer(
+            db,
+            tenant.id,
+            quote_request.customer_id,
+            kind="chat_message",
+            title=f"New message from {tenant.name}",
+            body=snippet,
+            link=f"/customer/chat/{quote_request_id}",
+        )
     await db.commit()
     await db.refresh(assistant_message)
 

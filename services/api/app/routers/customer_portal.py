@@ -151,16 +151,29 @@ async def register_customer(
             detail="An account with this email already exists",
         )
 
-    contact = Contact(
-        tenant_id=tenant.id,
-        name=data.full_name,
-        email=str(data.email),
-        phone=data.phone,
-        address=data.address,
-        postcode=data.postcode,
+    # Reuse the CRM contact created when the homeowner requested their quote —
+    # registering must not fork a second contact for the same person.
+    contact = await db.scalar(
+        select(Contact).where(Contact.tenant_id == tenant.id, Contact.email == str(data.email))
     )
-    db.add(contact)
-    await db.flush()
+    if contact is None:
+        contact = Contact(
+            tenant_id=tenant.id,
+            name=data.full_name,
+            email=str(data.email),
+            phone=data.phone,
+            address=data.address,
+            postcode=data.postcode,
+        )
+        db.add(contact)
+        await db.flush()
+    else:
+        if data.phone:
+            contact.phone = data.phone
+        if data.address:
+            contact.address = data.address
+        if data.postcode:
+            contact.postcode = data.postcode
 
     customer = Customer(
         tenant_id=tenant.id,
@@ -286,11 +299,13 @@ async def get_me(customer: CurrentCustomerDep) -> Customer:
 async def list_my_quote_requests(
     customer: CurrentCustomerDep,
     db: DbDep,
-) -> list[QuoteRequest]:
+) -> list[QuoteRequestRead]:
     """List the authenticated customer's quote requests (their history).
 
-    Each response includes the linked quote (with line items) when the request
-    has been converted to a quote, so the customer can view, accept or reject it.
+    Each response includes the linked quote (with line items) once the
+    electrician has sent it, so the customer can view, accept or reject it.
+    Drafts under review are withheld — the customer sees the request as
+    "awaiting review" instead of peeking at unreviewed line items.
     """
     # The customer dependency already set the tenant RLS context.
     result = await db.execute(
@@ -309,7 +324,16 @@ async def list_my_quote_requests(
         )
         .order_by(QuoteRequest.created_at.desc())
     )
-    return list(result.scalars().all())
+    rows = list(result.scalars().all())
+    reads = [QuoteRequestRead.model_validate(qr) for qr in rows]
+    # Drafts under electrician review stay hidden: the customer sees the
+    # request as awaiting review instead of peeking at unreviewed line items.
+    return [
+        read.model_copy(update={"quote": None})
+        if read.quote is not None and read.quote.status == "draft"
+        else read
+        for read in reads
+    ]
 
 
 @router.post("/files/upload")
@@ -416,6 +440,8 @@ async def _get_customer_quote(db: AsyncSession, customer: Customer, quote_id: UU
         .where(
             Quote.tenant_id == customer.tenant_id,
             Quote.id == quote_id,
+            # Drafts are electrician-only until sent; treat as not found.
+            Quote.status != "draft",
             or_(
                 Quote.contact_id == customer.contact_id,
                 Quote.quote_request.has(QuoteRequest.customer_id == customer.id),

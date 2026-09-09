@@ -10,6 +10,7 @@ from app.models import Communication, Contact, QuoteRequest, User
 from app.rls import set_tenant_in_session
 from app.security import get_password_hash
 from httpx import AsyncClient
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 pytestmark = pytest.mark.asyncio
@@ -387,3 +388,158 @@ async def test_ai_followup_persists_options_in_metadata(
         "In the garage",
         "Not sure",
     ]
+
+
+async def _make_customer(db: AsyncSession, tenant_id: UUID) -> Any:
+    """Create a contact + linked customer account in the given tenant."""
+    from app.models import Customer
+
+    await set_tenant_in_session(db, tenant_id)
+    contact = Contact(tenant_id=tenant_id, name="Chatty Homeowner", email="chatty@example.com")
+    db.add(contact)
+    await db.flush()
+    customer = Customer(
+        tenant_id=tenant_id,
+        contact_id=contact.id,
+        email="chatty@example.com",
+        full_name="Chatty Homeowner",
+        password_hash=get_password_hash("homeowner-pass-123"),
+        is_active=True,
+    )
+    db.add(customer)
+    await db.flush()
+    return customer
+
+
+def _customer_headers(tenant_id: UUID, customer: Any) -> dict[str, str]:
+    from app.security import create_access_token
+
+    token = create_access_token(
+        user_id=customer.id,
+        tenant_id=tenant_id,
+        role="customer",
+        email=customer.email,
+        subject_type="customer",
+    )
+    return {"X-Tenant-ID": str(tenant_id), "Authorization": f"Bearer {token}"}
+
+
+async def test_customer_message_direction_inbound_from_tenant_view(
+    admin_client: AsyncClient, db: AsyncSession
+) -> None:
+    """A customer-authored chat message is inbound, whatever the payload says."""
+    tenant_id = UUID(admin_client.headers["X-Tenant-ID"])
+    customer = await _make_customer(db, tenant_id)
+    quote_request = await _create_lead(db, tenant_id)
+    quote_request.customer_id = customer.id
+    await db.flush()
+
+    response = await admin_client.post(
+        "/communications",
+        headers=_customer_headers(tenant_id, customer),
+        json={
+            "quote_request_id": str(quote_request.id),
+            "channel": "in_app_chat",
+            "body": "The breaker trips straight away",
+            "direction": "outbound",
+            "sender_role": "ai",
+        },
+    )
+    assert response.status_code == 201, response.text
+    body = response.json()
+    assert body["direction"] == "inbound"
+    assert body["sender_role"] == "customer"
+
+
+async def test_staff_message_direction_outbound_even_if_payload_says_inbound(
+    admin_client: AsyncClient, db: AsyncSession
+) -> None:
+    """Staff-authored messages stay outbound regardless of client payload."""
+    tenant_id = UUID(admin_client.headers["X-Tenant-ID"])
+    quote_request = await _create_lead(db, tenant_id)
+
+    response = await admin_client.post(
+        "/communications",
+        json={
+            "quote_request_id": str(quote_request.id),
+            "channel": "in_app_chat",
+            "body": "We'll take a look",
+            "direction": "inbound",
+            "sender_role": "customer",
+        },
+    )
+    assert response.status_code == 201, response.text
+    body = response.json()
+    assert body["direction"] == "outbound"
+    assert body["sender_role"] == "business"
+
+
+async def test_ai_followup_notifies_linked_customer(
+    admin_client: AsyncClient, db: AsyncSession
+) -> None:
+    """A new AI chat message raises a persistent customer notification."""
+    from app.models import Notification
+
+    tenant_id = UUID(admin_client.headers["X-Tenant-ID"])
+    customer = await _make_customer(db, tenant_id)
+    quote_request = await _create_lead(db, tenant_id)
+    quote_request.customer_id = customer.id
+    await db.flush()
+
+    result_payload = {
+        "confidence": 40,
+        "complete": False,
+        "message": "Where is the consumer unit located?",
+        "extracted": {},
+    }
+    with patch(
+        "app.routers.communications.generate_followup",
+        new=AsyncMock(return_value=result_payload),
+    ):
+        response = await admin_client.post(f"/communications/{quote_request.id}/ai-followup")
+
+    assert response.status_code == 200, response.text
+
+    notification = await db.scalar(
+        select(Notification).where(
+            Notification.tenant_id == tenant_id,
+            Notification.recipient_type == "customer",
+            Notification.recipient_id == customer.id,
+            Notification.type == "chat_message",
+        )
+    )
+    assert notification is not None
+    assert notification.link == f"/customer/chat/{quote_request.id}"
+
+
+async def test_ai_followup_skips_notification_without_account(
+    admin_client: AsyncClient, db: AsyncSession
+) -> None:
+    """Leads without a customer account get no in-app notification (email-only)."""
+    from app.models import Notification
+
+    tenant_id = UUID(admin_client.headers["X-Tenant-ID"])
+    quote_request = await _create_lead(db, tenant_id)  # customer_id is None
+
+    result_payload = {
+        "confidence": 40,
+        "complete": False,
+        "message": "Where is the consumer unit located?",
+        "extracted": {},
+    }
+    with patch(
+        "app.routers.communications.generate_followup",
+        new=AsyncMock(return_value=result_payload),
+    ):
+        response = await admin_client.post(f"/communications/{quote_request.id}/ai-followup")
+
+    assert response.status_code == 200, response.text
+    count = await db.scalar(
+        select(func.count())
+        .select_from(Notification)
+        .where(
+            Notification.tenant_id == tenant_id,
+            Notification.recipient_type == "customer",
+        )
+    )
+    assert count == 0

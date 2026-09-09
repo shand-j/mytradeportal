@@ -162,6 +162,9 @@ class ContactRead(BaseModel):
     avatar_url: str | None = None
     created_at: datetime
     updated_at: datetime
+    # True when a customer account is linked to this contact. Unregistered
+    # contacts are email-only for comms — the UI flags them so staff know.
+    has_account: bool = False
 
     @computed_field  # type: ignore[prop-decorator]
     @property

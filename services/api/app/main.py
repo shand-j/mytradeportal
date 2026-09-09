@@ -30,6 +30,7 @@ from app.routers import (
     contacts,
     customer_portal,
     customers,
+    diagnostics,
     feature_flags,
     files,
     health,
@@ -142,6 +143,7 @@ app.include_router(auth.router)
 app.include_router(users.router)
 app.include_router(contacts.router)
 app.include_router(customers.router)
+app.include_router(diagnostics.router)
 app.include_router(customer_portal.router)
 app.include_router(quote_requests.router)
 app.include_router(businesses.router)

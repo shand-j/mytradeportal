@@ -10,7 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.audit import Actions, write_audit_log
 from app.database import get_db
 from app.dependencies import CurrentUserDep, TenantDep
-from app.models import Contact
+from app.models import Contact, Customer
 from app.rls import set_tenant_in_session
 from app.schemas import ContactCreate, ContactRead, ContactUpdate
 
@@ -26,12 +26,27 @@ async def _get_contact(db: AsyncSession, tenant_id: UUID, contact_id: UUID) -> C
     return contact
 
 
+async def _contacts_with_accounts(db: AsyncSession, tenant_id: UUID) -> set[UUID]:
+    """Contact ids that have a linked customer account (one query for the list)."""
+    result = await db.execute(
+        select(Customer.contact_id).where(
+            Customer.tenant_id == tenant_id, Customer.contact_id.is_not(None)
+        )
+    )
+    return {row for row in result.scalars().all() if row is not None}
+
+
 @router.get("")
 async def list_contacts(tenant: TenantDep, db: DbDep) -> list[ContactRead]:
     """List contacts for the current tenant."""
     await set_tenant_in_session(db, tenant.id)
     result = await db.execute(select(Contact).where(Contact.tenant_id == tenant.id))
-    return [ContactRead.model_validate(c) for c in result.scalars().all()]
+    contacts = list(result.scalars().all())
+    with_account = await _contacts_with_accounts(db, tenant.id)
+    reads = [ContactRead.model_validate(c) for c in contacts]
+    for read in reads:
+        read.has_account = read.id in with_account
+    return reads
 
 
 @router.post("", status_code=status.HTTP_201_CREATED)
@@ -64,7 +79,10 @@ async def create_contact(
 async def get_contact(contact_id: UUID, tenant: TenantDep, db: DbDep) -> ContactRead:
     """Get a single contact."""
     contact = await _get_contact(db, tenant.id, contact_id)
-    return ContactRead.model_validate(contact)
+    with_account = await _contacts_with_accounts(db, tenant.id)
+    read = ContactRead.model_validate(contact)
+    read.has_account = contact.id in with_account
+    return read
 
 
 @router.patch("/{contact_id}")

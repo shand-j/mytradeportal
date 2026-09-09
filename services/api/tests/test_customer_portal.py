@@ -1,11 +1,13 @@
 """Tests for the homeowner (customer) portal: register, login, history."""
 
+from datetime import datetime
 from decimal import Decimal
 from uuid import uuid4
 
 from app.models import Contact, Quote, QuoteRequest, Tenant
 from app.rls import bypass_rls_in_session, set_tenant_in_session
 from httpx import AsyncClient
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 
@@ -384,3 +386,132 @@ async def test_accept_quote_reconfirms_preferred_dates(
     body = response.json()
     assert body["status"] == "approved"
     assert body["accepted_dates"] == ["Fri 12 Sep", "Mon 15 Sep"]
+
+
+async def test_draft_quote_hidden_until_electrician_sends(
+    client: AsyncClient, db: AsyncSession
+) -> None:
+    """Customers must not see line items for a quote the electrician is still
+    reviewing — the request shows as awaiting review and detail 404s."""
+    slug = f"cust-{uuid4().hex[:8]}"
+    tenant = await _create_tenant(db, slug)
+    email = f"jane-{uuid4().hex[:6]}@example.com"
+    reg = await client.post("/customer/register", json=_register_payload(slug, email))
+    assert reg.status_code == 201, reg.text
+    token = reg.json()["accessToken"]
+    customer_id = reg.json()["customer"]["id"]
+
+    await set_tenant_in_session(db, tenant.id)
+    contact = await db.scalar(
+        select(Contact).where(Contact.tenant_id == tenant.id, Contact.email == email)
+    )
+    assert contact is not None
+    quote = Quote(
+        tenant_id=tenant.id,
+        contact_id=contact.id,
+        title="Socket installation",
+        status="draft",
+    )
+    db.add(quote)
+    await db.flush()
+    quote_request = QuoteRequest(
+        tenant_id=tenant.id,
+        contact_id=contact.id,
+        customer_id=customer_id,
+        quote_id=quote.id,
+        source="app",
+        raw_text="New sockets",
+    )
+    db.add(quote_request)
+    await db.commit()
+
+    headers = {"Authorization": f"Bearer {token}"}
+    history = await client.get("/customer/quote-requests", headers=headers)
+    assert history.status_code == 200, history.text
+    entry = history.json()[0]
+    assert entry["quote"] is None
+
+    # Accepting a draft is refused: the quote is not findable while pending.
+    accept = await client.post(f"/customer/quotes/{quote.id}/accept", headers=headers)
+    assert accept.status_code == 404
+
+    # Once sent, the quote becomes visible.
+    await set_tenant_in_session(db, tenant.id)
+    quote.status = "sent"
+    quote.sent_at = datetime.utcnow()
+    await db.commit()
+    sent_history = await client.get("/customer/quote-requests", headers=headers)
+    assert sent_history.json()[0]["quote"] is not None
+    sent_accept = await client.post(f"/customer/quotes/{quote.id}/accept", headers=headers)
+    assert sent_accept.status_code == 200
+
+
+async def test_register_reuses_existing_contact(client: AsyncClient, db: AsyncSession) -> None:
+    """Registering must not fork a duplicate contact for a lead's email."""
+    slug = f"cust-{uuid4().hex[:8]}"
+    tenant = await _create_tenant(db, slug)
+    email = f"jane-{uuid4().hex[:6]}@example.com"
+
+    await set_tenant_in_session(db, tenant.id)
+    existing = Contact(
+        tenant_id=tenant.id,
+        name="Lead Jane",
+        email=email,
+        phone="07700 900888",
+        address="1 High Street",
+        postcode="M1 2AB",
+    )
+    db.add(existing)
+    await db.commit()
+
+    reg = await client.post("/customer/register", json=_register_payload(slug, email))
+    assert reg.status_code == 201, reg.text
+
+    await bypass_rls_in_session(db)
+    contacts = (
+        (await db.execute(select(Contact).where(Contact.tenant_id == tenant.id))).scalars().all()
+    )
+    assert len(contacts) == 1
+    assert contacts[0].id == existing.id
+
+
+async def test_contact_has_account_flag(client: AsyncClient, db: AsyncSession) -> None:
+    """Contacts expose has_account so staff can see comms expectations."""
+    slug = f"cust-{uuid4().hex[:8]}"
+    tenant = await _create_tenant(db, slug)
+    email = f"jane-{uuid4().hex[:6]}@example.com"
+    reg = await client.post("/customer/register", json=_register_payload(slug, email))
+    assert reg.status_code == 201
+
+    await set_tenant_in_session(db, tenant.id)
+    db.add(Contact(tenant_id=tenant.id, name="No Account Lead", email="lead@example.com"))
+    await db.commit()
+
+    # Staff view: the registered contact is flagged, the bare lead is not.
+    password = "admin-password-123"
+    from app.models import User
+    from app.security import get_password_hash
+
+    await set_tenant_in_session(db, tenant.id)
+    db.add(
+        User(
+            tenant_id=tenant.id,
+            email="owner@test.local",
+            full_name="Owner",
+            role="admin",
+            password_hash=get_password_hash(password),
+            is_active=True,
+        )
+    )
+    await db.commit()
+    login = await client.post(
+        "/auth/login",
+        headers={"host": f"{slug}.localhost"},
+        json={"email": "owner@test.local", "password": password},
+    )
+    assert login.status_code == 200, login.text
+    response = await client.get("/contacts", headers={"X-Tenant-ID": str(tenant.id)})
+    assert response.status_code == 200
+    flags = {c["email"]: c["has_account"] for c in response.json()}
+    assert flags[email] is True
+    assert flags["lead@example.com"] is False
