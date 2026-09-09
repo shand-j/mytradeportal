@@ -2,6 +2,7 @@ packages:
   - 'packages/*'
   - 'packages/**/*'
   - 'mobile'
+  - 'mobile/*'
   - 'web/app'
 
 overrides:

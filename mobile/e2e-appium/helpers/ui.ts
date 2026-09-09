@@ -1,0 +1,147 @@
+/**
+ * Selector + interaction helpers for the RN app on iOS (XCUITest).
+ *
+ * Strategy: components forward `testID` → iOS accessibility identifier
+ * (queried with `~id`). Where no testID exists we match the visible text on
+ * the underlying StaticText — RN Pressable receives touches on children, so
+ * tapping the text activates the button.
+ */
+
+import { BUNDLE_ID } from "./env";
+
+/** Element by accessibility identifier (testID). */
+export const byId = (id: string) => $(`~${id}`);
+
+/** StaticText element by exact visible label. */
+export const textEl = (label: string) =>
+  $(`-ios class chain:**/XCUIElementTypeStaticText[\`label == "${esc(label)}"\`]`);
+
+/** Any element whose label contains the given string (case-insensitive). */
+export const textElContains = (label: string) =>
+  $(`-ios class chain:**/XCUIElementTypeStaticText[\`label CONTAINS[c] "${esc(label)}"\`]`);
+
+function esc(s: string): string {
+  return s.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+}
+
+export async function waitForText(label: string, timeoutMs = 15000) {
+  const el = textEl(label);
+  await el.waitForExist({ timeout: timeoutMs });
+  return el;
+}
+
+export async function waitForId(id: string, timeoutMs = 15000) {
+  const el = byId(id);
+  await el.waitForExist({ timeout: timeoutMs });
+  return el;
+}
+
+export async function tapText(label: string, timeoutMs = 15000) {
+  const el = await waitForText(label, timeoutMs);
+  await el.click();
+}
+
+export async function tapId(id: string, timeoutMs = 15000) {
+  const el = await waitForId(id, timeoutMs);
+  await el.click();
+}
+
+/** True when the given text is on screen now (no waiting). */
+export async function hasText(label: string): Promise<boolean> {
+  return textEl(label).isExisting();
+}
+
+/** Scroll until an element with the given text is visible, then tap it. */
+export async function scrollToTextAndTap(
+  label: string,
+  opts: { scrollId?: string; timeoutMs?: number } = {}
+) {
+  const timeout = opts.timeoutMs ?? 20000;
+  const start = Date.now();
+  // RN ScrollViews respond to class-chain scrollToVisible via XCUITest's
+  // scroll strategy only on the first scrollable ancestor; simpler and more
+  // reliable on RN is repeated swipe-up until the text exists.
+  while (!(await textEl(label).isExisting())) {
+    if (Date.now() - start > timeout) {
+      throw new Error(`scrollToTextAndTap timed out looking for text: ${label}`);
+    }
+    await swipeUp();
+    await driver.pause(350);
+  }
+  await tapText(label);
+}
+
+export async function swipeUp() {
+  const size = await driver.getWindowSize();
+  const x = Math.round(size.width / 2);
+  const fromY = Math.round(size.height * 0.72);
+  const toY = Math.round(size.height * 0.28);
+  await driver.performActions([
+    {
+      type: "pointer",
+      id: "swipe",
+      parameters: { pointerType: "touch" },
+      actions: [
+        { type: "pointerMove", duration: 0, x, y: fromY },
+        { type: "pointerDown", button: 0 },
+        { type: "pointerMove", duration: 350, x, y: toY },
+        { type: "pointerUp", button: 0 },
+      ],
+    },
+  ]);
+  await driver.releaseActions();
+}
+
+/** Back chevron rendered by our Header (testID back-button). */
+export async function tapBack() {
+  await tapId("back-button", 8000);
+}
+
+/**
+ * Handle a SpringBoard permission alert if one is showing. Returns the
+ * decision taken ("allow" | "deny" | null).
+ */
+export async function handlePermissionAlert(
+  decision: "allow" | "deny"
+): Promise<"allow" | "deny" | null> {
+  // Appium's alert API reaches SpringBoard alerts on XCUITest.
+  try {
+    const text = await driver.getAlertText();
+    const allow = await driver.$("~Allow");
+    const allowAlways = await driver.$("~Allow While Using App");
+    const ok = await driver.$("~OK");
+    const target = decision === "allow" ? (await allow.isExisting()) ? allow : (await allowAlways.isExisting()) ? allowAlways : ok : await driver.$("~Don't Allow");
+    if (await target.isExisting()) {
+      await target.click();
+      return decision;
+    }
+    void text;
+  } catch {
+    /* no alert — fine */
+  }
+  return null;
+}
+
+/** Dismiss any open alert by tapping its first button (e.g. OK). */
+export async function dismissAlertIfAny() {
+  try {
+    const buttons = await driver.$$("-ios predicate string:type == 'XCUIElementTypeButton'");
+    const n: number = await buttons.length;
+    if (n > 0) {
+      const last = await buttons[n - 1];
+      await last.click();
+      return true;
+    }
+  } catch {
+    /* ignore */
+  }
+  return false;
+}
+
+/** Wait for the app to be in the foreground. */
+export async function waitAppReady(timeoutMs = 20000) {
+  await driver.waitUntil(async () => (await driver.queryAppState(BUNDLE_ID)) === 4, {
+    timeout: timeoutMs,
+    timeoutMsg: "App did not reach foreground state",
+  });
+}
