@@ -159,9 +159,15 @@ class Settings(BaseSettings):
     # Resend (preferred production email transport). When ``resend_api_key``
     # is set the email helper skips SMTP and posts to https://api.resend.com.
     # ``resend_from_email`` overrides ``smtp_from_email`` for Resend sends so
-    # dev SMTP + prod Resend can each keep their own verified sender.
+    # dev SMTP + prod Resend can each keep their own verified sender. Branded
+    # sends (quotes/invoices, which pass a display name) use
+    # ``resend_from_email`` — typically the tenant-facing quotes@ address with
+    # the tenant's name and Reply-To. Transactional sends (password resets,
+    # account mail) use ``resend_no_reply_email`` with the platform name and
+    # no Reply-To; it falls back to ``resend_from_email`` when unset.
     resend_api_key: str = Field(default="")
     resend_from_email: str = Field(default="")
+    resend_no_reply_email: str = Field(default="")
 
     # Public base URL used to build customer/staff email links. Falls back to
     # the API's own origin at runtime when unset.

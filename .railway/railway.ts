@@ -165,6 +165,8 @@ export default defineRailway(() => {
       // RESEND_API_KEY is unset (there is no SMTP host in prod).
       RESEND_API_KEY: preserve(),
       RESEND_FROM_EMAIL: preserve(),
+      // Transactional sender (password resets etc.): platform-branded no-reply.
+      RESEND_NO_REPLY_EMAIL: preserve(),
       // Supabase Auth (staff identity). New-style keys: sb_publishable_ →
       // ANON, sb_secret_ → SERVICE_ROLE. Blank URL = local bcrypt auth.
       SUPABASE_URL: preserve(),

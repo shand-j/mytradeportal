@@ -305,17 +305,15 @@ async def password_reset_request(
     )
     reset_url = f"{app_origin}/reset-password?token={raw}"
     subject, html, text = password_reset_template(name=display_name, reset_url=reset_url)
-    tenant_row = await db.get(Tenant, tenant_id)
-    from_name = tenant_row.name if tenant_row is not None else None
-    reply_to = tenant_row.email if tenant_row is not None and tenant_row.email else None
+    # Transactional security mail goes out platform-branded from the no-reply
+    # sender (see ``_resend_from``); it must not impersonate the tenant or
+    # invite replies to the tenant's inbox.
     try:
         await send_email(
             to_email=email,
             subject=subject,
             html_body=html,
             text_body=text,
-            from_name=from_name,
-            reply_to=reply_to,
         )
         logger.info(
             "password_reset_email_sent",

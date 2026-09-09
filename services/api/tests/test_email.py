@@ -151,6 +151,60 @@ async def test_send_email_uses_tenant_display_name_and_reply_to(
 
 
 @pytest.mark.asyncio
+async def test_transactional_send_uses_no_reply_address(monkeypatch: MonkeyPatch) -> None:
+    """Sends without a display name come from the no-reply sender, not quotes@."""
+    from app import email as email_module
+
+    monkeypatch.setattr(email_module.settings, "resend_api_key", "re_dev_test")
+    monkeypatch.setattr(email_module.settings, "resend_from_email", "quotes@test.local")
+    monkeypatch.setattr(email_module.settings, "resend_no_reply_email", "no-reply@test.local")
+    monkeypatch.setattr(email_module.settings, "smtp_from_name", "My Trade Portal")
+
+    fake_response = _FakeResponse(200, {"id": "resend-noreply"})
+    fake_client = _FakeAsyncClient(fake_response)
+    monkeypatch.setattr(email_module.httpx, "AsyncClient", lambda **_: fake_client)
+
+    await send_email(
+        to_email="user@example.com",
+        subject="Reset your password",
+        html_body="<p>reset</p>",
+    )
+
+    _, payload, _ = fake_client.posts[0]
+    assert "no-reply@test.local" in payload["from"]
+    assert "My Trade Portal" in payload["from"]
+    assert "quotes@test.local" not in payload["from"]
+    assert "reply_to" not in payload
+
+
+@pytest.mark.asyncio
+async def test_branded_send_keeps_quotes_address(monkeypatch: MonkeyPatch) -> None:
+    """Branded sends still go out on resend_from_email even with no-reply set."""
+    from app import email as email_module
+
+    monkeypatch.setattr(email_module.settings, "resend_api_key", "re_dev_test")
+    monkeypatch.setattr(email_module.settings, "resend_from_email", "quotes@test.local")
+    monkeypatch.setattr(email_module.settings, "resend_no_reply_email", "no-reply@test.local")
+
+    fake_response = _FakeResponse(200, {"id": "resend-branded"})
+    fake_client = _FakeAsyncClient(fake_response)
+    monkeypatch.setattr(email_module.httpx, "AsyncClient", lambda **_: fake_client)
+
+    await send_email(
+        to_email="homeowner@example.com",
+        subject="Your quote",
+        html_body="<p>hi</p>",
+        from_name="Sparks & Sons",
+        reply_to="sam@sparksandsons.co.uk",
+    )
+
+    _, payload, _ = fake_client.posts[0]
+    assert "quotes@test.local" in payload["from"]
+    assert "Sparks & Sons" in payload["from"] or "Sparks" in payload["from"]
+    assert payload["reply_to"] == ["sam@sparksandsons.co.uk"]
+
+
+@pytest.mark.asyncio
 async def test_send_email_smtp_honours_tenant_display_name_and_reply_to(
     monkeypatch: MonkeyPatch,
 ) -> None:

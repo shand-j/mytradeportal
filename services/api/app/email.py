@@ -24,14 +24,24 @@ RESEND_ENDPOINT = "https://api.resend.com/emails"
 def _resend_from(display_name: str | None = None) -> str:
     """Build the ``From`` header for Resend.
 
-    Prefers ``resend_from_email`` (verified sender in the Resend dashboard),
-    falls back to the SMTP config so a single env override still works. When
-    ``display_name`` is provided (e.g. the tenant's business name) it is used
-    as the friendly name, so recipients see ``Sparks & Sons <notifications@…>``.
+    Branded sends (quotes/invoices) pass the tenant's business name as
+    ``display_name`` and go out on ``resend_from_email`` — typically the
+    shared quotes@ address — so recipients see ``Sparks & Sons <quotes@…>``
+    and replies reach the tenant via ``Reply-To``.
+
+    Transactional sends (password resets, account mail) pass no display name
+    and go out on ``resend_no_reply_email`` under the platform name, so
+    account security mail never impersonates a tenant and never invites a
+    reply. Falls back to ``resend_from_email`` then the SMTP sender when the
+    no-reply address is not configured.
     """
-    address = settings.resend_from_email or settings.smtp_from_email
-    name = display_name or settings.smtp_from_name
-    return formataddr((name, address))
+    if display_name:
+        address = settings.resend_from_email or settings.smtp_from_email
+        return formataddr((display_name, address))
+    address = (
+        settings.resend_no_reply_email or settings.resend_from_email or settings.smtp_from_email
+    )
+    return formataddr((settings.smtp_from_name, address))
 
 
 async def _send_via_resend(
