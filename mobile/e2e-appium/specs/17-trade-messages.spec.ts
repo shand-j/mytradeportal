@@ -14,7 +14,13 @@ import {
   TRADE_EMAIL,
   TRADE_PASSWORD,
 } from "../helpers/api";
-import { hasText, tapId, waitForId, waitForText } from "../helpers/ui";
+import {
+  hasText,
+  tapId,
+  waitForId,
+  waitForText,
+  dismissKeyboard,
+} from "../helpers/ui";
 
 const tag = Date.now().toString(36);
 const MESSAGE = `E2E business reply ${tag} - we can attend this week.`;
@@ -82,7 +88,7 @@ describe("17: trade messages (inbox + chat thread)", () => {
     const composer = await waitForId("chat-composer", 15000);
     await composer.click();
     await composer.setValue(MESSAGE);
-    await driver.hideKeyboard().catch(() => undefined);
+    await dismissKeyboard();
     await tapId("chat-send", 25000);
     // The bubble renders our text in the thread.
     await waitForText(MESSAGE, 25000);

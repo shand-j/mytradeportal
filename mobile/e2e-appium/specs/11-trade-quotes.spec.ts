@@ -35,6 +35,7 @@ import {
   textEl,
   waitForId,
   waitForText,
+  dismissKeyboard,
 } from "../helpers/ui";
 import { API_BASE } from "../helpers/env";
 
@@ -228,7 +229,7 @@ describe("trade quotes", () => {
     const instructions = await waitForId("refine-instructions");
     await instructions.click();
     await instructions.setValue("Keep the consumer unit line and assume a mid-range board");
-    await driver.hideKeyboard().catch(() => undefined);
+    await dismissKeyboard();
     await tapId("refine-submit");
 
     // Regeneration state: pulsing skeleton or the pending "Refining…" button.

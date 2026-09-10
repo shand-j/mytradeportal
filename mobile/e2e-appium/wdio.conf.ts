@@ -20,6 +20,8 @@ export const config = {
       "appium:dontStopOnReset": true,
       "appium:newCommandTimeout": 300,
       "appium:useNewWDA": false,
+      "appium:usePrebuiltWDA": true,
+      "appium:derivedDataPath": process.env.WDA_DERIVED_DATA_PATH ?? "/Users/home/Library/Developer/Xcode/DerivedData/WebDriverAgent-djaxkwladvjtfpeaepewxzgirrdk",
       "appium:wdaLaunchTimeout": 240000,
       "appium:wdaConnectionTimeout": 240000,
       // System permission dialogs (notifications/location/photos) are part of

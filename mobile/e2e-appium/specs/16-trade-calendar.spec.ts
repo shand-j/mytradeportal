@@ -21,7 +21,12 @@ import {
   TRADE_PASSWORD,
   type ApiTenantContext,
 } from "../helpers/api";
-import { tapId, waitForId, waitForText } from "../helpers/ui";
+import {
+  tapId,
+  waitForId,
+  waitForText,
+  dismissKeyboard,
+} from "../helpers/ui";
 
 const tag = Date.now().toString(36);
 const JOB_TITLE = `E2E Calendar job ${tag}`;
@@ -101,7 +106,7 @@ describe("16: trade calendar", () => {
     const notesField = await waitForId("job-create-notes");
     await notesField.click();
     await notesField.setValue(JOB_NOTES);
-    await driver.hideKeyboard().catch(() => undefined);
+    await dismissKeyboard();
 
     await tapId("job-create-submit", 25000);
     // Creation routes to the job detail screen.

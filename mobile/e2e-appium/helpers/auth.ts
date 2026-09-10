@@ -2,7 +2,7 @@
  * UI-level authentication helpers (trade + customer) and logout.
  */
 import { relaunchApp } from "./app";
-import { byId, tapId, waitForId, waitForText, tapText } from "./ui";
+import { byId, dismissKeyboard, dismissPasswordPrompt, tapId, waitForId, waitForText, tapText } from "./ui";
 
 /** Login as an electrician (tenant-agnostic, by email). */
 export async function loginAsTrade(email: string, password: string) {
@@ -39,8 +39,11 @@ async function fillLoginForm(email: string, password: string) {
   const passwordField = await waitForId("login-password");
   await passwordField.click();
   await passwordField.setValue(password);
-  await driver.hideKeyboard().catch(() => undefined);
+  await dismissKeyboard();
   await tapId("login-submit");
+  // iOS Keychain may offer to save the password — decline so it never
+  // swallows taps on the next screen.
+  await dismissPasswordPrompt();
 }
 
 /**

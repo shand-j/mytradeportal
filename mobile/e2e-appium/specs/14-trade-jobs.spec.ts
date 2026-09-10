@@ -22,7 +22,14 @@ import {
   type ApiTenantContext,
 } from "../helpers/api";
 import { loginAsTrade } from "../helpers/auth";
-import { byId, swipeUp, tapId, waitForId, waitForText } from "../helpers/ui";
+import {
+  byId,
+  swipeUp,
+  tapId,
+  waitForId,
+  waitForText,
+  dismissKeyboard,
+} from "../helpers/ui";
 import { API_BASE } from "../helpers/env";
 
 const TAG = Date.now().toString(36);
@@ -87,7 +94,7 @@ type SettableElement = { click(): Promise<unknown>; setValue(value: string): Pro
 async function setValue(el: SettableElement, value: string) {
   await el.click();
   await el.setValue(value);
-  await driver.hideKeyboard().catch(() => undefined);
+  await dismissKeyboard();
 }
 
 describe("trade jobs", () => {

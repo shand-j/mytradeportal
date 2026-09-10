@@ -14,7 +14,7 @@
  */
 import { relaunchApp } from "../helpers/app";
 import { ensureLoggedOut } from "../helpers/auth";
-import { tapBack, tapId, tapText, waitForId, waitForText } from "../helpers/ui";
+import { tapBack, tapId, tapText, textElContains, waitForId, waitForText, dismissKeyboard, dismissPasswordPrompt } from "../helpers/ui";
 
 const tag = Date.now().toString(36);
 const FULL_NAME = `E2E Tester ${tag}`;
@@ -58,6 +58,14 @@ async function readFieldByPlaceholder(placeholder: string): Promise<string> {
   return String(value ?? "");
 }
 
+
+/** Wait for text matched by substring (device copy carries bullet prefixes). */
+async function waitForTextContains(label: string, timeoutMs = 15000) {
+  const el = textElContains(label);
+  await el.waitForExist({ timeout: timeoutMs });
+  return el;
+}
+
 /** Assert we are still on the given step (validation blocked Continue). */
 async function expectStep(label: string) {
   await waitForText(`Step ${label}`);
@@ -77,9 +85,9 @@ describe("02 onboarding: wizard walk-through (stops before tenant creation)", ()
 
   it("step 1 Welcome renders the value props and launch preview", async () => {
     await expectStep("1 of 10: Welcome");
-    await waitForText("Get leads from QR codes, WhatsApp, and your website.");
-    await waitForText("AI drafts quotes; you review and send in seconds.");
-    await waitForText("Certificates, invoices, and accounts in one place.");
+    await waitForTextContains("Get leads from QR codes");
+    await waitForTextContains("AI drafts quotes");
+    await waitForTextContains("Certificates, invoices, and accounts");
     await waitForText("6-step launch preview");
     for (const label of ["Account", "Business", "Address", "Tax", "Compliance", "Services"]) {
       await waitForText(label);
@@ -93,6 +101,7 @@ describe("02 onboarding: wizard walk-through (stops before tenant creation)", ()
     await waitForText("This is how you’ll log in to manage your business.");
     // Incomplete form — tapping Continue must not advance.
     await setFieldByPlaceholder("Full name", FULL_NAME);
+    await dismissKeyboard();
     await tapText("Continue");
     await driver.pause(500);
     await expectStep("2 of 10: Account");
@@ -102,11 +111,12 @@ describe("02 onboarding: wizard walk-through (stops before tenant creation)", ()
     await setFieldByPlaceholder("you@business.com", EMAIL);
     await setFieldByPlaceholder("07700 123 456", "07700123456");
     await setFieldByPlaceholder("At least 8 characters", "E2E Passw0rd!");
+    await dismissKeyboard();
     // Password strength meter reacts (Weak → Strong as length grows).
     await waitForText("Strong");
     // Non-owner roles surface the owner-only hint.
     await tapText("Engineer");
-    await waitForText("Only owners can complete billing and team settings.");
+    await waitForTextContains("Only owners can complete billing and team settings.");
     await tapText("Owner");
     // Terms checkbox (a Pressable, not a Button — tap its label text).
     await tapText("I accept the Terms of Service and Privacy Notice.");
@@ -115,11 +125,15 @@ describe("02 onboarding: wizard walk-through (stops before tenant creation)", ()
   });
 
   it("step 3 Identity: trading name required, structure chips toggle fields", async () => {
-    await waitForText("Customers see this on quotes and the App Store listing.");
+    // iOS Keychain may offer to save the step-2 password — decline it, or it
+    // swallows every tap on this step.
+    await dismissPasswordPrompt();
+    await waitForTextContains("Customers see this on quotes");
     await tapText("Continue");
     await driver.pause(500);
     await expectStep("3 of 10: Identity"); // blocked: no trading name
     await setFieldByPlaceholder("e.g. Smith Electrical Ltd", TRADING_NAME);
+    await dismissKeyboard();
     // Sole trader shows the MTD hint…
     await tapText("Sole trader");
     await waitForText("MTD hint");
@@ -130,22 +144,36 @@ describe("02 onboarding: wizard walk-through (stops before tenant creation)", ()
     await setFieldByPlaceholder("YYYY", "2020");
     await setFieldByPlaceholder("e.g. 6", "6");
     await setFieldByPlaceholder("e.g. 45", "45");
+    await dismissKeyboard();
     await tapText("Continue");
     await expectStep("4 of 10: Address");
   });
 
   it("step 4 Address: postcode and address are required to continue", async () => {
+    try {
     await tapText("Continue");
     await driver.pause(500);
     await expectStep("4 of 10: Address"); // blocked
     await setFieldByPlaceholder("e.g. SK8 3NJ", "SK8 3NJ");
     await setFieldByPlaceholder("Full trading address", "1 Test Way, Cheadle, Manchester");
+    // Defocus the multiline field by tapping its label (Return would insert
+    // a newline here rather than dismiss the keyboard).
+    await tapText("Trading address");
     // Service-area mode chips + nations chips render.
     await waitForText("Radius from base");
     await waitForText("Postcode list");
     await waitForText("Nations served");
     await tapText("Continue");
     await expectStep("5 of 10: Tax");
+    } catch (e) {
+      const fs = await import("node:fs");
+      try {
+        fs.writeFileSync("/tmp/e2e-debug-02-address.xml", await driver.getPageSource());
+      } catch {
+        /* session may be gone; keep the original error */
+      }
+      throw e;
+    }
   });
 
   it("step 5 Tax: VAT toggle reveals VAT fields, No keeps it simple", async () => {
@@ -156,19 +184,22 @@ describe("02 onboarding: wizard walk-through (stops before tenant creation)", ()
     await waitForText("Verify VAT number");
     await waitForText("Online VAT verification is not yet implemented.");
     await waitForText("20% (read-only)");
+    await dismissKeyboard();
     await tapText("No");
     await tapText("Continue");
     await expectStep("6 of 10: Compliance");
   });
 
   it("step 6 Compliance: scheme, membership, qualifications and insurance", async () => {
-    await waitForText("These build trust with customers and unlock customer-facing badges.");
+    await waitForTextContains("build trust with customers");
     await tapText("NICEIC");
     await setFieldByPlaceholder("e.g. NE12345", "NE12345");
+    await dismissKeyboard();
     await tapText("18th Edition held");
     await waitForText("Public liability insurance");
     await setFieldByPlaceholder("e.g. AXA", "AXA");
     await setFieldByPlaceholder("e.g. PL-123456", "PL-123456");
+    await dismissKeyboard();
     await tapText("£2m");
     await waitForText("DD-MM-YYYY");
     await tapText("Continue");
@@ -176,7 +207,7 @@ describe("02 onboarding: wizard walk-through (stops before tenant creation)", ()
   });
 
   it("step 7 Services: Continue blocked until at least one service is chosen", async () => {
-    await waitForText("Choose the jobs you want to quote for. These appear in the customer form.");
+    await waitForTextContains("Choose the jobs you want to quote for");
     await tapText("Continue");
     await driver.pause(500);
     await expectStep("7 of 10: Services"); // blocked: nothing selected
@@ -187,12 +218,13 @@ describe("02 onboarding: wizard walk-through (stops before tenant creation)", ()
   });
 
   it("step 8 Branding: hex validation and preset swatches", async () => {
-    await waitForText("Brand colour, email blurb, and quote PDF template.");
+    await waitForTextContains("Brand colour");
     const hexField = await fieldByPlaceholder("#2563EB");
     await hexField.setValue("not-a-colour");
     await waitForText("Enter a valid hex colour, e.g. #2563EB");
     await hexField.clearValue();
     await hexField.setValue("#2563EB");
+    await dismissKeyboard();
     // Preset swatches are the only testID'd inputs on this step.
     await tapId("brand-colour-059669");
     await waitForId("brand-colour-preview");

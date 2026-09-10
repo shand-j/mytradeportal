@@ -12,13 +12,18 @@ import { BUNDLE_ID } from "./env";
 /** Element by accessibility identifier (testID). */
 export const byId = (id: string) => $(`~${id}`);
 
-/** StaticText element by exact visible label. */
+/** Element by visible label (any type).
+ *
+ * RN Pressable buttons collapse into a single XCUIElementTypeOther carrying
+ * the title as its label — they are NOT StaticText. An NSPredicate matches
+ * any element type so both real text and buttons are found.
+ */
 export const textEl = (label: string) =>
-  $(`-ios class chain:**/XCUIElementTypeStaticText[\`label == "${esc(label)}"\`]`);
+  $(`-ios predicate string:label == "${esc(label)}"`);
 
 /** Any element whose label contains the given string (case-insensitive). */
 export const textElContains = (label: string) =>
-  $(`-ios class chain:**/XCUIElementTypeStaticText[\`label CONTAINS[c] "${esc(label)}"\`]`);
+  $(`-ios predicate string:label CONTAINS[c] "${esc(label)}"`);
 
 function esc(s: string): string {
   return s.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
@@ -122,9 +127,74 @@ export async function handlePermissionAlert(
   return null;
 }
 
-/** Dismiss any open alert by tapping its first button (e.g. OK). */
-export async function dismissAlertIfAny() {
+/**
+ * Dismiss the software keyboard. `hideKeyboard` usually fails on RN apps
+ * ("Did not know how to dismiss the keyboard"), and iOS exposes Return/Done
+ * as a Button, not a Key — so tap that first, then fall back.
+ */
+export async function dismissKeyboard() {
   try {
+    if (!(await driver.isKeyboardShown())) return;
+  } catch {
+    /* proceed anyway */
+  }
+  const returnKey = await driver.$(
+    `-ios predicate string:(type == 'XCUIElementTypeKey' OR type == 'XCUIElementTypeButton') AND label IN {'return','Return','Done','done','Search','Go','Next'}`
+  );
+  if (await returnKey.isExisting()) {
+    await returnKey.click();
+    await driver.pause(300);
+    return;
+  }
+  try {
+    await driver.hideKeyboard();
+    return;
+  } catch {
+    /* last resort below */
+  }
+  // Tap the status-bar area to defocus.
+  const size = await driver.getWindowSize();
+  await driver.performActions([
+    {
+      type: "pointer",
+      id: "tap",
+      parameters: { pointerType: "touch" },
+      actions: [
+        { type: "pointerMove", duration: 0, x: Math.round(size.width / 2), y: 80 },
+        { type: "pointerDown", button: 0 },
+        { type: "pointerUp", button: 0 },
+      ],
+    },
+  ]);
+  await driver.releaseActions();
+  await driver.pause(300);
+}
+
+/**
+ * Dismiss the iCloud Keychain "Save Password?" prompt if one is showing.
+ * It appears over the app after password entry and swallows every tap.
+ */
+export async function dismissPasswordPrompt(): Promise<boolean> {
+  // The prompt animates in asynchronously after the triggering tap, so poll.
+  const deadline = Date.now() + 8000;
+  while (Date.now() < deadline) {
+    try {
+      const notNow = await driver.$("~Not Now");
+      if (await notNow.isExisting()) {
+        await notNow.click();
+        await driver.pause(500);
+        return true;
+      }
+    } catch {
+      /* session hiccup — keep polling */
+    }
+    await driver.pause(400);
+  }
+  return false;
+}
+
+/** Dismiss any open alert by tapping its first button (e.g. OK). */
+export async function dismissAlertIfAny() {  try {
     const buttons = await driver.$$("-ios predicate string:type == 'XCUIElementTypeButton'");
     const n: number = await buttons.length;
     if (n > 0) {

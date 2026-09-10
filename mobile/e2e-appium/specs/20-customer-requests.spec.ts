@@ -41,6 +41,7 @@ import {
   textElContains,
   waitForId,
   waitForText,
+  dismissKeyboard,
 } from "../helpers/ui";
 
 const tag = Date.now().toString(36);
@@ -68,7 +69,7 @@ async function fillIfEmpty(id: string, value: string): Promise<void> {
   if (!current) {
     await el.click();
     await el.setValue(value);
-    await driver.hideKeyboard().catch(() => undefined);
+    await dismissKeyboard();
   }
 }
 
@@ -106,7 +107,7 @@ async function runQuoteRequestWizard(opts: { withPhoto: boolean }): Promise<void
   expect(notes.length).toBeGreaterThan(0);
   await notes[0].click();
   await notes[0].setValue(DESCRIPTION);
-  await driver.hideKeyboard().catch(() => undefined);
+  await dismissKeyboard();
   await tapId("quote-other-continue", 15000);
 
   // Step 6 — photos (best effort: the native picker is Apple's UI).

@@ -29,6 +29,7 @@ import {
   tapText,
   waitForId,
   waitForText,
+  dismissKeyboard,
 } from "../helpers/ui";
 
 const tag = Date.now().toString(36);
@@ -61,7 +62,7 @@ async function fillIfEmpty(id: string, value: string): Promise<void> {
   if (!current) {
     await el.click();
     await el.setValue(value);
-    await driver.hideKeyboard().catch(() => undefined);
+    await dismissKeyboard();
   }
 }
 
@@ -89,7 +90,7 @@ async function runQuoteRequestWizard(): Promise<void> {
   expect(notes.length).toBeGreaterThan(0);
   await notes[0].click();
   await notes[0].setValue(DESCRIPTION);
-  await driver.hideKeyboard().catch(() => undefined);
+  await dismissKeyboard();
   await tapId("quote-other-continue", 15000);
   await waitForId("quote-media-continue", 15000);
   await tapId("quote-media-continue", 15000);
@@ -184,7 +185,7 @@ describe("21: customer AI chat", () => {
     const composer = await waitForId("chat-composer", 15000);
     await composer.click();
     await composer.setValue(reply);
-    await driver.hideKeyboard().catch(() => undefined);
+    await dismissKeyboard();
     await tapId("chat-send", 25000);
     await waitForText(reply, 25000);
 
@@ -217,7 +218,7 @@ describe("21: customer AI chat", () => {
       const composer = await waitForId("chat-composer", 15000);
       await composer.click();
       await composer.setValue(detail);
-      await driver.hideKeyboard().catch(() => undefined);
+      await dismissKeyboard();
       await tapId("chat-send", 25000);
       // Wait for the AI's next turn to land in the DB (LLM call).
       await driver.pause(1500);

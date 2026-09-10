@@ -10,20 +10,65 @@
  */
 import { relaunchApp } from "../helpers/app";
 import { ensureLoggedOut } from "../helpers/auth";
-import { byId, hasText, tapBack, tapId, textElContains, waitForId, waitForText } from "../helpers/ui";import { dbConfigured, findTenantBySlug, TENANT_SLUG } from "../helpers/api";
+import {
+  byId,
+  dismissKeyboard,
+  hasText,
+  tapBack,
+  tapId,
+  textElContains,
+  waitForId,
+  waitForText,
+} from "../helpers/ui";
+import { dbConfigured, findTenantBySlug, TENANT_SLUG } from "../helpers/api";
 import { BUNDLE_ID } from "../helpers/env";
 
 const tag = Date.now().toString(36);
 
-/** Fill the CodeInput (six single-digit boxes, digits only). */
+/** Fill the CodeInput (six single-digit boxes, digits only).
+ *
+ * Empty RN TextInputs without placeholders are absent from the XCUITest
+ * tree, so we first tap the code card to focus the first box, then type
+ * digits — via setValue when the box is queryable, else via the keyboard.
+ */
 async function enterBusinessCode(code: string) {
   const digits = code.replace(/\D/g, "").slice(0, 6).padEnd(6, "0");
+  // Focus the first code box: tap below the code-card label (the boxes sit
+  // between the label and the Find button). Empty RN TextInputs only appear
+  // in the XCUITest tree once focused.
+  const label = await waitForText("Enter your electrician's code or business slug");
+  const loc = await label.getLocation();
+  const size = await driver.getWindowSize();
+  const x = Math.min(Math.round(loc.x + 20), Math.round(size.width / 2));
+  const y = Math.round(loc.y + 50);
+  await driver.performActions([
+    {
+      type: "pointer",
+      id: "tap",
+      parameters: { pointerType: "touch" },
+      actions: [
+        { type: "pointerMove", duration: 0, x, y },
+        { type: "pointerDown", button: 0 },
+        { type: "pointerUp", button: 0 },
+      ],
+    },
+  ]);
+  await driver.releaseActions();
+  await driver.pause(800);
   for (let i = 0; i < 6; i++) {
-    const box = await waitForId(`business-code-${i}`);
-    await box.setValue(digits[i]);
-    await driver.pause(150);
+    const box = byId(`business-code-${i}`);
+    if (await box.isExisting()) {
+      await box.setValue(digits[i]);
+    } else {
+      const key = await driver.$(
+        `-ios predicate string:(type == 'XCUIElementTypeKey' OR type == 'XCUIElementTypeButton') AND label == '${digits[i]}'`
+      );
+      await key.waitForExist({ timeout: 5000 });
+      await key.click();
+    }
+    await driver.pause(200);
   }
-  await driver.hideKeyboard().catch(() => undefined);
+  await dismissKeyboard();
 }
 
 describe("01 entry: pre-auth surfaces", () => {
@@ -42,9 +87,9 @@ describe("01 entry: pre-auth surfaces", () => {
     await waitForId("entry-register-trade");
     await waitForId("entry-trade-login");
     await waitForId("entry-customer-login");
-    // Code input boxes render (CodeInput → business-code-0..5).
-    await waitForId("business-code-0");
-    await waitForId("business-code-5");
+    // The code input renders as the card between label and Find button.
+    // (The six empty CodeInput boxes are only exposed once focused — entry
+    // is exercised by the code-entry tests below.)
   });
 
   it("tapping Find my electrician with no code stays on the entry screen", async () => {
@@ -144,7 +189,7 @@ describe("01 entry: invalid credentials", () => {
     const password = await waitForId("login-password");
     await password.click();
     await password.setValue("definitely-wrong-pass");
-    await driver.hideKeyboard().catch(() => undefined);
+    await dismissKeyboard();
     await tapId("login-submit");
     await waitForId("login-error", 25000);
     await waitForText("Invalid email or password.");
@@ -161,7 +206,7 @@ describe("01 entry: invalid credentials", () => {
     const password = await waitForId("login-password");
     await password.click();
     await password.setValue("definitely-wrong-pass");
-    await driver.hideKeyboard().catch(() => undefined);
+    await dismissKeyboard();
     await tapId("login-submit");
     await waitForId("login-error", 25000);
     await waitForText("Invalid email or password.");
@@ -182,7 +227,7 @@ describe("01 entry: forgot password", () => {
     const email = await waitForId("login-email");
     await email.click();
     await email.setValue(`e2e-reset-${tag}@example.test`);
-    await driver.hideKeyboard().catch(() => undefined);
+    await dismissKeyboard();
     await tapId("login-forgot-password");
     await waitForId("login-reset-sent", 25000);
     const confirmation = await textElContains("we've emailed a reset link");
@@ -227,11 +272,11 @@ describe("01 entry: reset password deep link", () => {
     const confirm = await waitForId("reset-confirm-password");
     await confirm.click();
     await confirm.setValue("Different Pass123");
-    await driver.hideKeyboard().catch(() => undefined);
+    await dismissKeyboard();
     await waitForId("reset-hint-mismatch");
     await waitForText("The passwords don't match.");
     await confirm.setValue("E2E Password123");
-    await driver.hideKeyboard().catch(() => undefined);
+    await dismissKeyboard();
     await tapId("reset-submit");
     // The bogus token is rejected by the server — proves the form submits.
     await waitForId("reset-error", 25000);

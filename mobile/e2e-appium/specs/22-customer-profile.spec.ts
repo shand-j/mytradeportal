@@ -27,6 +27,7 @@ import {
   tapId,
   waitForId,
   waitForText,
+  dismissKeyboard,
 } from "../helpers/ui";
 
 const tag = Date.now().toString(36);
@@ -96,7 +97,7 @@ describe("22: customer profile", () => {
     const phoneField = fields[2];
     await phoneField.click();
     await phoneField.setValue(`07123 456${tag.slice(-3)}`);
-    await driver.hideKeyboard().catch(() => undefined);
+    await dismissKeyboard();
 
     // Keyboard-avoiding scroll: the Save button stays reachable and tappable.
     await scrollToTextAndTap("Save changes", { timeoutMs: 25000 });
