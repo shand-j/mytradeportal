@@ -1,16 +1,25 @@
 #!/usr/bin/env node
 /**
- * Generate device mockups via the Mockuuups MCP server (streamable HTTP).
+ * Mockuuups Studio API client (direct REST).
+ *
+ * NOTE: the hosted MCP gateway (https://mcp.mockuuups.studio/mcp) currently
+ * rejects valid developer API keys ("Invalid token format"), so this client
+ * calls the underlying Studio REST API directly — same renders, same catalog.
  *
  * Usage:
- *   MOCKUUUPS_API_KEY=<key> node scripts/mockuuups-generate.mjs list
- *   MOCKUUUPS_API_KEY=<key> node scripts/mockuuups-generate.mjs gen <image-url> [mockup-id]
+ *   MOCKUUUPS_API_KEY=<key> node scripts/mockuuups-generate.mjs list [page]
+ *     Browse the mockup catalog (50 per page).
+ *   MOCKUUUPS_API_KEY=<key> node scripts/mockuuups-generate.mjs render <mockup-id> <image-url> [size]
+ *     Render an image into a mockup. Returns JPEG bytes on stdout.
+ *     Free plan caps `size` at 1000 (longest side); larger requests fail
+ *     with feature-not-available / "hires".
  *
- * The server is also registered in ~/.kimi-code/mcp.json (user level) so
- * future Kimi Code sessions can call mcp__mockuuups__* directly.
+ * Image hosting gotcha: the render farm fetches contents[].url through
+ * assets.mockuuups.com/image-proxy/ — some hosts (catbox.moe) are blocked.
+ * uguu.se URLs work. Hosts must be publicly reachable.
  */
 
-const ENDPOINT = "https://mcp.mockuuups.studio/mcp";
+const ENDPOINT = "https://api.mockuuups.studio/v1";
 const API_KEY = process.env.MOCKUUUPS_API_KEY;
 
 if (!API_KEY) {
@@ -18,97 +27,56 @@ if (!API_KEY) {
   process.exit(1);
 }
 
-let nextId = 0;
-let sessionId = null;
-
-async function rpc(method, params) {
-  const id = ++nextId;
-  const res = await fetch(ENDPOINT, {
-    method: "POST",
+async function api(path, { method = "GET", body } = {}) {
+  const res = await fetch(`${ENDPOINT}${path}`, {
+    method,
     headers: {
-      "Content-Type": "application/json",
-      Accept: "application/json, text/event-stream",
       Authorization: `Bearer ${API_KEY}`,
-      ...(sessionId ? { "mcp-session-id": sessionId } : {}),
+      ...(body ? { "Content-Type": "application/json" } : {}),
     },
-    body: JSON.stringify({ jsonrpc: "2.0", id, method, params }),
+    ...(body ? { body: JSON.stringify(body) } : {}),
   });
-
   if (!res.ok) {
-    const body = await res.text().catch(() => "");
-    throw new Error(`HTTP ${res.status}: ${body.slice(0, 300)}`);
+    const text = await res.text().catch(() => "");
+    throw new Error(`HTTP ${res.status}: ${text.slice(0, 300)}`);
   }
-
-  if (!sessionId && res.headers.get("mcp-session-id")) {
-    sessionId = res.headers.get("mcp-session-id");
-  }
-
   const ctype = res.headers.get("content-type") || "";
-  if (ctype.includes("text/event-stream")) {
-    const text = await res.text();
-    for (const line of text.split("\n")) {
-      if (line.startsWith("data:")) {
-        const msg = JSON.parse(line.slice(5).trim());
-        if (msg.id === id) return msg;
-      }
-    }
-    throw new Error("No JSON-RPC response in SSE stream");
-  }
-  return res.json();
-}
-
-async function notify(method, params) {
-  await fetch(ENDPOINT, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Accept: "application/json, text/event-stream",
-      Authorization: `Bearer ${API_KEY}`,
-      ...(sessionId ? { "mcp-session-id": sessionId } : {}),
-    },
-    body: JSON.stringify({ jsonrpc: "2.0", method, params }),
-  });
+  return ctype.includes("application/json") ? res.json() : Buffer.from(await res.arrayBuffer());
 }
 
 async function main() {
   const [, , cmd, ...args] = process.argv;
 
-  const init = await rpc("initialize", {
-    protocolVersion: "2025-03-26",
-    capabilities: {},
-    clientInfo: { name: "mtp-marketing", version: "1.0.0" },
-  });
-  if (init.error) throw new Error(`initialize: ${JSON.stringify(init.error)}`);
-  await notify("notifications/initialized", {});
-
   if (cmd === "list") {
-    const tools = await rpc("tools/list", {});
-    if (tools.error) throw new Error(JSON.stringify(tools.error));
-    for (const t of tools.result.tools) {
-      console.log(`\n== ${t.name} ==\n${t.description || ""}`);
-      console.log(JSON.stringify(t.inputSchema, null, 2));
+    const page = args[0] || 1;
+    const data = await api(`/mockups?page=${page}`);
+    console.log(`total: ${data.total}, page ${page}`);
+    for (const m of data.mockups || []) {
+      const pl = (m.placements || [])[0] || {};
+      console.log(`${m.id} | ${pl.family || "?"} | ${m.width}x${m.height} | ${m.title}`);
     }
     return;
   }
 
-  if (cmd === "gen") {
-    const [imageUrl, mockupId] = args;
-    if (!imageUrl) {
-      console.error("Usage: gen <image-url> [mockup-id]");
+  if (cmd === "render") {
+    const [mockupId, imageUrl, size = "1000"] = args;
+    if (!mockupId || !imageUrl) {
+      console.error("Usage: render <mockup-id> <image-url> [size]");
       process.exit(1);
     }
-    const arguments_ = { image_url: imageUrl };
-    if (mockupId) arguments_.mockup_id = mockupId;
-    const call = await rpc("tools/call", {
-      name: "generate_mockup",
-      arguments: arguments_,
+    const image = await api("/renders", {
+      method: "POST",
+      body: {
+        mockup: mockupId,
+        size: Number(size),
+        contents: [{ type: "image", url: imageUrl }],
+      },
     });
-    if (call.error) throw new Error(JSON.stringify(call.error));
-    console.log(JSON.stringify(call.result, null, 2));
+    process.stdout.write(image);
     return;
   }
 
-  console.error(`Unknown command: ${cmd}. Use "list" or "gen".`);
+  console.error(`Unknown command: ${cmd}. Use "list" or "render".`);
   process.exit(1);
 }
 
