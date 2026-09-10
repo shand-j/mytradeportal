@@ -217,7 +217,14 @@ export function OnboardingStepperScreen() {
         >
           <StepComponent
             key={stepIndex}
-            data={data[STEPS[stepIndex].key] as Record<string, unknown>}
+            // Steps normally receive only their own slice of the wizard state.
+            // ReviewLaunchStep is the exception: it summarises earlier steps,
+            // so it needs the root state (compliance/services/etc.).
+            data={
+              (STEPS[stepIndex].key === "review"
+                ? data
+                : data[STEPS[stepIndex].key]) as Record<string, unknown>
+            }
             onNext={(stepData?: Record<string, unknown>) => {
               void goNext(stepData);
             }}

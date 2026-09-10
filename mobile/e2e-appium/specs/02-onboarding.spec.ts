@@ -14,7 +14,7 @@
  */
 import { relaunchApp } from "../helpers/app";
 import { ensureLoggedOut } from "../helpers/auth";
-import { tapBack, tapId, tapText, textElContains, waitForId, waitForText, dismissKeyboard, dismissPasswordPrompt } from "../helpers/ui";
+import { tapBack, tapId, tapText, textEl, textElContains, waitForId, waitForText, dismissKeyboard, dismissPasswordPrompt } from "../helpers/ui";
 
 const tag = Date.now().toString(36);
 const FULL_NAME = `E2E Tester ${tag}`;
@@ -28,21 +28,33 @@ function esc(s: string): string {
   return s.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
 }
 
-async function fieldByPlaceholder(placeholder: string) {
+async function fieldByPlaceholder(placeholder: string): Promise<WebdriverIO.Element> {
   const escaped = esc(placeholder);
   const tf = $(
     `-ios class chain:**/XCUIElementTypeTextField[\`placeholderValue == "${escaped}"\`]`
   );
-  if (await tf.isExisting()) return tf;
+  if (await tf.isExisting()) return (await tf) as unknown as WebdriverIO.Element;
   const secure = $(
     `-ios class chain:**/XCUIElementTypeSecureTextField[\`placeholderValue == "${escaped}"\`]`
   );
-  if (await secure.isExisting()) return secure;
+  if (await secure.isExisting()) return (await secure) as unknown as WebdriverIO.Element;
   const tv = $(
     `-ios class chain:**/XCUIElementTypeTextView[\`placeholderValue == "${escaped}"\`]`
   );
+  if (await tv.isExisting()) return (await tv) as unknown as WebdriverIO.Element;
+  // RN multiline TextInputs render the placeholder as a child StaticText
+  // rather than exposing placeholderValue on the TextView — tap the
+  // placeholder text to focus the field, then use the active TextView.
+  const phText = await textEl(placeholder);
+  if (await phText.isExisting()) {
+    await phText.click();
+    await driver.pause(400);
+    const anyTv = $(`-ios predicate string:type == 'XCUIElementTypeTextView'`);
+    await anyTv.waitForExist({ timeout: 5000 });
+    return (await anyTv) as unknown as WebdriverIO.Element;
+  }
   await tv.waitForExist({ timeout: 15000 });
-  return tv;
+  return (await tv) as unknown as WebdriverIO.Element;
 }
 
 async function setFieldByPlaceholder(placeholder: string, value: string) {
@@ -121,6 +133,8 @@ describe("02 onboarding: wizard walk-through (stops before tenant creation)", ()
     // Terms checkbox (a Pressable, not a Button — tap its label text).
     await tapText("I accept the Terms of Service and Privacy Notice.");
     await tapText("Continue");
+    // Successful password form → iOS Keychain "Save Password?" sheet.
+    await dismissPasswordPrompt();
     await expectStep("3 of 10: Identity");
   });
 
@@ -150,7 +164,6 @@ describe("02 onboarding: wizard walk-through (stops before tenant creation)", ()
   });
 
   it("step 4 Address: postcode and address are required to continue", async () => {
-    try {
     await tapText("Continue");
     await driver.pause(500);
     await expectStep("4 of 10: Address"); // blocked
@@ -165,15 +178,6 @@ describe("02 onboarding: wizard walk-through (stops before tenant creation)", ()
     await waitForText("Nations served");
     await tapText("Continue");
     await expectStep("5 of 10: Tax");
-    } catch (e) {
-      const fs = await import("node:fs");
-      try {
-        fs.writeFileSync("/tmp/e2e-debug-02-address.xml", await driver.getPageSource());
-      } catch {
-        /* session may be gone; keep the original error */
-      }
-      throw e;
-    }
   });
 
   it("step 5 Tax: VAT toggle reveals VAT fields, No keeps it simple", async () => {
@@ -240,6 +244,14 @@ describe("02 onboarding: wizard walk-through (stops before tenant creation)", ()
     await waitForText("Team & capacity");
     await waitForText("Data import");
     // Compliance summary shows the step-6 data.
+    //
+    // KNOWN APP DEFECT (fixed in app code, pending a new device build): the
+    // stepper passed each step only its own state slice, so this review step
+    // rendered "No Competent Person Scheme selected" / "No public liability
+    // insurance added yet." even after a fully completed step 6, and omitted
+    // the services summary. OnboardingStepperScreen now passes the root state
+    // to the review step. These assertions fail against builds predating
+    // that fix.
     await waitForText("CPS: NICEIC (NE12345)");
     await waitForText("18th Edition held");
     await waitForText("Public liability: AXA - PL-123456");

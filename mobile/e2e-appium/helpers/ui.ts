@@ -176,7 +176,7 @@ export async function dismissKeyboard() {
  */
 export async function dismissPasswordPrompt(): Promise<boolean> {
   // The prompt animates in asynchronously after the triggering tap, so poll.
-  const deadline = Date.now() + 8000;
+  const deadline = Date.now() + 12000;
   while (Date.now() < deadline) {
     try {
       const notNow = await driver.$("~Not Now");
@@ -185,8 +185,15 @@ export async function dismissPasswordPrompt(): Promise<boolean> {
         await driver.pause(500);
         return true;
       }
+      // SpringBoard alerts: reach it via the alert API and cancel it.
+      const alertText = await driver.getAlertText();
+      if (/save (this )?password/i.test(String(alertText))) {
+        await driver.dismissAlert();
+        await driver.pause(500);
+        return true;
+      }
     } catch {
-      /* session hiccup — keep polling */
+      /* no prompt — keep polling */
     }
     await driver.pause(400);
   }
