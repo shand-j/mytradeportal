@@ -21,7 +21,15 @@ import {
   TRADE_PASSWORD,
   type ApiTenantContext,
 } from "../helpers/api";
-import { byId, tapId, tapText, waitForId, waitForText } from "../helpers/ui";
+import {
+  byId,
+  openTradeSettings,
+  tapId,
+  tapText,
+  textElContains,
+  waitForId,
+  waitForText,
+} from "../helpers/ui";
 
 const NEW_COLOUR = "#059669"; // emerald swatch in BRAND_COLOURS
 
@@ -63,7 +71,7 @@ describe("18: trade settings, branding, billing, logout", () => {
   });
 
   it("settings shows signed-in identity and subscription plan", async () => {
-    await tapId("header-settings");
+    await openTradeSettings();
     await waitForText("Settings");
     await waitForId("settings-logout");
     await waitForText(TRADE_EMAIL, 15000);
@@ -94,7 +102,9 @@ describe("18: trade settings, branding, billing, logout", () => {
   });
 
   it("business profile shows contact details persisted via the API", async () => {
-    await tapText("Business profile & branding");
+    const row = textElContains("Business profile & branding");
+    await row.waitForExist({ timeout: 15000 });
+    await row.click();
     await waitForText("Branding", 15000);
     await driver.pause(500);
     // Render order on this screen: name, phone, address, custom hex.
@@ -112,7 +122,9 @@ describe("18: trade settings, branding, billing, logout", () => {
   });
 
   it("colour picker persists and survives a relaunch", async () => {
-    await tapText("Business profile & branding");
+    const row = textElContains("Business profile & branding");
+    await row.waitForExist({ timeout: 15000 });
+    await row.click();
     await waitForText("Branding", 15000);
     const swatch = await $(`-ios predicate string:label == "Brand colour ${NEW_COLOUR}"`);
     await swatch.waitForExist({ timeout: 15000 });
@@ -130,9 +142,11 @@ describe("18: trade settings, branding, billing, logout", () => {
     // Re-open the branding screen after a fresh launch: the saved colour
     // must still be applied (fetched from the backend).
     await relaunchApp();
-    await tapId("header-settings", 20000);
+    await openTradeSettings();
     await waitForText("Settings", 15000);
-    await tapText("Business profile & branding");
+    const rowAgain = textElContains("Business profile & branding");
+    await rowAgain.waitForExist({ timeout: 15000 });
+    await rowAgain.click();
     await waitForText("Branding", 15000);
     const relaunched = await (await $$("-ios class chain:**/XCUIElementTypeTextField")).getElements();
     expect(await fieldValue(relaunched[3])).toBe(NEW_COLOUR);

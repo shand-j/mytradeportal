@@ -34,21 +34,18 @@ export interface ApiTenantContext {
 export async function loginTradeApi(): Promise<ApiTenantContext> {
   const res = await fetch(`${API_BASE}/auth/token`, {
     method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: new URLSearchParams({ username: TRADE_EMAIL, password: TRADE_PASSWORD }),
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email: TRADE_EMAIL, password: TRADE_PASSWORD }),
   });
   if (!res.ok) throw new Error(`trade API login failed: ${res.status} ${await res.text()}`);
-  const body = (await res.json()) as { access_token: string };
-  const me = await fetch(`${API_BASE}/auth/me`, {
-    headers: { Authorization: `Bearer ${body.access_token}` },
-  });
-  const user = (await me.json()) as { tenant_id: string };
-  const tenants = await fetch(`${API_BASE}/tenants`, {
-    headers: { Authorization: `Bearer ${body.access_token}` },
-  });
-  const tenantList = (await tenants.json()) as { id: string; slug: string }[];
-  const tenant = tenantList.find((t) => t.id === user.tenant_id) ?? tenantList[0];
-  return { tenantId: tenant.id, tenantSlug: tenant.slug, token: body.access_token };
+  // The token response embeds everything needed for tenant-scoped calls —
+  // no /auth/me or /tenants round-trips (GET /tenants is not even served).
+  const body = (await res.json()) as {
+    access_token: string;
+    tenant_slug: string;
+    user: { tenant_id: string };
+  };
+  return { tenantId: body.user.tenant_id, tenantSlug: body.tenant_slug, token: body.access_token };
 }
 
 export async function apiGet(ctx: ApiTenantContext, path: string): Promise<unknown> {

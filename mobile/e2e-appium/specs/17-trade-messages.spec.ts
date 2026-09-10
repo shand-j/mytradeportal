@@ -15,8 +15,8 @@ import {
   TRADE_PASSWORD,
 } from "../helpers/api";
 import {
-  hasText,
   tapId,
+  textElContains,
   waitForId,
   waitForText,
   dismissKeyboard,
@@ -57,7 +57,9 @@ describe("17: trade messages (inbox + chat thread)", () => {
   it("renders the inbox (list or empty state)", async () => {
     await tapId("tab-messages");
     await waitForText("Messages");
-    const empty = await hasText("No conversations yet");
+    // Empty state renders as one composite line:
+    // "No conversations yet — new quote requests will appear here."
+    const empty = await textElContains("No conversations yet").isExisting();
     const hasLead = (await firstByIdPrefix("inbox-lead-")) !== null;
     expect(empty || hasLead).toBe(true);
     if (empty) {

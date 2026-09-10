@@ -30,6 +30,7 @@ import {
   tapBack,
   tapId,
   tapText,
+  textElContains,
   waitForId,
   waitForText,
   dismissKeyboard,
@@ -132,6 +133,18 @@ describe("trade invoices", () => {
   let jobId = "";
   let invoiceId = "";
 
+  afterEach(async function () {
+    const state = (this as { currentTest?: { state?: string } }).currentTest?.state;
+    if (state !== "failed") return;
+    const fs = await import("node:fs");
+    try {
+      const num = 15;
+      fs.writeFileSync(`/tmp/e2e-debug-${num}-${Date.now()}.xml`, await driver.getPageSource());
+    } catch {
+      /* keep the original error */
+    }
+  });
+
   before(async () => {
     ctx = await loginTradeApi();
     const contact = (await apiPost(ctx, "/contacts", {
@@ -179,7 +192,11 @@ describe("trade invoices", () => {
   it("invoices list renders with Outstanding and Paid summary cards", async () => {
     await tapId("dashboard-more");
     await waitForText("Settings");
-    await tapText("Invoices");
+    // The settings row collapses into one element: "Invoices, Raise, track &
+    // mark paid" — match it by substring, not exact label.
+    const row = textElContains("Invoices");
+    await row.waitForExist({ timeout: 15000 });
+    await row.click();
     await waitForText("Invoices", 15000);
     await waitForText("Outstanding");
     await waitForText("Paid");
@@ -202,7 +219,11 @@ describe("trade invoices", () => {
     await tapId("job-add-variation");
     await setValue(await inputByIdPrefix("job-invoice-description"), LINE_DESCRIPTION);
     await setValue(await inputByIdPrefix("job-invoice-amount"), String(LINE_AMOUNT));
-
+    // Defocus: the amount field keeps the keyboard up (Return does not close
+    // it), which would swallow the tap on the create-invoice button below.
+    await tapText("Invoice items", 8000);
+    await driver.pause(400);
+    await scrollUntilId("job-create-invoice");
     await tapId("job-create-invoice");
     // createAndSendInvoice persists the invoice and immediately marks it sent.
     await waitForId("invoice-total", 30000);
@@ -265,7 +286,9 @@ describe("trade invoices", () => {
     await waitForText("Dashboard");
     await tapId("dashboard-more");
     await waitForText("Settings");
-    await tapText("Invoices");
+    const invRow = textElContains("Invoices");
+    await invRow.waitForExist({ timeout: 15000 });
+    await invRow.click();
     await waitForText("Invoices", 15000);
 
     await scrollUntilId(`invoice-card-${invoiceId}`);

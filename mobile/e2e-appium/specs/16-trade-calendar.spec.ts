@@ -22,7 +22,10 @@ import {
   type ApiTenantContext,
 } from "../helpers/api";
 import {
+  swipeUp,
   tapId,
+  tapText,
+  textElContains,
   waitForId,
   waitForText,
   dismissKeyboard,
@@ -46,6 +49,19 @@ async function firstByIdPrefix(
   return els.length > 0 ? els[0] : null;
 }
 
+async function scrollUntilId(id: string, timeoutMs = 20000) {
+  const el = $(`~${id}`);
+  const start = Date.now();
+  while (!(await el.isExisting())) {
+    if (Date.now() - start > timeoutMs) {
+      throw new Error(`scrollUntilId timed out looking for testID: ${id}`);
+    }
+    await swipeUp();
+    await driver.pause(350);
+  }
+  return el;
+}
+
 describe("16: trade calendar", () => {
   if (!tradeCredsConfigured()) {
     console.log("SKIP: E2E_TRADE_EMAIL/E2E_TRADE_PASSWORD not set");
@@ -54,6 +70,17 @@ describe("16: trade calendar", () => {
 
   let ctx: ApiTenantContext | null = null;
   let jobCreated = false;
+
+  afterEach(async function () {
+    const state = (this as { currentTest?: { state?: string } }).currentTest?.state;
+    if (state !== "failed") return;
+    const fs = await import("node:fs");
+    try {
+      fs.writeFileSync(`/tmp/e2e-debug-16-${Date.now()}.xml`, await driver.getPageSource());
+    } catch {
+      /* keep the original error */
+    }
+  });
 
   before(async () => {
     await loginAsTrade(TRADE_EMAIL, TRADE_PASSWORD);
@@ -76,7 +103,8 @@ describe("16: trade calendar", () => {
     await waitForId("calendar-new-job");
     // Week view renders the 7-day header + the "N bookings this week" caption.
     await tapId("calendar-week");
-    await waitForText("bookings this week", 15000);
+    const caption = textElContains("bookings this week");
+    await caption.waitForExist({ timeout: 15000 });
     await tapId("calendar-day");
     await driver.pause(400);
   });
@@ -107,7 +135,11 @@ describe("16: trade calendar", () => {
     await notesField.click();
     await notesField.setValue(JOB_NOTES);
     await dismissKeyboard();
-
+    // Multiline notes: Return inserts "\n" and the keyboard stays up,
+    // covering the submit button. Defocus, then reveal and tap submit.
+    await tapText("Title", 8000);
+    await driver.pause(400);
+    await scrollUntilId("job-create-submit");
     await tapId("job-create-submit", 25000);
     // Creation routes to the job detail screen.
     await waitForText("Job detail", 25000);
@@ -130,8 +162,10 @@ describe("16: trade calendar", () => {
   it("shows the booking on the calendar", async () => {
     await tapId("tab-calendar");
     await driver.pause(600);
-    // Job date is today, which is the default selected day.
-    await waitForText(JOB_TITLE, 25000);
+    // Job date is today, which is the default selected day. The booking row
+    // collapses into one element ("08:00, <title>, <customer> · <postcode>").
+    const booking = textElContains(JOB_TITLE);
+    await booking.waitForExist({ timeout: 25000 });
     if (dbConfigured()) {
       const n = await countRows("jobs", "title = $1", [JOB_TITLE]);
       expect(n).toBe(1);

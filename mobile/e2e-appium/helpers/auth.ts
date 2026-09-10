@@ -2,11 +2,12 @@
  * UI-level authentication helpers (trade + customer) and logout.
  */
 import { relaunchApp } from "./app";
-import { byId, dismissKeyboard, dismissPasswordPrompt, tapId, waitForId, waitForText, tapText } from "./ui";
+import { byId, dismissKeyboard, dismissPasswordPrompt, openTradeSettings, tapId, waitForId, waitForText } from "./ui";
 
 /** Login as an electrician (tenant-agnostic, by email). */
 export async function loginAsTrade(email: string, password: string) {
-  await relaunchApp();
+  // Prior specs may have left a session active — always start logged out.
+  await ensureLoggedOut();
   // From the entry screen choose electrician login.
   if (await byId("entry-trade-login").isExisting()) {
     await tapId("entry-trade-login");
@@ -24,7 +25,7 @@ export async function loginAsTrade(email: string, password: string) {
 
 /** Login as an existing customer by email. */
 export async function loginAsCustomer(email: string, password: string) {
-  await relaunchApp();
+  await ensureLoggedOut();
   if (await byId("entry-customer-login").isExisting()) {
     await tapId("entry-customer-login");
   }
@@ -59,15 +60,32 @@ export async function ensureLoggedOut() {
   if ((await byId("entry-trade-login").isExisting()) || (await byId("entry-customer-login").isExisting())) {
     return;
   }
-  // We are inside a session — the three-dot header opens Settings, where the
-  // logout button lives.
-  const headerSettings = byId("header-settings");
-  if (await headerSettings.isExisting()) {
-    await headerSettings.click();
-  } else {
-    await tapText("Settings", 8000).catch(() => undefined);
+  // We are inside a session. Screens reached mid-flow (e.g. manual lead
+  // entry) have neither header-settings nor any "Settings" label — go via
+  // the dashboard tab, whose three-dot button carries the "Settings" label.
+  // Stack screens (job create, quote edit) have no tab bar: back out until
+  // it appears.
+  for (let i = 0; i < 6 && !(await byId("tab-dashboard").isExisting()); i++) {
+    const back = byId("back-button");
+    if (!(await back.isExisting())) break;
+    await back.click();
+    await driver.pause(500);
   }
-  const logout = await waitForId("settings-logout", 12000);
+  const dashTab = byId("tab-dashboard");
+  if (await dashTab.isExisting()) {
+    await dashTab.click();
+    await driver.pause(600);
+  }
+  await openTradeSettings();
+  const logout = await waitForId("settings-logout", 20000).catch(async (err) => {
+    const fs = await import("node:fs");
+    try {
+      fs.writeFileSync(`/tmp/e2e-debug-logout-${Date.now()}.xml`, await driver.getPageSource());
+    } catch {
+      /* keep the original error */
+    }
+    throw err;
+  });
   await logout.click();
   await driver.pause(1000);
 }

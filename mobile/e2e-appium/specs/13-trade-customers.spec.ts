@@ -23,6 +23,7 @@ import {
   type ApiTenantContext,
 } from "../helpers/api";
 import { loginAsTrade } from "../helpers/auth";
+import { relaunchApp } from "../helpers/app";
 import {
   byId,
   swipeUp,
@@ -96,6 +97,18 @@ describe("trade customers", () => {
   let ctx: ApiTenantContext;
   let contactId = "";
   let leadId = "";
+
+  afterEach(async function () {
+    const state = (this as { currentTest?: { state?: string } }).currentTest?.state;
+    if (state !== "failed") return;
+    const fs = await import("node:fs");
+    try {
+      const num = 13;
+      fs.writeFileSync(`/tmp/e2e-debug-${num}-${Date.now()}.xml`, await driver.getPageSource());
+    } catch {
+      /* keep the original error */
+    }
+  });
 
   before(async () => {
     ctx = await loginTradeApi();
@@ -172,14 +185,19 @@ describe("trade customers", () => {
   });
 
   it("contact card expands to show the persisted details and a create-quote action", async () => {
+    // The address was set via API in the previous test; the contacts query
+    // caches for 30s+ — restart the app so the list refetches with it.
+    await relaunchApp();
     await tapId("tab-customers");
     await waitForText("Customers");
     await scrollUntilId(`contact-card-${contactId}`);
     await tapId(`contact-card-${contactId}`);
-    // Renders as one composite line: "Customer since 10 Sep 2026".
-    const since = textElContains("Customer since");
-    await since.waitForExist({ timeout: 15000 });
-    await waitForText(CUSTOMER_ADDRESS);
+    // The whole card collapses into one accessible element; expanded details
+    // (address, "Customer since …") are substrings of its composite label.
+    const card = await waitForId(`contact-card-${contactId}`);
+    const label = String(await card.getAttribute("label"));
+    expect(label).toContain("Customer since");
+    expect(label).toContain(CUSTOMER_ADDRESS);
     await waitForId(`contact-create-quote-${contactId}`);
   });
 

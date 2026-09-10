@@ -26,6 +26,7 @@ import {
   byId,
   swipeUp,
   tapId,
+  tapText,
   waitForId,
   waitForText,
   dismissKeyboard,
@@ -109,6 +110,18 @@ describe("trade jobs", () => {
   // Today so the job lands in the calendar's default day view.
   const jobDate = futureDate(0);
 
+  afterEach(async function () {
+    const state = (this as { currentTest?: { state?: string } }).currentTest?.state;
+    if (state !== "failed") return;
+    const fs = await import("node:fs");
+    try {
+      const num = 14;
+      fs.writeFileSync(`/tmp/e2e-debug-${num}-${Date.now()}.xml`, await driver.getPageSource());
+    } catch {
+      /* keep the original error */
+    }
+  });
+
   before(async () => {
     ctx = await loginTradeApi();
     const contact = (await apiPost(ctx, "/contacts", {
@@ -155,7 +168,12 @@ describe("trade jobs", () => {
     await setValue(await waitForId("job-create-time"), "09:30");
     await scrollUntilId("job-create-notes");
     await setValue(await waitForId("job-create-notes"), JOB_NOTES);
-
+    // The notes field is multiline: Return inserts "\n" instead of closing
+    // the keyboard, so the submit button stays hidden behind it. Defocus by
+    // tapping the form's Title label, then reveal the submit button.
+    await tapText("Title", 8000);
+    await driver.pause(400);
+    await scrollUntilId("job-create-submit");
     await tapId("job-create-submit");
     await waitForText("Job detail", 25000);
     await waitForText(JOB_TITLE);

@@ -29,6 +29,22 @@ function esc(s: string): string {
   return s.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
 }
 
+/** True when our app (not e.g. Calendar/Mail opened by a notification) is foregrounded. */
+async function isAppForeground() {
+  try {
+    return (await driver.queryAppState(BUNDLE_ID)) === 4;
+  } catch {
+    return true; // don't block the test on a probe failure
+  }
+}
+
+/** Bring the app back if iOS switched away (notification tap, deep link). */
+export async function ensureForeground() {
+  if (await isAppForeground()) return;
+  await driver.activateApp(BUNDLE_ID);
+  await driver.pause(1200);
+}
+
 export async function waitForText(label: string, timeoutMs = 15000) {
   const el = textEl(label);
   await el.waitForExist({ timeout: timeoutMs });
@@ -42,13 +58,44 @@ export async function waitForId(id: string, timeoutMs = 15000) {
 }
 
 export async function tapText(label: string, timeoutMs = 15000) {
+  await ensureForeground();
   const el = await waitForText(label, timeoutMs);
   await el.click();
 }
 
 export async function tapId(id: string, timeoutMs = 15000) {
+  await ensureForeground();
   const el = await waitForId(id, timeoutMs);
   await el.click();
+}
+
+/**
+ * Open the trade settings screen from any trade tab page.
+ * The dashboard header uses `dashboard-more`; other main tabs use the shared
+ * `header-settings` three-dot button (both carry the "Settings" label).
+ * Clicks are verified: a tap right after a tab switch can be swallowed by the
+ * settling ScrollView, so retry until the settings screen actually opens.
+ */
+export async function openTradeSettings() {
+  const settingsProbe = byId("settings-logout");
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const dash = byId("dashboard-more");
+    if (await dash.isExisting()) {
+      await dash.click();
+    } else {
+      const header = byId("header-settings");
+      if (await header.isExisting()) {
+        await header.click();
+      } else {
+        await tapText("Settings", 8000);
+      }
+    }
+    if (await settingsProbe.waitForExist({ timeout: 8000 }).then(() => true).catch(() => false)) {
+      return;
+    }
+    await driver.pause(800);
+  }
+  throw new Error("openTradeSettings: settings screen did not open after 3 attempts");
 }
 
 /** True when the given text is on screen now (no waiting). */
