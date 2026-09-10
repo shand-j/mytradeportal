@@ -113,6 +113,16 @@ export const useAuthStore = create<AuthState>((set) => ({
           isRegistering: false,
           loading: false,
         });
+        try {
+          // Tenant-agnostic login resolves the tenant server-side; load its
+          // branding so customer flows that target a business (quote wizard)
+          // have a slug to submit against.
+          const tenant = await fetchCurrentTenant();
+          useBusinessStore.getState().setBusiness(tenant);
+        } catch {
+          // Branding could not be loaded; customer flows still work with
+          // default theming, but the quote wizard cannot submit.
+        }
       }
       return true;
     } catch (err) {
@@ -238,6 +248,14 @@ export const useAuthStore = create<AuthState>((set) => ({
             isRegistering: false,
             loading: false,
           });
+          try {
+            // Restore the tenant branding so customer flows that submit
+            // against a business slug (quote wizard) keep working.
+            const tenant = await fetchCurrentTenant();
+            useBusinessStore.getState().setBusiness(tenant);
+          } catch {
+            // Branding restore failed; non-fatal for the session itself.
+          }
           return true;
         } catch {
           // fall through to signed-out state

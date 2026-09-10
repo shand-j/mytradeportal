@@ -76,6 +76,7 @@ export function ProfileScreen({ navigation }: ProfileScreenProps) {
     setFullName(customer.fullName ?? "");
     setEmail(customer.email ?? "");
     setPhone(customer.phone ?? "");
+    setAddress(customer.address ?? "");
     const method = customer.preferredContactMethod as ContactMethod | undefined;
     if (method && CONTACT_METHODS.some((m) => m.key === method)) {
       setPreferredContact(method);
