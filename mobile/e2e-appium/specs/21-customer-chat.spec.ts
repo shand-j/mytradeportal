@@ -115,6 +115,17 @@ async function runQuoteRequestWizard(): Promise<void> {
   }
 
   await tapText("Flexible", 15000);
+  {
+    // Hermes Intl renders en-GB short month as "Sep", Node ICU as "Sept" —
+    // build the chip label explicitly.
+    const WD = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+    const MO = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+    const nextDay = new Date(Date.now() + 86400000);
+    const tomorrow = `${WD[nextDay.getDay()]} ${nextDay.getDate()} ${MO[nextDay.getMonth()]}`;
+    await tapText(tomorrow, 15000).catch(() => {
+      console.log(`WARN: preferred date chip not found: ${tomorrow}`);
+    });
+  }
   await tapId("quote-urgency-continue", 15000);
   await waitForId("quote-budget-continue", 15000);
   await tapId("quote-budget-continue", 15000);
@@ -192,7 +203,7 @@ describe("21: customer AI chat", () => {
     return comms.some((c) => c.sender_role === "ai" && c.ai_metadata?.complete === true);
   }
 
-  it("opens the chat from the AI banner and the AI asks a follow-up", async function () {
+  it("opens the chat from the AI banner and the AI asks a follow-up", async () => {
     await waitForId("customer-ai-banner", 25000);
     await tapId("customer-ai-banner");
     // The thread auto-fires the AI follow-up: a typing indicator, then an
@@ -200,22 +211,18 @@ describe("21: customer AI chat", () => {
     await waitForId("chat-composer", 25000);
     const typing = await hasText("is typing");
     if (!typing) {
-      await waitForId("chat-message-agent", 60000).catch(() =>
-        waitForText("is typing", 60000)
-      );
+      // The first follow-up is an LLM call and can take 60-90s+ — poll the
+      // UI patiently; both probes must fail before the final assert below.
+      await waitForId("chat-message-agent", 120000).catch(() => undefined);
+      if (!(await hasText("is typing"))) {
+        await waitForText("is typing", 30000).catch(() => undefined);
+      }
     }
-    await waitForId("chat-message-agent", 90000);
+    await waitForId("chat-message-agent", 120000);
 
     if (tradeCtx) {
       const qr = await findQuoteRequest();
-      if (!qr) {
-        console.log(
-          "SKIP (known defect, fix committed in app source): wizard in before-hook " +
-            "never reached the backend — installed build predates the customer " +
-            "tenant-branding fix"
-        );
-        this.skip();
-      }
+      expect(qr).toBeTruthy();
       const comms = await threadCommunications(String(qr?.id));
       expect(comms.some((c) => c.sender_role === "ai" && c.direction === "outbound")).toBe(true);
     } else {
@@ -234,13 +241,7 @@ describe("21: customer AI chat", () => {
 
     if (tradeCtx) {
       const qr = await findQuoteRequest();
-      if (!qr) {
-        console.log(
-          "SKIP (known defect, fix committed in app source): no quote request " +
-            "persisted — installed build predates the customer tenant-branding fix"
-        );
-        this.skip();
-      }
+      expect(qr).toBeTruthy();
       const comms = await threadCommunications(String(qr?.id));
       const mine = comms.find((c) => (c.body ?? "").includes(tag));
       expect(mine).toBeTruthy();
@@ -257,13 +258,7 @@ describe("21: customer AI chat", () => {
       this.skip();
     }
     const qr = await findQuoteRequest();
-    if (!qr) {
-      console.log(
-        "SKIP (known defect, fix committed in app source): no quote request persisted — " +
-          "installed build predates the customer tenant-branding fix"
-      );
-      this.skip();
-    }
+    expect(qr).toBeTruthy();
     const qrId = String(qr?.id);
 
     // Reply until the AI emits a closure message (capped at 4 turns).

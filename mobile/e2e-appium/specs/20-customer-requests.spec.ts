@@ -172,11 +172,12 @@ async function runQuoteRequestWizard(opts: { withPhoto: boolean }): Promise<void
   // Step 7 — urgency + one preferred date.
   await waitForId("quote-urgency-continue", 15000);
   await tapText("Flexible", 15000);
-  const tomorrow = new Date(Date.now() + 86400000).toLocaleDateString("en-GB", {
-    weekday: "short",
-    day: "numeric",
-    month: "short",
-  });
+  // The app formats chips via Hermes Intl (en-GB month "short" = "Sep"),
+  // while Node's ICU renders "Sept" — build the label explicitly.
+  const WD = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+  const MO = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+  const nextDay = new Date(Date.now() + 86400000);
+  const tomorrow = `${WD[nextDay.getDay()]} ${nextDay.getDate()} ${MO[nextDay.getMonth()]}`;
   await tapText(tomorrow, 15000).catch(() => {
     console.log(`WARN: preferred date chip not found: ${tomorrow}`);
   });
@@ -272,37 +273,12 @@ describe("20: customer quote requests", () => {
     // Back on the requests list: the new request appears as a card (no price
     // while it awaits review).
     const cardText = await textElContains(`E2E request ${tag}`);
-    const onList = await cardText
-      .waitForExist({ timeout: 25000 })
-      .then(() => true)
-      .catch(() => false);
-    if (!onList) {
-      // Known build-lag defect: builds before the authStore fix load no tenant
-      // branding for tenant-agnostic customer sessions, so the wizard has no
-      // business.slug and silently skips the submit (the confirmation screen
-      // shows regardless). Detect via the API and skip rather than hard-fail.
-      if (!(await findQuoteRequest())) {
-        console.log(
-          "SKIP (known defect, fix committed in app source): wizard submission never " +
-            "reached the backend — installed build predates the customer tenant-branding fix"
-        );
-        this.skip();
-      }
-      throw new Error(
-        "request persisted but the customer list never showed the new card (list refresh regression)"
-      );
-    }
+    await cardText.waitForExist({ timeout: 25000 });
   });
 
-  it("persists the quote request with all entered fields", async function () {
+  it("persists the quote request with all entered fields", async () => {
     const qr = await findQuoteRequest();
-    if (!qr) {
-      console.log(
-        "SKIP (known defect, fix committed in app source): no quote request persisted — " +
-          "installed build predates the customer tenant-branding fix"
-      );
-      this.skip();
-    }
+    expect(qr).toBeTruthy();
     expect(qr?.raw_text).toContain(tag);
     expect(qr?.preferred_dates?.length).toBeGreaterThanOrEqual(1);
     if (dbConfigured()) {
