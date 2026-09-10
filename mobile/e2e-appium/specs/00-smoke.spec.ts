@@ -22,7 +22,8 @@ describe("smoke: app launches on device", () => {
     // Either the unauthenticated entry screen or a restored session surface.
     const onEntry =
       (await byId("entry-trade-login").isExisting()) ||
-      (await byId("entry-customer-login").isExisting());
+      (await byId("entry-customer-login").isExisting()) ||
+      (await byId("role-select").isExisting());
     const inSession = await hasText("Dashboard").catch(() => false);
     expect(onEntry || inSession).toBe(true);
     await waitAppReady();

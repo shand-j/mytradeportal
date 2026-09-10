@@ -13,7 +13,7 @@
  * in-memory only and is discarded by relaunchApp() in the after hook.
  */
 import { relaunchApp } from "../helpers/app";
-import { ensureLoggedOut } from "../helpers/auth";
+import { ensureLoggedOut, pickRole } from "../helpers/auth";
 import { tapBack, tapId, tapText, textEl, textElContains, waitForId, waitForText, dismissKeyboard, dismissPasswordPrompt } from "../helpers/ui";
 
 const tag = Date.now().toString(36);
@@ -86,6 +86,7 @@ async function expectStep(label: string) {
 describe("02 onboarding: wizard walk-through (stops before tenant creation)", () => {
   before(async () => {
     await ensureLoggedOut();
+    await pickRole("electrician");
     await tapId("entry-register-trade");
     await waitForText("Run your electrical business from your phone.", 25000);
   });

@@ -4,11 +4,25 @@
 import { relaunchApp } from "./app";
 import { byId, dismissKeyboard, dismissPasswordPrompt, openTradeSettings, tapId, tapText, textEl, textElContains, waitForId, waitForText } from "./ui";
 
+/**
+ * Drill through the entry screen's role select if it is showing. The role
+ * cards gate the login/register buttons, so any spec touching entry-* IDs
+ * calls this first. No-op when a white-label business card or a role screen
+ * is already displayed.
+ */
+export async function pickRole(role: "electrician" | "customer") {
+  const select = byId("role-select");
+  if (await select.isExisting()) {
+    await tapId(`role-${role}`);
+  }
+}
+
 /** Login as an electrician (tenant-agnostic, by email). */
 export async function loginAsTrade(email: string, password: string) {
   // Prior specs may have left a session active — always start logged out.
   await ensureLoggedOut();
   // From the entry screen choose electrician login.
+  await pickRole("electrician");
   if (await byId("entry-trade-login").isExisting()) {
     await tapId("entry-trade-login");
   } else if (await byId("entry-customer-login").isExisting()) {
@@ -26,6 +40,7 @@ export async function loginAsTrade(email: string, password: string) {
 /** Login as an existing customer by email. */
 export async function loginAsCustomer(email: string, password: string) {
   await ensureLoggedOut();
+  await pickRole("customer");
   if (await byId("entry-customer-login").isExisting()) {
     await tapId("entry-customer-login");
   }
@@ -61,7 +76,11 @@ export async function ensureLoggedOut() {
   // anywhere in a group the logout button lives on the settings screen.
   // Cheap probe: try opening trade settings via deep link is unavailable on
   // the TestFlight build, so probe for entry markers first.
-  if ((await byId("entry-trade-login").isExisting()) || (await byId("entry-customer-login").isExisting())) {
+  if (
+    (await byId("entry-trade-login").isExisting()) ||
+    (await byId("entry-customer-login").isExisting()) ||
+    (await byId("role-select").isExisting())
+  ) {
     return;
   }
   // We are inside a session. Screens reached mid-flow (e.g. manual lead

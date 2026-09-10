@@ -156,7 +156,12 @@ describe("18: trade settings, branding, billing, logout", () => {
   it("logout returns to the entry screen", async () => {
     await waitForText("Settings", 15000);
     await tapId("settings-logout");
-    await waitForId("entry-trade-login", 25000);
+    // Logout lands on the role select (entry buttons live one tap deeper).
+    await waitForId("role-select", 25000);
+    await tapId("role-electrician");
+    await waitForId("entry-trade-login", 15000);
+    await tapId("back-button");
+    await tapId("role-customer");
     await waitForId("entry-customer-login", 15000);
   });
 });

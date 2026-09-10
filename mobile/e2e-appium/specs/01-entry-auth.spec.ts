@@ -9,7 +9,7 @@
  * exercised with an invalid token.
  */
 import { relaunchApp } from "../helpers/app";
-import { ensureLoggedOut } from "../helpers/auth";
+import { ensureLoggedOut, pickRole } from "../helpers/auth";
 import {
   byId,
   dismissKeyboard,
@@ -32,6 +32,8 @@ const tag = Date.now().toString(36);
  * digits — via setValue when the box is queryable, else via the keyboard.
  */
 async function enterBusinessCode(code: string) {
+  // The code card lives behind the customer role option.
+  await pickRole("customer");
   const digits = code.replace(/\D/g, "").slice(0, 6).padEnd(6, "0");
   // Focus the first code box: tap below the code-card label (the boxes sit
   // between the label and the Find button). Empty RN TextInputs only appear
@@ -76,25 +78,35 @@ describe("01 entry: pre-auth surfaces", () => {
     await ensureLoggedOut();
   });
 
-  it("renders the default entry screen with every primary surface", async () => {
+  it("renders the splash then the role select with both role surfaces", async () => {
     await relaunchApp();
-    await waitForText("My Trade Portal");
-    await waitForText("Find your local electrician and request a quote.");
+    // Cold open: animated splash (module-flagged, once per session).
+    await waitForId("splash", 15000);
+    await waitForId("role-select", 15000);
+    await waitForText("Get started");
+    await waitForText("I'm an Electrician");
+    await waitForText("I'm a Customer");
+
+    // Customer side: code lookup + customer login.
+    await tapId("role-customer");
     await waitForText("Enter your electrician's code or business slug");
-    // Five surfaces: request-a-quote lives on the business card (asserted
-    // below); the other four are on the default entry screen.
     await waitForId("entry-find-business");
-    await waitForId("entry-register-trade");
-    await waitForId("entry-trade-login");
     await waitForId("entry-customer-login");
-    // The code input renders as the card between label and Find button.
-    // (The six empty CodeInput boxes are only exposed once focused — entry
-    // is exercised by the code-entry tests below.)
+    await tapId("back-button");
+    await waitForId("role-select");
+
+    // Electrician side: login + registration.
+    await tapId("role-electrician");
+    await waitForId("entry-trade-login");
+    await waitForId("entry-register-trade");
+    await tapId("back-button");
+    await waitForId("role-select");
   });
 
-  it("tapping Find my electrician with no code stays on the entry screen", async () => {
+  it("tapping Find my electrician with no code stays on the customer view", async () => {
     // The button is disabled until a digit is entered; a tap must not
     // navigate anywhere.
+    await pickRole("customer");
     await tapId("entry-find-business");
     await driver.pause(600);
     expect(await hasText("My Trade Portal")).toBe(true);
@@ -146,11 +158,11 @@ describe("01 entry: pre-auth surfaces", () => {
     await tapId("entry-request-quote");
     await waitForId("customer-quote-flow");
     await (await textElContains("Step 1 of")).waitForExist({ timeout: 15000 });
-    // Back out of the flow → business card, then back again → default entry.
+    // Back out of the flow → business card, then back again → customer view.
     await tapBack();
     await waitForId("entry-request-quote");
     await tapBack();
-    await waitForText("My Trade Portal");
+    await waitForId("entry-customer-login");
   });
 });
 
@@ -160,6 +172,7 @@ describe("01 entry: login form validation", () => {
   });
 
   it("trade login: submitting with empty fields stays on the login form", async () => {
+    await pickRole("electrician");
     await tapId("entry-trade-login");
     await waitForText("Electrician login");
     // Button is disabled while email/password are empty — a tap is a no-op.
@@ -181,6 +194,7 @@ describe("01 entry: invalid credentials", () => {
   });
 
   it("trade login with bad credentials shows Invalid email or password.", async () => {
+    await pickRole("electrician");
     await tapId("entry-trade-login");
     await waitForText("Electrician login");
     const email = await waitForId("login-email");
@@ -198,6 +212,7 @@ describe("01 entry: invalid credentials", () => {
 
   it("customer login with bad credentials shows Invalid email or password.", async () => {
     await relaunchApp();
+    await pickRole("customer");
     await tapId("entry-customer-login");
     await waitForText("Customer login");
     const email = await waitForId("login-email");
@@ -220,6 +235,7 @@ describe("01 entry: forgot password", () => {
   });
 
   it("requesting a reset link confirms 'we've emailed a reset link'", async () => {
+    await pickRole("electrician");
     await tapId("entry-trade-login");
     await waitForText("Electrician login");
     // A throwaway address: the API response is generic, so the confirmation
