@@ -9,8 +9,9 @@ export interface Tier {
   priceId: { month: string; year: string };
 }
 
-const env = (key: string): string => process.env[key] ?? "";
-
+// NOTE: Next.js only inlines NEXT_PUBLIC_* vars referenced by their literal
+// name in client bundles — dynamic process.env[key] lookups stay undefined.
+// Keep every access explicit.
 export const PricingTier: Tier[] = [
   {
     name: "Starter",
@@ -25,8 +26,8 @@ export const PricingTier: Tier[] = [
     ],
     featured: false,
     priceId: {
-      month: env("NEXT_PUBLIC_PADDLE_PRICE_STARTER_MONTH"),
-      year: env("NEXT_PUBLIC_PADDLE_PRICE_STARTER_YEAR"),
+      month: process.env.NEXT_PUBLIC_PADDLE_PRICE_STARTER_MONTH ?? "",
+      year: process.env.NEXT_PUBLIC_PADDLE_PRICE_STARTER_YEAR ?? "",
     },
   },
   {
@@ -42,8 +43,8 @@ export const PricingTier: Tier[] = [
     ],
     featured: true,
     priceId: {
-      month: env("NEXT_PUBLIC_PADDLE_PRICE_PRO_MONTH"),
-      year: env("NEXT_PUBLIC_PADDLE_PRICE_PRO_YEAR"),
+      month: process.env.NEXT_PUBLIC_PADDLE_PRICE_PRO_MONTH ?? "",
+      year: process.env.NEXT_PUBLIC_PADDLE_PRICE_PRO_YEAR ?? "",
     },
   },
   {
@@ -59,8 +60,8 @@ export const PricingTier: Tier[] = [
     ],
     featured: false,
     priceId: {
-      month: env("NEXT_PUBLIC_PADDLE_PRICE_BUSINESS_MONTH"),
-      year: env("NEXT_PUBLIC_PADDLE_PRICE_BUSINESS_YEAR"),
+      month: process.env.NEXT_PUBLIC_PADDLE_PRICE_BUSINESS_MONTH ?? "",
+      year: process.env.NEXT_PUBLIC_PADDLE_PRICE_BUSINESS_YEAR ?? "",
     },
   },
 ];
