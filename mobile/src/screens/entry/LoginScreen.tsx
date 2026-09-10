@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { ScrollView, StyleSheet, TextInput, View } from "react-native";
+import { KeyboardAvoidingView, Platform, ScrollView, StyleSheet, TextInput, View } from "react-native";
 import { useRouter } from "expo-router";
 import { Button } from "../../components/ui/Button";
 import { Header } from "../../components/ui/Header";
@@ -149,7 +149,11 @@ export function LoginScreen({ role, mode = "login", onBack }: LoginScreenProps) 
         </Text>
       )}
 
-      <ScrollView style={styles.scroll} contentContainerStyle={styles.card}>
+      <KeyboardAvoidingView
+        style={styles.keyboardAvoider}
+        behavior={Platform.OS === "ios" ? "padding" : undefined}
+      >
+        <ScrollView style={styles.scroll} contentContainerStyle={styles.card} keyboardShouldPersistTaps="handled">
         {isRegister && role === "customer" && (
           <>
             <TextInput testID="login-name" style={styles.input} value={name} onChangeText={setName} placeholder="Full name" />
@@ -239,7 +243,8 @@ export function LoginScreen({ role, mode = "login", onBack }: LoginScreenProps) 
             }}
           />
         )}
-      </ScrollView>
+        </ScrollView>
+      </KeyboardAvoidingView>
 
     </Screen>
   );
@@ -252,6 +257,9 @@ const styles = StyleSheet.create({
     gap: 16,
   },
   scroll: {
+    flex: 1,
+  },
+  keyboardAvoider: {
     flex: 1,
   },
   card: {

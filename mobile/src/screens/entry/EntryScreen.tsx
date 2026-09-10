@@ -4,6 +4,8 @@ import {
   ActivityIndicator,
   Animated,
   Image,
+  KeyboardAvoidingView,
+  Platform,
   Pressable,
   StyleSheet,
   View,
@@ -171,70 +173,68 @@ export function EntryScreen() {
             </View>
           </View>
         ) : view === "electrician" ? (
-          <View style={styles.container}>
-            <Pressable testID="back-button" onPress={() => setView("role")} style={styles.backBtn} accessibilityRole="button">
-              <Icon name="back" size={22} color="#111827" />
-            </Pressable>
-            <Image source={mtMark} style={styles.brandMarkSmall} accessibilityLabel="My Trade Portal" />
-            <Text variant="title" weight="bold" align="center">
-              Electrician
-            </Text>
-            <View style={styles.card}>
-              <Button testID="entry-trade-login" title="Log in" onPress={() => setLoginRole("trade")} />
-              <Button
-                testID="entry-register-trade"
-                title="Register my business"
-                variant="outline"
-                onPress={() => startRegistration("trade")}
-              />
-              <Text variant="caption" color="secondary" align="center">
-                Free during beta — no card required
-              </Text>
-            </View>
-          </View>
-        ) : (
-          <View style={styles.container}>
-            <Pressable testID="back-button" onPress={() => setView("role")} style={styles.backBtn} accessibilityRole="button">
-              <Icon name="back" size={22} color="#111827" />
-            </Pressable>
-            <Image source={mtMark} style={styles.brandMarkSmall} accessibilityLabel="My Trade Portal" />
-            <Text variant="title" weight="bold" align="center">
-              Customer
-            </Text>
-
-            <View style={[styles.card, styles.codeCard]}>
-              <Text variant="body" weight="semibold" align="center">
-                Enter your electrician&apos;s code or business slug
-              </Text>
-              <CodeInput value={code} onChange={setCode} />
-              {isLoading ? (
-                <ActivityIndicator color={theme.colors.primary} />
-              ) : (
+          <>
+            <Header title="Electrician" onBack={() => setView("role")} />
+            <View style={styles.container}>
+              <Image source={mtMark} style={styles.brandMarkSmall} accessibilityLabel="My Trade Portal" />
+              <View style={styles.card}>
+                <Button testID="entry-trade-login" title="Log in" onPress={() => setLoginRole("trade")} />
                 <Button
-                  testID="entry-find-business"
-                  title="Find my electrician"
-                  onPress={lookupBusiness}
-                  disabled={code.trim().length === 0}
+                  testID="entry-register-trade"
+                  title="Register my business"
+                  variant="outline"
+                  onPress={() => startRegistration("trade")}
                 />
-              )}
-              {error && (
-                <Text variant="caption" color="warning" align="center">
-                  {error}
+                <Text variant="caption" color="secondary" align="center">
+                  Free during beta — no card required
                 </Text>
-              )}
+              </View>
             </View>
+          </>
+        ) : (
+          <>
+            <Header title="Customer" onBack={() => setView("role")} />
+            <KeyboardAvoidingView
+              style={styles.flex}
+              behavior={Platform.OS === "ios" ? "padding" : undefined}
+            >
+              <View style={styles.container}>
+              <Image source={mtMark} style={styles.brandMarkSmall} accessibilityLabel="My Trade Portal" />
+              <View style={[styles.card, styles.codeCard]}>
+                <Text variant="body" weight="semibold" align="center">
+                  Enter your electrician&apos;s code or business slug
+                </Text>
+                <CodeInput value={code} onChange={setCode} />
+                {isLoading ? (
+                  <ActivityIndicator color={theme.colors.primary} />
+                ) : (
+                  <Button
+                    testID="entry-find-business"
+                    title="Find my electrician"
+                    onPress={lookupBusiness}
+                    disabled={code.trim().length === 0}
+                  />
+                )}
+                {error && (
+                  <Text variant="caption" color="warning" align="center">
+                    {error}
+                  </Text>
+                )}
+              </View>
 
-            <View style={styles.divider} />
+              <View style={styles.divider} />
 
-            <View style={styles.card}>
-              <Button
-                testID="entry-customer-login"
-                title="Customer login"
-                variant="outline"
-                onPress={() => setLoginRole("customer")}
-              />
-            </View>
-          </View>
+              <View style={styles.card}>
+                <Button
+                  testID="entry-customer-login"
+                  title="Customer login"
+                  variant="outline"
+                  onPress={() => setLoginRole("customer")}
+                />
+              </View>
+              </View>
+            </KeyboardAvoidingView>
+          </>
         )}
       </Animated.View>
     </Screen>
@@ -343,11 +343,6 @@ const styles = StyleSheet.create({
   roleCopy: {
     flex: 1,
     gap: 2,
-  },
-  backBtn: {
-    alignSelf: "flex-start",
-    padding: 8,
-    marginLeft: -8,
   },
   card: {
     padding: 20,
