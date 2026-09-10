@@ -53,6 +53,10 @@ async function fillLoginForm(email: string, password: string) {
  */
 export async function ensureLoggedOut() {
   await relaunchApp();
+  // Let the auth store rehydrate before probing: right after launch the app
+  // can render the entry screen briefly even when a session exists, and a
+  // probe in that window misreads "logged out".
+  await driver.pause(2500);
   // Session screens share a bottom tab bar with a settings route; if we are
   // anywhere in a group the logout button lives on the settings screen.
   // Cheap probe: try opening trade settings via deep link is unavailable on
