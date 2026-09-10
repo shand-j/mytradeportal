@@ -223,11 +223,11 @@ describe("02 onboarding: wizard walk-through (stops before tenant creation)", ()
 
   it("step 8 Branding: hex validation and preset swatches", async () => {
     await waitForTextContains("Brand colour");
-    const hexField = await fieldByPlaceholder("#2563EB");
+    const hexField = await fieldByPlaceholder("#F2B100");
     await hexField.setValue("not-a-colour");
-    await waitForText("Enter a valid hex colour, e.g. #2563EB");
+    await waitForText("Enter a valid hex colour, e.g. #F2B100");
     await hexField.clearValue();
-    await hexField.setValue("#2563EB");
+    await hexField.setValue("#F2B100");
     await dismissKeyboard();
     // Preset swatches are the only testID'd inputs on this step.
     await tapId("brand-colour-059669");

@@ -39,7 +39,7 @@ const BADGE_COLORS: Record<
     label: "OPEN",
     background: "#EFF6FF",
     border: "#BFDBFE",
-    text: "#1D4ED8",
+    text: "#1B2A32",
   },
   accepted: {
     label: "ACCEPTED",
@@ -154,7 +154,7 @@ function BookDateView({
                     className="h-16 w-12 items-center justify-center rounded-xl border"
                     style={{
                       backgroundColor: active ? "#EFF6FF" : "#F8FAFC",
-                      borderColor: active ? "#2563EB" : "#E2E8F0",
+                      borderColor: active ? "#1B2A32" : "#E2E8F0",
                     }}
                   >
                     <Text variant="caption" color={active ? "primary" : "secondary"}>
@@ -191,7 +191,7 @@ function BookDateView({
                     className="rounded-xl border px-4 py-2"
                     style={{
                       backgroundColor: active ? "#EFF6FF" : "#F8FAFC",
-                      borderColor: active ? "#2563EB" : "#E2E8F0",
+                      borderColor: active ? "#1B2A32" : "#E2E8F0",
                     }}
                   >
                     <Text
@@ -407,7 +407,7 @@ function CustomerQuoteView({
                         className="rounded-xl border px-4 py-2"
                         style={{
                           backgroundColor: active ? "#EFF6FF" : "#F8FAFC",
-                          borderColor: active ? "#2563EB" : "#E2E8F0",
+                          borderColor: active ? "#1B2A32" : "#E2E8F0",
                         }}
                       >
                         <Text

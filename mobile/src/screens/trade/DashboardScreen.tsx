@@ -162,7 +162,7 @@ export function DashboardScreen(_props: DashboardScreenProps) {
                   Review and quote
                 </Text>
               </View>
-              <Icon name="navigate" size={18} color="#2563EB" />
+              <Icon name="navigate" size={18} color="#1B2A32" />
             </View>
           </Pressable>
         )}

@@ -124,7 +124,7 @@ export function ChatThread({
   };
 
   const bubbleFor = (sender: ChatSenderRole | "agent") => {
-    if (sender === "customer" || sender === "business") return { bg: "#2563EB", fg: "#FFFFFF" };
+    if (sender === "customer" || sender === "business") return { bg: "#1B2A32", fg: "#FFFFFF" };
     if (sender === "agent" || sender === "ai") return { bg: "#EEF2FF", fg: "#111827" };
     return { bg: "#F3F4F6", fg: "#111827" };
   };

@@ -101,7 +101,7 @@ export function NotificationsScreen({ role, onBack }: NotificationsScreenProps) 
                   <Icon
                     name={iconFor(notification.type)}
                     size={18}
-                    color={notification.type === "quote_failed" ? "#B45309" : "#2563EB"}
+                    color={notification.type === "quote_failed" ? "#B45309" : "#1B2A32"}
                   />
                 </View>
                 <View className="flex-1 gap-0.5">

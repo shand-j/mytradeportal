@@ -29,7 +29,7 @@ export function ConfirmationStep({
   return (
     <View style={styles.container}>
       <View style={styles.iconCircle}>
-        <Icon name="checkmark" size={40} color="#2563EB" />
+        <Icon name="checkmark" size={40} color="#1B2A32" />
       </View>
 
       <Text variant="title" weight="bold" align="center">

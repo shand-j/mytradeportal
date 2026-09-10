@@ -62,7 +62,7 @@ export function CustomerCalendarScreen() {
               <IconButton
                 icon="message"
                 size={22}
-                color="#2563EB"
+                color="#1B2A32"
                 onPress={() => handleMessage(job.title)}
                 accessibilityLabel="Message business"
               />

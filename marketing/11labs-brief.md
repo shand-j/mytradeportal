@@ -17,13 +17,22 @@ example.com addresses. Safe to publish as-is.
 - **Product name:** My Trade Portal
 - **One-liner (proposed):** "Quotes to invoices in minutes — powered by AI."
   (alternatives: "Less admin. More sparks." / "The AI back office for trades.")
-- **Primary colour:** `#2563EB` (blue) — in-app default
-- **Secondary/accent:** `#F59E0B` (amber), success `#10B981` (green)
+- **Brand mark:** hi-vis yellow "MT" monogram (`#F2B100`) on deep slate ink
+  (`#1B2A32`) — industrial worksite-label aesthetic (see `assets/mtp-icon-hivis-yellow-on-slate.svg`
+  and `assets/mtp-icon-ios-1024.png`)
+- **Primary colour:** `#1B2A32` (slate ink) — interactive base (buttons, selected states)
+- **Accent colour:** `#F2B100` (hi-vis yellow) — brand highlights, badges, fills with dark text
+- **Secondary:** success `#10B981` (green), warning `#F59E0B` (amber)
 - **Demo tenant brand (shown in footage):** Hartley Electrical Services Ltd —
   primary `#1D4ED8`, secondary `#F59E0B`
 - **Typeface:** system SF Pro (iOS system font — use SF Pro or Inter in overlays)
-- **Logo/assets:** see `assets/` — `mtp-app-icon.png` (app icon, blue),
-  `mtp-logo-icon.jpg` (product logo mark, orange bolt)
+- **Logo/assets:** see `assets/` — `mtp-icon-ios-1024.png` (app icon, yellow-on-slate MT),
+  `mtp-icon-hivis-yellow-on-slate.svg` (vector source), `mtp-logo-icon.jpg` (legacy product mark)
+
+> **Note:** the recordings predate this rebrand — default app chrome in the
+> footage (buttons, selected states) is blue `#2563EB`. The demo tenant
+> Hartley's own branding is unchanged. Re-recording with the slate/yellow UI
+> is possible on request.
 
 ## Cast (fictional)
 

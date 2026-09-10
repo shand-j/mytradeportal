@@ -64,7 +64,7 @@ export function MediaCaptureStep({ formData, updateFormData, onNext }: StepProps
       </Text>
 
       <View style={styles.guide}>
-        <Icon name="info" size={20} color="#2563EB" />
+        <Icon name="info" size={20} color="#1B2A32" />
         <Text variant="caption" color="primary">
           {requiredLabel}
         </Text>

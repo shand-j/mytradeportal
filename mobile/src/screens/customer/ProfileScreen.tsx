@@ -35,7 +35,7 @@ function Toggle({
         <Text variant="body">{label}</Text>
         <View
           className="h-7 w-12 justify-center rounded-full px-0.5"
-          style={{ backgroundColor: value ? "#2563EB" : "#E5E7EB" }}
+          style={{ backgroundColor: value ? "#1B2A32" : "#E5E7EB" }}
         >
           <View
             className="h-6 w-6 rounded-full bg-white"
@@ -181,10 +181,10 @@ export function ProfileScreen({ navigation }: ProfileScreenProps) {
                   className="flex-row items-center gap-1 rounded-xl border px-3 py-2"
                   style={{
                     backgroundColor: active ? "#EFF6FF" : "#F8FAFC",
-                    borderColor: active ? "#2563EB" : "#E2E8F0",
+                    borderColor: active ? "#1B2A32" : "#E2E8F0",
                   }}
                 >
-                  <Icon name={method.icon} size={16} color={active ? "#2563EB" : "#6B7280"} />
+                  <Icon name={method.icon} size={16} color={active ? "#1B2A32" : "#6B7280"} />
                   <Text
                     variant="caption"
                     weight={active ? "semibold" : "normal"}
