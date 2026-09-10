@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { ActivityIndicator, Image, StyleSheet, View } from "react-native";
+import mtMark from "../../../assets/icon.png";
 import { Button } from "../../components/ui/Button";
 import { CodeInput } from "../../components/ui/CodeInput";
 import { Header } from "../../components/ui/Header";
@@ -68,9 +69,12 @@ export function EntryScreen() {
         </>
       ) : (
         <View style={styles.container}>
-          <Text variant="title" weight="bold" align="center">
-            My Trade Portal
-          </Text>
+          <Image
+            source={mtMark}
+            style={styles.brandMark}
+            accessibilityLabel="My Trade Portal"
+            resizeMode="cover"
+          />
           <Text variant="subtitle" color="secondary" align="center">
             Find your local electrician and request a quote.
           </Text>
@@ -115,6 +119,12 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: "center",
     gap: 16,
+  },
+  brandMark: {
+    width: 88,
+    height: 88,
+    alignSelf: "center",
+    borderRadius: 20,
   },
   card: {
     padding: 20,
