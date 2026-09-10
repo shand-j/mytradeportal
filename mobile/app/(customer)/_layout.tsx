@@ -3,12 +3,10 @@ import { View } from "react-native";
 import { BottomTabBar } from "../../src/components/navigation/BottomTabBar";
 import { NotificationWatcher } from "../../src/components/notifications/NotificationWatcher";
 
-const MAIN_CUSTOMER_ROUTES = [
-  "/(customer)/requests",
-  "/(customer)/calendar",
-  "/(customer)/messages",
-  "/(customer)/profile",
-];
+// usePathname returns the path without route-group segments, e.g. "/requests"
+// — including "(customer)" here would never match and the tab bar would never
+// render.
+const MAIN_CUSTOMER_ROUTES = ["/requests", "/calendar", "/messages", "/profile"];
 
 export default function CustomerLayout() {
   const pathname = usePathname();

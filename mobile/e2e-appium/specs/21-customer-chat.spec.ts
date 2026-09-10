@@ -261,8 +261,10 @@ describe("21: customer AI chat", () => {
     expect(qr).toBeTruthy();
     const qrId = String(qr?.id);
 
-    // Reply until the AI emits a closure message (capped at 4 turns).
-    for (let turn = 1; turn <= 4; turn += 1) {
+    // Reply until the AI emits a closure message. The backend forces a
+    // closure at MAX_FOLLOWUP_TURNS (5) AI turns, so keep replying up to 6
+    // turns; each AI turn is a live LLM call (~60-90s).
+    for (let turn = 1; turn <= 6; turn += 1) {
       const comms = await threadCommunications(qrId);
       if (await aiClosed(comms)) break;
       const detail = `E2E detail ${tag} turn ${turn}: hallway ceiling rose, standard height, parking available.`;
@@ -283,15 +285,22 @@ describe("21: customer AI chat", () => {
       }
     }
 
-    const final = await threadCommunications(qrId);
-    expect(await aiClosed(final)).toBe(true);
+    // The forced closure can land just after the loop's last poll — give the
+    // final AI turn a generous window before asserting.
+    let closed = await aiClosed(await threadCommunications(qrId));
+    const closeDeadline = Date.now() + 150000;
+    while (!closed && Date.now() < closeDeadline) {
+      await driver.pause(5000);
+      closed = await aiClosed(await threadCommunications(qrId));
+    }
+    expect(closed).toBe(true);
 
     // Staff notification row: kind triage_closed. The link is /chat/{qrId}
     // only until a draft quote exists (then /quotes/{quoteId}), so match on
     // tenant + type + recency instead.
     const n = await countRows(
       "notifications",
-      "tenant_id = $1 AND type = 'triage_closed' AND created_at > now() - interval '20 minutes'",
+      "tenant_id = $1 AND type = 'triage_closed' AND created_at > now() - interval '30 minutes'",
       [String(qr?.tenant_id ?? "")]
     );
     expect(n).toBeGreaterThanOrEqual(1);
