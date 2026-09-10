@@ -1,6 +1,6 @@
 """Pydantic schemas for API requests and responses."""
 
-from datetime import datetime
+from datetime import UTC, datetime
 from decimal import Decimal, InvalidOperation
 from typing import Any
 from uuid import UUID
@@ -561,6 +561,13 @@ class PushTokenRead(BaseModel):
 # ---------------------------------------------------------------------------
 
 
+def _strip_tz(value: datetime | None) -> datetime | None:
+    """Store naive UTC — job schedule columns are `DateTime` (no timezone)."""
+    if value is not None and value.tzinfo is not None:
+        return value.astimezone(UTC).replace(tzinfo=None)
+    return value
+
+
 class JobCreate(BaseModel):
     contact_id: UUID
     quote_id: UUID | None = None
@@ -568,6 +575,10 @@ class JobCreate(BaseModel):
     description: str | None = None
     scheduled_start: datetime | None = None
     scheduled_end: datetime | None = None
+
+    _normalize_schedule = field_validator("scheduled_start", "scheduled_end", mode="after")(
+        _strip_tz
+    )
 
 
 class JobConvertRequest(BaseModel):
@@ -577,11 +588,19 @@ class JobConvertRequest(BaseModel):
     scheduled_end: datetime | None = None
     notes: str | None = None
 
+    _normalize_schedule = field_validator("scheduled_start", "scheduled_end", mode="after")(
+        _strip_tz
+    )
+
 
 class JobUpdate(BaseModel):
     scheduled_start: datetime | None = None
     scheduled_end: datetime | None = None
     notes: str | None = None
+
+    _normalize_schedule = field_validator("scheduled_start", "scheduled_end", mode="after")(
+        _strip_tz
+    )
 
 
 class JobRead(BaseModel):

@@ -35,7 +35,6 @@ import {
   textEl,
   waitForId,
   waitForText,
-  dismissKeyboard,
 } from "../helpers/ui";
 import { API_BASE } from "../helpers/env";
 
@@ -134,6 +133,17 @@ describe("trade quotes", () => {
     return;
   }
 
+  afterEach(async function () {
+    const state = (this as { currentTest?: { state?: string } }).currentTest?.state;
+    if (state !== "failed") return;
+    const fs = await import("node:fs");
+    try {
+      fs.writeFileSync(`/tmp/e2e-debug-11-${Date.now()}.xml`, await driver.getPageSource());
+    } catch {
+      /* keep the original error */
+    }
+  });
+
   let ctx: ApiTenantContext;
   let contactId = "";
   let quoteId = "";
@@ -198,9 +208,15 @@ describe("trade quotes", () => {
   it("quotes list renders the quote with status and total", async () => {
     await tapId("tab-quotes");
     await waitForText("Quotes");
-    await scrollUntilText(QUOTE_TITLE);
-    await scrollUntilText(`${EXPECTED_TOTAL_TEXT} inc VAT`);
-    await waitForText("Draft");
+    // RN collapses each card into a single accessible element whose label
+    // composites title/status/customer/total — the individual texts are not
+    // exposed, and the title truncates (numberOfLines={1}). Assert on the
+    // card's composite label instead.
+    const card = await scrollUntilId(`quote-card-${quoteId}`);
+    const label = String(await card.getAttribute("label"));
+    expect(label).toContain("E2E Quote");
+    expect(label).toContain("Draft");
+    expect(label).toContain(`${EXPECTED_TOTAL_TEXT} inc VAT`);
   });
 
   it("quote detail renders line items and totals matching the API", async () => {
@@ -229,7 +245,9 @@ describe("trade quotes", () => {
     const instructions = await waitForId("refine-instructions");
     await instructions.click();
     await instructions.setValue("Keep the consumer unit line and assume a mid-range board");
-    await dismissKeyboard();
+    // The instructions field is multiline — Return would insert a newline
+    // instead of dismissing the keyboard, so defocus by tapping a label.
+    await tapText("Refine with AI");
     await tapId("refine-submit");
 
     // Regeneration state: pulsing skeleton or the pending "Refining…" button.
@@ -239,10 +257,12 @@ describe("trade quotes", () => {
       { timeout: 15000, timeoutMsg: "refine regeneration state (skeleton/Refining…) never appeared" }
     );
 
-    // Wait for the refine call to settle (LLM round-trip; generous window).
+    // Wait for the refine call to settle. The backend drives a real LLM with
+    // retry/backoff, so allow a generous window; an error banner afterwards
+    // is tolerated below (LLM availability is an environment concern).
     await driver.waitUntil(
       async () => !(await skeleton.isExisting()) && !(await hasText("Refining…")),
-      { timeout: 120000, timeoutMsg: "refine did not settle within 120s" }
+      { timeout: 300000, timeoutMsg: "refine did not settle within 300s" }
     );
 
     if (await byId("refine-error").isExisting()) {
@@ -305,16 +325,19 @@ describe("trade quotes", () => {
       expect(sends).toBeGreaterThanOrEqual(1);
     }
 
-    // Status badge on the list now reads "Sent".
-    await scrollUntilId(`quote-card-${quoteId}`);
-    await tapId(`quote-card-${quoteId}`);
-    await waitForText("Sent");
-    await tapBack();
+    // Status badge on the list now reads "Sent" — it lives inside the card's
+    // composite label (the edit screen renders no status text).
+    const card = await waitForId(`quote-card-${quoteId}`);
+    const cardLabel = String(await card.getAttribute("label"));
+    expect(cardLabel).toContain("Sent");
   });
 
   it("accepted quote converts to a job that references the quote", async () => {
     // Convert requires backend status "approved" (customer acceptance).
     await apiPost(ctx, `/quotes/${quoteId}/approve`, { approved: true });
+    // The detail screen caches quotes for staleTime (30s); outlive it so the
+    // re-open below refetches and sees the accepted status.
+    await driver.pause(31_000);
 
     await tapId("tab-quotes");
     await waitForText("Quotes");

@@ -27,6 +27,7 @@ import {
   byId,
   swipeUp,
   tapId,
+  textElContains,
   waitForId,
   waitForText,
   dismissKeyboard,
@@ -175,7 +176,9 @@ describe("trade customers", () => {
     await waitForText("Customers");
     await scrollUntilId(`contact-card-${contactId}`);
     await tapId(`contact-card-${contactId}`);
-    await waitForText("Customer since");
+    // Renders as one composite line: "Customer since 10 Sep 2026".
+    const since = textElContains("Customer since");
+    await since.waitForExist({ timeout: 15000 });
     await waitForText(CUSTOMER_ADDRESS);
     await waitForId(`contact-create-quote-${contactId}`);
   });

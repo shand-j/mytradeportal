@@ -24,9 +24,11 @@ import {
 import { loginAsTrade } from "../helpers/auth";
 import {
   byId,
+  dismissKeyboard,
   swipeUp,
   tapId,
   tapText,
+  textElContains,
   waitForId,
   waitForText,
 } from "../helpers/ui";
@@ -95,12 +97,31 @@ function messageTextView() {
   return $(`-ios class chain:**/XCUIElementTypeTextView`);
 }
 
-type SettableElement = { click(): Promise<unknown>; setValue(value: string): Promise<unknown> };
+type SettableElement = {
+  click(): Promise<unknown>;
+  setValue(value: string): Promise<unknown>;
+  getAttribute(name: string): Promise<unknown>;
+};
 
-async function setValue(el: SettableElement, value: string) {
+/** Click → type → read back, so misdirected focus fails loudly here, not later. */
+async function setValue(el: SettableElement, value: string, defocusLabel?: string) {
+  // A tap on the next field while the keyboard is up just dismisses the
+  // keyboard (RN default) and typing continues in the previous field —
+  // always dismiss first. Single-line fields: Return works. Multiline
+  // fields would swallow Return as a newline — defocus via a label tap.
+  await dismissKeyboard();
   await el.click();
   await el.setValue(value);
-  await driver.hideKeyboard().catch(() => undefined);
+  await driver.pause(300);
+  const actual = String((await el.getAttribute("value")) ?? "");
+  if (!actual.includes(value)) {
+    throw new Error(`field read-back mismatch: typed "${value}" but field holds "${actual}"`);
+  }
+  if (defocusLabel) {
+    await tapText(defocusLabel);
+  } else {
+    await dismissKeyboard();
+  }
 }
 
 describe("trade leads", () => {
@@ -108,6 +129,17 @@ describe("trade leads", () => {
     console.log("SKIP: E2E_TRADE_EMAIL/E2E_TRADE_PASSWORD not set");
     return;
   }
+
+  afterEach(async function () {
+    const state = (this as { currentTest?: { state?: string } }).currentTest?.state;
+    if (state !== "failed") return;
+    const fs = await import("node:fs");
+    try {
+      fs.writeFileSync(`/tmp/e2e-debug-12-${Date.now()}.xml`, await driver.getPageSource());
+    } catch {
+      /* keep the original error */
+    }
+  });
 
   let ctx: ApiTenantContext;
   let contactId = "";
@@ -150,7 +182,7 @@ describe("trade leads", () => {
     await tapText("+ New lead");
     await waitForText("Manual lead entry");
 
-    await setValue(await messageTextView(), LEAD_MESSAGE);
+    await setValue(await messageTextView(), LEAD_MESSAGE, "Urgency");
     await tapText("Phone");
     await setValue(await inputByPlaceholder("Name"), CUSTOMER_NAME);
     await setValue(await inputByPlaceholder("Phone"), CUSTOMER_PHONE);
@@ -185,9 +217,11 @@ describe("trade leads", () => {
     await waitForText(CUSTOMER_NAME);
     await waitForText(CUSTOMER_PHONE);
     await waitForText(CUSTOMER_EMAIL);
-    await waitForText("Manual");
-    await waitForText("This week");
-    await waitForText(CUSTOMER_POSTCODE.toUpperCase());
+    // Source/postcode/urgency render as one composite line:
+    // "Manual · AB1 2CD · This week".
+    const meta = await textElContains("Manual ·");
+    expect(String(await meta.getAttribute("label"))).toContain(CUSTOMER_POSTCODE.toUpperCase());
+    expect(String(await meta.getAttribute("label"))).toContain("This week");
 
     // No customer app account is linked: invite is offered, chat is not.
     await waitForId("lead-invite-to-app");
@@ -200,7 +234,10 @@ describe("trade leads", () => {
   it("lead converts to an AI-generated quote via the intake screen", async () => {
     await tapId("lead-generate-quote");
     await waitForText("Quote intake");
-    await waitForText(CUSTOMER_NAME);
+    // Contact line renders as a composite: "Name · POSTCODE · Urgency".
+    const who = textElContains(CUSTOMER_NAME);
+    await who.waitForExist({ timeout: 15000 });
+    expect(String(await who.getAttribute("label"))).toContain(CUSTOMER_NAME);
 
     await tapId("intake-generate-quote");
     // Async generation: the quotes list shows the progress banner.
