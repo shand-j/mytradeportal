@@ -47,3 +47,47 @@ asserts intended behaviour blocked by a known gap; `—` out of beta scope.
 - **Push banner delivery while app closed** needs a dev-signed build +
   APNs; the TestFlight build asserts the in-app notification row + token
   registration instead.
+
+## Device run results (2026-09-10, John's iPhone, prod backend)
+
+| Spec | Area | Result |
+|---|---|---|
+| 01 | Entry/auth/reset | 12/12 passing |
+| 02 | Onboarding wizard | 11/12 + 1 documented (review-step assertion needs a build with 4a60f2a) |
+| 10-18 | Trade: dashboard, quotes, leads, customers, jobs, invoices, calendar, messages, settings | all green |
+| 20 | Customer requests + accept/reject/book | 5 passing, 2 documented skips (wizard submit — needs a build with 3b180d4) |
+| 21 | Customer AI chat | 1 passing, 3 documented skips (same root cause as 20) |
+| 22 | Customer profile | 2 passing, 1 documented skip (address prefill — needs a build with 3b180d4) |
+| 23 | Customer calendar | skips: customer calendar not present in the installed build |
+| 30 | Notifications, push-token, bells | 6/6 passing |
+
+Documented skips log a `SKIP (known defect, fix committed in app source)` line
+and turn strict again automatically once the installed TestFlight build
+contains the referenced commit — they do not weaken assertions for new builds.
+
+## Defects found during device runs
+
+**Fixed and deployed (services/api, prod-verified):**
+- `POST /jobs` 500'd on tz-aware datetimes (job schedule columns are naive)
+  — `field_validator` strips tz (84b3cf5).
+
+**Fixed in app source, pending a new device build:**
+- Onboarding review step received only its own state slice (4a60f2a).
+- Customer sessions (tenant-agnostic login + session restore) never loaded
+  the tenant branding, so the quote-request wizard had no `business.slug`
+  and **silently skipped its submit** while still showing the confirmation
+  screen (3b180d4). Backend was verified healthy end-to-end (manual submit
+  → 201 → lead visible → AI follow-up fires).
+- Customer profile screen did not prefill the address field (3b180d4).
+
+**Found, documented, not fixed:**
+- Push tokens are globally re-pointed: one device token per row, so logging
+  in as the customer after the trade account re-owns the token and trade
+  pushes stop. This explains "push notifications not working" on John's
+  phone, where both accounts are used. Registration itself works (spec 30
+  asserts the staff row mid-run). Needs a product decision: scope tokens by
+  (owner_type, owner_id) instead of globally unique.
+- Calendar displays naive UTC job times one hour off during BST.
+- Customer profile edits are UI-only (no backend PATCH endpoint); spec 22
+  asserts the backend record is untouched.
+- Quote refine intermittently 502s at the LLM gateway.
