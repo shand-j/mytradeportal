@@ -48,7 +48,9 @@ asserts intended behaviour blocked by a known gap; `—` out of beta scope.
   APNs; the TestFlight build asserts the in-app notification row + token
   registration instead.
 
-## Device run results (2026-09-10, John's iPhone, prod backend)
+## Device run results
+
+Build 10 era (2026-09-10, John's iPhone, prod backend):
 
 | Spec | Area | Result |
 |---|---|---|
@@ -61,9 +63,19 @@ asserts intended behaviour blocked by a known gap; `—` out of beta scope.
 | 23 | Customer calendar | skips: customer calendar not present in the installed build |
 | 30 | Notifications, push-token, bells | 6/6 passing |
 
-Documented skips log a `SKIP (known defect, fix committed in app source)` line
-and turn strict again automatically once the installed TestFlight build
-contains the referenced commit — they do not weaken assertions for new builds.
+Build 11 (contains 4a60f2a, 3b180d4 — all app fixes, 2026-09-10):
+
+| Spec | Area | Result |
+|---|---|---|
+| 20 | Customer requests + accept/reject/book | **7/7 strict** — wizard submits, persists with preferred dates |
+| 21 | Customer AI chat | 3/4 — banner follow-up, inbound reply, triage-closure timing fixed; see below |
+| 22 | Customer profile | **3/3 strict** — address prefill verified |
+| 02 | Onboarding wizard | **12/12 strict** — review-step fix verified |
+
+Spec 21's remaining test (`notifies the electrician once AI triage closes`)
+asserts the backend's forced closure at `MAX_FOLLOWUP_TURNS` (5). The spec
+now replies up to 6 turns and polls for the closure message; if the LLM's
+confidence never reaches 80 the closure arrives exactly at turn 5.
 
 ## Defects found during device runs
 
@@ -71,14 +83,19 @@ contains the referenced commit — they do not weaken assertions for new builds.
 - `POST /jobs` 500'd on tz-aware datetimes (job schedule columns are naive)
   — `field_validator` strips tz (84b3cf5).
 
-**Fixed in app source, pending a new device build:**
-- Onboarding review step received only its own state slice (4a60f2a).
+**Fixed in app source (build 11 or 12):**
+- Onboarding review step received only its own state slice (4a60f2a, build 11).
 - Customer sessions (tenant-agnostic login + session restore) never loaded
   the tenant branding, so the quote-request wizard had no `business.slug`
   and **silently skipped its submit** while still showing the confirmation
-  screen (3b180d4). Backend was verified healthy end-to-end (manual submit
-  → 201 → lead visible → AI follow-up fires).
-- Customer profile screen did not prefill the address field (3b180d4).
+  screen (3b180d4, build 11 — verified strict-green by spec 20). Backend was
+  verified healthy end-to-end (manual submit → 201 → lead visible → AI
+  follow-up fires).
+- Customer profile screen did not prefill the address field (3b180d4,
+  build 11 — verified strict-green by spec 22).
+- Customer bottom tab bar never rendered: `usePathname()` returns paths
+  without route-group segments (`/requests`, not `/(customer)/requests`), so
+  the inclusion check always failed (391db18, build 12).
 
 **Found, documented, not fixed:**
 - Push tokens are globally re-pointed: one device token per row, so logging
