@@ -2,7 +2,7 @@
  * UI-level authentication helpers (trade + customer) and logout.
  */
 import { relaunchApp } from "./app";
-import { byId, dismissKeyboard, dismissPasswordPrompt, openTradeSettings, tapId, tapText, textEl, waitForId, waitForText } from "./ui";
+import { byId, dismissKeyboard, dismissPasswordPrompt, openTradeSettings, tapId, tapText, textEl, textElContains, waitForId, waitForText } from "./ui";
 
 /** Login as an electrician (tenant-agnostic, by email). */
 export async function loginAsTrade(email: string, password: string) {
@@ -76,11 +76,21 @@ export async function ensureLoggedOut() {
     await dashTab.click();
     await driver.pause(600);
   }
-  // Customer session: no dashboard tab — the header carries a "Profile"
-  // action and the logout button lives on that screen.
-  if (!(await byId("tab-dashboard").isExisting()) && (await textEl("Profile").isExisting())) {
-    await tapText("Profile", 8000);
-    await tapText("Log out", 15000);
+  // Customer session: no dashboard tab — the profile screen carries the
+  // logout button. New builds reach it via the bottom `tab-profile` tab;
+  // older builds via a header "Profile" action.
+  if (!(await byId("tab-dashboard").isExisting())) {
+    const profileTab = byId("tab-profile");
+    if (await profileTab.isExisting()) {
+      await profileTab.click();
+      await driver.pause(600);
+    } else if (await textEl("Profile").isExisting()) {
+      await tapText("Profile", 8000);
+    }
+    // The logout Button collapses into a composite-label element — match
+    // by containment, not exact label.
+    await textElContains("Log out").waitForExist({ timeout: 15000 });
+    await textElContains("Log out").click();
     await driver.pause(1000);
     return;
   }

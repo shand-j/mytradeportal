@@ -16,6 +16,7 @@ import {
 import {
   hasText,
   tapId,
+  textElContains,
   waitForText,
   byId,
 } from "../helpers/ui";
@@ -54,7 +55,10 @@ describe("23: customer calendar (appointments)", () => {
     }
     await tapId("tab-calendar", 25000);
     await waitForText("Appointments", 15000);
-    await waitForText("Upcoming appointments and bookings", 15000);
+    // The subtitle ends with the business name, so match by containment.
+    await textElContains("Upcoming appointments and bookings").waitForExist({
+      timeout: 15000,
+    });
 
     if (await hasText("No upcoming bookings.")) {
       console.log("SKIP: no confirmed appointments for this customer");
