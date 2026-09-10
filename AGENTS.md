@@ -29,6 +29,9 @@ tradesperson and homeowner/customer flows against the real FastAPI backend
 and uses a white-label theme system.
 - **`web/app/`** — a React + Vite back-office SPA. It implements the tradesperson
 dashboard, CRM, quotes, jobs, invoices, calendar, reviews, AI insights, and settings.
+- **`web/landing/`** — the Next.js marketing site: brand hero with demo-video slots,
+feature showcases, and Paddle-localised pricing. Standalone `output` build,
+Railway-ready.
 - **`packages/shared/ts/`** — shared TypeScript design tokens and utilities used by
 `mobile/` and `web/app/`.
 - **`packages/shared/py/mtp_shared/`** — shared Python primitives (Pydantic models,

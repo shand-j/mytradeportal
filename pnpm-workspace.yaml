@@ -4,6 +4,7 @@ packages:
   - 'mobile'
   - 'mobile/*'
   - 'web/app'
+  - 'web/landing'
 
 overrides:
   react-dom: 19.2.3
