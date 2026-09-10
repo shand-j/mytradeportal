@@ -17,11 +17,11 @@ example.com addresses. Safe to publish as-is.
 - **Product name:** My Trade Portal
 - **One-liner (proposed):** "Quotes to invoices in minutes — powered by AI."
   (alternatives: "Less admin. More sparks." / "The AI back office for trades.")
-- **Brand mark:** hi-vis yellow "MT" monogram (`#F2B100`) on deep slate ink
-  (`#1B2A32`) — industrial worksite-label aesthetic (see `assets/mtp-icon-hivis-yellow-on-slate.svg`
+- **Brand mark:** hi-vis yellow "MT" monogram (`#FFC107`) on deep slate ink
+  (`#0F1E26`) — industrial worksite-label aesthetic (see `assets/mtp-icon-hivis-yellow-on-slate.svg`
   and `assets/mtp-icon-ios-1024.png`)
-- **Primary colour:** `#1B2A32` (slate ink) — interactive base (buttons, selected states)
-- **Accent colour:** `#F2B100` (hi-vis yellow) — brand highlights, badges, fills with dark text
+- **Primary colour:** `#0F1E26` (slate ink) — interactive base (buttons, selected states)
+- **Accent colour:** `#FFC107` (hi-vis yellow) — brand highlights, badges, fills with dark text
 - **Secondary:** success `#10B981` (green), warning `#F59E0B` (amber)
 - **Demo tenant brand (shown in footage):** Hartley Electrical Services Ltd —
   primary `#1D4ED8`, secondary `#F59E0B`

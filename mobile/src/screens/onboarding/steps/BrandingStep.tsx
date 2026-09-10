@@ -11,7 +11,7 @@ type BrandingStepProps = {
 
 /** Preset brand colours offered during onboarding (hex). */
 const BRAND_COLOURS = [
-  "#F2B100", // hi-vis yellow
+  "#FFC107", // hi-vis yellow
   "#0EA5E9", // sky
   "#059669", // emerald
   "#D97706", // amber
@@ -55,7 +55,7 @@ export function BrandingStep({ data, onNext }: BrandingStepProps) {
       setPrimaryColor(hex);
       setHexError(null);
     } else if (raw.trim().length > 0) {
-      setHexError("Enter a valid hex colour, e.g. #F2B100");
+      setHexError("Enter a valid hex colour, e.g. #FFC107");
     } else {
       setHexError(null);
     }
@@ -107,7 +107,7 @@ export function BrandingStep({ data, onNext }: BrandingStepProps) {
                 label="Custom hex colour"
                 value={hexInput}
                 onChangeText={onHexChange}
-                placeholder="#F2B100"
+                placeholder="#FFC107"
                 autoCapitalize="characters"
                 error={hexError}
               />

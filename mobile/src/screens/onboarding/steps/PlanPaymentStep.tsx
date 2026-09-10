@@ -114,7 +114,7 @@ export function PlanPaymentStep({ data, onNext }: PlanPaymentStepProps) {
               onPress={() => setSelected(p.key)}
               className="rounded-2xl border p-4"
               style={{
-                borderColor: active ? "#1B2A32" : "#E5E7EB",
+                borderColor: active ? "#0F1E26" : "#E5E7EB",
                 borderWidth: active ? 2 : 1,
                 backgroundColor: active ? "#EFF6FF" : "#FFFFFF",
               }}

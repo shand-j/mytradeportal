@@ -1,15 +1,15 @@
 /**
  * Shared design tokens for the My Trade Portal white-label iOS app.
  *
- * Base brand: hi-vis yellow (#F2B100) on deep slate ink (#1B2A32), per the
- * brand mark in `marketing/assets/mtp-icon-hivis-yellow-on-slate.svg`.
+ * Base brand: hi-vis yellow (#FFC107) on deep slate ink (#0F1E26), per the
+ * brand sheet palette (Slate #0F1E26, Yellow #FFC107).
  */
 
 export const colors = {
-  primary: "#1B2A32" as string, // slate ink — interactive base
-  primaryDark: "#0F1E26",
-  accent: "#F2B100", // hi-vis yellow — brand highlights
-  accentDark: "#C78F00",
+  primary: "#0F1E26" as string, // slate ink — interactive base
+  primaryDark: "#0A151B",
+  accent: "#FFC107", // hi-vis yellow — brand highlights
+  accentDark: "#CC8F00",
   background: "#FFFFFF",
   surface: "#F3F4F6",
   border: "#E5E7EB",
@@ -19,7 +19,7 @@ export const colors = {
   warning: "#F59E0B",
   error: "#EF4444",
   infoSurface: "#F2F5F6",
-  infoText: "#1B2A32",
+  infoText: "#0F1E26",
   successSurface: "#ECFDF5",
   successText: "#065F46",
   warningSurface: "#FFFBEB",

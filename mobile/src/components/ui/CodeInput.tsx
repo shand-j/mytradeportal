@@ -66,7 +66,7 @@ export function CodeInput({ value, onChange, length = 6, disabled }: CodeInputPr
               height: boxWidth,
               borderRadius: 16,
               borderWidth: focusedIndex === index || char ? 2 : 1,
-              borderColor: focusedIndex === index || char ? "#1B2A32" : "#E5E7EB",
+              borderColor: focusedIndex === index || char ? "#0F1E26" : "#E5E7EB",
               backgroundColor: char ? "#EFF6FF" : "#FFFFFF",
               fontSize: 26,
               fontWeight: "600",

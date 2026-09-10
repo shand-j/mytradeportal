@@ -18,7 +18,7 @@ type CertificateScreenProps = {
 
 function CodeBadge({ code }: { code: CertObservation["code"] }) {
   const color =
-    code === "C1" ? "#DC2626" : code === "C2" ? "#EA580C" : code === "FI" ? "#7C3AED" : "#1B2A32";
+    code === "C1" ? "#DC2626" : code === "C2" ? "#EA580C" : code === "FI" ? "#7C3AED" : "#0F1E26";
   return (
     <View className="rounded-md px-2 py-0.5" style={{ backgroundColor: color }}>
       <Text variant="caption" weight="bold" style={{ color: "#FFFFFF", fontSize: 11 }}>

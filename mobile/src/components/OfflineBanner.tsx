@@ -51,7 +51,7 @@ export function OfflineBanner() {
       : "Work is saved on this device";
 
   if (isOnline && syncing) {
-    bg = "#1B2A32";
+    bg = "#0F1E26";
     iconName = "sync";
     iconColor = "#FFFFFF";
     title = "Back online — syncing";

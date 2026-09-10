@@ -166,7 +166,7 @@ const styles = StyleSheet.create({
   completenessFill: {
     height: 8,
     borderRadius: 4,
-    backgroundColor: "#1B2A32",
+    backgroundColor: "#0F1E26",
   },
   notesInput: {
     height: 80,

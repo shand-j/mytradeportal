@@ -15,7 +15,7 @@ export type BrandingSettingsScreenProps = {
 };
 
 const BRAND_COLOURS = [
-  "#F2B100", // hi-vis yellow
+  "#FFC107", // hi-vis yellow
   "#0EA5E9", // sky
   "#059669", // emerald
   "#D97706", // amber
@@ -69,7 +69,7 @@ export function BrandingSettingsScreen({ onClose }: BrandingSettingsScreenProps)
       setPrimaryColor(hex);
       setHexError(null);
     } else if (raw.trim().length > 0) {
-      setHexError("Enter a valid hex colour, e.g. #F2B100");
+      setHexError("Enter a valid hex colour, e.g. #FFC107");
     } else {
       setHexError(null);
     }
@@ -159,14 +159,14 @@ export function BrandingSettingsScreen({ onClose }: BrandingSettingsScreenProps)
           <View className="flex-row items-center gap-3">
             <View
               className="h-10 w-10 rounded-full border border-slate-300"
-              style={{ backgroundColor: primaryColor || tenant?.primaryColor || "#1B2A32" }}
+              style={{ backgroundColor: primaryColor || tenant?.primaryColor || "#0F1E26" }}
             />
             <View className="flex-1">
               <FormField
                 label="Custom hex colour"
                 value={hexInput}
                 onChangeText={onHexChange}
-                placeholder="#F2B100"
+                placeholder="#FFC107"
                 autoCapitalize="characters"
                 error={hexError}
               />

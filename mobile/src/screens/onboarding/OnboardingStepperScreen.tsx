@@ -248,7 +248,7 @@ const styles = StyleSheet.create({
     backgroundColor: "#E5E7EB",
   },
   dotActive: {
-    backgroundColor: "#1B2A32",
+    backgroundColor: "#0F1E26",
   },
   dotCompleted: {
     opacity: 0.6,
