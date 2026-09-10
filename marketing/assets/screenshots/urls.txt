@@ -1,0 +1,7 @@
+app-store-customer-ai-chat.png https://files.catbox.moe/5cey9i.png
+app-store-dashboard.png https://files.catbox.moe/79som9.png
+app-store-entry-role-select.png https://files.catbox.moe/iex643.png
+app-store-invoice.png https://files.catbox.moe/x3rg4p.png
+app-store-quotes-generating.png https://files.catbox.moe/z4y4y4.png
+app-store-quotes-pipeline.png https://files.catbox.moe/736hr0.png
+app-store-review-quote.png https://files.catbox.moe/hbxe0b.png
