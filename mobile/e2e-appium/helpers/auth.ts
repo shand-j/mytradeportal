@@ -2,7 +2,7 @@
  * UI-level authentication helpers (trade + customer) and logout.
  */
 import { relaunchApp } from "./app";
-import { byId, dismissKeyboard, dismissPasswordPrompt, openTradeSettings, tapId, waitForId, waitForText } from "./ui";
+import { byId, dismissKeyboard, dismissPasswordPrompt, openTradeSettings, tapId, tapText, textEl, waitForId, waitForText } from "./ui";
 
 /** Login as an electrician (tenant-agnostic, by email). */
 export async function loginAsTrade(email: string, password: string) {
@@ -75,6 +75,14 @@ export async function ensureLoggedOut() {
   if (await dashTab.isExisting()) {
     await dashTab.click();
     await driver.pause(600);
+  }
+  // Customer session: no dashboard tab — the header carries a "Profile"
+  // action and the logout button lives on that screen.
+  if (!(await byId("tab-dashboard").isExisting()) && (await textEl("Profile").isExisting())) {
+    await tapText("Profile", 8000);
+    await tapText("Log out", 15000);
+    await driver.pause(1000);
+    return;
   }
   await openTradeSettings();
   const logout = await waitForId("settings-logout", 20000).catch(async (err) => {

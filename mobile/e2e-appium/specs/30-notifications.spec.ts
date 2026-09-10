@@ -45,6 +45,17 @@ describe("30 notifications: permission prompt + push token (trade)", () => {
 
   let alertDecision: "allow" | "deny" | null = null;
 
+  afterEach(async function () {
+    const state = (this as { currentTest?: { state?: string } }).currentTest?.state;
+    if (state !== "failed") return;
+    const fs = await import("node:fs");
+    try {
+      fs.writeFileSync(`/tmp/e2e-debug-30-${Date.now()}.xml`, await driver.getPageSource());
+    } catch {
+      /* keep the original error */
+    }
+  });
+
   before(async () => {
     await ensureLoggedOut();
     await loginAsTrade(TRADE_EMAIL, TRADE_PASSWORD);

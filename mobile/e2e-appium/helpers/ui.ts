@@ -69,6 +69,18 @@ export async function tapId(id: string, timeoutMs = 15000) {
   await el.click();
 }
 
+/** Open the customer profile: bottom tab on new builds, header action otherwise. */
+export async function openCustomerProfile() {
+  const tab = byId("tab-profile");
+  if (await tab.isExisting()) {
+    await tab.click();
+    return;
+  }
+  const hdr = textEl("Profile");
+  await hdr.waitForExist({ timeout: 15000 });
+  await hdr.click();
+}
+
 /**
  * Open the trade settings screen from any trade tab page.
  * The dashboard header uses `dashboard-more`; other main tabs use the shared

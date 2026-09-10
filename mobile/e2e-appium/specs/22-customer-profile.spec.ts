@@ -28,6 +28,8 @@ import {
   waitForId,
   waitForText,
   dismissKeyboard,
+  openCustomerProfile,
+  textElContains,
 } from "../helpers/ui";
 
 const tag = Date.now().toString(36);
@@ -62,6 +64,17 @@ describe("22: customer profile", () => {
     return;
   }
 
+  afterEach(async function () {
+    const state = (this as { currentTest?: { state?: string } }).currentTest?.state;
+    if (state !== "failed") return;
+    const fs = await import("node:fs");
+    try {
+      fs.writeFileSync(`/tmp/e2e-debug-22-${Date.now()}.xml`, await driver.getPageSource());
+    } catch {
+      /* keep the original error */
+    }
+  });
+
   before(async () => {
     await loginAsCustomer(CUSTOMER_EMAIL, CUSTOMER_PASSWORD);
   });
@@ -72,7 +85,7 @@ describe("22: customer profile", () => {
 
   it("shows persisted profile details from the backend", async () => {
     const { customer } = await loginCustomerApi();
-    await tapId("tab-profile", 25000);
+    await openCustomerProfile();
     await waitForText("Profile", 15000);
     await waitForText("Personal details", 15000);
 
@@ -91,7 +104,7 @@ describe("22: customer profile", () => {
   });
 
   it("edits details, scrolls with the keyboard, and shows saved feedback", async () => {
-    await tapId("tab-profile", 25000);
+    await openCustomerProfile();
     await waitForText("Personal details", 15000);
     const fields = await $$("-ios class chain:**/XCUIElementTypeTextField");
     const phoneField = fields[2];
@@ -110,10 +123,10 @@ describe("22: customer profile", () => {
   });
 
   it("back button returns to the requests screen", async () => {
-    await tapId("tab-profile", 25000);
+    await openCustomerProfile();
     await waitForText("Profile", 15000);
     await tapId("back-button", 8000);
     await waitForId("request-new-quote", 25000);
-    expect(await hasText("Track your quote requests")).toBe(true);
+    expect(await textElContains("Track your quote requests").isExisting()).toBe(true);
   });
 });
