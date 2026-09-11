@@ -6,10 +6,12 @@
  *   railway config plan    # preview the diff against the linked environment
  *   railway config apply   # apply after confirmation
  *
- * Layout (8 resources) — mobile-only beta stack:
+ * Layout (9 resources) — mobile-only beta stack:
  *   postgres + redis      — native Railway database plugins
  *   qdrant, minio         — Docker-image services with mounted volumes
  *   api, admin, data-pipeline — built from this GitHub repo
+ *   landing               — Vite marketing site (www.mytradeportal.co.uk),
+ *                             built from this GitHub repo via Railpack
  *
  * Not deployed for the mobile beta (parked as commented blocks):
  *   ocerp — BoQ engine, superseded by the LLM quote pipeline
@@ -175,10 +177,10 @@ export default defineRailway(() => {
       // Public URL the reset-password + quote links resolve to. Update to
       // the App Store / landing page domain once available.
       APP_PUBLIC_URL: preserve(),
-      // In beta only the Django admin has a public browser origin; CORS from
-      // the native app doesn't need this (no Origin header). Extend when
-      // app.mytradeportal.com goes live.
-      ALLOWED_ORIGINS: ADMIN_PUBLIC_URL,
+      // Public browser origins: the Django admin and the marketing landing
+      // (which hosts the no-login AI quote demo calling /demo/*). The native
+      // app sends no Origin header, so it needs no entry.
+      ALLOWED_ORIGINS: `${ADMIN_PUBLIC_URL},https://www.mytradeportal.co.uk,https://mytradeportal.co.uk`,
       // Keep production strict: exact allowed origins are defined explicitly
       // by ALLOWED_ORIGINS (set per environment).
       ALLOWED_ORIGIN_REGEX: "",
@@ -211,6 +213,29 @@ export default defineRailway(() => {
       // The API connects as a lower-privilege role so RLS policies are enforced.
       APP_ROLE_NAME: "mtp_app",
       APP_ROLE_PASSWORD: preserve(),
+    },
+  });
+
+  // Marketing landing (www.mytradeportal.co.uk) — Vite SPA with the no-login
+  // AI quote demo, Paddle pricing, blog. Railpack detects Vite; the SPA output
+  // dir gives client-side-route fallback (/blog/:slug deep links).
+  const landing = service("landing", {
+    source: github(GITHUB_REPO, { rootDirectory: "web/landing/new design/app" }),
+    build: { builder: "RAILPACK" },
+    healthcheck: "/",
+    regions: { [TARGET_REGION]: 1 },
+    env: {
+      RAILPACK_SPA_OUTPUT_DIR: "dist",
+      // Public by design (present in every browser bundle); values live in the
+      // dashboard, picked up here via preserve().
+      VITE_PADDLE_ENV: "sandbox",
+      VITE_PADDLE_CLIENT_TOKEN: preserve(),
+      VITE_PADDLE_PRICE_STARTER_MONTH: preserve(),
+      VITE_PADDLE_PRICE_PRO_MONTH: preserve(),
+      VITE_PADDLE_PRICE_BUSINESS_MONTH: preserve(),
+      VITE_TESTFLIGHT_URL: "https://testflight.apple.com/join/bDFK3bPU",
+      // The hero demo calls the public demo endpoints on the api service.
+      VITE_DEMO_API_URL: "https://${{api.RAILWAY_PUBLIC_DOMAIN}}",
     },
   });
 
@@ -298,6 +323,6 @@ export default defineRailway(() => {
   });
 
   return project("mytradeportal", {
-    resources: [db, cache, qdrant, minio, api, admin, dataPipeline, qdrantStorage, minioData],
+    resources: [db, cache, qdrant, minio, api, admin, dataPipeline, landing, qdrantStorage, minioData],
   });
 });
