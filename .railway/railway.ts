@@ -47,6 +47,7 @@ const QDRANT_URL = "http://${{qdrant.RAILWAY_PRIVATE_DOMAIN}}:6333";
 // OCERP / BoQ engine is parked for the mobile-pivot MVP.
 // const OCERP_URL = "http://${{ocerp.RAILWAY_PRIVATE_DOMAIN}}:8000";
 const ADMIN_PUBLIC_URL = "https://${{admin.RAILWAY_PUBLIC_DOMAIN}}";
+const LANDING_PUBLIC_URL = "https://${{landing.RAILWAY_PUBLIC_DOMAIN}}";
 
 const TARGET_REGION = "europe-west4-drams3a"; // EU West Metal (Amsterdam) — closest Railway region to the UK market.
 
@@ -180,7 +181,7 @@ export default defineRailway(() => {
       // Public browser origins: the Django admin and the marketing landing
       // (which hosts the no-login AI quote demo calling /demo/*). The native
       // app sends no Origin header, so it needs no entry.
-      ALLOWED_ORIGINS: `${ADMIN_PUBLIC_URL},https://www.mytradeportal.co.uk,https://mytradeportal.co.uk,https://${{landing.RAILWAY_PUBLIC_DOMAIN}}`,
+      ALLOWED_ORIGINS: `${ADMIN_PUBLIC_URL},${LANDING_PUBLIC_URL},https://www.mytradeportal.co.uk,https://mytradeportal.co.uk`,
       // Keep production strict: exact allowed origins are defined explicitly
       // by ALLOWED_ORIGINS (set per environment).
       ALLOWED_ORIGIN_REGEX: "",
