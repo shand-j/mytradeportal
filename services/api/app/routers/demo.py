@@ -9,8 +9,9 @@ job description" without login, tenant, or email. Two endpoints:
 Statelessness is the core constraint: quotes are generated, returned, and
 never stored. The only durable writes are :class:`DemoQuoteEvent` rows — a
 count of generations plus marketing metadata (salted IP hash, browser headers,
-UTM parameters) — and a short-TTL Redis flag enforcing one generate per
-visitor. Job descriptions, generated quotes and line items are never
+UTM parameters) — and short-TTL Redis flags enforcing one generate per
+visitor (a browser fingerprint plus a bare-IP backstop that survives
+incognito). Job descriptions, generated quotes and line items are never
 persisted.
 
 Rate limits are per source IP (the default limiter key), generous enough for
@@ -100,13 +101,19 @@ def _demo_llm_overrides() -> _DemoLLMOverrides:
 
 # One generate per visitor: a successful generate sets the ``mtp_demo_used``
 # cookie (180 days, SameSite=None+Secure so the cross-site landing XHR carries
-# it) and a Redis fingerprint flag (30 days) as the no-cookie fallback. Refine
-# is never gated this way — it is part of the same quote.
+# it) plus two Redis flags (30 days) as the no-cookie fallback: a browser
+# fingerprint (IP+UA+Accept-Language) and a bare IP flag. The IP flag is what
+# stops incognito mode: no cookie, but the address is the same. Refine is never
+# gated this way — it is part of the same quote.
+#
+# A device MAC address cannot be captured here: MACs are link-layer and are
+# stripped by the first router, so no web server ever sees them.
 _DEMO_USED_COOKIE = "mtp_demo_used"
 _DEMO_USED_MESSAGE = "You've already tried the AI demo — download the app for unlimited quotes."
 _DEMO_USED_MAX_AGE_SECONDS = 180 * 24 * 60 * 60
 _DEMO_USED_REDIS_TTL_SECONDS = 30 * 24 * 60 * 60
 _DEMO_USED_KEY_PREFIX = "mtp:demo:used:"
+_DEMO_USED_IP_KEY_PREFIX = "mtp:demo:used:ip:"
 
 
 class DemoQuoteGenerateRequest(BaseModel):
@@ -182,6 +189,17 @@ def _demo_used_key(request: Request) -> str:
     return f"{_DEMO_USED_KEY_PREFIX}{fingerprint}"
 
 
+def _demo_used_ip_key(request: Request) -> str:
+    """Redis key for the bare-IP flag — the incognito-mode backstop.
+
+    Incognito clears cookies but cannot change the source address, so this
+    catches visitors who clear cookies and rotate user agents.
+    """
+    ip = get_remote_address(request)
+    digest = hashlib.sha256(f"{ip}|{settings.auth_secret_key}".encode()).hexdigest()
+    return f"{_DEMO_USED_IP_KEY_PREFIX}{digest}"
+
+
 async def _demo_already_used(request: Request) -> bool:
     """True when this visitor already had a successful demo generate.
 
@@ -191,7 +209,11 @@ async def _demo_already_used(request: Request) -> bool:
     if request.cookies.get(_DEMO_USED_COOKIE) == "1":
         return True
     try:
-        return bool(await get_redis().get(_demo_used_key(request)))
+        redis = get_redis()
+        return bool(
+            await redis.get(_demo_used_key(request))
+            or await redis.get(_demo_used_ip_key(request))
+        )
     except Exception as exc:  # cache down must not break the demo
         logger.warning(
             "demo_used_check_failed",
@@ -202,14 +224,11 @@ async def _demo_already_used(request: Request) -> bool:
 
 
 async def _mark_demo_used(request: Request) -> None:
-    """Record the fingerprint flag after a successful generate (best-effort)."""
+    """Record the fingerprint and IP flags after a successful generate."""
     try:
-        await get_redis().set(
-            _demo_used_key(request),
-            "1",
-            nx=True,
-            ex=_DEMO_USED_REDIS_TTL_SECONDS,
-        )
+        redis = get_redis()
+        for key in (_demo_used_key(request), _demo_used_ip_key(request)):
+            await redis.set(key, "1", nx=True, ex=_DEMO_USED_REDIS_TTL_SECONDS)
     except Exception as exc:  # cache down must not break the demo
         logger.warning(
             "demo_used_mark_failed",

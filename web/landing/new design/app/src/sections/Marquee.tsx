@@ -1,5 +1,3 @@
-import { useEffect, useRef, useState } from 'react'
-
 const JOBS = [
   'Consumer units',
   'EV chargers',
@@ -11,63 +9,27 @@ const JOBS = [
   'Smart lighting',
 ]
 
-const SET_MS = 2800
-const SWAP_MS = 350
-
-/** Job-types band — a fixed single line that rotates through the list:
- *  fade out, swap the set, fade back in. No scrolling (that felt cheap). */
+/** Job-types band — fixed and fully visible on desktop; on mobile it becomes a
+ *  single-line row the user swipes through (native scroll with snap points).
+ *  No auto-rotation: anything that moves on its own felt cheap. */
 export default function Marquee() {
-  const [start, setStart] = useState(0)
-  const [leaving, setLeaving] = useState(false)
-  const [perView, setPerView] = useState(4)
-  const timeoutRef = useRef<number | null>(null)
-
-  useEffect(() => {
-    const mq = window.matchMedia('(min-width: 768px)')
-    const apply = () => setPerView(mq.matches ? 4 : 2)
-    apply()
-    mq.addEventListener('change', apply)
-    return () => mq.removeEventListener('change', apply)
-  }, [])
-
-  useEffect(() => {
-    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return
-    const id = window.setInterval(() => {
-      setLeaving(true)
-      timeoutRef.current = window.setTimeout(() => {
-        setStart((s) => (s + perView) % JOBS.length)
-        setLeaving(false)
-      }, SWAP_MS)
-    }, SET_MS)
-    return () => {
-      window.clearInterval(id)
-      if (timeoutRef.current !== null) window.clearTimeout(timeoutRef.current)
-    }
-  }, [perView])
-
-  const visible = Array.from({ length: perView }, (_, i) => JOBS[(start + i) % JOBS.length])
-
   return (
     <section aria-label="Job types covered" className="border-b-2 border-[var(--ink)] bg-[var(--ink)]">
       <div className="mx-auto max-w-[1400px] px-5 py-[var(--space-md)] md:px-10">
-        <div
-          aria-live="off"
-          className={`flex flex-nowrap items-baseline gap-x-[var(--space-lg)] overflow-hidden whitespace-nowrap transition-all duration-[350ms] ${
-            leaving ? '-translate-y-1 opacity-0' : 'translate-y-0 opacity-100'
-          }`}
-          style={{ transitionTimingFunction: 'var(--ease)' }}
-        >
-          {visible.map((job, i) => (
-            <span key={i} className="flex items-baseline gap-[var(--space-lg)]">
+        <ul className="flex items-baseline gap-x-[var(--space-lg)] max-md:snap-x max-md:snap-mandatory max-md:flex-nowrap max-md:gap-x-[var(--space-md)] max-md:overflow-x-auto max-md:whitespace-nowrap max-md:[scrollbar-width:none] max-md:[&::-webkit-scrollbar]:hidden md:flex-wrap md:gap-y-[var(--space-2xs)]">
+          {JOBS.map((job, i) => (
+            <li key={job} className="flex shrink-0 snap-start items-baseline gap-[var(--space-md)] md:gap-[var(--space-lg)]">
               <span className="whitespace-nowrap font-display text-[15px] font-bold uppercase tracking-[0.1em] text-[var(--paper-on-dark)]">
                 {job}
               </span>
-              <span className="font-display text-[15px] font-bold text-[var(--accent)]" aria-hidden>
-                +
-              </span>
-            </span>
+              {i < JOBS.length - 1 && (
+                <span className="font-display text-[15px] font-bold text-[var(--accent)]" aria-hidden>
+                  +
+                </span>
+              )}
+            </li>
           ))}
-        </div>
+        </ul>
       </div>
     </section>
   )

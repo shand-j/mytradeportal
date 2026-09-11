@@ -333,14 +333,39 @@ async def test_demo_generate_second_attempt_without_cookie_gets_429_via_redis(
     assert second.status_code == 429
     assert second.json() == {"detail": _DEMO_USED_MESSAGE}
 
-    # The fingerprint flag was stored with ~30-day TTL.
+    # The fingerprint and IP flags were stored with ~30-day TTL.
     from app.redis_client import get_redis
 
     redis = get_redis()
     keys = [k async for k in redis.scan_iter(match=f"{_DEMO_USED_KEY_PREFIX}*")]
-    assert len(keys) == 1
+    assert len(keys) == 2
     ttl = await redis.ttl(keys[0])
     assert 29 * 24 * 60 * 60 < ttl <= 30 * 24 * 60 * 60
+
+
+@pytest.mark.asyncio
+async def test_demo_generate_incognito_same_ip_gets_429(
+    client: AsyncClient, db: AsyncSession
+) -> None:
+    """Incognito simulation: no cookie AND a rotated user agent. The bare-IP
+    Redis flag from attempt one must still trip the gate."""
+    with _mock_llm():
+        first = await client.post(
+            "/demo/quotes/generate",
+            json={"description": DESCRIPTION},
+            headers={"user-agent": "chrome-normal/1.0"},
+        )
+    assert first.status_code == 200, first.text
+
+    with _mock_llm() as generate_mock:
+        second = await client.post(
+            "/demo/quotes/generate",
+            json={"description": DESCRIPTION},
+            headers={"user-agent": "chrome-incognito/2.0"},
+        )
+    assert second.status_code == 429
+    assert second.json() == {"detail": _DEMO_USED_MESSAGE}
+    generate_mock.assert_not_called()
 
 
 @pytest.mark.asyncio
@@ -575,6 +600,9 @@ async def test_demo_generate_rate_limit_kicks_in_after_five(
             )
         assert response.status_code == 200, response.text
         client.cookies.clear()
+        # The one-shot gate now also flags the bare IP; clear it so the next
+        # iteration is judged by the limiter alone.
+        await _clean_demo_used_flags()
 
     sixth = await client.post(
         "/demo/quotes/generate",
