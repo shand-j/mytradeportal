@@ -22,9 +22,10 @@ export default function Hero() {
             app.
           </h1>
           <p className="reveal mt-7 max-w-md text-[16.5px] leading-relaxed text-[var(--muted)]" style={{ ['--i' as string]: 1 }}>
-            Built for electricians, native on iOS. Your customers download the app and it puts
-            on your brand the moment they sign in — quotes, bookings, reviews and invoices,
-            live in <b className="font-semibold text-[var(--ink)]">48 hours</b>.
+            Built for electricians, native on iOS. Create your account, onboard your business,
+            share your code — your customers download the app and it puts
+            on your brand the moment they sign in. Up and running in{' '}
+            <b className="font-semibold text-[var(--ink)]">2 minutes</b>.
           </p>
           <div className="reveal mt-8 flex flex-wrap items-center gap-x-6 gap-y-4" style={{ ['--i' as string]: 2 }}>
             <a href={TESTFLIGHT_URL} target="_blank" rel="noopener noreferrer" className="chip chip--fill">

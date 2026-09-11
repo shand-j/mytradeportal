@@ -1,18 +1,18 @@
 const STEPS = [
   {
     n: '1.0',
-    title: 'Sign up',
-    body: 'Choose your plan and check out securely. Five minutes, no paperwork, no tech jargon.',
+    title: 'Create account',
+    body: 'Choose your plan and create your account in the app. No paperwork, no tech jargon.',
   },
   {
     n: '2.0',
-    title: 'We set it up',
-    body: "We load your name, logo, services and prices, connect your calendar and review links. You don't touch a thing.",
+    title: 'Onboard your business',
+    body: 'Guided setup: your details, logo, brand colour, services and qualifications. Done in a couple of minutes.',
   },
   {
     n: '3.0',
-    title: 'Customers download the app',
-    body: 'You get a link and QR code. They install it, sign in — and see your business, not ours.',
+    title: 'Share your code',
+    body: 'You get a 6-digit code. Customers enter it in the app and see your business, not ours.',
   },
 ]
 
@@ -22,10 +22,11 @@ export default function HowItWorks() {
       <div className="mx-auto max-w-[1400px] px-5 py-[var(--space-3xl)] md:px-10 md:py-[var(--space-4xl)]">
         <div className="mb-[var(--space-3xl)] grid gap-[var(--space-lg)] md:grid-cols-12">
           <h2 className="reveal font-display text-[clamp(2rem,4.4vw,4rem)] leading-[0.98] font-extrabold tracking-[-0.02em] text-[var(--ink)] md:col-span-7">
-            Up and running in 48 hours.
+            Up and running in 2 minutes.
           </h2>
           <p className="reveal max-w-[38ch] self-end text-[15.5px] leading-[1.75] text-[var(--muted)] md:col-span-4 md:col-start-9" style={{ ['--i' as string]: 1 }}>
-            No coding. No developer accounts. No "we'll get back to you in six weeks". Signed up Monday, taking bookings by Wednesday.
+            No coding. No developer accounts. No waiting on us — create account,
+            onboard your business, share your code, and you're taking quotes.
           </p>
         </div>
 
