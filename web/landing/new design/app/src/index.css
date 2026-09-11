@@ -253,6 +253,28 @@ html {
   }
 }
 
+/* Demo phone screen scroll — tame the webkit scrollbar so it reads as part of
+   the "screen", and fade the bottom edge so it's obvious there's more content.
+   (Touch devices show the native overlay scrollbar and don't need the fade.) */
+.demo-screen-scroll {
+  mask-image: linear-gradient(to bottom, black calc(100% - 20px), transparent);
+}
+.demo-screen-scroll::-webkit-scrollbar {
+  width: 5px;
+}
+.demo-screen-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+.demo-screen-scroll::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, var(--ink) 25%, transparent);
+  border-radius: 3px;
+}
+@media (hover: none) {
+  .demo-screen-scroll {
+    mask-image: none;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,

@@ -420,7 +420,13 @@ export default function TryDemo() {
               : undefined
           }
         />
-        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain" aria-live="polite">
+        {/* data-lenis-prevent: without it Lenis hijacks wheel events over the
+            frame and the page scrolls instead of this inner screen. */}
+        <div
+          data-lenis-prevent
+          className="demo-screen-scroll min-h-0 flex-1 overflow-y-auto overscroll-contain"
+          aria-live="polite"
+        >
           {busy === 'generate' ? (
             <GeneratingScreen />
           ) : reviewing ? (
