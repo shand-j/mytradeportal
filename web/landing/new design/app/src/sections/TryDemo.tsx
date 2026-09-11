@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import PhoneFrame from '../components/PhoneFrame'
 import {
   captureUtm,
   type DemoLineItem,
@@ -13,156 +14,322 @@ const MAX_CHARS = 4000
 
 const gbp = new Intl.NumberFormat('en-GB', { style: 'currency', currency: 'GBP' })
 
-function SkeletonRows() {
-  // Fixed pseudo-random widths so the layout is stable between renders.
-  const widths = ['88%', '72%', '94%', '61%', '80%', '70%']
+/* ------------------------------------------------------------------ */
+/* App-style primitives — mirror the real iOS app's visual language    */
+/* (white cards, rounded-2xl, slate borders, blue primary, soft pills) */
+/* ------------------------------------------------------------------ */
+
+function ChevronLeft() {
   return (
-    <div aria-hidden className="space-y-[var(--space-sm)]">
-      {widths.map((w, i) => (
-        <div key={i} className="flex items-center gap-[var(--space-md)] py-1.5">
-          <div className="demo-skeleton-bar h-3.5" style={{ width: w }} />
-          <div className="demo-skeleton-bar ml-auto h-3.5 w-14 shrink-0" />
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden>
+      <path
+        d="M15 18l-6-6 6-6"
+        stroke="currentColor"
+        strokeWidth="2.4"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  )
+}
+
+function Sparkles({ className = 'text-[#2563eb]' }: { className?: string }) {
+  return (
+    <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" className={className} aria-hidden>
+      <path d="M12 2l2.1 6.4L21 10.5l-6.9 2.1L12 19l-2.1-6.4L3 10.5l6.9-2.1L12 2z" />
+    </svg>
+  )
+}
+
+/** App header: back chevron + centered bold title, clearing the dynamic island. */
+function AppHeader({ title, onBack }: { title: string; onBack?: () => void }) {
+  return (
+    <div className="relative flex items-center justify-center px-3 pb-2.5 pt-11">
+      {onBack && (
+        <button
+          type="button"
+          onClick={onBack}
+          aria-label="Back"
+          className="absolute left-2 top-11 flex items-center gap-0.5 text-[13px] font-medium text-slate-900"
+        >
+          <ChevronLeft />
+          Back
+        </button>
+      )}
+      <p className="text-[15px] font-semibold text-slate-900">{title}</p>
+    </div>
+  )
+}
+
+function PulseBar({ className = '' }: { className?: string }) {
+  return <div className={`animate-pulse rounded-md bg-slate-200 ${className}`} />
+}
+
+/** Grey placeholder line-item cards, like the app's generating skeleton. */
+function LineItemSkeleton({ rows = 3 }: { rows?: number }) {
+  return (
+    <div className="space-y-2" aria-hidden>
+      {Array.from({ length: rows }).map((_, i) => (
+        <div key={i} className="space-y-2 rounded-2xl border border-slate-200 bg-white p-3 shadow-sm">
+          <div className="flex items-center justify-between">
+            <PulseBar className="h-2.5 w-12" />
+            <PulseBar className="h-2.5 w-8" />
+          </div>
+          <PulseBar className="h-3 w-full" />
+          <div className="flex items-center justify-between pt-0.5">
+            <PulseBar className="h-2.5 w-16" />
+            <PulseBar className="h-3.5 w-14" />
+          </div>
         </div>
       ))}
     </div>
   )
 }
 
-function QuoteSkeleton() {
+function confidencePct(confidence: number): number {
+  return Math.round(confidence <= 1 ? confidence * 100 : confidence)
+}
+
+/* ------------------------------------------------------------------ */
+/* Screen states                                                       */
+/* ------------------------------------------------------------------ */
+
+function IntakeScreen({
+  description,
+  setDescription,
+  error,
+  busy,
+  onGenerate,
+}: {
+  description: string
+  setDescription: (v: string) => void
+  error: string | null
+  busy: boolean
+  onGenerate: () => void
+}) {
+  const canGenerate = description.trim().length >= MIN_CHARS && !busy
   return (
-    <div className="border-[1.5px] border-[var(--ink)] bg-[var(--paper)] p-[var(--space-lg)] shadow-[4px_4px_0_0_var(--ink)]">
-      <div className="mb-[var(--space-md)] flex items-center justify-between border-b border-[var(--rule)] pb-[var(--space-sm)]">
-        <div className="demo-skeleton-bar h-3.5 w-28" />
-        <div className="demo-skeleton-bar h-3.5 w-16" />
+    <div className="space-y-3 px-3 pb-4">
+      <div className="space-y-2 rounded-2xl bg-slate-100 p-4">
+        <label htmlFor="demo-description" className="block text-[13.5px] font-semibold text-slate-900">
+          Job description
+        </label>
+        <textarea
+          id="demo-description"
+          value={description}
+          onChange={(e) => setDescription(e.target.value)}
+          maxLength={MAX_CHARS}
+          rows={7}
+          placeholder="Describe the job in plain English, e.g. Replace consumer unit in a 3-bed semi…"
+          className="w-full resize-none rounded-xl border border-slate-200 bg-white px-3.5 py-3 text-[13px] leading-relaxed text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-[#2563eb]/40"
+        />
+        <p className="text-right text-[10.5px] text-slate-400">
+          {description.length}/{MAX_CHARS}
+          {description.length > 0 && description.trim().length < MIN_CHARS && (
+            <span className="text-amber-700"> · min {MIN_CHARS} chars</span>
+          )}
+        </p>
       </div>
-      <SkeletonRows />
-      <div className="mt-[var(--space-md)] space-y-[var(--space-xs)] border-t border-[var(--rule)] pt-[var(--space-md)]">
-        <div className="flex justify-end">
-          <div className="demo-skeleton-bar h-3.5 w-40" />
-        </div>
-        <div className="flex justify-end">
-          <div className="demo-skeleton-bar h-7 w-52" />
-        </div>
+
+      <div className="rounded-2xl bg-blue-50 p-4">
+        <p className="text-[11.5px] leading-snug text-slate-600">
+          The AI drafts guide-priced, ex-VAT line items from your description. In the
+          full app you can edit every line before it goes out.
+        </p>
       </div>
-      <p className="spec-label mt-[var(--space-lg)] text-[var(--muted)]">Generating your quote…</p>
+
+      {error && (
+        <div role="alert" className="rounded-2xl bg-amber-50 p-4">
+          <p className="text-[11.5px] leading-snug text-amber-800">{error}</p>
+        </div>
+      )}
+
+      <button
+        type="button"
+        disabled={!canGenerate}
+        onClick={onGenerate}
+        className="w-full rounded-xl bg-[#2563eb] py-3 text-[14.5px] font-semibold text-white shadow-sm transition-opacity disabled:cursor-not-allowed disabled:opacity-40"
+      >
+        {busy ? 'Generating…' : 'Generate quote'}
+      </button>
+      <p className="text-center text-[10.5px] leading-snug text-slate-500">
+        Guide prices only — no login, nothing saved.
+      </p>
     </div>
   )
 }
 
-function confidenceTier(confidence: number): { label: string; className: string } {
-  const pct = confidence <= 1 ? confidence * 100 : confidence
-  if (pct >= 75) return { label: 'High confidence', className: 'border-[#1a7f37] text-[#1a7f37]' }
-  if (pct >= 45) return { label: 'Medium confidence', className: 'border-[var(--accent-dark)] text-[var(--accent-dark)]' }
-  return { label: 'Low confidence', className: 'border-[#b42318] text-[#b42318]' }
+function GeneratingScreen({ label = 'Generating quote…' }: { label?: string }) {
+  return (
+    <div className="space-y-3 px-3 pb-4">
+      <div className="flex items-start gap-2.5 rounded-2xl border border-blue-100 bg-blue-50 p-3.5">
+        <Sparkles />
+        <div>
+          <p className="text-[12.5px] font-semibold text-slate-900">Quote is generating</p>
+          <p className="text-[11.5px] leading-snug text-slate-600">
+            Drafting line items and guide prices…
+          </p>
+        </div>
+      </div>
+
+      <div className="flex flex-col items-center gap-2 pt-4">
+        <div className="h-7 w-7 animate-spin rounded-full border-2 border-slate-200 border-t-[#2563eb]" />
+        <p className="text-[13.5px] font-semibold text-slate-900">{label}</p>
+        <p className="text-[11px] text-slate-500">Typical UK domestic trade rates</p>
+      </div>
+
+      <div className="pt-2">
+        <LineItemSkeleton rows={3} />
+      </div>
+    </div>
+  )
 }
 
-function QuoteCard({ quote }: { quote: DemoQuote }) {
-  const tier = confidenceTier(quote.ai.confidence)
+function ReviewScreen({
+  quote,
+  quoteDescription,
+  instructions,
+  setInstructions,
+  error,
+  refining,
+  onRefine,
+}: {
+  quote: DemoQuote
+  quoteDescription: string
+  instructions: string
+  setInstructions: (v: string) => void
+  error: string | null
+  refining: boolean
+  onRefine: () => void
+}) {
+  const canRefine = instructions.trim().length >= 3 && !refining
   return (
-    <div className="border-[1.5px] border-[var(--ink)] bg-[var(--paper)] shadow-[4px_4px_0_0_var(--ink)]">
-      <div className="flex flex-wrap items-center justify-between gap-[var(--space-sm)] border-b-2 border-[var(--ink)] px-[var(--space-lg)] py-[var(--space-sm)]">
-        <span className="spec-label">Guide quote · ex-VAT line items</span>
-        <span className={`spec-label border-[1.5px] px-2 py-0.5 ${tier.className}`}>
-          {tier.label}
+    <div className="space-y-3 px-3 pb-4">
+      {/* Job description + confidence pill */}
+      <div className="space-y-1.5 rounded-xl bg-slate-100 p-3">
+        <p className="text-[12.5px] font-semibold leading-snug text-slate-900">{quoteDescription}</p>
+        <p className="text-[11px] text-slate-500">AI draft · guide prices · ex-VAT lines</p>
+        <span className="inline-block rounded-md bg-blue-100 px-2 py-1 text-[10.5px] font-medium text-blue-800">
+          AI confidence {confidencePct(quote.ai.confidence)}%
         </span>
       </div>
 
-      <div className="overflow-x-auto px-[var(--space-lg)] py-[var(--space-md)]">
-        <table className="w-full min-w-[520px] border-collapse text-[14px]">
-          <thead>
-            <tr className="spec-label border-b border-[var(--rule)] text-left text-[var(--muted)]">
-              <th className="py-2 pr-4 font-medium">Description</th>
-              <th className="w-16 py-2 pr-4 text-right font-medium">Qty</th>
-              <th className="w-16 py-2 pr-4 text-left font-medium">Unit</th>
-              <th className="w-24 py-2 pr-4 text-right font-medium">Unit price</th>
-              <th className="w-24 py-2 text-right font-medium">Total</th>
-            </tr>
-          </thead>
-          <tbody>
-            {quote.line_items.map((item, i) => (
-              <LineRow key={`${i}-${item.description}`} item={item} />
-            ))}
-          </tbody>
-        </table>
-      </div>
-
-      <div className="space-y-[var(--space-2xs)] border-t-2 border-[var(--ink)] px-[var(--space-lg)] py-[var(--space-md)]">
-        <div className="tnum flex justify-between text-[14px] text-[var(--muted)]">
-          <span>Subtotal</span>
-          <span>{gbp.format(quote.subtotal)}</span>
-        </div>
-        <div className="tnum flex justify-between text-[14px] text-[var(--muted)]">
-          <span>VAT ({(quote.vat_rate * 100).toFixed(0)}%)</span>
-          <span>{gbp.format(quote.vat_amount)}</span>
-        </div>
-        <div className="tnum flex justify-between pt-[var(--space-xs)] font-display text-[1.35rem] font-extrabold tracking-[-0.01em]">
-          <span>Total</span>
-          <span>{gbp.format(quote.total)}</span>
-        </div>
-      </div>
-
-      {(quote.ai.assumptions.length > 0 || quote.ai.warnings.length > 0 || quote.ai.notes) && (
-        <div className="space-y-[var(--space-xs)] border-t border-[var(--rule)] px-[var(--space-lg)] py-[var(--space-md)]">
-          {quote.ai.assumptions.length > 0 && (
-            <details>
-              <summary className="spec-label cursor-pointer select-none text-[var(--ink)]">
-                Assumptions ({quote.ai.assumptions.length})
-              </summary>
-              <ul className="mt-[var(--space-xs)] list-inside list-square space-y-[var(--space-2xs)] text-[13.5px] leading-[1.65] text-[var(--muted)]">
-                {quote.ai.assumptions.map((a, i) => (
-                  <li key={i}>{a}</li>
-                ))}
-              </ul>
-            </details>
-          )}
-          {quote.ai.warnings.length > 0 && (
-            <details>
-              <summary className="spec-label cursor-pointer select-none text-[var(--ink)]">
-                Warnings ({quote.ai.warnings.length})
-              </summary>
-              <ul className="mt-[var(--space-xs)] list-inside list-square space-y-[var(--space-2xs)] text-[13.5px] leading-[1.65] text-[var(--muted)]">
-                {quote.ai.warnings.map((w, i) => (
-                  <li key={i}>{w}</li>
-                ))}
-              </ul>
-            </details>
-          )}
-          {quote.ai.notes && (
-            <p className="text-[13.5px] leading-[1.65] text-[var(--muted)]">{quote.ai.notes}</p>
-          )}
+      {/* Assumptions / warnings — amber card, app-style bullets */}
+      {(quote.ai.assumptions.length > 0 || quote.ai.warnings.length > 0) && (
+        <div className="space-y-1.5 rounded-xl bg-amber-50 p-3">
+          {quote.ai.warnings.map((w, i) => (
+            <p key={`w-${i}`} className="text-[11px] leading-snug text-amber-800">
+              • {w}
+            </p>
+          ))}
+          {quote.ai.assumptions.map((a, i) => (
+            <p key={`a-${i}`} className="text-[11px] leading-snug text-slate-600">
+              • Assumed: {a}
+            </p>
+          ))}
         </div>
       )}
+      {quote.ai.notes && (
+        <p className="text-[11px] leading-snug text-slate-500">{quote.ai.notes}</p>
+      )}
 
-      <p className="spec-label border-t border-[var(--rule)] px-[var(--space-lg)] py-[var(--space-sm)] text-[var(--muted)]">
+      {/* Line items */}
+      {refining ? (
+        <LineItemSkeleton rows={2} />
+      ) : (
+        quote.line_items.map((item, i) => <LineItemCard key={`${i}-${item.description}`} item={item} index={i} />)
+      )}
+
+      {/* Totals — Subtotal / VAT / Total, like the app's footer */}
+      <div className="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm">
+        {refining ? (
+          <div className="flex items-center justify-between" aria-hidden>
+            <PulseBar className="h-6 w-24" />
+            <PulseBar className="h-7 w-20" />
+          </div>
+        ) : (
+          <div className="flex items-end justify-between">
+            <div>
+              <p className="text-[10.5px] text-slate-500">Subtotal</p>
+              <p className="tnum text-[12px] font-medium text-slate-700">{gbp.format(quote.subtotal)}</p>
+            </div>
+            <div>
+              <p className="text-[10.5px] text-slate-500">VAT ({(quote.vat_rate * 100).toFixed(0)}%)</p>
+              <p className="tnum text-[12px] font-medium text-slate-700">{gbp.format(quote.vat_amount)}</p>
+            </div>
+            <div className="text-right">
+              <p className="text-[10.5px] text-slate-500">Total</p>
+              <p className="tnum text-[16px] font-bold text-slate-900">{gbp.format(quote.total)}</p>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Refine with AI */}
+      <div className="space-y-2 rounded-2xl border border-slate-200 bg-white p-3 shadow-sm">
+        <p className="flex items-center gap-1.5 text-[12.5px] font-semibold text-slate-900">
+          <Sparkles className="text-[#d97706]" />
+          Refine with AI
+        </p>
+        <input
+          type="text"
+          value={instructions}
+          onChange={(e) => setInstructions(e.target.value)}
+          maxLength={1000}
+          placeholder='e.g. "make it cheaper" or "assume the CU needs upgrading"'
+          className="h-9 w-full rounded-lg border border-slate-200 px-3 text-[12px] text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-[#2563eb]/40"
+        />
+        {error && (
+          <div role="alert" className="rounded-xl bg-amber-50 p-2.5">
+            <p className="text-[11px] leading-snug text-amber-800">{error}</p>
+          </div>
+        )}
+        <button
+          type="button"
+          disabled={!canRefine}
+          onClick={onRefine}
+          className="w-full rounded-xl bg-[#2563eb] py-2.5 text-[13px] font-semibold text-white shadow-sm transition-opacity disabled:cursor-not-allowed disabled:opacity-40"
+        >
+          {refining ? 'Refining…' : 'Refine quote'}
+        </button>
+      </div>
+
+      <p className="text-center text-[10px] text-slate-400">
         Generated in {quote.generation_seconds.toFixed(1)}s · {quote.retrieval_status}
       </p>
     </div>
   )
 }
 
-function LineRow({ item }: { item: DemoLineItem }) {
+function LineItemCard({ item, index }: { item: DemoLineItem; index: number }) {
   return (
-    <tr className="border-b border-[var(--rule)] last:border-0">
-      <td className="py-2.5 pr-4 align-top">
-        {item.description}
+    <div className="space-y-1.5 rounded-2xl border border-slate-200 bg-white p-3 shadow-sm">
+      <div className="flex items-center justify-between">
+        <span className="text-[10.5px] text-slate-400">Line {index + 1}</span>
         {item.ai_generated && (
-          <span className="spec-label ml-2 border border-[var(--rule)] px-1.5 py-0.5 text-[10px] text-[var(--muted)]">
+          <span className="flex items-center gap-1 text-[10px] font-medium text-amber-700">
+            <Sparkles className="text-[#d97706]" />
             AI
           </span>
         )}
-      </td>
-      <td className="tnum py-2.5 pr-4 text-right align-top">{item.quantity}</td>
-      <td className="py-2.5 pr-4 align-top text-[var(--muted)]">{item.unit}</td>
-      <td className="tnum py-2.5 pr-4 text-right align-top">{gbp.format(item.unit_price)}</td>
-      <td className="tnum py-2.5 text-right align-top font-semibold">{gbp.format(item.total)}</td>
-    </tr>
+      </div>
+      <p className="text-[12.5px] leading-snug text-slate-900">{item.description}</p>
+      <div className="flex items-end justify-between pt-0.5">
+        <span className="tnum text-[11.5px] text-slate-500">
+          {item.quantity} × {gbp.format(item.unit_price)}
+        </span>
+        <span className="tnum text-[13px] font-semibold text-slate-900">{gbp.format(item.total)}</span>
+      </div>
+    </div>
   )
 }
 
 /**
- * TryDemo — public, login-free demo of the AI quote pipeline. Everything is
- * ephemeral: nothing is stored in localStorage, cookies, or sent anywhere
- * except the demo endpoints (with UTM params forwarded for attribution).
+ * TryDemo — public, login-free demo of the AI quote pipeline, presented
+ * inside the realistic phone frame so it reads as the app itself. Screen
+ * content mirrors the real app's quote-intake and review-quote screens.
+ * Everything is ephemeral: nothing is stored, and only the demo endpoints
+ * are called (with UTM params forwarded for attribution).
  */
 export default function TryDemo() {
   const [description, setDescription] = useState('')
@@ -172,9 +339,6 @@ export default function TryDemo() {
   const [busy, setBusy] = useState<'generate' | 'refine' | null>(null)
   const [error, setError] = useState<string | null>(null)
   const abortRef = useRef<AbortController | null>(null)
-
-  const canGenerate = description.trim().length >= MIN_CHARS && busy === null
-  const canRefine = instructions.trim().length >= 3 && busy === null && quote !== null
 
   /* Abort any in-flight request when the section unmounts. */
   useEffect(() => {
@@ -219,117 +383,48 @@ export default function TryDemo() {
     }
   }
 
+  const reviewing = quote !== null
+  const title = reviewing ? 'Review quote' : 'New quote'
+
   return (
-    <section id="try-ai" className="border-b-2 border-[var(--ink)]">
-      <div className="mx-auto max-w-[1400px] px-5 py-[var(--space-3xl)] md:px-10 md:py-[var(--space-4xl)]">
-        <div className="mb-[var(--space-3xl)] max-w-[52ch]">
-          <h2 className="reveal font-display text-[clamp(2rem,4.4vw,4rem)] leading-[0.98] font-extrabold tracking-[-0.02em] text-[var(--ink)]">
-            Try the AI. Right here.
-          </h2>
-          <p className="reveal mt-[var(--space-md)] text-[15.5px] leading-[1.75] text-[var(--muted)]" style={{ ['--i' as string]: 1 }}>
-            Type an electrical job below and watch a guide-priced quote get
-            drafted — the same engine the app runs on. No login, no email,
-            nothing saved.
-          </p>
-        </div>
-
-        <div className="grid gap-[var(--space-lg)] lg:grid-cols-12">
-          {/* Input column */}
-          <div className="reveal lg:col-span-5" style={{ ['--i' as string]: 2 }}>
-            <div className="border-[1.5px] border-[var(--ink)] bg-[var(--paper)] p-[var(--space-lg)] shadow-[4px_4px_0_0_var(--ink)]">
-              <label htmlFor="demo-description" className="spec-label text-[var(--ink)]">
-                Describe the job
-              </label>
-              <textarea
-                id="demo-description"
-                value={description}
-                onChange={(e) => setDescription(e.target.value)}
-                maxLength={MAX_CHARS}
-                rows={6}
-                placeholder="e.g. Install 6 LED downlights in a kitchen ceiling, add a double socket in the utility room…"
-                className="mt-[var(--space-sm)] w-full resize-y border-[1.5px] border-[var(--ink)] bg-[var(--paper)] px-3 py-2.5 text-[15px] leading-[1.6] placeholder:text-[var(--muted)]/70"
-              />
-              <div className="mt-[var(--space-xs)] flex items-center justify-between">
-                <span className="font-mono text-[11px] text-[var(--muted)]">
-                  {description.length}/{MAX_CHARS}
-                  {description.length > 0 && description.trim().length < MIN_CHARS && (
-                    <span className="text-[var(--accent-dark)]">
-                      {' '}
-                      · min {MIN_CHARS} chars
-                    </span>
-                  )}
-                </span>
-              </div>
-              <button
-                type="button"
-                disabled={!canGenerate}
-                onClick={() => void run('generate')}
-                className="chip chip--fill mt-[var(--space-md)] w-full justify-center disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                {busy === 'generate' ? 'Generating…' : 'Generate quote'}
-              </button>
-              <p className="mt-[var(--space-sm)] text-[12.5px] leading-[1.6] text-[var(--muted)]">
-                Guide prices only — ex-VAT trade rates for typical UK domestic
-                work. The full app lets you edit every line before it goes out.
-              </p>
-            </div>
-          </div>
-
-          {/* Result column */}
-          <div className="reveal lg:col-span-7" style={{ ['--i' as string]: 3 }}>
-            {error && (
-              <div role="alert" className="mb-[var(--space-md)] border-[1.5px] border-[var(--accent-dark)] bg-[var(--accent)]/15 px-4 py-3 text-[14px] font-medium text-[var(--ink)]">
-                {error}
-              </div>
-            )}
-
-            <div aria-live="polite">
-              {busy !== null ? (
-                <QuoteSkeleton />
-              ) : quote ? (
-                <QuoteCard quote={quote} />
-              ) : (
-                <div className="flex min-h-[280px] items-center justify-center border-[1.5px] border-dashed border-[var(--rule)] p-[var(--space-lg)]">
-                  <p className="spec-label max-w-[32ch] text-center leading-[1.8] text-[var(--muted)]">
-                    Your draft quote will appear here — line items, VAT and all
-                  </p>
-                </div>
-              )}
-            </div>
-
-            {quote && busy === null && (
-              <div className="mt-[var(--space-md)] border-[1.5px] border-[var(--ink)] bg-[var(--paper)] p-[var(--space-lg)]">
-                <label htmlFor="demo-instructions" className="spec-label text-[var(--ink)]">
-                  Refine with AI
-                </label>
-                <div className="mt-[var(--space-sm)] flex flex-col gap-[var(--space-sm)] sm:flex-row">
-                  <input
-                    id="demo-instructions"
-                    type="text"
-                    value={instructions}
-                    onChange={(e) => setInstructions(e.target.value)}
-                    maxLength={1000}
-                    placeholder='e.g. "make it cheaper" or "assume the consumer unit needs upgrading"'
-                    className="min-w-0 flex-1 border-[1.5px] border-[var(--ink)] bg-[var(--paper)] px-3 py-2.5 text-[14.5px] placeholder:text-[var(--muted)]/70"
-                  />
-                  <button
-                    type="button"
-                    disabled={!canRefine}
-                    onClick={() => void run('refine')}
-                    className="chip justify-center disabled:cursor-not-allowed disabled:opacity-50"
-                  >
-                    {busy === 'refine' ? 'Refining…' : 'Refine with AI'}
-                  </button>
-                </div>
-                <p className="mt-[var(--space-xs)] text-[12.5px] text-[var(--muted)]">
-                  The whole quote is regenerated with your instruction — line
-                  items come back re-priced.
-                </p>
-              </div>
-            )}
-          </div>
+    <PhoneFrame>
+      <div className="flex h-full flex-col bg-[var(--cream)]">
+        <AppHeader
+          title={title}
+          onBack={
+            reviewing && busy === null
+              ? () => {
+                  setQuote(null)
+                  setError(null)
+                  setInstructions('')
+                }
+              : undefined
+          }
+        />
+        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain" aria-live="polite">
+          {busy === 'generate' ? (
+            <GeneratingScreen />
+          ) : reviewing ? (
+            <ReviewScreen
+              quote={quote}
+              quoteDescription={quoteDescription}
+              instructions={instructions}
+              setInstructions={setInstructions}
+              error={error}
+              refining={busy === 'refine'}
+              onRefine={() => void run('refine')}
+            />
+          ) : (
+            <IntakeScreen
+              description={description}
+              setDescription={setDescription}
+              error={error}
+              busy={busy !== null}
+              onGenerate={() => void run('generate')}
+            />
+          )}
         </div>
       </div>
-    </section>
+    </PhoneFrame>
   )
 }
