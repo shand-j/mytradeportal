@@ -1,0 +1,18 @@
+/* MyTradePortal design tokens — brand lock 2026-09-11
+ * Primary: slate ink #0F1E26 · pressed/dark: #0A151B
+ * Accent: hi-vis yellow #FFC107 · dark variant: #CC8F00
+ * Source of truth: src/index.css :root
+ */
+:root {
+  --color-paper: #fafaf8;
+  --color-paper-2: #f3f3f1;
+  --color-paper-3: #eaeae7;
+  --color-ink: #0f1e26;
+  --color-ink-pressed: #0a151b;
+  --color-ink-deep: #060d12;
+  --color-accent: #ffc107;
+  --color-accent-dark: #cc8f00;
+  --color-cream: #ffffff;
+  --font-display: 'Inter', -apple-system, 'SF Pro Display', 'Segoe UI', sans-serif;
+  --font-body: 'Inter', -apple-system, 'Segoe UI', sans-serif;
+}

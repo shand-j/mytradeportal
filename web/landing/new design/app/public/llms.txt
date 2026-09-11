@@ -1,0 +1,20 @@
+# My Trade Portal
+
+My Trade Portal is an AI-powered iOS app for UK electricians and trade
+businesses. It drafts guide-priced quotes from a plain-language job
+description, keeps every lead in one pipeline, and lets tradespeople chat
+with customers and send invoices under their own brand.
+
+Key features:
+
+- AI quote drafting: line items, VAT and a confidence score in seconds, with
+  every number editable before it goes out
+- Quotes pipeline: new, flagged, sent and accepted jobs sorted by urgency and
+  value
+- In-app customer chat with one-tap photo and site-visit requests
+- Invoices issued straight from a job
+- White-label branding: the app wears each business's name, logo and colours
+
+Availability: iOS, currently in beta via Apple TestFlight.
+
+Site: https://www.mytradeportal.co.uk/
