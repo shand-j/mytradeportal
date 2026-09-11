@@ -25,6 +25,25 @@ router = APIRouter(prefix="/files", tags=["Files"])
 DbDep = Annotated[AsyncSession, Depends(get_db)]
 
 _MAX_UPLOAD_BYTES = 20 * 1024 * 1024  # 20 MB per photo is generous
+_DEFAULT_MINIO_PORT = 9000
+
+
+def _minio_endpoint_url() -> str:
+    """Build the MinIO endpoint URL from settings.
+
+    Accepts ``host``, ``host:port``, or a full ``http(s)://...`` URL. A bare
+    host gets the scheme from ``minio_use_ssl`` and the default MinIO port:
+    the Railway private DNS name (``minio.railway.internal``) carries no
+    implied port, and MinIO serves the S3 API on 9000 — without an explicit
+    port boto3 dials 80/443 and the connection is refused (surfaced as 503).
+    """
+    endpoint: str = settings.minio_endpoint.strip().rstrip("/")
+    if "://" in endpoint:
+        return endpoint
+    if ":" not in endpoint:
+        endpoint = f"{endpoint}:{_DEFAULT_MINIO_PORT}"
+    scheme = "https" if settings.minio_use_ssl else "http"
+    return f"{scheme}://{endpoint}"
 
 
 def s3_client() -> boto3.client:
@@ -33,11 +52,9 @@ def s3_client() -> boto3.client:
     MinIO has no public domain — this client is only ever used server-side, so
     the endpoint is the private host and http (no TLS inside the network).
     """
-    scheme = "https" if settings.minio_use_ssl else "http"
-    endpoint_url = f"{scheme}://{settings.minio_endpoint}"
     return boto3.client(
         "s3",
-        endpoint_url=endpoint_url,
+        endpoint_url=_minio_endpoint_url(),
         aws_access_key_id=settings.minio_access_key,
         aws_secret_access_key=settings.minio_secret_key,
         region_name="us-east-1",

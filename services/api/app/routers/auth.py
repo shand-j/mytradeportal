@@ -327,6 +327,9 @@ async def password_reset_request(
         # email transport is down.
         logger.error(
             "password_reset_email_failed",
+            email_event="password_reset",
+            template="password_reset",
+            recipient=email,
             owner_type=owner_type,
             tenant_id=str(tenant_id),
             error_type=type(exc).__name__,

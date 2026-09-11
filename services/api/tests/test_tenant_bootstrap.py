@@ -2,6 +2,7 @@
 
 from uuid import uuid4
 
+import httpx
 import pytest
 from httpx import AsyncClient
 
@@ -133,3 +134,37 @@ async def test_bootstrap_rejects_duplicate_slug(client: AsyncClient) -> None:
     assert first.status_code == 201
     second = await client.post("/tenants", json=_bootstrap_payload(slug))
     assert second.status_code == 409
+
+
+async def test_bootstrap_supabase_rejection_returns_502_not_500(
+    client: AsyncClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """C23 regression: when Supabase Auth is configured but rejects the admin
+    signup, the endpoint must return a clear 502 instead of a bare 500."""
+    monkeypatch.setattr("app.routers.tenants.is_supabase_configured", lambda: True)
+
+    def _reject(*args: object, **kwargs: object) -> None:
+        raise RuntimeError("Failed to create Supabase user: 422 weak_password")
+
+    monkeypatch.setattr("app.routers.tenants.admin_create_user", _reject)
+
+    response = await client.post("/tenants", json=_bootstrap_payload(f"sb-{uuid4().hex[:8]}"))
+    assert response.status_code == 502
+    assert "authentication provider" in response.json()["detail"].lower()
+
+
+async def test_bootstrap_supabase_unreachable_returns_503_not_500(
+    client: AsyncClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """C23 regression: a network-level failure talking to Supabase Auth must
+    return a clear 503 instead of a bare 500."""
+    monkeypatch.setattr("app.routers.tenants.is_supabase_configured", lambda: True)
+
+    def _unreachable(*args: object, **kwargs: object) -> None:
+        raise httpx.ConnectError("connection refused")
+
+    monkeypatch.setattr("app.routers.tenants.admin_create_user", _unreachable)
+
+    response = await client.post("/tenants", json=_bootstrap_payload(f"sbx-{uuid4().hex[:8]}"))
+    assert response.status_code == 503
+    assert "unavailable" in response.json()["detail"].lower()

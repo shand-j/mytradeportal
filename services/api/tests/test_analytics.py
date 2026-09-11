@@ -79,7 +79,9 @@ async def test_dashboard_kpis_reflect_data(admin_client: AsyncClient) -> None:
     data = response.json()
     assert data["kpi"]["pending_quotes"] == 0
     assert data["kpi"]["active_jobs"] == 0
-    assert Decimal(str(data["kpi"]["revenue_this_month"])) == Decimal("480.00")
+    # Bootstrap tenant has not answered the onboarding Tax step, so it is not
+    # VAT registered: £100 × 4 at 0% VAT.
+    assert Decimal(str(data["kpi"]["revenue_this_month"])) == Decimal("400.00")
 
 
 async def test_ai_insights_returns_expected_structure(admin_client: AsyncClient) -> None:

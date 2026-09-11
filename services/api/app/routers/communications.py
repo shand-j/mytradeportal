@@ -13,7 +13,11 @@ from app.database import get_db
 from app.dependencies import TenantDep, _extract_token
 from app.models import Communication, Contact, Customer, QuoteRequest, User
 from app.push import notify_customer, notify_staff
-from app.quote_automation import build_triage_description, requote_after_triage_close
+from app.quote_automation import (
+    build_triage_description,
+    email_triage_question,
+    requote_after_triage_close,
+)
 from app.rag import generate_followup
 from app.rls import set_tenant_in_session
 from app.schemas import CommunicationCreate, CommunicationRead
@@ -377,6 +381,11 @@ async def ai_followup(
             body=snippet,
             link=f"/customer/chat/{quote_request_id}",
         )
+    # A still-open AI question also goes out by email: in-app + push only reach
+    # customers with an account and the app installed. Best-effort; the wrapper
+    # logs (and never raises) on failure or a missing contact email.
+    if not closed:
+        await email_triage_question(db, tenant, quote_request, body)
     await db.commit()
     await db.refresh(assistant_message)
 

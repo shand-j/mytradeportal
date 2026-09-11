@@ -1,5 +1,6 @@
 """Tests for invoice creation and quote-to-invoice conversion."""
 
+from decimal import Decimal
 from typing import Any
 from uuid import uuid4
 
@@ -59,8 +60,10 @@ async def test_convert_quote_to_invoice(client: AsyncClient) -> None:
     assert invoice["contact_id"] == contact["id"]
     assert invoice["tenant_id"] == tenant["id"]
     assert invoice["subtotal"] == "600.00"
-    assert invoice["vat_amount"] == "120.00"
-    assert invoice["total"] == "720.00"
+    # The bootstrap-created tenant never answered the onboarding Tax step, so
+    # it is not VAT registered and charges 0% VAT.
+    assert invoice["vat_amount"] == "0.00"
+    assert invoice["total"] == "600.00"
     assert invoice["invoice_number"].startswith("INV-")
     assert len(invoice["line_items"]) == 2
 
@@ -126,5 +129,68 @@ async def test_create_invoice_from_quote_without_line_items(client: AsyncClient)
     assert response.status_code == 201
     invoice = response.json()
     assert invoice["quote_id"] == quote["id"]
-    assert invoice["total"] == "720.00"
+    # Not VAT registered (no onboarding Tax answer) → 0% VAT.
+    assert invoice["total"] == "600.00"
     assert invoice["invoice_number"] == "INV-001"
+
+
+async def test_create_invoice_for_quoteless_job(client: AsyncClient) -> None:
+    """A job with no attributed quote can still be invoiced (backlog N18).
+
+    The app's job detail screen guards the empty-lines case client-side, but the
+    endpoint must accept quote-less jobs and never 5xx.
+    """
+    tenant = await _create_tenant(client, f"sparky-{uuid4().hex[:8]}")
+    contact = await _create_contact(client, tenant["id"], "Eve")
+    job_response = await client.post(
+        "/jobs",
+        headers={"X-Tenant-ID": tenant["id"]},
+        json={"contact_id": contact["id"], "title": "Quote-less job"},
+    )
+    assert job_response.status_code == 201
+    job = job_response.json()
+    assert job["quote_id"] is None
+
+    # Manual line items supplied by the electrician.
+    response = await client.post(
+        "/invoices",
+        headers={"X-Tenant-ID": tenant["id"]},
+        json={
+            "contact_id": contact["id"],
+            "job_id": job["id"],
+            "line_items": [
+                {"description": "Labour", "quantity": "2", "unit_price": "45.00"},
+            ],
+        },
+    )
+    assert response.status_code == 201
+    invoice = response.json()
+    assert invoice["quote_id"] is None
+    assert invoice["job_id"] == job["id"]
+    assert invoice["subtotal"] == "90.00"
+    # The VAT-inclusive total depends on the tenant's VAT registration; require
+    # the invoice to be internally consistent instead of a fixed rate.
+    assert Decimal(invoice["total"]) == Decimal(invoice["subtotal"]) + Decimal(
+        invoice["vat_amount"]
+    )
+
+    send_response = await client.post(
+        f"/invoices/{invoice['id']}/send",
+        headers={"X-Tenant-ID": tenant["id"]},
+    )
+    assert send_response.status_code == 200
+    assert send_response.json()["status"] == "sent"
+
+
+async def test_create_invoice_rejects_unknown_job_with_400(client: AsyncClient) -> None:
+    """Invalid job/contact/quote references are clear 400s, not 500s."""
+    tenant = await _create_tenant(client, f"sparky-{uuid4().hex[:8]}")
+    contact = await _create_contact(client, tenant["id"], "Frank")
+
+    response = await client.post(
+        "/invoices",
+        headers={"X-Tenant-ID": tenant["id"]},
+        json={"contact_id": contact["id"], "job_id": str(uuid4())},
+    )
+    assert response.status_code == 400
+    assert response.json()["detail"] == "Invalid job"

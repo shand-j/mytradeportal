@@ -159,3 +159,56 @@ async def send_email(
     return await _send_via_smtp(
         to_email, subject, html_body, text_body, attachments, from_name, reply_to
     )
+
+
+async def send_event_email(
+    *,
+    to_email: str | None,
+    subject: str,
+    html_body: str,
+    text_body: str | None = None,
+    event: str,
+    template: str,
+    from_name: str | None = None,
+    reply_to: str | None = None,
+    attachments: list[tuple[str, str, bytes]] | None = None,
+    context: dict[str, Any] | None = None,
+) -> bool:
+    """Send an event-triggered email with uniform logging. Never raises.
+
+    Wraps :func:`send_email` for customer-facing triggers (quote sent, triage
+    question, account created, ...) so no dispatch gap is ever silent:
+
+    * No usable recipient address → warning log (``email_skipped_no_contact_email``)
+      with the event/template plus the caller's ``context`` (quote id, customer
+      id, ...), and ``False``. Callers must pass identifying context so the
+      skipped customer is traceable.
+    * Transport/Resend failure → error log (``email_send_failed``) with the
+      recipient, template and event, and ``False``.
+    * Success → info log (``email_dispatched``) and ``True``.
+    """
+    log_context = {"email_event": event, "template": template, **(context or {})}
+    if not to_email or not to_email.strip():
+        logger.warning("email_skipped_no_contact_email", **log_context)
+        return False
+    try:
+        await send_email(
+            to_email=to_email,
+            subject=subject,
+            html_body=html_body,
+            text_body=text_body,
+            attachments=attachments,
+            from_name=from_name,
+            reply_to=reply_to,
+        )
+    except Exception as exc:
+        logger.error(
+            "email_send_failed",
+            recipient=to_email,
+            error_type=type(exc).__name__,
+            error=str(exc)[:300],
+            **log_context,
+        )
+        return False
+    logger.info("email_dispatched", recipient=to_email, **log_context)
+    return True

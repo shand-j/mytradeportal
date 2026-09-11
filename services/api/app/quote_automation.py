@@ -30,8 +30,8 @@ from sqlalchemy.orm import selectinload
 from app.audit import Actions, write_audit_log
 from app.calculations import calculate_quote_totals
 from app.database import get_db_session
-from app.models import Notification, PushToken, Quote, QuoteLineItem, QuoteRequest, Tenant
-from app.push import send_expo_push
+from app.models import Quote, QuoteLineItem, QuoteRequest, Tenant
+from app.push import notify_customer, notify_staff
 from app.rls import set_tenant_in_session
 from app.routers import quotes as quotes_router
 from app.schemas import QuoteGenerateRequest, QuoteRead
@@ -45,68 +45,45 @@ async def _notify_quote_ready(
     quote: QuoteRead,
     quote_request_id: UUID | None,
 ) -> None:
-    """Record quote_ready notifications and push to staff devices (best-effort)."""
+    """Record quote_ready notifications and push to staff + customer devices."""
     await set_tenant_in_session(db, tenant_id)
-    body = f"AI draft quote '{quote.title}' is ready for your review."
     link = f"/quotes/{quote.id}"
     # recipient_id=None addresses every staff user of the tenant.
-    db.add(
-        Notification(
-            tenant_id=tenant_id,
-            recipient_type="staff",
-            recipient_id=None,
-            type="quote_ready",
-            title="Quote ready for review",
-            body=body,
-            link=link,
-        )
+    await notify_staff(
+        db,
+        tenant_id,
+        kind="quote_ready",
+        title="Quote ready for review",
+        body=f"AI draft quote '{quote.title}' is ready for your review.",
+        link=link,
     )
 
-    # The homeowner gets their own notification when the lead is linked to a
-    # customer account.
+    # The homeowner gets their own notification AND push when the lead is
+    # linked to a customer account.
     if quote_request_id is not None:
         quote_request = await db.get(QuoteRequest, quote_request_id)
         if quote_request is not None and quote_request.customer_id is not None:
-            db.add(
-                Notification(
-                    tenant_id=tenant_id,
-                    recipient_type="customer",
-                    recipient_id=quote_request.customer_id,
-                    type="quote_ready",
-                    title="Your quote is ready",
-                    body=f"Your quote '{quote.title}' is ready to view.",
-                    link=link,
-                )
+            await notify_customer(
+                db,
+                tenant_id,
+                quote_request.customer_id,
+                kind="quote_ready",
+                title="Your quote is ready",
+                body=f"Your quote '{quote.title}' is ready to view.",
+                link=link,
             )
-
-    tokens = (
-        (
-            await db.execute(
-                select(PushToken.token).where(
-                    PushToken.tenant_id == tenant_id,
-                    PushToken.owner_type == "staff",
-                )
-            )
-        )
-        .scalars()
-        .all()
-    )
-    await send_expo_push(list(tokens), "Quote ready for review", body, data={"link": link})
 
 
 async def _notify_quote_failed(db: AsyncSession, tenant_id: UUID) -> None:
-    """Record a quote_failed notification for the tenant's staff."""
+    """Record and push a quote_failed notification for the tenant's staff."""
     await set_tenant_in_session(db, tenant_id)
-    db.add(
-        Notification(
-            tenant_id=tenant_id,
-            recipient_type="staff",
-            recipient_id=None,
-            type="quote_failed",
-            title="Quote generation failed",
-            body="Quote generation failed — please build it manually or retry.",
-            link=None,
-        )
+    await notify_staff(
+        db,
+        tenant_id,
+        kind="quote_failed",
+        title="Quote generation failed",
+        body="Quote generation failed — please build it manually or retry.",
+        link=None,
     )
 
 
@@ -195,6 +172,57 @@ async def auto_draft_quote_for_request(tenant_id: UUID, quote_request_id: UUID) 
         )
 
 
+async def email_triage_question(
+    db: AsyncSession,
+    tenant: Tenant,
+    quote_request: QuoteRequest,
+    question: str,
+) -> None:
+    """Email the customer an outstanding AI triage question (best-effort).
+
+    Shared by the low-confidence auto-triage trigger and the ai-followup
+    endpoint: in-app + push only reach customers with an account and the app
+    installed, so the question also goes out by email. Customer-facing comm,
+    so it is tenant-branded with the tenant's address as Reply-To. The wrapper
+    logs a warning instead of dropping silently when the lead's contact has no
+    email address.
+    """
+    from app.config import settings
+    from app.email import send_event_email
+    from app.email_templates import triage_question as triage_question_template
+    from app.models import Contact
+
+    contact = (
+        await db.get(Contact, quote_request.contact_id)
+        if quote_request.contact_id is not None
+        else None
+    )
+    app_origin = settings.app_public_url.rstrip("/") if settings.app_public_url else ""
+    chat_url = f"{app_origin}/customer/chat/{quote_request.id}" if app_origin else None
+    subject, html, text = triage_question_template(
+        customer_name=contact.name.split()[0] if contact is not None and contact.name else "there",
+        business_name=tenant.name,
+        question=question,
+        chat_url=chat_url,
+    )
+    await send_event_email(
+        to_email=contact.email if contact is not None else None,
+        subject=subject,
+        html_body=html,
+        text_body=text,
+        event="ai_followup_needed",
+        template="triage_question",
+        from_name=tenant.name,
+        reply_to=tenant.email if tenant.email else None,
+        context={
+            "quote_request_id": str(quote_request.id),
+            "contact_id": str(quote_request.contact_id),
+            "customer_id": (str(quote_request.customer_id) if quote_request.customer_id else None),
+            "tenant_id": str(tenant.id),
+        },
+    )
+
+
 async def start_ai_triage(
     db: AsyncSession,
     tenant: Tenant,
@@ -209,7 +237,6 @@ async def start_ai_triage(
     chat themselves.
     """
     from app.models import Communication
-    from app.push import notify_customer
     from app.rag import generate_followup
 
     quote_request = await db.get(QuoteRequest, quote_request_id)
@@ -266,6 +293,7 @@ async def start_ai_triage(
             body=body[:120] + ("…" if len(body) > 120 else ""),
             link=f"/chat/{quote_request_id}",
         )
+    await email_triage_question(db, tenant, quote_request, body)
     await db.commit()
     logger.info(
         "auto_triage_started",

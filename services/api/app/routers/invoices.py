@@ -119,7 +119,12 @@ async def create_invoice(
             quote_id=data.quote_id,
             invoice_number=invoice_number,
             due_date=due_date,
-            vat_rate=data.vat_rate if data.vat_rate is not None else tenant_vat_rate(tenant),
+            # InvoiceCreate.vat_rate defaults to 0.20, so "not sent" is only
+            # detectable via model_fields_set — otherwise non-VAT-registered
+            # tenants would never fall through to their 0% rate.
+            vat_rate=(
+                data.vat_rate if "vat_rate" in data.model_fields_set else tenant_vat_rate(tenant)
+            ),
         )
         # When the caller did not supply line items, derive a sensible default from
         # the source record so the invoice is not empty. This happens when the

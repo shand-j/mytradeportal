@@ -21,7 +21,7 @@ from app.calculations import build_invoice_from_quote, calculate_quote_totals, t
 from app.config import settings
 from app.database import get_db
 from app.dependencies import CurrentUserDep, TenantDep
-from app.email import send_email
+from app.email import send_event_email
 from app.email_templates import quote_ready as quote_ready_template
 from app.limiter import limiter, tenant_key
 from app.models import (
@@ -119,7 +119,10 @@ async def create_quote(
         contact_id=data.contact_id,
         title=data.title,
         description=data.description,
-        vat_rate=data.vat_rate if data.vat_rate is not None else tenant_vat_rate(tenant),
+        # QuoteCreate.vat_rate defaults to 0.20, so "not sent" is only
+        # detectable via model_fields_set — otherwise non-VAT-registered
+        # tenants would never fall through to their 0% rate.
+        vat_rate=data.vat_rate if "vat_rate" in data.model_fields_set else tenant_vat_rate(tenant),
         valid_until=data.valid_until,
     )
     quote.line_items = [
@@ -230,42 +233,36 @@ async def send_quote(
                 link=f"/customer/quote/{quote.id}",
             )
     # Email the customer a review link. Non-fatal — if delivery fails they
-    # can still open the quote from the mobile app via the notification.
+    # can still open the quote from the mobile app via the notification. The
+    # wrapper logs Resend failures at error level and warns when the customer
+    # has no contact email instead of dropping the send silently.
     contact = await db.get(Contact, quote.contact_id)
     tenant_row = await db.get(Tenant, tenant.id)
-    if contact is not None and contact.email:
-        app_origin = settings.app_public_url.rstrip("/") if settings.app_public_url else ""
-        view_url = (
-            f"{app_origin}/customer/quote/{quote.id}"
-            if app_origin
-            else f"/customer/quote/{quote.id}"
-        )
-        business_name = tenant_row.name if tenant_row is not None else "Your electrician"
-        subject, html, text = quote_ready_template(
-            customer_name=contact.name.split()[0] if contact.name else "there",
-            business_name=business_name,
-            quote_title=quote.title,
-            quote_total=f"£{quote.total}",
-            view_url=view_url,
-        )
-        try:
-            await send_email(
-                to_email=contact.email,
-                subject=subject,
-                html_body=html,
-                text_body=text,
-                from_name=business_name,
-                reply_to=(
-                    tenant_row.email if tenant_row is not None and tenant_row.email else None
-                ),
-            )
-        except Exception as exc:
-            logger.warning(
-                "quote_sent_email_failed",
-                quote_id=str(quote.id),
-                error_type=type(exc).__name__,
-                error=str(exc)[:300],
-            )
+    app_origin = settings.app_public_url.rstrip("/") if settings.app_public_url else ""
+    view_url = f"{app_origin}/customer/quote/{quote.id}" if app_origin else None
+    business_name = tenant_row.name if tenant_row is not None else "Your electrician"
+    subject, html, text = quote_ready_template(
+        customer_name=contact.name.split()[0] if contact is not None and contact.name else "there",
+        business_name=business_name,
+        quote_title=quote.title,
+        quote_total=f"£{quote.total}",
+        view_url=view_url or f"/customer/quote/{quote.id}",
+    )
+    await send_event_email(
+        to_email=contact.email if contact is not None else None,
+        subject=subject,
+        html_body=html,
+        text_body=text,
+        event="quote_sent",
+        template="quote_ready",
+        from_name=business_name,
+        reply_to=(tenant_row.email if tenant_row is not None and tenant_row.email else None),
+        context={
+            "quote_id": str(quote.id),
+            "contact_id": str(quote.contact_id),
+            "tenant_id": str(tenant.id),
+        },
+    )
     await db.commit()
     return QuoteRead.model_validate(await _get_quote(db, tenant.id, quote.id))
 

@@ -3,6 +3,7 @@
 from typing import Annotated, Any
 from uuid import UUID
 
+import httpx
 from fastapi import APIRouter, Depends, Header, HTTPException, status
 from mtp_shared import get_settings
 from sqlalchemy import select
@@ -111,13 +112,28 @@ async def create_tenant(
         password_hash: str | None = None
         supabase_uid: str | None = None
         if is_supabase_configured():
-            sb_user = admin_create_user(
-                data.admin_email,
-                data.admin_password,
-                full_name=data.admin_name,
-                role="admin",
-                tenant_id=str(tenant.id),
-            )
+            try:
+                sb_user = admin_create_user(
+                    data.admin_email,
+                    data.admin_password,
+                    full_name=data.admin_name,
+                    role="admin",
+                    tenant_id=str(tenant.id),
+                )
+            except httpx.HTTPError as exc:
+                # Network-level failure talking to Supabase Auth.
+                raise HTTPException(
+                    status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                    detail="Authentication provider is unavailable; please try again shortly",
+                ) from exc
+            except RuntimeError as exc:
+                # Supabase rejected the signup (e.g. password policy, malformed
+                # payload). Without this guard the exception surfaced as a bare
+                # 500 during onboarding plan selection.
+                raise HTTPException(
+                    status_code=status.HTTP_502_BAD_GATEWAY,
+                    detail="Could not create the login account with the authentication provider",
+                ) from exc
             supabase_uid = sb_user.get("id")
         else:
             password_hash = get_password_hash(data.admin_password)

@@ -1,5 +1,6 @@
 import { Platform } from "react-native";
 import * as SecureStore from "expo-secure-store";
+import Constants from "expo-constants";
 
 /**
  * First-launch permission prompts + Expo push token registration.
@@ -135,7 +136,13 @@ export async function requestFirstLaunchPermissions(role: "trade" | "customer"):
     }
 
     try {
-      const token = await Notifications.getExpoPushTokenAsync();
+      // Pass the EAS project id explicitly: the implicit fallback depends on
+      // runtime config resolution, which can silently produce a token bound
+      // to the wrong experience after OTA updates.
+      const projectId = Constants.expoConfig?.extra?.eas?.projectId as string | undefined;
+      const token = await Notifications.getExpoPushTokenAsync(
+        projectId ? { projectId } : undefined
+      );
       await postPushToken(role, token.data);
       console.log("Push token registered with backend");
     } catch (err) {

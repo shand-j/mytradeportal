@@ -18,6 +18,9 @@ from sqlalchemy.orm import selectinload
 
 from app.database import get_db
 from app.dependencies import CurrentCustomerDep
+from app.email import send_event_email
+from app.email_templates import account_created as account_created_template
+from app.email_templates import quote_accepted as quote_accepted_template
 from app.limiter import limiter
 from app.models import (
     Appointment,
@@ -216,6 +219,27 @@ async def register_customer(
 
     await db.refresh(customer)
     await db.commit()
+
+    # Welcome email — transactional account mail, so platform-branded from the
+    # no-reply sender (no tenant display name, no Reply-To). Best-effort: the
+    # wrapper logs and never raises.
+    from app.config import settings
+
+    app_origin = settings.app_public_url.rstrip("/") if settings.app_public_url else ""
+    subject, html, text = account_created_template(
+        name=customer.full_name.split()[0] if customer.full_name else None,
+        business_name=tenant.name,
+        login_url=f"{app_origin}/customer-login" if app_origin else None,
+    )
+    await send_event_email(
+        to_email=customer.email,
+        subject=subject,
+        html_body=html,
+        text_body=text,
+        event="account_created",
+        template="account_created",
+        context={"customer_id": str(customer.id), "tenant_id": str(tenant.id)},
+    )
 
     return CustomerTokenResponse(
         access_token=_issue_token(customer),
@@ -485,6 +509,30 @@ async def accept_quote(
         link=f"/quote/{quote.id}",
     )
     await db.commit()
+    # Confirm the acceptance to the customer by email. No response is expected,
+    # so it goes out platform-branded from the no-reply sender. Best-effort:
+    # the wrapper logs and never raises.
+    tenant = await db.get(Tenant, customer.tenant_id)
+    business_name = tenant.name if tenant is not None else "Your electrician"
+    subject, html, text = quote_accepted_template(
+        customer_name=customer.full_name.split()[0] if customer.full_name else "there",
+        business_name=business_name,
+        quote_title=quote.title,
+        quote_total=f"£{quote.total}",
+    )
+    await send_event_email(
+        to_email=customer.email,
+        subject=subject,
+        html_body=html,
+        text_body=text,
+        event="quote_accepted",
+        template="quote_accepted",
+        context={
+            "quote_id": str(quote.id),
+            "customer_id": str(customer.id),
+            "tenant_id": str(customer.tenant_id),
+        },
+    )
     # Re-fetch with relationships eager-loaded: QuoteRead serialises
     # line_items/contact, which are expired on the committed object.
     return await _get_customer_quote(db, customer, quote_id)

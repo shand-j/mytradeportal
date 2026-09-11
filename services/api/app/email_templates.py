@@ -104,3 +104,119 @@ def invoice_sent(
 </html>
 """
     return subject, html, text
+
+
+def account_created(
+    *,
+    name: str | None,
+    business_name: str,
+    login_url: str | None,
+) -> tuple[str, str, str]:
+    """Welcome email after a homeowner registers. (subject, html, text)."""
+    greeting = f"Hi {name}," if name else "Hi,"
+    subject = f"Your {business_name} customer account is ready"
+    if login_url:
+        text_cta = f"Sign in here to view your quotes and messages:\n{login_url}\n\n"
+        html_cta = f"""\
+    <p style="margin:24px 0;">
+      <a href="{login_url}" style="background:#4F46E5;color:#fff;padding:12px 20px;border-radius:8px;text-decoration:none;font-weight:600;">Sign in</a>
+    </p>
+    <p style="color:#64748b;font-size:13px;">If the button doesn't work, copy and paste this link:<br><a href="{login_url}" style="color:#4F46E5;">{login_url}</a></p>
+"""
+    else:
+        text_cta = "Open the app to view your quotes and messages.\n\n"
+        html_cta = "<p>Open the app to view your quotes and messages.</p>"
+    text = (
+        f"{greeting}\n\n"
+        f"Your customer account with {business_name} has been created.\n\n"
+        f"{text_cta}"
+        "— My Trade Portal"
+    )
+    html = f"""\
+<!doctype html>
+<html>
+  <body style="font-family:-apple-system,Segoe UI,Roboto,sans-serif;color:#0f172a;max-width:560px;margin:0 auto;padding:24px;">
+    <h1 style="font-size:22px;margin:0 0 12px;">Welcome to {business_name}</h1>
+    <p>{greeting}</p>
+    <p>Your customer account with <strong>{business_name}</strong> has been created. Use it to track your quote requests, view quotes and chat with your electrician.</p>
+{html_cta}
+    <p style="color:#64748b;font-size:13px;margin-top:32px;">— My Trade Portal</p>
+  </body>
+</html>
+"""
+    return subject, html, text
+
+
+def triage_question(
+    *,
+    customer_name: str,
+    business_name: str,
+    question: str,
+    chat_url: str | None,
+) -> tuple[str, str, str]:
+    """AI follow-up question email. (subject, html, text)."""
+    subject = f"{business_name} has a question about your quote request"
+    if chat_url:
+        text_cta = f"Reply in the chat here:\n{chat_url}\n\n"
+        html_cta = f"""\
+    <p style="margin:24px 0;">
+      <a href="{chat_url}" style="background:#4F46E5;color:#fff;padding:12px 20px;border-radius:8px;text-decoration:none;font-weight:600;">Reply in chat</a>
+    </p>
+    <p style="color:#64748b;font-size:13px;">If the button doesn't work, copy and paste this link:<br><a href="{chat_url}" style="color:#4F46E5;">{chat_url}</a></p>
+"""
+    else:
+        text_cta = "Open the app to reply in the chat.\n\n"
+        html_cta = "<p>Open the app to reply in the chat.</p>"
+    text = (
+        f"Hi {customer_name},\n\n"
+        f"{business_name} is preparing your quote and needs one more detail:\n\n"
+        f'"{question}"\n\n'
+        f"{text_cta}"
+        "— My Trade Portal"
+    )
+    html = f"""\
+<!doctype html>
+<html>
+  <body style="font-family:-apple-system,Segoe UI,Roboto,sans-serif;color:#0f172a;max-width:560px;margin:0 auto;padding:24px;">
+    <h1 style="font-size:22px;margin:0 0 12px;">One question about your quote</h1>
+    <p>Hi {customer_name},</p>
+    <p><strong>{business_name}</strong> is preparing your quote and needs one more detail:</p>
+    <p style="background:#f1f5f9;border-radius:8px;padding:12px 16px;font-style:italic;">{question}</p>
+{html_cta}
+    <p style="color:#64748b;font-size:13px;margin-top:32px;">— My Trade Portal</p>
+  </body>
+</html>
+"""
+    return subject, html, text
+
+
+def quote_accepted(
+    *,
+    customer_name: str,
+    business_name: str,
+    quote_title: str,
+    quote_total: str,
+) -> tuple[str, str, str]:
+    """Confirmation email after the customer accepts a quote. (subject, html, text)."""
+    subject = f"Quote accepted — {business_name}"
+    text = (
+        f"Hi {customer_name},\n\n"
+        f"Thanks — you've accepted the quote for '{quote_title}' from {business_name}.\n"
+        f"Total: {quote_total}\n\n"
+        f"{business_name} will be in touch to schedule the work.\n\n"
+        "— My Trade Portal"
+    )
+    html = f"""\
+<!doctype html>
+<html>
+  <body style="font-family:-apple-system,Segoe UI,Roboto,sans-serif;color:#0f172a;max-width:560px;margin:0 auto;padding:24px;">
+    <h1 style="font-size:22px;margin:0 0 12px;">Quote accepted</h1>
+    <p>Hi {customer_name},</p>
+    <p>Thanks — you've accepted the quote for <strong>{quote_title}</strong> from <strong>{business_name}</strong>.</p>
+    <p style="font-size:20px;font-weight:700;margin:16px 0;">Total: {quote_total}</p>
+    <p>{business_name} will be in touch to schedule the work.</p>
+    <p style="color:#64748b;font-size:13px;margin-top:32px;">— My Trade Portal</p>
+  </body>
+</html>
+"""
+    return subject, html, text

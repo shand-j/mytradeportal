@@ -5,7 +5,14 @@ import { Header } from "../../components/ui/Header";
 import { IconButton } from "../../components/ui/IconButton";
 import { Text } from "../../components/ui/Text";
 import { Screen } from "../../components/ui/Screen";
+import { ApiError } from "../../lib/apiClient";
 import { Job, JobStatus } from "../../types";
+
+function errorMessage(err: unknown, fallback: string): string {
+  if (err instanceof ApiError) return err.detail;
+  if (err instanceof Error) return err.message;
+  return fallback;
+}
 
 const STATUS_COPY: Record<JobStatus, string> = {
   confirmed: "Confirmed",
@@ -59,6 +66,10 @@ export function JobDetailScreen({
   const [items, setItems] = useState<InvoiceItem[]>([]);
   const [submitting, setSubmitting] = useState(false);
 
+  // Quote-less jobs have no priced lines to inherit: the electrician must add
+  // line items by hand before an invoice can be created.
+  const hasQuote = job.quoteId !== "";
+
   const totals = useMemo(() => {
     const subtotal = items.reduce((sum, i) => sum + i.amount, 0);
     const vat = subtotal * (vatRate ?? 0.2);
@@ -66,26 +77,43 @@ export function JobDetailScreen({
   }, [items, vatRate]);
 
   const handleStart = async () => {
-    if (onStart) {
-      await onStart();
+    try {
+      if (onStart) {
+        await onStart();
+      }
+      setStatus("in_progress");
+    } catch (err) {
+      Alert.alert("Couldn't start the job", errorMessage(err, "Please try again."));
     }
-    setStatus("in_progress");
   };
 
   const handleComplete = async () => {
-    if (onComplete) {
-      await onComplete();
+    try {
+      if (onComplete) {
+        await onComplete();
+      }
+      setStatus("completed");
+    } catch (err) {
+      Alert.alert("Couldn't complete the job", errorMessage(err, "Please try again."));
     }
-    setStatus("completed");
   };
 
   const handleSubmitInvoice = async () => {
+    if (!hasQuote && items.length === 0) {
+      Alert.alert(
+        "No quote attached",
+        "This job has no quote attached, so there are no priced lines to invoice. Add the job's line items above first, then create the invoice."
+      );
+      return;
+    }
     setSubmitting(true);
     try {
       await onSubmitInvoice?.(
         items.map((i) => ({ description: i.description, amount: i.amount })),
         totals.total
       );
+    } catch (err) {
+      Alert.alert("Couldn't create the invoice", errorMessage(err, "Please try again."));
     } finally {
       setSubmitting(false);
     }
@@ -104,8 +132,14 @@ export function JobDetailScreen({
     Alert.alert("Cannot open maps", "No maps application is available on this device.");
   };
 
-  const callCustomer = () => Linking.openURL(`tel:${job.phone.replace(/\s/g, "")}`);
-  const messageCustomer = () => Linking.openURL(`sms:${job.phone.replace(/\s/g, "")}`);
+  const callCustomer = () =>
+    Linking.openURL(`tel:${job.phone.replace(/\s/g, "")}`).catch(() =>
+      Alert.alert("Cannot place call", "No dialler is available on this device.")
+    );
+  const messageCustomer = () =>
+    Linking.openURL(`sms:${job.phone.replace(/\s/g, "")}`).catch(() =>
+      Alert.alert("Cannot send message", "No messaging app is available on this device.")
+    );
 
   const addLineItem = () => {
     setItems((prev) => [
@@ -210,9 +244,15 @@ export function JobDetailScreen({
                   Invoice items
                 </Text>
                 <Text variant="caption" color="secondary">
-                  from approved quote
+                  {hasQuote ? "from approved quote" : "no quote attached"}
                 </Text>
               </View>
+              {!hasQuote && (
+                <Text variant="caption" color="secondary">
+                  This job has no quote attached — add the job's line items below before
+                  creating the invoice.
+                </Text>
+              )}
               {items.map((item) => (
                 <View key={item.id} className="gap-2">
                   <TextInput

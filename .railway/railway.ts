@@ -44,6 +44,10 @@ import {
 const GITHUB_REPO = process.env.MTP_GITHUB_REPO ?? "shand-j/mytradeportal";
 
 const QDRANT_URL = "http://${{qdrant.RAILWAY_PRIVATE_DOMAIN}}:6333";
+// MinIO is private-network-only. The private DNS name carries no implied
+// port, and MinIO serves the S3 API on 9000 — the port is mandatory here or
+// boto3 dials 80 and uploads 503.
+const MINIO_ENDPOINT = "${{minio.RAILWAY_PRIVATE_DOMAIN}}:9000";
 // OCERP / BoQ engine is parked for the mobile-pivot MVP.
 // const OCERP_URL = "http://${{ocerp.RAILWAY_PRIVATE_DOMAIN}}:8000";
 const ADMIN_PUBLIC_URL = "https://${{admin.RAILWAY_PUBLIC_DOMAIN}}";
@@ -148,7 +152,7 @@ export default defineRailway(() => {
       // and public exposure). All file traffic from devices is proxied through
       // the API (POST /files/upload, GET /files/download), which reaches MinIO
       // over the private network. Never hand MinIO URLs to clients.
-      MINIO_ENDPOINT: "minio.railway.internal",
+      MINIO_ENDPOINT,
       MINIO_USE_SSL: "false",
       MINIO_BUCKET: "mtp-uploads",
       // These secrets are required for production startup. They are set as
