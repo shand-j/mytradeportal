@@ -180,7 +180,7 @@ export default defineRailway(() => {
       // Public browser origins: the Django admin and the marketing landing
       // (which hosts the no-login AI quote demo calling /demo/*). The native
       // app sends no Origin header, so it needs no entry.
-      ALLOWED_ORIGINS: `${ADMIN_PUBLIC_URL},https://www.mytradeportal.co.uk,https://mytradeportal.co.uk`,
+      ALLOWED_ORIGINS: `${ADMIN_PUBLIC_URL},https://www.mytradeportal.co.uk,https://mytradeportal.co.uk,https://${{landing.RAILWAY_PUBLIC_DOMAIN}}`,
       // Keep production strict: exact allowed origins are defined explicitly
       // by ALLOWED_ORIGINS (set per environment).
       ALLOWED_ORIGIN_REGEX: "",
