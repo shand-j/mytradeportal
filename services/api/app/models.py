@@ -7,7 +7,7 @@ from decimal import Decimal
 from typing import Any
 from uuid import UUID, uuid4
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Numeric, String, Text
+from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Numeric, String, Text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
@@ -1054,3 +1054,29 @@ class Event(TenantScopedBase):
     entity_type: Mapped[str] = mapped_column(String(50), nullable=False)
     entity_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), nullable=False)
     payload: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict, nullable=False)
+
+
+class DemoQuoteEvent(Base):
+    """Anonymous usage counter for the public, no-auth AI quote demo.
+
+    Deliberately minimal so the marketing demo can run without a tenant:
+    no ``tenant_id`` and no quote content (no job description, no line items)
+    — only a salted IP hash plus browser/attribution metadata. Because it
+    carries no ``tenant_id`` it is intentionally absent from
+    ``app.rls.TENANT_SCOPED_TABLES``, so schema init does not attach a tenant
+    isolation policy to it (same as the shared ``cost_items`` table).
+    """
+
+    __tablename__ = "demo_quote_events"
+
+    id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+    # sha256(f"{ip}|{settings.auth_secret_key}") — the raw IP is never stored.
+    ip_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    user_agent: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    accept_language: Mapped[str | None] = mapped_column(String(300), nullable=True)
+    referer: Mapped[str | None] = mapped_column(String(1000), nullable=True)
+    utm_source: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    utm_medium: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    utm_campaign: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    generation_seconds: Mapped[float | None] = mapped_column(Float, nullable=True)

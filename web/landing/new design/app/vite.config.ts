@@ -8,6 +8,13 @@ export default defineConfig({
   plugins: [react()],
   server: {
     port: 3000,
+    proxy: {
+      // "Try the AI" demo — same-origin /demo in dev, forwarded to the API.
+      "/demo": {
+        target: "http://localhost:8000",
+        changeOrigin: true,
+      },
+    },
   },
   resolve: {
     alias: {

@@ -30,6 +30,7 @@ from app.routers import (
     contacts,
     customer_portal,
     customers,
+    demo,
     diagnostics,
     feature_flags,
     files,
@@ -138,6 +139,7 @@ app.add_middleware(SubscriptionPaywallMiddleware)
 
 app.include_router(health.router)
 app.include_router(feature_flags.router)
+app.include_router(demo.router)
 app.include_router(tenants.router)
 app.include_router(auth.router)
 app.include_router(users.router)

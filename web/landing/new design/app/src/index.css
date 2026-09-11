@@ -238,6 +238,21 @@ html {
   outline-offset: 2px;
 }
 
+/* Try-the-AI demo skeleton — quiet grey placeholders while the quote generates */
+.demo-skeleton-bar {
+  background: var(--paper-3);
+  animation: demo-skeleton-pulse 1.6s var(--ease-in-out) infinite;
+}
+@keyframes demo-skeleton-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.45;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
@@ -245,6 +260,9 @@ html {
     animation-duration: 150ms !important;
     animation-iteration-count: 1 !important;
     transition-duration: 150ms !important;
+  }
+  .demo-skeleton-bar {
+    animation: none;
   }
   .reveal {
     opacity: 1;

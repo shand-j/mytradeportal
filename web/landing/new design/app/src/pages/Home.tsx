@@ -4,6 +4,7 @@ import { useSmoothScroll } from '../hooks/useSmoothScroll'
 import { usePageMeta } from '../hooks/usePageMeta'
 import Nav from '../sections/Nav'
 import Hero from '../sections/Hero'
+import TryDemo from '../sections/TryDemo'
 import Marquee from '../sections/Marquee'
 import TradesStrip from '../sections/TradesStrip'
 import Statement from '../sections/Statement'
@@ -62,6 +63,7 @@ export default function Home() {
     <main className="relative">
       <Nav />
       <Hero />
+      <TryDemo />
       <Marquee />
       <TradesStrip />
       <Statement />

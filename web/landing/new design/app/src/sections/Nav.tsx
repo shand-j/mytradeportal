@@ -4,6 +4,7 @@ import Logo from '../components/Logo'
 import { TESTFLIGHT_URL } from '@/lib/site'
 
 const LINKS = [
+  ['Try the AI', '#try-ai'],
   ['The tour', '#features'],
   ['How it works', '#how'],
   ['Pricing', '#pricing'],
