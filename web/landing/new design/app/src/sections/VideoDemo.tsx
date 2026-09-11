@@ -1,4 +1,5 @@
 import { useEffect, useRef } from 'react'
+import PhoneFrame from '../components/PhoneFrame'
 
 const SIDES = [
   {
@@ -53,8 +54,8 @@ export default function VideoDemo() {
           {SIDES.map((s) => (
             <div key={s.label}>
               <figure className="reveal" style={{ ['--i' as string]: 0 }}>
-                <div className="border border-[var(--rule-on-dark)] bg-[var(--ink-pressed)] p-3">
-                  <div className="mx-auto aspect-[368/800] w-full max-w-[239px]">
+                <div className="flex justify-center">
+                  <PhoneFrame className="w-full max-w-[260px]">
                     <video
                       src={s.video}
                       muted
@@ -63,9 +64,9 @@ export default function VideoDemo() {
                       preload="metadata"
                       width={368}
                       height={800}
-                      className="block h-full w-full object-cover"
+                      className="absolute inset-0 h-full w-full object-cover"
                     />
-                  </div>
+                  </PhoneFrame>
                 </div>
                 <figcaption className="mt-[var(--space-sm)] flex items-center gap-[var(--space-xs)] font-mono text-[11px] tracking-[0.08em] text-[var(--paper-on-dark-muted)] uppercase">
                   <span className="inline-block h-2 w-2 bg-[var(--accent)]" aria-hidden />
