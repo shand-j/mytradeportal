@@ -17,6 +17,8 @@ lib64/
 !web/app/src/lib/**
 !mobile/src/lib/
 !mobile/src/lib/**
+!web/landing/new design/app/src/lib/
+!web/landing/new design/app/src/lib/**
 parts/
 sdist/
 var/
