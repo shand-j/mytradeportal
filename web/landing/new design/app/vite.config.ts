@@ -13,5 +13,12 @@ export default defineConfig({
     alias: {
       "@": path.resolve(__dirname, "./src"),
     },
+    dedupe: ["react", "react-dom"],
+  },
+  // react-router's prebundled chunk inlines its own React copy (duplicate-
+  // dispatcher crash at runtime); serve its raw ESM build instead.
+  optimizeDeps: {
+    exclude: ["react-router"],
+    include: ["cookie", "set-cookie-parser"],
   },
 });

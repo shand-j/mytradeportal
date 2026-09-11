@@ -21,13 +21,13 @@ export default function FinalCta() {
           <div className="reveal md:col-span-3 md:col-start-10" style={{ ['--i' as string]: 2 }}>
             <figure className="border border-[var(--paper-on-dark)]/20 bg-[var(--paper)] p-2 shadow-[8px_8px_0_0_rgba(255,193,7,0.9)]">
               <img
-                src="/assets/mockups/app-store-invoice-construction.jpg"
-                alt="Invoice issued from the app, on a phone at a construction site"
-                width={1000}
-                height={750}
+                src="/assets/mockups/app-store-invoice.png"
+                alt="Invoice issued from the app, on an iPhone"
+                width={1444}
+                height={3000}
                 loading="lazy"
                 decoding="async"
-                className="block h-auto w-full"
+                className="mx-auto block h-auto w-full max-w-[240px]"
                 draggable={false}
               />
             </figure>

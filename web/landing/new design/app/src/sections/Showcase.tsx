@@ -2,37 +2,37 @@ const STOPS = [
   {
     title: 'Your brand, from sign-in',
     body: "Customers download one app and it wears your name, your logo and your colours the moment they sign in. Want your own App Store listing too? That's the add-on.",
-    img: '/assets/mockups/app-store-entry-role-select-concrete-hand.jpg',
+    img: '/assets/mockups/app-store-entry-role-select.png',
     alt: 'App entry screen re-skinned to the business brand',
   },
   {
     title: 'Quote intake, built for the job',
     body: "Property type, consumer unit location, parking, photos — the app asks the questions you'd ask on the phone, before you ever call back.",
-    img: '/assets/mockups/app-store-quotes-generating-construction.jpg',
+    img: '/assets/mockups/app-store-quotes-generating.png',
     alt: 'Structured quote intake form for an electrical job',
   },
   {
     title: 'AI-drafted quotes',
     body: 'Line items, VAT and a confidence score drafted in seconds. You check every number before it goes out — the AI does the typing, you do the pricing.',
-    img: '/assets/mockups/app-store-review-quote-concrete-hand.jpg',
+    img: '/assets/mockups/app-store-review-quote.png',
     alt: 'AI-drafted quote with line items and VAT',
   },
   {
     title: 'In-app chat',
     body: 'Ask for photos or book a site visit with one-tap quick requests. No more quote threads buried in WhatsApp.',
-    img: '/assets/mockups/app-store-customer-ai-chat-construction.jpg',
+    img: '/assets/mockups/app-store-customer-ai-chat.png',
     alt: 'In-app chat with a quick info request',
   },
   {
     title: 'Every lead in one place',
     body: 'New, flagged, sent, accepted — sorted by urgency with the money on the card. £545–£620 beats "somewhere in my messages".',
-    img: '/assets/mockups/app-store-quotes-pipeline-concrete-hand.jpg',
+    img: '/assets/mockups/app-store-quotes-pipeline.png',
     alt: 'Quotes list sorted by status and value',
   },
   {
     title: 'Customer history',
     body: 'Lifetime value, quotes, jobs and notes on one screen. "Has a dog, board is in the garage" — the details that make you look good.',
-    img: '/assets/mockups/app-store-dashboard-construction.jpg',
+    img: '/assets/mockups/app-store-dashboard.png',
     alt: 'Customer record with history and notes',
   },
 ]
@@ -60,12 +60,12 @@ export default function Showcase() {
               >
                 <figure className={`reveal md:col-span-5 ${flip ? 'md:order-2 md:col-start-8' : ''}`} style={{ ['--i' as string]: 0 }}>
                   <div className="border border-[var(--rule)] bg-[var(--paper-2)] p-3 md:p-5">
-                    <div className="mx-auto aspect-[1000/750] w-full max-w-[460px]">
+                    <div className="mx-auto aspect-[1444/3000] w-full max-w-[340px]">
                       <img
                         src={s.img}
                         alt={s.alt}
-                        width={1000}
-                        height={750}
+                        width={1444}
+                        height={3000}
                         loading={i === 0 ? 'eager' : 'lazy'}
                         decoding="async"
                         className="block h-full w-full object-cover"
