@@ -9,7 +9,8 @@ job description" without login, tenant, or email. Two endpoints:
 Statelessness is the core constraint: quotes are generated, returned, and
 never stored. The only durable writes are :class:`DemoQuoteEvent` rows — a
 count of generations plus marketing metadata (salted IP hash, browser headers,
-UTM parameters). Job descriptions, generated quotes and line items are never
+UTM parameters) — and a short-TTL Redis flag enforcing one generate per
+visitor. Job descriptions, generated quotes and line items are never
 persisted.
 
 Rate limits are per source IP (the default limiter key), generous enough for
@@ -24,7 +25,7 @@ from decimal import Decimal
 from typing import Annotated, Any
 
 import structlog
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from pydantic import BaseModel, Field
 from slowapi.util import get_remote_address
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -38,6 +39,7 @@ from app.rag import (
     search_cost_items_with_status,
     validate_generated_quote,
 )
+from app.redis_client import get_redis
 from app.routers.quotes import _fallback_line_items, _intake_completeness
 
 router = APIRouter(prefix="/demo", tags=["demo"])
@@ -67,6 +69,16 @@ DEMO_VAT_RATE = Decimal("0.20")
 
 _MONEY_QUANTIZE = Decimal("0.01")
 _LLM_BUSY_MESSAGE = "The AI is busy right now — try again in a moment."
+
+# One generate per visitor: a successful generate sets the ``mtp_demo_used``
+# cookie (180 days, SameSite=None+Secure so the cross-site landing XHR carries
+# it) and a Redis fingerprint flag (30 days) as the no-cookie fallback. Refine
+# is never gated this way — it is part of the same quote.
+_DEMO_USED_COOKIE = "mtp_demo_used"
+_DEMO_USED_MESSAGE = "You've already tried the AI demo — download the app for unlimited quotes."
+_DEMO_USED_MAX_AGE_SECONDS = 180 * 24 * 60 * 60
+_DEMO_USED_REDIS_TTL_SECONDS = 30 * 24 * 60 * 60
+_DEMO_USED_KEY_PREFIX = "mtp:demo:used:"
 
 
 class DemoQuoteGenerateRequest(BaseModel):
@@ -129,6 +141,53 @@ def _client_ip_hash(request: Request) -> str:
     """Salted sha256 of the source IP — the raw IP is never persisted."""
     ip = get_remote_address(request)
     return hashlib.sha256(f"{ip}|{settings.auth_secret_key}".encode()).hexdigest()
+
+
+def _demo_used_key(request: Request) -> str:
+    """Redis key for the no-cookie fingerprint fallback of the one-shot gate."""
+    ip = get_remote_address(request)
+    user_agent = request.headers.get("user-agent") or ""
+    accept_language = request.headers.get("accept-language") or ""
+    fingerprint = hashlib.sha256(
+        f"{ip}|{user_agent}|{accept_language}|{settings.auth_secret_key}".encode()
+    ).hexdigest()
+    return f"{_DEMO_USED_KEY_PREFIX}{fingerprint}"
+
+
+async def _demo_already_used(request: Request) -> bool:
+    """True when this visitor already had a successful demo generate.
+
+    Redis is best-effort: an unavailable cache logs a warning and allows the
+    request rather than breaking the demo.
+    """
+    if request.cookies.get(_DEMO_USED_COOKIE) == "1":
+        return True
+    try:
+        return bool(await get_redis().get(_demo_used_key(request)))
+    except Exception as exc:  # cache down must not break the demo
+        logger.warning(
+            "demo_used_check_failed",
+            error_type=type(exc).__name__,
+            error=str(exc)[:300],
+        )
+        return False
+
+
+async def _mark_demo_used(request: Request) -> None:
+    """Record the fingerprint flag after a successful generate (best-effort)."""
+    try:
+        await get_redis().set(
+            _demo_used_key(request),
+            "1",
+            nx=True,
+            ex=_DEMO_USED_REDIS_TTL_SECONDS,
+        )
+    except Exception as exc:  # cache down must not break the demo
+        logger.warning(
+            "demo_used_mark_failed",
+            error_type=type(exc).__name__,
+            error=str(exc)[:300],
+        )
 
 
 async def _record_demo_event(
@@ -256,9 +315,20 @@ def _ai_from_validated(validated: dict[str, Any]) -> DemoQuoteAI:
 async def demo_generate_quote(
     request: Request,
     data: DemoQuoteGenerateRequest,
+    response: Response,
     db: DbDep,
 ) -> DemoQuoteResponse:
-    """Generate a guide-priced quote for a job description. No auth required."""
+    """Generate a guide-priced quote for a job description. No auth required.
+
+    One generate per visitor: a cookie (or its Redis fingerprint fallback)
+    from a previous successful generate is rejected with 429 before any LLM
+    spend. Refine remains unlimited.
+    """
+    if await _demo_already_used(request):
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail=_DEMO_USED_MESSAGE,
+        )
     started = time.perf_counter()
     try:
         retrieved, retrieval_status = await search_cost_items_with_status(data.description)
@@ -291,6 +361,16 @@ async def demo_generate_quote(
         for line in validated["line_items"]
     ]
     await _record_demo_event(db, request, data, generation_seconds)
+    await _mark_demo_used(request)
+    response.set_cookie(
+        _DEMO_USED_COOKIE,
+        "1",
+        max_age=_DEMO_USED_MAX_AGE_SECONDS,
+        httponly=True,
+        samesite="none",
+        secure=True,
+        path="/",
+    )
     return _build_response(
         line_items,
         _ai_from_validated(validated),

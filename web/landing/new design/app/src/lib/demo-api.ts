@@ -61,7 +61,7 @@ export class DemoApiError extends Error {
 }
 
 const API: string = import.meta.env.VITE_DEMO_API_URL ?? ''
-const TIMEOUT_MS = 60_000
+const TIMEOUT_MS = 300_000
 
 /** UTM params forwarded on generate so the backend can attribute the demo. */
 export function captureUtm(): Pick<
@@ -97,26 +97,41 @@ function extractDetail(data: unknown): string {
 }
 
 function fallbackMessage(status: number): string {
-  if (status === 429) return 'Too many requests — give it a few seconds and try again.'
+  if (status === 429) return "You've already tried the AI demo — download the app for unlimited quotes."
   if (status === 502) return 'The AI is busy right now — try again in a moment.'
   if (status >= 500) return 'Something went wrong on our side — please try again.'
   return 'That did not work — check the description and try again.'
 }
 
 async function postJson(path: string, body: unknown, signal?: AbortSignal): Promise<DemoQuote> {
-  // Own controller for the 60s timeout, chained to the caller's signal so
-  // unmounting the component cancels the in-flight request.
+  // Own controller for the 5-minute timeout, chained to the caller's signal so
+  // unmounting the component cancels the in-flight request. A timeout abort is
+  // converted to a DemoApiError so callers can tell it apart from an unmount.
   const timeout = new AbortController()
   const timer = setTimeout(() => timeout.abort(), TIMEOUT_MS)
   const onAbort = () => timeout.abort()
   signal?.addEventListener('abort', onAbort, { once: true })
+  let res: Response
   try {
-    const res = await fetch(`${API}${path}`, {
+    res = await fetch(`${API}${path}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
       signal: timeout.signal,
+      // Send the mtp_demo_used cookie so the backend can enforce one demo
+      // per user. Same-origin (dev proxy) is unaffected.
+      credentials: 'include',
     })
+  } catch (err) {
+    if (timeout.signal.aborted && !signal?.aborted) {
+      throw new DemoApiError('That took too long — please try again.', 408)
+    }
+    throw err
+  } finally {
+    clearTimeout(timer)
+    signal?.removeEventListener('abort', onAbort)
+  }
+  try {
     if (!res.ok) {
       let detail = ''
       try {

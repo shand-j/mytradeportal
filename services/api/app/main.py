@@ -17,6 +17,7 @@ from app.limiter import limiter
 from app.logging import configure_logging
 from app.middleware import RequestLoggingMiddleware, SubscriptionPaywallMiddleware
 from app.models import Base
+from app.redis_client import close_redis
 from app.rls import apply_tenant_rls_sync
 from app.routers import (
     address_lookup,
@@ -86,6 +87,7 @@ async def lifespan(app: FastAPI) -> "AsyncIterator[None]":
     )
     yield
     await engine.dispose()
+    await close_redis()
 
 
 app = FastAPI(

@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import PhoneFrame from '../components/PhoneFrame'
+import { TESTFLIGHT_URL } from '@/lib/site'
 import {
   captureUtm,
   type DemoLineItem,
@@ -98,12 +99,14 @@ function IntakeScreen({
   description,
   setDescription,
   error,
+  errorStatus,
   busy,
   onGenerate,
 }: {
   description: string
   setDescription: (v: string) => void
   error: string | null
+  errorStatus: number | null
   busy: boolean
   onGenerate: () => void
 }) {
@@ -141,6 +144,14 @@ function IntakeScreen({
       {error && (
         <div role="alert" className="rounded-2xl bg-amber-50 p-4">
           <p className="text-[11.5px] leading-snug text-amber-800">{error}</p>
+          {errorStatus === 429 && (
+            <a
+              href={TESTFLIGHT_URL}
+              className="mt-2 inline-flex items-center justify-center rounded-xl bg-[#2563eb] px-3.5 py-2 text-[12.5px] font-semibold text-white shadow-sm"
+            >
+              Join the beta
+            </a>
+          )}
         </div>
       )}
 
@@ -176,6 +187,9 @@ function GeneratingScreen({ label = 'Generating quote…' }: { label?: string })
         <div className="h-7 w-7 animate-spin rounded-full border-2 border-slate-200 border-t-[#2563eb]" />
         <p className="text-[13.5px] font-semibold text-slate-900">{label}</p>
         <p className="text-[11px] text-slate-500">Typical UK domestic trade rates</p>
+        <p className="max-w-[240px] text-center text-[10.5px] leading-snug text-slate-400">
+          This can take a minute or two — the AI is pricing real parts.
+        </p>
       </div>
 
       <div className="pt-2">
@@ -338,6 +352,7 @@ export default function TryDemo() {
   const [instructions, setInstructions] = useState('')
   const [busy, setBusy] = useState<'generate' | 'refine' | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [errorStatus, setErrorStatus] = useState<number | null>(null)
   const abortRef = useRef<AbortController | null>(null)
 
   /* Abort any in-flight request when the section unmounts. */
@@ -351,6 +366,7 @@ export default function TryDemo() {
     abortRef.current = controller
     setBusy(kind)
     setError(null)
+    setErrorStatus(null)
     try {
       const next =
         kind === 'generate'
@@ -372,10 +388,12 @@ export default function TryDemo() {
     } catch (err) {
       if (err instanceof DemoApiError) {
         setError(err.message)
+        setErrorStatus(err.status)
       } else if (err instanceof Error && err.name === 'AbortError') {
         // unmounted or superseded — leave state untouched
       } else {
         setError('Network hiccup — please try again.')
+        setErrorStatus(null)
       }
     } finally {
       setBusy(null)
@@ -396,6 +414,7 @@ export default function TryDemo() {
               ? () => {
                   setQuote(null)
                   setError(null)
+                  setErrorStatus(null)
                   setInstructions('')
                 }
               : undefined
@@ -419,6 +438,7 @@ export default function TryDemo() {
               description={description}
               setDescription={setDescription}
               error={error}
+              errorStatus={errorStatus}
               busy={busy !== null}
               onGenerate={() => void run('generate')}
             />

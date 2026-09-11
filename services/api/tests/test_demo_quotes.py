@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from contextlib import contextmanager
 from decimal import Decimal
+from http.cookies import SimpleCookie
 from typing import TYPE_CHECKING, Any
 
 import pytest
@@ -13,12 +14,17 @@ from app.models import DemoQuoteEvent
 from sqlalchemy import select
 
 if TYPE_CHECKING:
-    from collections.abc import Iterator
+    from collections.abc import AsyncIterator, Iterator
 
     from httpx import AsyncClient
     from sqlalchemy.ext.asyncio import AsyncSession
 
 DESCRIPTION = "I need two extra double sockets installed in the kitchen walls"
+
+_DEMO_USED_COOKIE = "mtp_demo_used"
+_DEMO_USED_MESSAGE = "You've already tried the AI demo — download the app for unlimited quotes."
+_DEMO_USED_KEY_PREFIX = "mtp:demo:used:"
+_ALLOWED_ORIGIN = "http://localhost:3000"
 
 # Labour priced AT the demo tenant rate (£65/hr) so validation's labour snap
 # (drift > 20%) does not rewrite it; material is guide-priced (no catalogue).
@@ -50,22 +56,48 @@ _RETRIEVED: list[dict[str, Any]] = []
 def _mock_llm(generated: dict[str, Any] | None = None, retrieval_status: str = "no_index") -> Any:
     from unittest.mock import AsyncMock, patch
 
+    generate_mock = AsyncMock(return_value=generated if generated is not None else _GENERATED)
     with (
         patch(
             "app.routers.demo.search_cost_items_with_status",
             new=AsyncMock(return_value=(_RETRIEVED, retrieval_status)),
         ),
-        patch(
-            "app.routers.demo.generate_quote_from_prompt",
-            new=AsyncMock(return_value=generated if generated is not None else _GENERATED),
-        ),
+        patch("app.routers.demo.generate_quote_from_prompt", new=generate_mock),
     ):
-        yield
+        yield generate_mock
 
 
 async def _all_events(db: AsyncSession) -> list[DemoQuoteEvent]:
     rows = await db.execute(select(DemoQuoteEvent))
     return list(rows.scalars().all())
+
+
+async def _clean_demo_used_flags() -> None:
+    """Delete every demo one-shot flag so tests don't leak fingerprints."""
+    from app.redis_client import get_redis
+
+    redis = get_redis()
+    keys = [key async for key in redis.scan_iter(match=f"{_DEMO_USED_KEY_PREFIX}*")]
+    if keys:
+        await redis.delete(*keys)
+
+
+@pytest.fixture(autouse=True)
+async def _demo_used_flags_cleanup() -> AsyncIterator[None]:
+    """The demo gate keys on IP+UA+Accept-Language, which is identical for
+    every test client, so flags must be cleared around each test."""
+    await _clean_demo_used_flags()
+    try:
+        yield
+    finally:
+        await _clean_demo_used_flags()
+
+
+def _used_cookie_morsel(response: Any) -> Any:
+    set_cookie = response.headers.get_list("set-cookie")[0]
+    jar = SimpleCookie()
+    jar.load(set_cookie)
+    return jar[_DEMO_USED_COOKIE]
 
 
 @pytest.mark.asyncio
@@ -170,6 +202,178 @@ async def test_demo_generate_returns_502_when_llm_unavailable(client: AsyncClien
         )
     assert response.status_code == 502
     assert response.json() == {"detail": "The AI is busy right now — try again in a moment."}
+
+
+@pytest.mark.asyncio
+async def test_demo_generate_second_attempt_with_cookie_gets_429(
+    client: AsyncClient, db: AsyncSession
+) -> None:
+    """A visitor carrying mtp_demo_used=1 is rejected before any LLM spend."""
+    with _mock_llm():
+        first = await client.post(
+            "/demo/quotes/generate",
+            json={"description": DESCRIPTION},
+            headers={"user-agent": "pytest-demo-gate/1.0"},
+        )
+    assert first.status_code == 200, first.text
+
+    with _mock_llm() as generate_mock:
+        second = await client.post(
+            "/demo/quotes/generate",
+            json={"description": DESCRIPTION},
+            headers={"user-agent": "pytest-demo-gate/1.0"},
+            cookies={_DEMO_USED_COOKIE: "1"},
+        )
+    assert second.status_code == 429
+    assert second.json() == {"detail": _DEMO_USED_MESSAGE}
+    # The gate tripped before the LLM was called again.
+    generate_mock.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_demo_generate_second_attempt_without_cookie_gets_429_via_redis(
+    client: AsyncClient, db: AsyncSession
+) -> None:
+    """No cookie, but the Redis fingerprint flag from attempt one trips the gate."""
+    headers = {"user-agent": "pytest-demo-redis/1.0", "accept-language": "en-GB"}
+    with _mock_llm():
+        first = await client.post(
+            "/demo/quotes/generate",
+            json={"description": DESCRIPTION},
+            headers=headers,
+        )
+    assert first.status_code == 200, first.text
+
+    with _mock_llm():
+        second = await client.post(
+            "/demo/quotes/generate",
+            json={"description": DESCRIPTION},
+            headers=headers,
+        )
+    assert second.status_code == 429
+    assert second.json() == {"detail": _DEMO_USED_MESSAGE}
+
+    # The fingerprint flag was stored with ~30-day TTL.
+    from app.redis_client import get_redis
+
+    redis = get_redis()
+    keys = [k async for k in redis.scan_iter(match=f"{_DEMO_USED_KEY_PREFIX}*")]
+    assert len(keys) == 1
+    ttl = await redis.ttl(keys[0])
+    assert 29 * 24 * 60 * 60 < ttl <= 30 * 24 * 60 * 60
+
+
+@pytest.mark.asyncio
+async def test_demo_refine_still_works_after_generate_gate_trips(
+    client: AsyncClient, db: AsyncSession
+) -> None:
+    """Refine is part of the same quote: the one-shot generate gate must not
+    block it, even when the visitor carries the mtp_demo_used cookie."""
+    with _mock_llm():
+        generate = await client.post(
+            "/demo/quotes/generate",
+            json={"description": DESCRIPTION},
+        )
+    assert generate.status_code == 200, generate.text
+
+    blocked = await client.post(
+        "/demo/quotes/generate",
+        json={"description": DESCRIPTION},
+        cookies={_DEMO_USED_COOKIE: "1"},
+    )
+    assert blocked.status_code == 429
+
+    with _mock_llm():
+        refine = await client.post(
+            "/demo/quotes/refine",
+            json={
+                "description": DESCRIPTION,
+                "instructions": "Adjust the labour to two hours please",
+                "line_items": [
+                    {
+                        "description": "Install double socket (labour per point)",
+                        "quantity": "2",
+                        "unit": "hour",
+                        "unit_price": "65.00",
+                        "ai_generated": True,
+                    }
+                ],
+            },
+            cookies={_DEMO_USED_COOKIE: "1"},
+        )
+    assert refine.status_code == 200, refine.text
+
+
+@pytest.mark.asyncio
+async def test_demo_generate_429_carries_cors_credentials_header(
+    client: AsyncClient, db: AsyncSession
+) -> None:
+    """Credentialed cross-site callers must see Access-Control-Allow-Credentials
+    on the 429 too, or the browser hides the response from the landing page."""
+    with _mock_llm():
+        first = await client.post(
+            "/demo/quotes/generate",
+            json={"description": DESCRIPTION},
+        )
+    assert first.status_code == 200, first.text
+
+    second = await client.post(
+        "/demo/quotes/generate",
+        json={"description": DESCRIPTION},
+        cookies={_DEMO_USED_COOKIE: "1"},
+        headers={"Origin": _ALLOWED_ORIGIN},
+    )
+    assert second.status_code == 429
+    assert second.headers.get("access-control-allow-credentials") == "true"
+    assert second.headers.get("access-control-allow-origin") == _ALLOWED_ORIGIN
+
+
+@pytest.mark.asyncio
+async def test_demo_generate_success_sets_used_cookie_with_cross_site_attributes(
+    client: AsyncClient, db: AsyncSession
+) -> None:
+    """The landing is cross-site (www → *.up.railway.app): SameSite=None +
+    Secure is required for the browser to send the cookie on credentialed XHR."""
+    with _mock_llm():
+        response = await client.post(
+            "/demo/quotes/generate",
+            json={"description": DESCRIPTION},
+        )
+    assert response.status_code == 200, response.text
+
+    morsel = _used_cookie_morsel(response)
+    assert morsel.value == "1"
+    assert morsel["httponly"] is True
+    assert morsel["samesite"].lower() == "none"
+    assert morsel["secure"] is True
+    assert morsel["path"] == "/"
+    assert morsel["max-age"] == str(180 * 24 * 60 * 60)
+
+
+@pytest.mark.asyncio
+async def test_demo_generate_allows_when_redis_unavailable(
+    client: AsyncClient,
+    db: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A down Redis must not break the demo — the gate degrades to 'allow'."""
+
+    class _BoomRedis:
+        async def get(self, key: str) -> None:
+            raise ConnectionError("redis is down")
+
+        async def set(self, *args: Any, **kwargs: Any) -> None:
+            raise ConnectionError("redis is down")
+
+    monkeypatch.setattr("app.routers.demo.get_redis", lambda: _BoomRedis())
+    with _mock_llm():
+        response = await client.post(
+            "/demo/quotes/generate",
+            json={"description": DESCRIPTION},
+        )
+    assert response.status_code == 200, response.text
+    # The cookie is still set — it alone will gate the next attempt.
+    assert _used_cookie_morsel(response).value == "1"
 
 
 @pytest.mark.asyncio
@@ -280,12 +484,23 @@ async def test_demo_generate_rate_limit_kicks_in_after_five(
 ) -> None:
     """The 6th rapid demo generation from one IP must be rejected with 429."""
     payload = {"description": DESCRIPTION}
-    for _ in range(5):
+    for i in range(5):
         with _mock_llm():
-            response = await client.post("/demo/quotes/generate", json=payload)
+            response = await client.post(
+                "/demo/quotes/generate",
+                json=payload,
+                # A fresh fingerprint per request: this test exercises the
+                # per-IP limiter, not the one-generate-per-visitor gate.
+                headers={"user-agent": f"pytest-rate-limit/{i}"},
+            )
         assert response.status_code == 200, response.text
+        client.cookies.clear()
 
-    sixth = await client.post("/demo/quotes/generate", json=payload)
+    sixth = await client.post(
+        "/demo/quotes/generate",
+        json=payload,
+        headers={"user-agent": "pytest-rate-limit/6"},
+    )
     assert sixth.status_code == 429
 
 
