@@ -23,8 +23,8 @@ export default function FinalCta() {
               <img
                 src="/assets/mockups/app-store-invoice.png"
                 alt="Invoice issued from the app, on an iPhone"
-                width={1444}
-                height={3000}
+                width={787}
+                height={1635}
                 loading="lazy"
                 decoding="async"
                 className="mx-auto block h-auto w-full max-w-[240px]"

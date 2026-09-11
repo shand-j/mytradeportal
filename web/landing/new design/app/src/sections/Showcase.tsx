@@ -64,8 +64,8 @@ export default function Showcase() {
                       <img
                         src={s.img}
                         alt={s.alt}
-                        width={1444}
-                        height={3000}
+                        width={787}
+                        height={1635}
                         loading={i === 0 ? 'eager' : 'lazy'}
                         decoding="async"
                         className="block h-full w-full object-cover"
