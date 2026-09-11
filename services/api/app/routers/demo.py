@@ -22,7 +22,7 @@ from __future__ import annotations
 import hashlib
 import time
 from decimal import Decimal
-from typing import Annotated, Any
+from typing import Annotated, Any, TypedDict
 
 import structlog
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
@@ -69,6 +69,34 @@ DEMO_VAT_RATE = Decimal("0.20")
 
 _MONEY_QUANTIZE = Decimal("0.01")
 _LLM_BUSY_MESSAGE = "The AI is busy right now — try again in a moment."
+
+
+class _DemoLLMOverrides(TypedDict, total=False):
+    """Optional per-call overrides threaded to ``generate_quote_from_prompt``."""
+
+    model: str
+    api_base: str
+    api_key: str
+
+
+def _demo_llm_overrides() -> _DemoLLMOverrides:
+    """Per-call LLM overrides so the public demo favours speed over flagship
+    quality.
+
+    When an OpenAI key is configured, the demo routes generation to OpenAI
+    (``demo_llm_model``, default ``gpt-4o-mini``) with an explicitly empty
+    ``api_base`` so a production Kimi base is not inherited. Without an OpenAI
+    key it returns no overrides and the demo uses the default pipeline config
+    (current behaviour). Retrieval / knowledge steps are untouched.
+    """
+    if settings.openai_api_key:
+        return {
+            "model": settings.demo_llm_model,
+            "api_base": "",
+            "api_key": settings.openai_api_key,
+        }
+    return {}
+
 
 # One generate per visitor: a successful generate sets the ``mtp_demo_used``
 # cookie (180 days, SameSite=None+Secure so the cross-site landing XHR carries
@@ -330,6 +358,7 @@ async def demo_generate_quote(
             detail=_DEMO_USED_MESSAGE,
         )
     started = time.perf_counter()
+    llm_overrides = _demo_llm_overrides()
     try:
         retrieved, retrieval_status = await search_cost_items_with_status(data.description)
         generated = await generate_quote_from_prompt(
@@ -338,6 +367,7 @@ async def demo_generate_quote(
             tenant_settings=DEMO_TENANT_SETTINGS,
             property_type=data.property_type,
             site_survey=data.site_survey,
+            **llm_overrides,
         )
     except RuntimeError as exc:
         logger.error("demo_quote_llm_error", error=str(exc)[:300])
@@ -346,6 +376,12 @@ async def demo_generate_quote(
             detail=_LLM_BUSY_MESSAGE,
         ) from exc
     generation_seconds = round(time.perf_counter() - started, 2)
+    logger.info(
+        "demo_quote_generated",
+        model=llm_overrides.get("model", settings.llm_model),
+        fast_path=bool(llm_overrides),
+        generation_seconds=generation_seconds,
+    )
 
     validated = _run_validation(
         generated, retrieved, data.description, data.property_type, data.site_survey
@@ -418,6 +454,7 @@ async def demo_refine_quote(
     )
 
     started = time.perf_counter()
+    llm_overrides = _demo_llm_overrides()
     try:
         retrieved, retrieval_status = await search_cost_items_with_status(
             f"{data.description} {data.instructions}"
@@ -428,6 +465,7 @@ async def demo_refine_quote(
             tenant_settings=DEMO_TENANT_SETTINGS,
             property_type=data.property_type,
             site_survey=data.site_survey,
+            **llm_overrides,
         )
     except RuntimeError as exc:
         logger.error("demo_quote_refine_llm_error", error=str(exc)[:300])
@@ -436,6 +474,12 @@ async def demo_refine_quote(
             detail=_LLM_BUSY_MESSAGE,
         ) from exc
     generation_seconds = round(time.perf_counter() - started, 2)
+    logger.info(
+        "demo_quote_refined",
+        model=llm_overrides.get("model", settings.llm_model),
+        fast_path=bool(llm_overrides),
+        generation_seconds=generation_seconds,
+    )
 
     validated = _run_validation(
         generated, retrieved, data.description, data.property_type, data.site_survey

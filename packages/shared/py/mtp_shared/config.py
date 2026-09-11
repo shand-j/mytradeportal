@@ -69,6 +69,12 @@ class Settings(BaseSettings):
     embedding_model: str = Field(default="text-embedding-3-large")
     embedding_dimensions: int | None = Field(default=None)
     llm_model: str = Field(default="gpt-4o-mini")
+    # Model for the public landing-page demo quote endpoints. The demo favours
+    # speed and reliability over flagship quality, so it routes to OpenAI
+    # (gpt-4o-mini by default) whenever ``openai_api_key`` is set, ignoring the
+    # production ``LLM_MODEL``/``LLM_API_BASE`` (e.g. slow Kimi k2.6). Override
+    # per environment via ``DEMO_LLM_MODEL``.
+    demo_llm_model: str = Field(default="gpt-4o-mini")
     # Kimi (openai/kimi-k*) quote-generation JSON reliably takes 60-120s, so
     # the default is deliberately above LiteLLM's 60s. Docker overrides via
     # ``LLM_TIMEOUT_SECONDS`` env; keeping the same default here so native /

@@ -572,6 +572,9 @@ async def generate_quote_from_prompt(
     property_type: str | None = None,
     site_survey: dict[str, Any] | None = None,
     knowledge_chunks: list[dict[str, Any]] | None = None,
+    model: str | None = None,
+    api_base: str | None = None,
+    api_key: str | None = None,
 ) -> dict[str, Any]:
     """Call the configured LLM and return parsed guide-priced line items.
 
@@ -580,8 +583,17 @@ async def generate_quote_from_prompt(
     knowledge-collection lookup so this stays a one-line wiring for the
     existing quote router while the eval harness / tests can pass an empty
     list to skip retrieval.
+
+    ``model`` / ``api_base`` / ``api_key`` optionally override the configured
+    provider for a single call (the public demo uses them to route to a fast,
+    reliable model regardless of the production ``LLM_MODEL``). All default to
+    ``None`` → the configured pipeline is used unchanged. Pass ``api_base=""``
+    to suppress a configured non-OpenAI base (e.g. Kimi) and hit the
+    OpenAI defaults instead.
     """
-    if not settings.resolved_llm_api_key:
+    resolved_model = model or settings.llm_model
+    resolved_api_key = api_key or settings.resolved_llm_api_key
+    if not resolved_api_key:
         raise RuntimeError("LLM API key is not configured")
 
     if knowledge_chunks is None:
@@ -599,24 +611,24 @@ async def generate_quote_from_prompt(
         knowledge_chunks=knowledge_chunks,
     )
     completion_kwargs: dict[str, Any] = {
-        "model": settings.llm_model,
+        "model": resolved_model,
         "messages": [
             {"role": "system", "content": SYSTEM_PROMPT},
             {"role": "user", "content": prompt},
         ],
-        "api_key": settings.resolved_llm_api_key,
+        "api_key": resolved_api_key,
         "response_format": {"type": "json_object"},
         "timeout": settings.llm_timeout_seconds,
         "num_retries": settings.llm_max_retries,
     }
     # Kimi's kimi-k* models reject a custom temperature; omit it for them.
-    if settings.llm_temperature is not None and _model_allows_custom_temperature(
-        settings.llm_model
-    ):
+    if settings.llm_temperature is not None and _model_allows_custom_temperature(resolved_model):
         completion_kwargs["temperature"] = settings.llm_temperature
     # Route to any OpenAI-compatible endpoint (e.g. Kimi/Moonshot) when set.
-    if settings.llm_api_base:
-        completion_kwargs["api_base"] = settings.llm_api_base
+    # An explicit empty override suppresses the configured base (OpenAI path).
+    resolved_api_base = settings.llm_api_base if api_base is None else api_base
+    if resolved_api_base:
+        completion_kwargs["api_base"] = resolved_api_base
 
     try:
         started = time.perf_counter()
@@ -625,7 +637,7 @@ async def generate_quote_from_prompt(
         logger.error(
             "llm_error",
             phase="quote_generation",
-            model=settings.llm_model,
+            model=resolved_model,
             error_type=type(exc).__name__,
         )
         raise RuntimeError(f"LLM generation failed: {exc.message}") from exc
@@ -633,7 +645,7 @@ async def generate_quote_from_prompt(
         logger.error(
             "llm_error",
             phase="quote_generation",
-            model=settings.llm_model,
+            model=resolved_model,
             error_type=type(exc).__name__,
         )
         raise RuntimeError(f"LLM service unavailable: {exc}") from exc
@@ -642,7 +654,7 @@ async def generate_quote_from_prompt(
     if not content:
         logger.warning(
             "llm_quote_empty",
-            model=settings.llm_model,
+            model=resolved_model,
             duration_ms=round((time.perf_counter() - started) * 1000, 2),
         )
         return {"line_items": [], "assumptions": [], "notes": "LLM returned empty content"}
@@ -652,7 +664,7 @@ async def generate_quote_from_prompt(
     ref_stats = _resolve_catalogue_refs(parsed, cost_items)
     logger.info(
         "llm_quote_generated",
-        model=settings.llm_model,
+        model=resolved_model,
         duration_ms=round((time.perf_counter() - started) * 1000, 2),
         prompt_chars=len(prompt),
         catalogue_items=len(cost_items),

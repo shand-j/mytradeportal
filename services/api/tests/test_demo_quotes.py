@@ -189,6 +189,86 @@ async def test_demo_generate_uses_fallback_lines_when_llm_returns_nothing(
 
 
 @pytest.mark.asyncio
+async def test_demo_generate_routes_to_openai_fast_model_when_key_configured(
+    client: AsyncClient,
+    db: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """With an OpenAI key, the demo overrides the slow production pipeline and
+    calls the LLM with the fast demo model + OpenAI key and no api_base."""
+    monkeypatch.setattr(settings, "openai_api_key", "sk-test-openai")
+    monkeypatch.setattr(settings, "demo_llm_model", "gpt-4o-mini")
+    with _mock_llm() as generate_mock:
+        response = await client.post(
+            "/demo/quotes/generate",
+            json={"description": DESCRIPTION},
+            headers={"user-agent": "pytest-demo-llm-fast/1.0"},
+        )
+    assert response.status_code == 200, response.text
+    assert generate_mock.call_count == 1
+    _, kwargs = generate_mock.call_args
+    assert kwargs["model"] == "gpt-4o-mini"
+    assert kwargs["api_key"] == "sk-test-openai"
+    # Empty base suppresses a production Kimi base so OpenAI defaults apply.
+    assert kwargs["api_base"] == ""
+
+
+@pytest.mark.asyncio
+async def test_demo_generate_uses_default_pipeline_without_openai_key(
+    client: AsyncClient,
+    db: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Without an OpenAI key the demo passes no overrides — the production
+    pipeline config (LLM_MODEL/LLM_API_BASE/key) is used unchanged."""
+    monkeypatch.setattr(settings, "openai_api_key", "")
+    with _mock_llm() as generate_mock:
+        response = await client.post(
+            "/demo/quotes/generate",
+            json={"description": DESCRIPTION},
+            headers={"user-agent": "pytest-demo-llm-default/1.0"},
+        )
+    assert response.status_code == 200, response.text
+    _, kwargs = generate_mock.call_args
+    assert "model" not in kwargs
+    assert "api_key" not in kwargs
+    assert "api_base" not in kwargs
+
+
+@pytest.mark.asyncio
+async def test_demo_refine_also_routes_to_openai_fast_model_when_key_configured(
+    client: AsyncClient,
+    db: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The refine path must hit the same fast demo model as generate."""
+    monkeypatch.setattr(settings, "openai_api_key", "sk-test-openai")
+    monkeypatch.setattr(settings, "demo_llm_model", "gpt-4o-mini")
+    with _mock_llm() as generate_mock:
+        response = await client.post(
+            "/demo/quotes/refine",
+            json={
+                "description": DESCRIPTION,
+                "instructions": "Adjust the labour to two hours please",
+                "line_items": [
+                    {
+                        "description": "Install double socket (labour per point)",
+                        "quantity": "2",
+                        "unit": "hour",
+                        "unit_price": "65.00",
+                        "ai_generated": True,
+                    }
+                ],
+            },
+        )
+    assert response.status_code == 200, response.text
+    _, kwargs = generate_mock.call_args
+    assert kwargs["model"] == "gpt-4o-mini"
+    assert kwargs["api_key"] == "sk-test-openai"
+    assert kwargs["api_base"] == ""
+
+
+@pytest.mark.asyncio
 async def test_demo_generate_returns_502_when_llm_unavailable(client: AsyncClient) -> None:
     from unittest.mock import AsyncMock, patch
 
