@@ -19,10 +19,10 @@ journey broken · P2 = polish · P3 = cosmetic.
 
 | Ref | Item | Priority | Notes / root-cause hypothesis | Status — AI | Status — User |
 |---|---|---|---|---|---|
-| N1 | Push notifications never arrive on iOS (no banner/badge/sound when app closed; in-app banner only) | P0 | Reported ~5× across beta. Token plumbing exists (`mobile/src/lib/pushNotifications.ts`, `services/api/app/push.py`). Suspect Expo APNs production credentials or token/environment mismatch. Needs end-to-end trace: token registration → DB → Expo push API response. | Pending | |
+| N1 | Push notifications never arrive on iOS (no banner/badge/sound when app closed; in-app banner only) | P0 | Reported ~5× across beta. Token plumbing exists (`mobile/src/lib/pushNotifications.ts`, `services/api/app/push.py`). Suspect Expo APNs production credentials or token/environment mismatch. Needs end-to-end trace: token registration → DB → Expo push API response. | Done (code) `6929dd4` — ticket errors now parsed (were logged as success), sound/high-priority + deep-link data, customer gets quote-ready push, dead-token cleanup; 7 tests. Needs APNs creds on EAS + on-device verify | |
 | N2 | Bell-icon notification list items don't navigate to the notified thing | P1 | Nav targets missing on notification rows; each notification type needs a deep-link route. Carried: triage-complete / quote-refreshed notifications had the same complaint. | Pending | |
-| N3 | Emails fail silently when customer has no contact information | P1 | Silent failure must become logged + surfaced; sending path should no-op with a warning, not drop. Related to N4. | Pending | |
-| N4 | Customer emails broadly don't work (no quote-ready notifications, no reset emails received) | P0 | Resend vars are set (`RESEND_FROM_EMAIL=quotes@mytradeportal.co.uk`). Customer-facing event emails (quote ready, reset) appear unsent or unlogged. Trace `communications.py` send paths + Resend API responses; add delivery logging. Carried: "no email arrives" reported for password reset earlier. | Pending | |
+| N3 | Emails fail silently when customer has no contact information | P1 | Silent failure must become logged + surfaced; sending path should no-op with a warning, not drop. Related to N4. | Done `6929dd4` — no-contact case logs `email_skipped_no_contact_email` warning instead of dropping; tested | |
+| N4 | Customer emails broadly don't work (no quote-ready notifications, no reset emails received) | P0 | Resend vars are set (`RESEND_FROM_EMAIL=quotes@mytradeportal.co.uk`). Customer-facing event emails (quote ready, reset) appear unsent or unlogged. Trace `communications.py` send paths + Resend API responses; add delivery logging. Carried: "no email arrives" reported for password reset earlier. | Done `6929dd4` — send_event_email wrapper + welcome/triage-question/quote-accepted emails, Resend errors logged loudly; 14 tests. Live-delivery verify pending | |
 | N5 | Job-detail message button opens iOS Messages | P2 | Should respect customer contact preference (Email or in-app Chat); SMS options were removed earlier. | Pending | |
 | N6 | Quote/invoice reminder cron jobs don't exist | P1 | Confirmed: no scheduler exists anywhere in the API. Build one (APScheduler-style, in-process): quote reminders default 3 (configurable), invoice reminders recur indefinitely, cadence configurable in app settings. | Pending | |
 | N7 | Apple calendar subscription button surfaces raw up.railway.app link | P2 | Needs proper `webcal:`/native add-to-calendar flow (ICS feed + `.ics` download / `addevent`-style). Carried: earlier "Apple calendar sync doesn't do anything" — partial fix landed as a link; make it native. | Pending | |
@@ -42,11 +42,11 @@ journey broken · P2 = polish · P3 = cosmetic.
 | N11 | Job detail "assigned to" uneditable and undefinable at creation; job notes not editable | P1 | Add assignee selection (tenant members) + editable notes on job detail. | Pending | |
 | N12 | AI quote assumptions/footnotes should appear in job notes | P2 | Copy assumptions + notes into the job's notes when converting quote → job. | Pending | |
 | N13 | Uploaded images should appear attached to the job | P1 | Photos uploaded on the quote should carry through to the job record. | Pending | |
-| N14 | Photo upload returns 503 | P0 | Regression — likely from the MinIO private-endpoint change (`minio.railway.internal`). Verify `files.py` + storage config end-to-end. | Pending | |
+| N14 | Photo upload returns 503 | P0 | Regression — likely from the MinIO private-endpoint change (`minio.railway.internal`). Verify `files.py` + storage config end-to-end. | Done `6929dd4` — MinIO bare host dialed :80; endpoint normalizer adds :9000, IaC pinned to private domain:9000; 9 tests. Live upload verify pending | |
 | N15 | Job creation needs date picker + time picker + duration; pre-fill duration from quoted hours | P1 | e.g. 3 lines × 10h → job spans 30 working hours. Duration derived from quote line items, editable. | Pending | |
 | N16 | Working hours configurable in the app | P2 | Feeds duration suggestion and calendar slot logic. | Pending | |
 | N17 | New-job page has no keyboard-avoiding layout | P1 | Recurring class — quote screen, customer profile, chat input all had this. Audit KeyboardAvoidingView across form screens. | Pending | |
-| N18 | New job: select a quote → prefill duration/date/customer/start time/notes from calendar slots; without a quote "complete and send invoice" silently fails | P0 | Silent failure is the P0; prefill is P1. Disable/redirect the invoice action when no quote is attached. | Pending | |
+| N18 | New job: select a quote → prefill duration/date/customer/start time/notes from calendar slots; without a quote "complete and send invoice" silently fails | P0 | Silent failure is the P0; prefill is P1. Disable/redirect the invoice action when no quote is attached. | P0 half done `6929dd4` — swallowed rejections now alert with backend detail; quote-less invoice guarded + explained. Prefill half moves to wave 2 jobs agent | |
 | N19 | Jobs with no quote → AI create-invoice page | P1 | Reuse quote-generation UI (editable, AI-built) but the CTA creates an invoice directly and navs to the invoice send page. | Pending | |
 | N20 | Calendar "New job" button → plain `+` symbol, no border | P3 | Cosmetic. | Pending | |
 
@@ -97,7 +97,7 @@ journey broken · P2 = polish · P3 = cosmetic.
 
 | Ref | Item | Priority | Notes / root-cause hypothesis | Status — AI | Status — User |
 |---|---|---|---|---|---|
-| C1 | VAT still applied when tenant is not VAT registered | P1 | **Regression — re-verify.** Believed fixed twice; latest report says still broken. Check VAT rate resolution in quote + invoice generation against tenant flag. | Pending | |
+| C1 | VAT still applied when tenant is not VAT registered | P1 | **Regression — re-verify.** Believed fixed twice; latest report says still broken. Check VAT rate resolution in quote + invoice generation against tenant flag. | Done `6929dd4` — schema default 0.20 made the tenant fallback dead code; fixed via model_fields_set; 7 VAT tests | |
 | C2 | Chat message direction all "outbound" | P1 | Direction must be tenant-relative: customer messages = inbound. | Pending | |
 | C3 | Customer can view quote before electrician review | P1 | Gate customer quote view on status (e.g. sent/accepted only). | Pending | |
 | C4 | Quotes sent to non-account customers: persist details, email-only comms, flag unregistered | P1 | Overlaps N4. Customer + quote must persist even if they never create an account; tenant sees flag setting comms expectation. | Pending | |
@@ -107,7 +107,7 @@ journey broken · P2 = polish · P3 = cosmetic.
 | C8 | Keyboard hides content (quote screen, customer profile, chat input) | P1 | Recurring KeyboardAvoidingView class — audit with N17. | Pending | |
 | C9 | Capture electrician quote edits as fine-tuning dataset | P2 | Log edit events (before/after) for AI training data. | Pending | |
 | C10 | AI refine: dynamic placeholder animation + leave-page banner | P3 | Greyed placeholders for lines/assumptions/price; notify-on-complete banner. | Pending | |
-| C11 | Membership type not persisted in onboarding object | P2 | Verify onboarding payload → tenant record. | Pending | |
+| C11 | Membership type not persisted in onboarding object | P2 | Verify onboarding payload → tenant record. | Done (verified) — membership_type persists as `membership` in tenant.settings (onboarding.py:137) | |
 | C12 | Customer login should be tenant-agnostic (tenant resolved post-auth) | P1 | Hangover from the web sub-domain approach; future: multi-tenant customers. | Pending | |
 | C13 | AI first follow-up asks for detail already provided; no acknowledgement; should auto-trigger + notify customer | P1 | Follow-up must fire as an event on low-confidence first attempt and notify the customer (depends on N1). | Pending | |
 | C14 | Electrician notified on every customer AI-chat reply (noise at scale) | P2 | Summarise/digest instead of per-message notifications. | Pending | |
@@ -119,7 +119,7 @@ journey broken · P2 = polish · P3 = cosmetic.
 | C20 | Customer dashboard "you are not connected" empty state is confusing | P2 | Should read "N quote(s) generating. We'll notify you if we need anything else." | Pending | |
 | C21 | Customer quote photos: single upload point; customers can add photos | P2 | Photos currently requested in two places; electrician-only upload. | Pending | |
 | C22 | Tenant dashboard accessible before payment (subscription gating) | P1 | Security: gate app access on active subscription (beta free, but enforce the check). | Pending | |
-| C23 | Plan selection 500 on POST /tenants (step 9/10) | P0 | Believed fixed — verify on latest TestFlight build. | Pending | |
+| C23 | Plan selection 500 on POST /tenants (step 9/10) | P0 | Believed fixed — verify on latest TestFlight build. | Done `6929dd4` — Supabase admin_create_user failures were unhandled 500s at plan selection; now 502/503 with clear messages; 2 tests | |
 
 ---
 
