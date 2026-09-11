@@ -14,7 +14,9 @@ Pipeline (post-process):
   python scripts/mockup-device-frame.py --og <final-device.png> <out.jpg>
     - composite the device onto a solid #0F1E26 slate card, 1200x630
 """
+
 import sys
+
 from PIL import Image, ImageFilter
 
 INK = (15, 30, 38)  # #0F1E26 brand slate
@@ -43,22 +45,24 @@ def finish_device(raw_path: str, out_path: str) -> None:
 
 
 def render_og(device_path: str, out_path: str) -> None:
-    W, H = 1200, 630
-    card = Image.new("RGB", (W, H), INK)
+    w, h = 1200, 630
+    card = Image.new("RGB", (w, h), INK)
     device = Image.open(device_path).convert("RGBA")
     bbox = device.getchannel("A").getbbox()
     device = device.crop(bbox)
-    scale = (H * 0.92) / device.size[1]
-    device = device.resize((round(device.size[0] * scale), round(device.size[1] * scale)), Image.LANCZOS)
-    dx, dy = (W - device.size[0]) // 2, (H - device.size[1]) // 2
+    scale = (h * 0.92) / device.size[1]
+    device = device.resize(
+        (round(device.size[0] * scale), round(device.size[1] * scale)), Image.LANCZOS
+    )
+    dx, dy = (w - device.size[0]) // 2, (h - device.size[1]) // 2
     alpha = device.getchannel("A").point(lambda a: a * 0.55)
-    sh_layer = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+    sh_layer = Image.new("RGBA", (w, h), (0, 0, 0, 0))
     sh_layer.paste((0, 0, 0, 255), (dx, dy + 16), alpha)
     shadow = sh_layer.filter(ImageFilter.GaussianBlur(26))
     card.paste(shadow, (0, 0), shadow)
     card.paste(device, (dx, dy), device)
     card.save(out_path, quality=90)
-    print(f"{out_path}: {W}x{H}")
+    print(f"{out_path}: {w}x{h}")
 
 
 if __name__ == "__main__":

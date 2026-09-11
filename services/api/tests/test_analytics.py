@@ -80,7 +80,7 @@ async def test_dashboard_kpis_reflect_data(admin_client: AsyncClient) -> None:
     assert data["kpi"]["pending_quotes"] == 0
     assert data["kpi"]["active_jobs"] == 0
     # Bootstrap tenant has not answered the onboarding Tax step, so it is not
-    # VAT registered: £100 × 4 at 0% VAT.
+    # VAT registered: £100 x 4 at 0% VAT.
     assert Decimal(str(data["kpi"]["revenue_this_month"])) == Decimal("400.00")
 
 
