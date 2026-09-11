@@ -47,7 +47,10 @@ const QDRANT_URL = "http://${{qdrant.RAILWAY_PRIVATE_DOMAIN}}:6333";
 // OCERP / BoQ engine is parked for the mobile-pivot MVP.
 // const OCERP_URL = "http://${{ocerp.RAILWAY_PRIVATE_DOMAIN}}:8000";
 const ADMIN_PUBLIC_URL = "https://${{admin.RAILWAY_PUBLIC_DOMAIN}}";
-const LANDING_PUBLIC_URL = "https://${{landing.RAILWAY_PUBLIC_DOMAIN}}";
+// Hardcoded rather than ${{landing.RAILWAY_PUBLIC_DOMAIN}}: that reference
+// resolves to the service's *custom* domain once one is attached, not the
+// generated *.up.railway.app origin the beta is viewed on until DNS lands.
+const LANDING_PUBLIC_URL = "https://landing-production-e043.up.railway.app";
 
 const TARGET_REGION = "europe-west4-drams3a"; // EU West Metal (Amsterdam) — closest Railway region to the UK market.
 
