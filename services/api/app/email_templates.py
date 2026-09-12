@@ -8,6 +8,8 @@ Jinja + a ``templates/`` directory.
 
 from __future__ import annotations
 
+from html import escape
+
 
 def password_reset(*, name: str | None, reset_url: str) -> tuple[str, str, str]:
     greeting = f"Hi {name}," if name else "Hi,"
@@ -25,12 +27,12 @@ def password_reset(*, name: str | None, reset_url: str) -> tuple[str, str, str]:
 <html>
   <body style="font-family:-apple-system,Segoe UI,Roboto,sans-serif;color:#0f172a;max-width:560px;margin:0 auto;padding:24px;">
     <h1 style="font-size:22px;margin:0 0 12px;">Reset your password</h1>
-    <p>{greeting}</p>
-    <p>We received a request to reset your My Trade Portal password. Click the button below to set a new one — the link expires in 30 minutes.</p>
+    <p>{escape(greeting)}</p>
+    <p>We received a request to reset your My Trade Portal password. Click the button below to choose a new one on our website — the link expires in 30 minutes and can only be used once.</p>
     <p style="margin:24px 0;">
-      <a href="{reset_url}" style="background:#4F46E5;color:#fff;padding:12px 20px;border-radius:8px;text-decoration:none;font-weight:600;">Reset password</a>
+      <a href="{reset_url}" style="background:#FFC107;color:#0F1E26;padding:12px 20px;border-radius:8px;text-decoration:none;font-weight:700;">Reset password</a>
     </p>
-    <p style="color:#64748b;font-size:13px;">If the button doesn't work, copy and paste this link:<br><a href="{reset_url}" style="color:#4F46E5;">{reset_url}</a></p>
+    <p style="color:#64748b;font-size:13px;">If the button doesn't work, copy and paste this link:<br><a href="{reset_url}" style="color:#CC8F00;">{reset_url}</a></p>
     <p style="color:#64748b;font-size:13px;">If you didn't request this, you can safely ignore this email.</p>
     <p style="color:#64748b;font-size:13px;margin-top:32px;">— My Trade Portal</p>
   </body>
@@ -74,19 +76,63 @@ def quote_ready(
     return subject, html, text
 
 
+def _payment_details_block(
+    payment_details: dict[str, str] | None,
+) -> tuple[str, str]:
+    """Render the bank-transfer block for an invoice email as (text, html).
+
+    Returns empty strings when the tenant has not configured any bank details,
+    so invoice emails stay unchanged for businesses that take payment another
+    way. Rows are HTML-escaped — these values come from tenant settings.
+    """
+    if not payment_details:
+        return "", ""
+    rows = [
+        ("Account name", payment_details.get("account_name", "")),
+        ("Sort code", payment_details.get("sort_code", "")),
+        ("Account number", payment_details.get("account_number", "")),
+        ("Payment reference", payment_details.get("reference", "")),
+    ]
+    rows = [(label, value) for label, value in rows if value]
+    if not rows:
+        return "", ""
+    text = "Pay by bank transfer:\n" + "\n".join(f"  {label}: {value}" for label, value in rows)
+    text += "\n\n"
+    html_rows = "".join(
+        f'<tr><td style="padding:4px 12px 4px 0;color:#64748b;">{escape(label)}</td>'
+        f'<td style="padding:4px 0;font-weight:600;">{escape(value)}</td></tr>'
+        for label, value in rows
+    )
+    html = f"""\
+    <div style="background:#f1f5f9;border-radius:8px;padding:16px;margin:16px 0;">
+      <p style="margin:0 0 8px;font-weight:600;">Pay by bank transfer</p>
+      <table style="border-collapse:collapse;font-size:14px;">{html_rows}</table>
+    </div>
+"""
+    return text, html
+
+
 def invoice_sent(
     *,
     customer_name: str,
     business_name: str,
     invoice_number: str,
     invoice_total: str,
+    payment_details: dict[str, str] | None = None,
 ) -> tuple[str, str, str]:
-    """Invoice-issued email. (subject, html, text)."""
+    """Invoice-issued email. (subject, html, text).
+
+    ``payment_details`` carries the tenant's bank-transfer details (keys:
+    ``account_name``, ``sort_code``, ``account_number``, ``reference``); the
+    block is omitted entirely when the tenant has not configured them.
+    """
     subject = f"Invoice {invoice_number} from {business_name}"
+    payment_text, payment_html = _payment_details_block(payment_details)
     text = (
         f"Hi {customer_name},\n\n"
         f"{business_name} has sent you invoice {invoice_number}.\n"
         f"Total due: {invoice_total}\n\n"
+        f"{payment_text}"
         "Open the app to view and pay.\n\n"
         "— My Trade Portal"
     )
@@ -98,6 +144,7 @@ def invoice_sent(
     <p>Hi {customer_name},</p>
     <p><strong>{business_name}</strong> has sent you an invoice.</p>
     <p style="font-size:20px;font-weight:700;margin:16px 0;">Total due: {invoice_total}</p>
+{payment_html}\
     <p>Open the app to view and pay.</p>
     <p style="color:#64748b;font-size:13px;margin-top:32px;">— My Trade Portal</p>
   </body>

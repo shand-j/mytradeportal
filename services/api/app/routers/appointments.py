@@ -69,7 +69,11 @@ async def get_availability(
     db: DbDep,
     date: date = Query(..., description="Date to check availability (YYYY-MM-DD)"),
 ) -> list[str]:
-    """Return free 1-hour appointment slots for the given date."""
+    """Return free 1-hour appointment slots for the given date.
+
+    Both appointments and scheduled jobs block a slot — a day that looks free
+    on the appointment calendar may already have a job booked.
+    """
     await set_tenant_in_session(db, tenant.id)
 
     day_start = datetime.combine(date, time(8, 0))
@@ -85,15 +89,34 @@ async def get_availability(
         )
         .order_by(Appointment.start_at)
     )
-    busy = result.scalars().all()
+    busy_periods: list[tuple[datetime, datetime]] = [
+        (appointment.start_at, appointment.end_at) for appointment in result.scalars().all()
+    ]
+
+    jobs_result = await db.execute(
+        select(Job).where(
+            Job.tenant_id == tenant.id,
+            Job.scheduled_start.isnot(None),
+            Job.scheduled_start < day_end,
+            Job.status.notin_({"cancelled", "completed"}),
+        )
+    )
+    for job in jobs_result.scalars().all():
+        job_start = job.scheduled_start
+        if job_start is None:  # filtered above; satisfies the type checker
+            continue
+        # Jobs without an end block one hour from their start.
+        job_end = job.scheduled_end or (job_start + timedelta(hours=1))
+        if job_end > day_start:
+            busy_periods.append((job_start, job_end))
 
     slots: list[str] = []
     current = day_start
     while current + timedelta(hours=1) <= day_end:
         slot_end = current + timedelta(hours=1)
         is_free = True
-        for appointment in busy:
-            if appointment.start_at < slot_end and appointment.end_at > current:
+        for busy_start, busy_end in busy_periods:
+            if busy_start < slot_end and busy_end > current:
                 is_free = False
                 break
         if is_free:

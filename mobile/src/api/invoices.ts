@@ -69,6 +69,20 @@ export type CreateInvoiceInput = {
 };
 
 /**
+ * Create a draft invoice (POST /invoices) without sending it — the electrician
+ * reviews and sends from the invoice page. When `quoteId` is set and no line
+ * items are given, the backend builds the lines from the quote.
+ */
+export async function createInvoice(input: CreateInvoiceInput): Promise<ApiInvoice> {
+  return api.post<ApiInvoice>("/invoices", {
+    contactId: input.contactId,
+    jobId: input.jobId,
+    quoteId: input.quoteId,
+    ...(input.lineItems.length > 0 ? { lineItems: input.lineItems } : {}),
+  });
+}
+
+/**
  * Create an invoice (from a completed job's line items) and immediately mark it
  * sent, so it lands ready to be paid. Returns the created invoice.
  */

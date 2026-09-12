@@ -141,6 +141,11 @@ class ContactCreate(BaseModel):
     address: str | None = None
     postcode: str | None = None
     notes: str | None = None
+    preferred_contact_method: str | None = Field(default=None, max_length=50)
+    property_type: str | None = Field(default=None, max_length=50)
+    bedrooms: int | None = None
+    parking_notes: str | None = None
+    access_notes: str | None = None
 
 
 class ContactUpdate(BaseModel):
@@ -150,6 +155,11 @@ class ContactUpdate(BaseModel):
     address: str | None = None
     postcode: str | None = None
     notes: str | None = None
+    preferred_contact_method: str | None = Field(default=None, max_length=50)
+    property_type: str | None = Field(default=None, max_length=50)
+    bedrooms: int | None = None
+    parking_notes: str | None = None
+    access_notes: str | None = None
 
 
 class ContactRead(BaseModel):
@@ -163,6 +173,11 @@ class ContactRead(BaseModel):
     address: str | None
     postcode: str | None
     notes: str | None
+    preferred_contact_method: str | None = None
+    property_type: str | None = None
+    bedrooms: int | None = None
+    parking_notes: str | None = None
+    access_notes: str | None = None
     avatar_url: str | None = None
     created_at: datetime
     updated_at: datetime
@@ -575,6 +590,8 @@ class JobCreate(BaseModel):
     description: str | None = None
     scheduled_start: datetime | None = None
     scheduled_end: datetime | None = None
+    notes: str | None = None
+    assigned_user_id: UUID | None = None
 
     _normalize_schedule = field_validator("scheduled_start", "scheduled_end", mode="after")(
         _strip_tz
@@ -587,6 +604,7 @@ class JobConvertRequest(BaseModel):
     scheduled_start: datetime | None = None
     scheduled_end: datetime | None = None
     notes: str | None = None
+    assigned_user_id: UUID | None = None
 
     _normalize_schedule = field_validator("scheduled_start", "scheduled_end", mode="after")(
         _strip_tz
@@ -597,6 +615,7 @@ class JobUpdate(BaseModel):
     scheduled_start: datetime | None = None
     scheduled_end: datetime | None = None
     notes: str | None = None
+    assigned_user_id: UUID | None = None
 
     _normalize_schedule = field_validator("scheduled_start", "scheduled_end", mode="after")(
         _strip_tz
@@ -617,9 +636,32 @@ class JobRead(BaseModel):
     scheduled_end: datetime | None
     completed_at: datetime | None
     notes: str | None
+    assigned_user_id: UUID | None
+    # Display name of the assignee, derived from the ORM `assignee` relationship.
+    assigned_to: str | None = None
+    # Photo/file URLs carried over from the source quote's quote request.
+    photos: list[str] = Field(default_factory=list)
     created_at: datetime
     updated_at: datetime
     customer: ContactRead = Field(validation_alias="contact", serialization_alias="customer")
+
+    @model_validator(mode="before")
+    @classmethod
+    def _derive_assignee_and_photos(cls, value: Any) -> Any:
+        """Populate assigned_to/photos from the ORM relationships when present."""
+        if isinstance(value, dict):
+            return value
+        try:
+            assignee = getattr(value, "assignee", None)
+            value.assigned_to = assignee.full_name if assignee is not None else None
+        except Exception:  # unloaded relationship outside a session
+            value.assigned_to = None
+        try:
+            media = getattr(value, "media", None) or []
+            value.photos = [asset.file_url for asset in media]
+        except Exception:  # unloaded relationship outside a session
+            value.photos = []
+        return value
 
 
 # ---------------------------------------------------------------------------
@@ -1142,6 +1184,21 @@ class CustomerCreate(BaseModel):
     password: str | None = Field(default=None, min_length=8, max_length=128)
     marketing_consent: bool = False
     preferred_contact_method: str | None = Field(default=None, max_length=50)
+    address: str | None = Field(default=None, max_length=2000)
+    postcode: str | None = Field(default=None, max_length=20)
+    parking_notes: str | None = None
+    access_notes: str | None = None
+
+
+class CustomerUpdate(BaseModel):
+    full_name: str | None = Field(default=None, min_length=1, max_length=255)
+    phone: str | None = Field(default=None, max_length=50)
+    address: str | None = Field(default=None, max_length=2000)
+    postcode: str | None = Field(default=None, max_length=20)
+    preferred_contact_method: str | None = Field(default=None, max_length=50)
+    parking_notes: str | None = None
+    access_notes: str | None = None
+    marketing_consent: bool | None = None
 
 
 class CustomerRead(BaseModel):
@@ -1159,6 +1216,8 @@ class CustomerRead(BaseModel):
     is_active: bool
     marketing_consent: bool
     preferred_contact_method: str | None
+    parking_notes: str | None = None
+    access_notes: str | None = None
     created_at: datetime
     updated_at: datetime
 
@@ -1196,10 +1255,30 @@ class CustomerLogin(BaseModel):
     password: str = Field(..., min_length=1, max_length=128)
 
 
+class CustomerTenantAssociation(BaseModel):
+    """One business (tenant) a customer account email is associated with.
+
+    Login resolves a single current tenant today, but the response always
+    carries the full association list so multi-tenant customers (a homeowner
+    using several electricians on the platform) can be supported without an
+    API shape change.
+    """
+
+    tenant_id: UUID
+    slug: str
+    name: str
+    # True for the tenant the issued bearer token is scoped to.
+    is_current: bool
+
+
 class CustomerTokenResponse(BaseModel):
     access_token: str = Field(serialization_alias="accessToken")
     token_type: str = Field(default="bearer", serialization_alias="tokenType")
     customer: CustomerRead
+    # Every active tenant association for this email; empty only in hand-built
+    # responses. Post-auth tenant resolution, so this is never disclosed
+    # before credentials check out.
+    tenants: list[CustomerTenantAssociation] = Field(default_factory=list)
 
 
 class PropertyCreate(BaseModel):

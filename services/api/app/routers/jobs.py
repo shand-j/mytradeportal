@@ -1,7 +1,7 @@
 """Job endpoints."""
 
 from datetime import datetime
-from typing import Annotated
+from typing import Annotated, Any
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -11,7 +11,7 @@ from sqlalchemy.orm import selectinload
 
 from app.database import get_db
 from app.dependencies import TenantDep
-from app.models import Contact, Job, Quote
+from app.models import Contact, Job, Quote, User
 from app.push import notify_staff
 from app.rls import set_tenant_in_session
 from app.schemas import JobCreate, JobRead, JobUpdate
@@ -20,11 +20,20 @@ router = APIRouter(prefix="/jobs", tags=["Jobs"])
 DbDep = Annotated[AsyncSession, Depends(get_db)]
 
 
+def _job_load_options() -> tuple[Any, ...]:
+    """Eager-load everything JobRead derives display fields from."""
+    return (
+        selectinload(Job.contact),
+        selectinload(Job.assignee),
+        selectinload(Job.media),
+    )
+
+
 async def _get_job(db: AsyncSession, tenant_id: UUID, job_id: UUID) -> Job:
     await set_tenant_in_session(db, tenant_id)
     result = await db.execute(
         select(Job)
-        .options(selectinload(Job.contact))
+        .options(*_job_load_options())
         .where(Job.id == job_id, Job.tenant_id == tenant_id)
     )
     job = result.scalar_one_or_none()
@@ -33,13 +42,24 @@ async def _get_job(db: AsyncSession, tenant_id: UUID, job_id: UUID) -> Job:
     return job
 
 
+async def _validate_assignee(
+    db: AsyncSession, tenant_id: UUID, assigned_user_id: UUID | None
+) -> None:
+    """Assignees must be active staff of the same tenant."""
+    if assigned_user_id is None:
+        return
+    user = await db.get(User, assigned_user_id)
+    if user is None or user.tenant_id != tenant_id or not user.is_active:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid assignee")
+
+
 @router.get("")
 async def list_jobs(tenant: TenantDep, db: DbDep) -> list[JobRead]:
     """List jobs for the current tenant."""
     await set_tenant_in_session(db, tenant.id)
     result = await db.execute(
         select(Job)
-        .options(selectinload(Job.contact))
+        .options(*_job_load_options())
         .where(Job.tenant_id == tenant.id)
         .order_by(Job.created_at.desc())
     )
@@ -60,6 +80,8 @@ async def create_job(data: JobCreate, tenant: TenantDep, db: DbDep) -> JobRead:
         if quote is None or quote.tenant_id != tenant.id:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid quote")
 
+    await _validate_assignee(db, tenant.id, data.assigned_user_id)
+
     job = Job(tenant_id=tenant.id, **data.model_dump())
     db.add(job)
     await db.flush()
@@ -76,8 +98,7 @@ async def create_job(data: JobCreate, tenant: TenantDep, db: DbDep) -> JobRead:
             link=f"/job/{job.id}",
         )
     await db.commit()
-    await db.refresh(job)
-    return JobRead.model_validate(job)
+    return JobRead.model_validate(await _get_job(db, tenant.id, job.id))
 
 
 @router.patch("/{job_id}")
@@ -87,12 +108,18 @@ async def update_job(
     tenant: TenantDep,
     db: DbDep,
 ) -> JobRead:
-    """Update a job's schedule or notes."""
+    """Update a job's schedule, notes or assignee."""
     job = await _get_job(db, tenant.id, job_id)
-    for key, value in data.model_dump(exclude_unset=True).items():
+    changes = data.model_dump(exclude_unset=True)
+    if "assigned_user_id" in changes:
+        await _validate_assignee(db, tenant.id, changes["assigned_user_id"])
+    for key, value in changes.items():
         setattr(job, key, value)
     await db.commit()
-    return JobRead.model_validate(job)
+    # The assignee/media relationships were loaded by the initial _get_job;
+    # expire them so the re-read reflects the values just written.
+    db.expire(job, ["assignee", "media"])
+    return JobRead.model_validate(await _get_job(db, tenant.id, job.id))
 
 
 @router.post("/{job_id}/start")

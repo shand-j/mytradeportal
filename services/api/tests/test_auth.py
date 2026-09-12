@@ -617,3 +617,225 @@ async def test_password_reset_confirm_rejects_used_token(
         json={"token": deterministic_reset_token, "new_password": "SecondUseP@ssw0rd!"},
     )
     assert second.status_code == 400
+
+
+async def test_password_reset_email_links_to_landing_base_url(
+    client: AsyncClient,
+    admin_credentials: dict[str, Any],
+    deterministic_reset_token: str,
+    stub_email_send: list[dict[str, Any]],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The emailed link must point at the public landing site, not the
+    back-office app / admin that APP_PUBLIC_URL targets."""
+    monkeypatch.setenv("PASSWORD_RESET_BASE_URL", "https://www.mytradeportal.co.uk/")
+    await client.post(
+        "/auth/password-reset/request",
+        json={"email": admin_credentials["email"]},
+    )
+    assert len(stub_email_send) == 1
+    expected = f"https://www.mytradeportal.co.uk/reset-password?token={deterministic_reset_token}"
+    assert expected in stub_email_send[0]["html_body"]
+    assert expected in stub_email_send[0]["text_body"]
+
+
+async def test_password_reset_request_invalidates_previous_tokens(
+    client: AsyncClient,
+    admin_credentials: dict[str, Any],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Requesting a new link retires earlier ones — only the newest works."""
+    tokens = iter(["first-token-" + "a" * 40, "second-token-" + "b" * 40])
+    monkeypatch.setattr("app.routers.auth.secrets.token_urlsafe", lambda _n: next(tokens))
+
+    await client.post(
+        "/auth/password-reset/request",
+        json={"email": admin_credentials["email"]},
+    )
+    await client.post(
+        "/auth/password-reset/request",
+        json={"email": admin_credentials["email"]},
+    )
+
+    stale = await client.post(
+        "/auth/password-reset/confirm",
+        json={"token": "first-token-" + "a" * 40, "new_password": "StaleTokenP@ssw0rd!"},
+    )
+    assert stale.status_code == 400
+
+    fresh = await client.post(
+        "/auth/password-reset/confirm",
+        json={"token": "second-token-" + "b" * 40, "new_password": "FreshTokenP@ssw0rd!"},
+    )
+    assert fresh.status_code == 200
+
+
+async def test_password_reset_inspect_returns_email_without_consuming_token(
+    client: AsyncClient,
+    admin_credentials: dict[str, Any],
+    deterministic_reset_token: str,
+) -> None:
+    """The landing page reads the account email up front; the token must stay
+    valid for the subsequent confirm call."""
+    await client.post(
+        "/auth/password-reset/request",
+        json={"email": admin_credentials["email"]},
+    )
+
+    inspect = await client.get(
+        "/auth/password-reset/inspect",
+        params={"token": deterministic_reset_token},
+    )
+    assert inspect.status_code == 200
+    assert inspect.json()["email"] == admin_credentials["email"]
+    assert "expires_at" in inspect.json()
+
+    confirm = await client.post(
+        "/auth/password-reset/confirm",
+        json={"token": deterministic_reset_token, "new_password": "PostInspectP@ssw0rd!"},
+    )
+    assert confirm.status_code == 200
+
+
+async def test_password_reset_inspect_rejects_unknown_token(client: AsyncClient) -> None:
+    """An unknown token must be rejected with 400."""
+    response = await client.get(
+        "/auth/password-reset/inspect",
+        params={"token": "z" * 48},
+    )
+    assert response.status_code == 400
+
+
+async def test_password_reset_inspect_rejects_used_token(
+    client: AsyncClient,
+    admin_credentials: dict[str, Any],
+    deterministic_reset_token: str,
+) -> None:
+    """A consumed token no longer resolves to an account."""
+    await client.post(
+        "/auth/password-reset/request",
+        json={"email": admin_credentials["email"]},
+    )
+    confirm = await client.post(
+        "/auth/password-reset/confirm",
+        json={"token": deterministic_reset_token, "new_password": "UsedTokenP@ssw0rd!"},
+    )
+    assert confirm.status_code == 200
+
+    inspect = await client.get(
+        "/auth/password-reset/inspect",
+        params={"token": deterministic_reset_token},
+    )
+    assert inspect.status_code == 400
+
+
+async def _login_and_get_tenant_status(
+    client: AsyncClient, admin_credentials: dict[str, Any]
+) -> dict[str, Any]:
+    login = await client.post(
+        "/auth/login",
+        headers={"host": admin_credentials["host"]},
+        json={"email": admin_credentials["email"], "password": admin_credentials["password"]},
+    )
+    assert login.status_code == 200, login.text
+    response = await client.get("/auth/tenant-status")
+    assert response.status_code == 200, response.text
+    data: dict[str, Any] = response.json()
+    return data
+
+
+async def test_tenant_status_requires_authentication(client: AsyncClient) -> None:
+    """C22: the gate check is staff-only."""
+    response = await client.get("/auth/tenant-status")
+    assert response.status_code in (401, 403)
+
+
+async def test_tenant_status_no_subscription_is_beta_comped(
+    client: AsyncClient, db: AsyncSession, admin_credentials: dict[str, Any]
+) -> None:
+    """C22: tenants with no subscription row (the existing beta cohort) pass
+    the gate — beta is free, but the check exists and reports the comp."""
+    data = await _login_and_get_tenant_status(client, admin_credentials)
+    assert data["tenant_id"] == admin_credentials["tenant_id"]
+    assert data["subscription_status"] is None
+    assert data["access"] == "active"
+    assert data["beta_comped"] is True
+
+
+async def test_tenant_status_incomplete_subscription_requires_payment(
+    client: AsyncClient, db: AsyncSession, admin_credentials: dict[str, Any]
+) -> None:
+    """C22: an abandoned checkout (incomplete) hits the paywall."""
+    from app.models import Subscription
+
+    await set_tenant_in_session(db, UUID(admin_credentials["tenant_id"]))
+    db.add(
+        Subscription(
+            tenant_id=UUID(admin_credentials["tenant_id"]), plan_key="starter", status="incomplete"
+        )
+    )
+    await db.commit()
+
+    data = await _login_and_get_tenant_status(client, admin_credentials)
+    assert data["subscription_status"] == "incomplete"
+    assert data["access"] == "payment_required"
+    assert data["beta_comped"] is False
+
+
+async def test_tenant_status_live_and_lapsed_subscriptions(
+    client: AsyncClient, db: AsyncSession, admin_credentials: dict[str, Any]
+) -> None:
+    """C22: trialing/active/past_due pass; canceled hits the paywall."""
+    from datetime import datetime, timedelta
+
+    from app.models import Subscription
+
+    tenant_id = UUID(admin_credentials["tenant_id"])
+    await set_tenant_in_session(db, tenant_id)
+    subscription = Subscription(
+        tenant_id=tenant_id,
+        plan_key="pro",
+        status="trialing",
+        trial_ends_at=datetime.utcnow() + timedelta(days=14),
+    )
+    db.add(subscription)
+    await db.commit()
+
+    data = await _login_and_get_tenant_status(client, admin_credentials)
+    assert data["access"] == "active"
+    assert data["subscription_status"] == "trialing"
+    assert data["trial_ends_at"] is not None
+    assert data["beta_comped"] is False
+
+    for status_value, expected in (
+        ("active", "active"),
+        ("past_due", "active"),
+        ("paused", "payment_required"),
+        ("canceled", "payment_required"),
+    ):
+        await set_tenant_in_session(db, tenant_id)
+        subscription.status = status_value
+        await db.commit()
+        data = await _login_and_get_tenant_status(client, admin_credentials)
+        assert data["access"] == expected, status_value
+
+
+async def test_tenant_status_beta_comped_setting_overrides_lapsed_subscription(
+    client: AsyncClient, db: AsyncSession, admin_credentials: dict[str, Any]
+) -> None:
+    """C22: an explicit beta_comped flag in tenant settings keeps a comped
+    tenant on the dashboard even with a lapsed subscription row."""
+    from app.models import Subscription
+
+    tenant_id = UUID(admin_credentials["tenant_id"])
+    await set_tenant_in_session(db, tenant_id)
+    db.add(Subscription(tenant_id=tenant_id, plan_key="starter", status="canceled"))
+    tenant = await db.scalar(select(Tenant).where(Tenant.id == tenant_id))
+    assert tenant is not None
+    tenant.settings = {**tenant.settings, "beta_comped": True}
+    await db.commit()
+
+    data = await _login_and_get_tenant_status(client, admin_credentials)
+    assert data["subscription_status"] == "canceled"
+    assert data["access"] == "active"
+    assert data["beta_comped"] is True

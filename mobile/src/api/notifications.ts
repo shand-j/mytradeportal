@@ -118,30 +118,83 @@ export function quoteIdFromLink(link: string | null | undefined): string | null 
   return match ? match[1] : null;
 }
 
+function idFromLink(link: string | null | undefined, pattern: RegExp): string | null {
+  const match = link?.match(pattern);
+  return match ? match[1] : null;
+}
+
 /** In-app route for a notification link, per role (null when unmapped). */
 export function routeForNotificationLink(
   role: NotificationRole,
-  link: string | null | undefined
+  link: string | null | undefined,
+  type?: string | null
 ): { pathname: string; params?: Record<string, string> } | null {
-  const chatMatch = link?.match(/\/chat\/([0-9a-f-]+)/i);
-  if (chatMatch) {
+  const chatId = idFromLink(link, /\/chat\/([0-9a-f-]+)/i);
+  if (chatId) {
     // Chat links open the thread directly on either side (the customer chat
     // link is `/customer/chat/{quoteRequestId}` — same tail match).
     const pathname = role === "trade" ? "/(trade)/messages" : "/(customer)/messages";
-    return { pathname, params: { quoteRequestId: chatMatch[1] } };
+    return { pathname, params: { quoteRequestId: chatId } };
   }
+  // Quote links: canonical `/quotes/{id}`; older rows may carry `/quote/{id}`
+  // or `/customer/quote/{id}` — all open the same quote.
+  const quoteId = idFromLink(link, /\/quotes?\/([0-9a-f-]+)/i);
   if (role === "trade") {
-    const quoteId = quoteIdFromLink(link);
     if (quoteId) return { pathname: `/(trade)/quote/${quoteId}` };
-    const leadMatch = link?.match(/\/quote-requests\/([0-9a-f-]+)/i);
-    if (leadMatch) return { pathname: `/(trade)/lead/${leadMatch[1]}` };
+    const jobId = idFromLink(link, /\/jobs?\/([0-9a-f-]+)/i);
+    if (jobId) return { pathname: `/(trade)/job/${jobId}` };
+    const invoiceId = idFromLink(link, /\/invoices\/([0-9a-f-]+)/i);
+    if (invoiceId) return { pathname: `/(trade)/invoice/${invoiceId}` };
+    const leadId = idFromLink(link, /\/quote-requests\/([0-9a-f-]+)/i);
+    if (leadId) return { pathname: `/(trade)/lead/${leadId}` };
     return null;
   }
-  // Customer quotes are reviewed inline on the requests screen.
-  if (quoteIdFromLink(link) || link?.startsWith("/quotes")) {
+  // Customer quotes are reviewed inline on the requests screen. The customer
+  // app has no invoice screen, so invoice links intentionally resolve to null
+  // (the row marks read but navigates nowhere).
+  if (quoteId || type?.startsWith("quote")) {
     return { pathname: "/(customer)/requests" };
   }
   return null;
+}
+
+/** Rebuild a notification link from a push payload's `type` + `id` when `link` is absent. */
+export function linkFromPushData(
+  type: string | null | undefined,
+  id: string | null | undefined
+): string | null {
+  if (!type || !id) return null;
+  switch (type) {
+    case "quote_ready":
+    case "quote_sent":
+    case "quote_accepted":
+      return `/quotes/${id}`;
+    case "chat_reply":
+    case "chat_message":
+      return `/chat/${id}`;
+    case "job_scheduled":
+      return `/job/${id}`;
+    case "invoice_paid":
+    case "invoice_sent":
+      return `/invoices/${id}`;
+    default:
+      return null;
+  }
+}
+
+/**
+ * Route for a system-push tap: prefers the payload's `link`, falls back to
+ * reconstructing one from `type` + `id`, and resolves through the same map
+ * as the in-app notification list so both entry points land identically.
+ */
+export function routeForPushData(
+  role: NotificationRole,
+  data: { link?: unknown; type?: unknown; id?: unknown } | null | undefined
+): { pathname: string; params?: Record<string, string> } | null {
+  const link = typeof data?.link === "string" && data.link ? data.link : null;
+  const type = typeof data?.type === "string" ? data.type : null;
+  const id = typeof data?.id === "string" ? data.id : null;
+  return routeForNotificationLink(role, link ?? linkFromPushData(type, id), type);
 }
 
 /**

@@ -22,9 +22,19 @@ type CurrentTenantResponse = {
   secondaryColor: string;
   phone: string | null;
   address: string | null;
+  /** Free-form tenant settings; bank payment details live here. */
+  settings?: TenantSettings | null;
   /** Onboarding quoting metrics, when the tenant provided them. */
   quotesPerWeek?: number | null;
   avgMinutesPerQuote?: number | null;
+};
+
+/** Tenant settings keys the app reads/writes directly (camelized on the wire). */
+type TenantSettings = {
+  bankAccountName?: string;
+  bankSortCode?: string;
+  bankAccountNumber?: string;
+  [key: string]: unknown;
 };
 
 const CODE_REGEX = /^\d{6}$/;
@@ -100,4 +110,38 @@ export type UpdateTenantInput = {
 export async function updateCurrentTenant(input: UpdateTenantInput): Promise<BusinessConfig> {
   const data = await api.patch<CurrentTenantResponse>("/tenants/me", input);
   return normalizeTenant(data);
+}
+
+export type PaymentDetails = {
+  bankAccountName: string;
+  bankSortCode: string;
+  bankAccountNumber: string;
+};
+
+/** Fetch the tenant's bank-transfer payment details (shown on invoice emails). */
+export async function fetchPaymentDetails(): Promise<PaymentDetails> {
+  const data = await api.get<CurrentTenantResponse>("/tenants/me");
+  const settings = data.settings ?? {};
+  return {
+    bankAccountName: settings.bankAccountName ?? "",
+    bankSortCode: settings.bankSortCode ?? "",
+    bankAccountNumber: settings.bankAccountNumber ?? "",
+  };
+}
+
+/** Save the tenant's bank-transfer payment details into tenant settings. */
+export async function updatePaymentDetails(input: PaymentDetails): Promise<PaymentDetails> {
+  const data = await api.patch<CurrentTenantResponse>("/tenants/me", {
+    settings: {
+      bankAccountName: input.bankAccountName,
+      bankSortCode: input.bankSortCode,
+      bankAccountNumber: input.bankAccountNumber,
+    },
+  });
+  const settings = data.settings ?? {};
+  return {
+    bankAccountName: settings.bankAccountName ?? "",
+    bankSortCode: settings.bankSortCode ?? "",
+    bankAccountNumber: settings.bankAccountNumber ?? "",
+  };
 }

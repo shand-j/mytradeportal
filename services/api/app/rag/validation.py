@@ -216,7 +216,12 @@ def validate_generated_quote(
         if code and code in retrieved_by_code:
             item = retrieved_by_code[code]
             description = item["description"]
-            unit = unit or (item.get("unit") if isinstance(item.get("unit"), str) else None)
+            # The catalogue unit is authoritative for grounded lines (C6):
+            # a line priced from the catalogue's per-unit price must bill in
+            # the catalogue's unit (e.g. cable priced per metre bills in "m"),
+            # never in whatever unit the LLM guessed.
+            catalogue_unit = item.get("unit") if isinstance(item.get("unit"), str) else None
+            unit = catalogue_unit or unit
             unit_price = Decimal(str(item.get("unit_price", "0") or "0"))
             grounded += 1
         elif kind == "material" and retrieved_items:
@@ -230,7 +235,8 @@ def validate_generated_quote(
                 item, _score = match
                 code = item.get("code")
                 description = line_desc_raw
-                unit = unit or (item.get("unit") if isinstance(item.get("unit"), str) else None)
+                catalogue_unit = item.get("unit") if isinstance(item.get("unit"), str) else None
+                unit = catalogue_unit or unit
                 unit_price = Decimal(str(item.get("unit_price", "0") or "0"))
                 auto_grounded += 1
                 grounded += 1

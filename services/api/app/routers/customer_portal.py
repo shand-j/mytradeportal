@@ -41,6 +41,7 @@ from app.schemas import (
     CustomerQuoteAccept,
     CustomerRead,
     CustomerRegister,
+    CustomerTenantAssociation,
     CustomerTokenResponse,
     QuoteRead,
     QuoteRequestMediaCreate,
@@ -51,6 +52,11 @@ from app.security import create_access_token, get_password_hash, verify_password
 router = APIRouter(prefix="/customer", tags=["Customer Portal"])
 DbDep = Annotated[AsyncSession, Depends(get_db)]
 logger = structlog.get_logger("api.customer_portal")
+
+# Quote statuses a customer may see. Visibility is an allow-list (not
+# "anything except draft") so future pre-send states (e.g. an explicit
+# "in_review" status) can never leak unreviewed line items to the homeowner.
+CUSTOMER_VISIBLE_QUOTE_STATUSES = frozenset({"sent", "approved", "rejected", "expired", "invoiced"})
 
 
 def _phone_digits(value: str | None) -> str:
@@ -130,6 +136,39 @@ def _issue_token(customer: Customer) -> str:
         email=customer.email,
         subject_type="customer",
     )
+
+
+async def _tenant_associations(
+    db: AsyncSession, email: str, current_tenant_id: UUID
+) -> list[CustomerTenantAssociation]:
+    """Every active-tenant customer account for an email (multi-tenant shape).
+
+    Cross-tenant by design — it must run under the transaction-local RLS
+    bypass the register/login flows establish — so a homeowner with accounts
+    at several electricians sees every association from one login. Only
+    tenant id/slug/name are exposed, and callers invoke it strictly after
+    credentials have been verified.
+    """
+    rows = (
+        await db.execute(
+            select(Customer.tenant_id, Tenant.slug, Tenant.name)
+            .join(Tenant, Customer.tenant_id == Tenant.id)
+            .where(
+                func.lower(Customer.email) == email.lower(),
+                Tenant.is_active.is_(True),
+            )
+            .order_by(Customer.created_at.desc())
+        )
+    ).all()
+    return [
+        CustomerTenantAssociation(
+            tenant_id=tenant_id,
+            slug=slug,
+            name=name,
+            is_current=tenant_id == current_tenant_id,
+        )
+        for tenant_id, slug, name in rows
+    ]
 
 
 @router.post("/register", status_code=status.HTTP_201_CREATED, response_model=CustomerTokenResponse)
@@ -217,6 +256,10 @@ async def register_customer(
     # email/phone so they show up in the customer's history immediately.
     await _link_quote_requests_by_contact(db, customer)
 
+    # Snapshot the tenant associations before commit ends the transaction
+    # (and with it the cross-tenant RLS bypass the lookup relies on).
+    associations = await _tenant_associations(db, customer.email, tenant.id)
+
     await db.refresh(customer)
     await db.commit()
 
@@ -244,6 +287,7 @@ async def register_customer(
     return CustomerTokenResponse(
         access_token=_issue_token(customer),
         customer=CustomerRead.model_validate(customer),
+        tenants=associations,
     )
 
 
@@ -259,7 +303,9 @@ async def login_customer(
     Tenant-agnostic: customers no longer pick a business at login (a hangover
     from the per-tenant-subdomain web approach). With a slug, resolution is
     direct; without one, the account is located by email across tenants and
-    the tenant is derived from it (newest account wins on duplicates).
+    the tenant is derived from it (newest account wins on duplicates). The
+    response also lists every active tenant association for the email —
+    single-tenant resolution today, multi-tenant-ready shape for later.
     """
     await bypass_rls_for_transaction(db)
 
@@ -303,6 +349,11 @@ async def login_customer(
     ):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid credentials")
 
+    # Post-auth tenant associations: only computed once credentials have
+    # passed, and before _link_quote_requests_by_contact's commit ends the
+    # transaction-local RLS bypass the cross-tenant lookup needs.
+    associations = await _tenant_associations(db, customer.email, tenant.id)
+
     # Claim any leads captured with the same email/phone since the last login.
     if await _link_quote_requests_by_contact(db, customer):
         await db.commit()
@@ -310,6 +361,7 @@ async def login_customer(
     return CustomerTokenResponse(
         access_token=_issue_token(customer),
         customer=CustomerRead.model_validate(customer),
+        tenants=associations,
     )
 
 
@@ -350,11 +402,13 @@ async def list_my_quote_requests(
     )
     rows = list(result.scalars().all())
     reads = [QuoteRequestRead.model_validate(qr) for qr in rows]
-    # Drafts under electrician review stay hidden: the customer sees the
-    # request as awaiting review instead of peeking at unreviewed line items.
+    # Quotes the electrician has not sent yet stay hidden: the customer sees
+    # the request as awaiting review instead of peeking at unreviewed line
+    # items. Gated on the allow-list, not "not draft", so new pre-send
+    # statuses cannot leak by default.
     return [
         read.model_copy(update={"quote": None})
-        if read.quote is not None and read.quote.status == "draft"
+        if read.quote is not None and read.quote.status not in CUSTOMER_VISIBLE_QUOTE_STATUSES
         else read
         for read in reads
     ]
@@ -446,7 +500,7 @@ async def list_my_quotes(
                 Quote.contact_id == customer.contact_id,
                 Quote.quote_request.has(QuoteRequest.customer_id == customer.id),
             ),
-            Quote.status.in_(["sent", "approved", "rejected", "expired"]),
+            Quote.status.in_(CUSTOMER_VISIBLE_QUOTE_STATUSES),
         )
         .order_by(Quote.created_at.desc())
     )
@@ -464,8 +518,10 @@ async def _get_customer_quote(db: AsyncSession, customer: Customer, quote_id: UU
         .where(
             Quote.tenant_id == customer.tenant_id,
             Quote.id == quote_id,
-            # Drafts are electrician-only until sent; treat as not found.
-            Quote.status != "draft",
+            # Unsent quotes (draft/review states) are electrician-only; treat
+            # them as not found. Allow-list, so new pre-send statuses stay
+            # hidden by default.
+            Quote.status.in_(CUSTOMER_VISIBLE_QUOTE_STATUSES),
             or_(
                 Quote.contact_id == customer.contact_id,
                 Quote.quote_request.has(QuoteRequest.customer_id == customer.id),
@@ -506,7 +562,7 @@ async def accept_quote(
         kind="quote_accepted",
         title="Quote accepted",
         body=f"{customer.full_name} accepted quote '{quote.title}'.{dates_note}",
-        link=f"/quote/{quote.id}",
+        link=f"/quotes/{quote.id}",
     )
     await db.commit()
     # Confirm the acceptance to the customer by email. No response is expected,

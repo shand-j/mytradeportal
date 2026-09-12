@@ -285,6 +285,7 @@ async def test_quote_send_dispatches_quote_ready_email(
 
     assert response.status_code == 200, response.text
     send_mock.assert_awaited_once()
+    assert send_mock.await_args is not None
     kwargs = send_mock.await_args.kwargs
     assert kwargs["to_email"] == "homeowner@example.com"
     assert kwargs["event"] == "quote_sent"
@@ -346,6 +347,7 @@ async def test_customer_register_dispatches_account_created_email(
 
     assert response.status_code == 201, response.text
     send_mock.assert_awaited_once()
+    assert send_mock.await_args is not None
     kwargs = send_mock.await_args.kwargs
     assert kwargs["to_email"] == "jane@example.com"
     assert kwargs["event"] == "account_created"
@@ -408,6 +410,7 @@ async def test_quote_accept_dispatches_confirmation_email(
 
     assert response.status_code == 200, response.text
     send_mock.assert_awaited_once()
+    assert send_mock.await_args is not None
     kwargs = send_mock.await_args.kwargs
     assert kwargs["to_email"] == "jane@example.com"
     assert kwargs["event"] == "quote_accepted"
@@ -432,6 +435,7 @@ async def test_email_triage_question_sends_to_contact_email(
     await email_triage_question(db, tenant, lead, "Where is the consumer unit?")
 
     transport.assert_awaited_once()
+    assert transport.await_args is not None
     kwargs = transport.await_args.kwargs
     assert kwargs["to_email"] == "homeowner@example.com"
     assert kwargs["from_name"] == tenant.name
@@ -480,6 +484,7 @@ async def test_start_ai_triage_dispatches_email(
     await start_ai_triage(db, tenant, lead.id, 0.5)
 
     email_mock.assert_awaited_once()
+    assert email_mock.await_args is not None
     args = email_mock.await_args.args
     assert args[1].id == tenant.id
     assert args[2].id == lead.id
@@ -515,6 +520,7 @@ async def test_ai_followup_endpoint_dispatches_email(
 
     assert response.status_code == 200, response.text
     email_mock.assert_awaited_once()
+    assert email_mock.await_args is not None
     args = email_mock.await_args.args
     assert args[2].id == lead.id
     assert args[3] == "Where is the consumer unit located?"

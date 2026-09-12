@@ -18,6 +18,7 @@ with a system actor (``None`` — the ``AuditLog.actor_id`` column allows it),
 and swallow + log every failure so the scheduling request is never affected.
 """
 
+import re
 import time
 from typing import Any
 from uuid import UUID
@@ -304,11 +305,70 @@ async def start_ai_triage(
     )
 
 
+def _humanize_key(key: str) -> str:
+    """Turn a camelCase/snake_case payload key into a readable label."""
+    spaced = re.sub(r"(?<=[a-z0-9])(?=[A-Z])", " ", key).replace("_", " ")
+    return spaced.strip().lower()
+
+
+def _format_answer(value: Any) -> str | None:
+    """Render one captured answer as human-readable text; None means skip it."""
+    if value is None or value == "":
+        return None
+    if isinstance(value, bool):
+        return "yes" if value else "no"
+    if isinstance(value, (int, float)):
+        return str(value)
+    if isinstance(value, str):
+        return value.strip() or None
+    if isinstance(value, (list, tuple)):
+        items = [text for item in value if (text := _format_answer(item)) is not None]
+        return ", ".join(items) if items else None
+    return None
+
+
+def _render_answers(label: str, answers: dict[str, Any]) -> str | None:
+    """Render a dict of captured answers as ``label: key: value, ...``."""
+    parts = []
+    for key, value in answers.items():
+        text = _format_answer(value)
+        if text is not None:
+            parts.append(f"{_humanize_key(str(key))}: {text}")
+    if not parts:
+        return None
+    return f"{label}: " + ", ".join(parts)
+
+
+# structured_data keys rendered by dedicated sections below (or internal-only),
+# so the generic catch-all loop skips them.
+_HANDLED_STRUCTURED_KEYS = frozenset(
+    {
+        "title",
+        "category",
+        "property",
+        "questionnaire",
+        "ai_extracted",
+        "budgetContext",
+        "preferredContact",
+        "bestTimeToCall",
+        "marketing_consent",
+    }
+)
+
+
 def build_triage_description(quote_request: QuoteRequest) -> str:
     """Assemble the LLM triage context from a quote request (shared by the
-    ai-followup endpoint and the low-confidence auto-triage trigger)."""
+    ai-followup endpoint and the low-confidence auto-triage trigger).
+
+    Every fact the customer has already given — request detail, property
+    profile, questionnaire answers, contact preferences, photos and anything
+    confirmed earlier in the triage chat — is rendered under an explicit
+    "already provided" banner. The follow-up question must acknowledge that
+    information and ask only for what is missing: the original defect was the
+    first follow-up re-asking for symptoms stated in the request and looping
+    when the customer replied "no".
+    """
     sd = quote_request.structured_data or {}
-    parts: list[str] = []
 
     problem_parts: list[str] = []
     title = sd.get("title") or ""
@@ -316,42 +376,107 @@ def build_triage_description(quote_request: QuoteRequest) -> str:
     if title:
         problem_parts.append(str(title))
     if category and category != title:
-        problem_parts.append(f"[{category}]")
+        problem_parts.append(f"[{_humanize_key(str(category))}]")
     problem = " ".join(problem_parts)
     if quote_request.raw_text:
         problem = f"{problem} — {quote_request.raw_text}" if problem else quote_request.raw_text
-    if problem:
-        parts.append(f"Customer's stated problem: {problem}")
 
-    property_profile = sd.get("property") or {}
-    if property_profile:
-        prop_parts = []
-        for key in ("type", "age", "bedrooms", "parking", "tenure"):
-            value = property_profile.get(key)
-            if value is not None and value != "":
-                prop_parts.append(f"{key}: {value}")
-        if prop_parts:
-            parts.append("Property: " + ", ".join(prop_parts))
+    provided: list[str] = []
 
-    questionnaire = sd.get("questionnaire") or {}
-    if questionnaire:
+    property_profile = sd.get("property")
+    if isinstance(property_profile, dict):
+        rendered = _render_answers("Property", property_profile)
+        if rendered:
+            provided.append(rendered)
+
+    questionnaire = sd.get("questionnaire")
+    if isinstance(questionnaire, dict):
         for section, answers in questionnaire.items():
+            label = _humanize_key(str(section))
             if isinstance(answers, dict):
-                q_parts = []
-                for key, value in answers.items():
-                    if value is not None and value != "":
-                        q_parts.append(f"{key}: {value}")
-                if q_parts:
-                    parts.append(f"{section}: " + ", ".join(q_parts))
-            elif answers is not None and answers != "" and not isinstance(answers, bool):
+                rendered = _render_answers(label.capitalize(), answers)
+                if rendered:
+                    provided.append(rendered)
+            else:
                 # Flat questionnaire shape (e.g. fault-finding's free-text
-                # other_description) — the key is the question label.
-                parts.append(f"{section.replace('_', ' ')}: {answers}")
+                # other_description, or the shared notes field) — the key is
+                # the question label.
+                text = _format_answer(answers)
+                if text is not None:
+                    provided.append(f"{label.capitalize()}: {text}")
+
+    budget = sd.get("budgetContext")
+    if isinstance(budget, dict):
+        rendered = _render_answers("Budget context", budget)
+        if rendered:
+            provided.append(rendered)
+
+    contact_pref = _format_answer(sd.get("preferredContact"))
+    best_time = _format_answer(sd.get("bestTimeToCall"))
+    pref_parts = []
+    if contact_pref:
+        pref_parts.append(f"preferred contact: {contact_pref}")
+    if best_time:
+        pref_parts.append(f"best time to call: {best_time}")
+    if pref_parts:
+        provided.append("Contact preferences: " + ", ".join(pref_parts))
+
+    # Facts the customer confirmed in earlier triage turns (persisted by the
+    # ai-followup endpoint) — re-feeding them is what stops the assistant
+    # asking the same question twice.
+    ai_extracted = sd.get("ai_extracted")
+    if isinstance(ai_extracted, dict):
+        rendered = _render_answers("Already confirmed during triage", ai_extracted)
+        if rendered:
+            provided.append(rendered)
+
+    # Catch-all for keys added by new intake versions, so future answers are
+    # never silently dropped from the triage context.
+    for key, value in sd.items():
+        if key in _HANDLED_STRUCTURED_KEYS:
+            continue
+        if isinstance(value, dict):
+            rendered = _render_answers(_humanize_key(str(key)).capitalize(), value)
+            if rendered:
+                provided.append(rendered)
+        else:
+            text = _format_answer(value)
+            if text is not None:
+                provided.append(f"{_humanize_key(str(key)).capitalize()}: {text}")
 
     if quote_request.urgency:
-        parts.append(f"Urgency: {quote_request.urgency}")
+        provided.append(f"Urgency: {_humanize_key(quote_request.urgency)}")
 
-    return "\n".join(parts) or "Electrical work requested by a customer."
+    dates = [
+        str(entry["date"])
+        for entry in quote_request.preferred_dates or []
+        if isinstance(entry, dict) and entry.get("date")
+    ]
+    if dates:
+        provided.append("Preferred visit dates: " + ", ".join(dates))
+
+    photo_count = len(quote_request.media_urls or [])
+    if photo_count:
+        provided.append(f"Photos attached: {photo_count}")
+
+    if not problem and not provided:
+        return "Electrical work requested by a customer."
+
+    parts: list[str] = []
+    if problem:
+        parts.append(f"Customer's stated problem: {problem}")
+    if provided:
+        parts.append(
+            "The customer has ALREADY PROVIDED everything below — never ask for it "
+            "again. Acknowledge it (especially in your first message) and only ask "
+            "about details that are still missing:\n" + "\n".join(provided)
+        )
+    parts.append(
+        "If the customer declines or cannot answer a question, do NOT repeat it — "
+        "move on to the next most valuable missing detail, or close the conversation."
+    )
+
+    return "\n\n".join(parts) or "Electrical work requested by a customer."
 
 
 async def requote_after_triage_close(tenant_id: UUID, quote_request_id: UUID) -> None:

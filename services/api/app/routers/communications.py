@@ -153,7 +153,7 @@ async def list_communications(
     actor: ActorDep,
     db: DbDep,
     quote_request_id: UUID | None = Query(None),
-) -> list[Communication]:
+) -> list[CommunicationRead]:
     """List communications for the current tenant, optionally filtered by thread."""
     await set_tenant_in_session(db, tenant.id)
 
@@ -169,7 +169,19 @@ async def list_communications(
     if quote_request_id is not None:
         stmt = stmt.where(Communication.quote_request_id == quote_request_id)
     result = await db.execute(stmt)
-    return list(result.scalars().all())
+    reads: list[CommunicationRead] = []
+    for comm in result.scalars().all():
+        read = CommunicationRead.model_validate(comm)
+        # Direction is tenant-relative and is derived from the actor at write
+        # time. Rows written before that fix stored "outbound" for everything
+        # (including customer-authored chat), so normalise the known-broken
+        # case at read time instead of requiring a data migration. Only
+        # customer-authored rows are touched — staff can legitimately log an
+        # inbound call/email with sender_role "business".
+        if read.sender_role == "customer" and read.direction != "inbound":
+            read = read.model_copy(update={"direction": "inbound"})
+        reads.append(read)
+    return reads
 
 
 @router.post("", status_code=status.HTTP_201_CREATED, response_model=CommunicationRead)

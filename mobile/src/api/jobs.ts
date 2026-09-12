@@ -14,6 +14,11 @@ export type ApiJob = {
   scheduledEnd: string | null;
   completedAt: string | null;
   notes: string | null;
+  assignedUserId: string | null;
+  /** Display name of the assignee, derived server-side. */
+  assignedTo: string | null;
+  /** Photo URLs carried over from the source quote. */
+  photos: string[];
   customer: ApiContact;
 };
 
@@ -33,6 +38,8 @@ export type CreateJobInput = {
   /** ISO datetimes; snakeized to scheduled_start/scheduled_end on the wire. */
   scheduledStart?: string;
   scheduledEnd?: string;
+  notes?: string;
+  assignedUserId?: string;
 };
 
 /** Create a standalone job (POST /jobs). */
@@ -40,10 +47,24 @@ export async function createJob(input: CreateJobInput): Promise<ApiJob> {
   return api.post<ApiJob>("/jobs", input);
 }
 
+export type UpdateJobInput = {
+  scheduledStart?: string;
+  scheduledEnd?: string;
+  notes?: string;
+  /** Pass null to unassign. */
+  assignedUserId?: string | null;
+};
+
+/** Update a job's schedule, notes or assignee (PATCH /jobs/{id}). */
+export async function updateJob(id: string, input: UpdateJobInput): Promise<ApiJob> {
+  return api.patch<ApiJob>(`/jobs/${id}`, input);
+}
+
 export type ConvertToJobSchedule = {
   scheduledStart?: string;
   scheduledEnd?: string;
   notes?: string;
+  assignedUserId?: string;
 };
 
 /**
@@ -94,7 +115,7 @@ function mapJob(j: ApiJob): Job {
     postcode: j.customer?.postcode ?? "",
     address: j.customer?.address ?? "",
     status: STATUS_MAP[j.status] ?? "confirmed",
-    assignedTo: "",
+    assignedTo: j.assignedTo ?? "",
     date: start ? toLocalIsoDate(start) : "",
     time: start ? formatTime(start) : "",
     endTime: end ? formatTime(end) : undefined,
@@ -158,6 +179,18 @@ export function useCreateJob() {
     onSuccess: (job) => {
       qc.invalidateQueries({ queryKey: ["jobs"] });
       qc.invalidateQueries({ queryKey: ["job", job.id] });
+    },
+  });
+}
+
+/** Mutation: update a job's schedule/notes/assignee and refresh the caches. */
+export function useUpdateJob(id: string | undefined) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: UpdateJobInput) => updateJob(id as string, input),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["jobs"] });
+      qc.invalidateQueries({ queryKey: ["job", id] });
     },
   });
 }

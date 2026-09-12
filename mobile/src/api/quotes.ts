@@ -148,6 +148,22 @@ export async function generateQuoteAsync(
   });
 }
 
+/**
+ * Generate an AI draft quote for an existing CRM contact (POST /quotes/generate
+ * with contact_id). Used by the quote-less job → AI invoice flow, where the
+ * generated lines become the invoice's line items.
+ */
+export async function generateQuoteForContact(input: {
+  contactId: string;
+  description: string;
+}): Promise<ApiQuote> {
+  return api.post<ApiQuote>(
+    "/quotes/generate",
+    { contactId: input.contactId, description: input.description },
+    { timeoutMs: AI_TIMEOUT_MS }
+  );
+}
+
 /** Mark a quote as sent to the customer (POST /quotes/{id}/send). */
 export async function sendQuote(id: string): Promise<void> {
   await api.post(`/quotes/${id}/send`);

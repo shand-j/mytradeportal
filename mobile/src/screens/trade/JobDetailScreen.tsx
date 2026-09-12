@@ -1,8 +1,7 @@
-import { useMemo, useState } from "react";
-import { Alert, Linking, ScrollView, TextInput, View } from "react-native";
+import { useEffect, useMemo, useState } from "react";
+import { Alert, Image, Linking, Pressable, ScrollView, TextInput, View } from "react-native";
 import { Button } from "../../components/ui/Button";
 import { Header } from "../../components/ui/Header";
-import { IconButton } from "../../components/ui/IconButton";
 import { Text } from "../../components/ui/Text";
 import { Screen } from "../../components/ui/Screen";
 import { ApiError } from "../../lib/apiClient";
@@ -30,6 +29,8 @@ const STATUS_COLORS: Record<JobStatus, string> = {
 
 type InvoiceItem = { id: string; description: string; amount: number };
 
+type JobUpdatePatch = { notes?: string; assignedUserId?: string | null };
+
 type JobDetailScreenProps = {
   job: Job;
   onClose: () => void;
@@ -38,6 +39,8 @@ type JobDetailScreenProps = {
     lineItems: { description: string; amount: number }[],
     total: number
   ) => void | Promise<void>;
+  /** Quote-less jobs: open the AI create-invoice page. */
+  onCreateInvoiceAi?: () => void;
   /** Persist status transitions on the backend. */
   onStart?: () => Promise<void>;
   onComplete?: () => Promise<void>;
@@ -47,6 +50,14 @@ type JobDetailScreenProps = {
   vatRate?: number;
   /** Navigate to the existing invoice. */
   onViewInvoice?: () => void;
+  /** Persist notes/assignee changes (PATCH /jobs/{id}). */
+  onUpdateJob?: (patch: JobUpdatePatch) => Promise<void>;
+  /** Tenant staff members available for assignment. */
+  members?: { id: string; fullName: string }[];
+  /** Notes saved on the backend job record. */
+  initialNotes?: string | null;
+  /** Photos carried over from the source quote. */
+  photos?: string[];
   busy?: boolean;
 };
 
@@ -54,20 +65,37 @@ export function JobDetailScreen({
   job,
   onClose,
   onSubmitInvoice,
+  onCreateInvoiceAi,
   onStart,
   onComplete,
   existingInvoiceId,
   vatRate,
   onViewInvoice,
+  onUpdateJob,
+  members,
+  initialNotes,
+  photos,
   busy,
 }: JobDetailScreenProps) {
   const [status, setStatus] = useState<JobStatus>(job.status);
-  const [notes, setNotes] = useState("");
+  const [notes, setNotes] = useState(initialNotes ?? "");
+  const [notesDirty, setNotesDirty] = useState(false);
+  const [savingNotes, setSavingNotes] = useState(false);
+  const [assignedTo, setAssignedTo] = useState(job.assignedTo);
+  const [assigneePickerOpen, setAssigneePickerOpen] = useState(false);
+  const [savingAssignee, setSavingAssignee] = useState(false);
   const [items, setItems] = useState<InvoiceItem[]>([]);
   const [submitting, setSubmitting] = useState(false);
 
-  // Quote-less jobs have no priced lines to inherit: the electrician must add
-  // line items by hand before an invoice can be created.
+  // The job record loads asynchronously — adopt server notes until the user
+  // starts editing.
+  useEffect(() => {
+    if (!notesDirty) setNotes(initialNotes ?? "");
+  }, [initialNotes, notesDirty]);
+  useEffect(() => setAssignedTo(job.assignedTo), [job.assignedTo]);
+
+  // Quote-less jobs have no priced lines to inherit: the electrician builds the
+  // invoice on the AI create-invoice page (or by hand below).
   const hasQuote = job.quoteId !== "";
 
   const totals = useMemo(() => {
@@ -98,8 +126,43 @@ export function JobDetailScreen({
     }
   };
 
+  const handleSaveNotes = async () => {
+    if (!onUpdateJob) return;
+    setSavingNotes(true);
+    try {
+      await onUpdateJob({ notes });
+      setNotesDirty(false);
+    } catch (err) {
+      Alert.alert("Couldn't save the notes", errorMessage(err, "Please try again."));
+    } finally {
+      setSavingNotes(false);
+    }
+  };
+
+  const handleSelectAssignee = async (userId: string | null, name: string) => {
+    setAssigneePickerOpen(false);
+    if (!onUpdateJob) {
+      setAssignedTo(name);
+      return;
+    }
+    setSavingAssignee(true);
+    try {
+      await onUpdateJob({ assignedUserId: userId });
+      setAssignedTo(name);
+    } catch (err) {
+      Alert.alert("Couldn't update the assignee", errorMessage(err, "Please try again."));
+    } finally {
+      setSavingAssignee(false);
+    }
+  };
+
   const handleSubmitInvoice = async () => {
     if (!hasQuote && items.length === 0) {
+      // N19: quote-less jobs build their invoice on the AI create-invoice page.
+      if (onCreateInvoiceAi) {
+        onCreateInvoiceAi();
+        return;
+      }
       Alert.alert(
         "No quote attached",
         "This job has no quote attached, so there are no priced lines to invoice. Add the job's line items above first, then create the invoice."
@@ -206,28 +269,97 @@ export function JobDetailScreen({
         </View>
 
         <View className="rounded-2xl bg-slate-100 p-4 gap-3">
-          <Text variant="body" weight="semibold">
-            Assigned to
+          <View className="flex-row items-center justify-between">
+            <Text variant="body" weight="semibold">
+              Assigned to
+            </Text>
+            {members && members.length > 0 && (
+              <Pressable
+                testID="job-assignee-edit"
+                onPress={() => setAssigneePickerOpen((open) => !open)}
+              >
+                <Text variant="caption" color="primary">
+                  {assigneePickerOpen ? "Done" : "Change"}
+                </Text>
+              </Pressable>
+            )}
+          </View>
+          <Text testID="job-assignee-name" variant="body">
+            {savingAssignee ? "Saving…" : assignedTo || "Unassigned"}
           </Text>
-          <Text variant="body">{job.assignedTo}</Text>
+          {assigneePickerOpen && members && (
+            <View className="flex-row flex-wrap gap-2">
+              <Button
+                testID="job-assignee-none"
+                title="Unassigned"
+                size="sm"
+                variant={assignedTo === "" ? "primary" : "outline"}
+                onPress={() => void handleSelectAssignee(null, "")}
+              />
+              {members.map((member) => (
+                <Button
+                  key={member.id}
+                  testID={`job-assignee-${member.id}`}
+                  title={member.fullName}
+                  size="sm"
+                  variant={assignedTo === member.fullName ? "primary" : "outline"}
+                  onPress={() => void handleSelectAssignee(member.id, member.fullName)}
+                />
+              ))}
+            </View>
+          )}
         </View>
 
-        {status === "completed" ? (
-          <>
-            <View className="rounded-2xl bg-slate-100 p-4 gap-2">
-              <Text variant="body" weight="semibold">
-                Completion notes
-              </Text>
-              <TextInput
-                testID="job-completion-notes"
-                className="min-h-20 rounded-xl border border-slate-200 bg-white p-3 text-base text-slate-900"
-                value={notes}
-                onChangeText={setNotes}
-                multiline
-                textAlignVertical="top"
-              />
-            </View>
+        {photos && photos.length > 0 && (
+          <View className="rounded-2xl bg-slate-100 p-4 gap-3">
+            <Text variant="body" weight="semibold">
+              Photos
+            </Text>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+              <View className="flex-row gap-2">
+                {photos.map((url, index) => (
+                  <Image
+                    key={url}
+                    testID={`job-photo-${index}`}
+                    source={{ uri: url }}
+                    className="h-24 w-24 rounded-xl"
+                    accessibilityLabel={`Job photo ${index + 1}`}
+                  />
+                ))}
+              </View>
+            </ScrollView>
+          </View>
+        )}
 
+        <View className="rounded-2xl bg-slate-100 p-4 gap-2">
+          <Text variant="body" weight="semibold">
+            Notes
+          </Text>
+          <TextInput
+            testID="job-notes-input"
+            className="min-h-20 rounded-xl border border-slate-200 bg-white p-3 text-base text-slate-900"
+            value={notes}
+            onChangeText={(value) => {
+              setNotes(value);
+              setNotesDirty(true);
+            }}
+            placeholder="Access details, AI assumptions, customer requests…"
+            multiline
+            textAlignVertical="top"
+          />
+          {onUpdateJob && notesDirty && (
+            <Button
+              testID="job-notes-save"
+              title={savingNotes ? "Saving…" : "Save notes"}
+              size="sm"
+              disabled={savingNotes}
+              onPress={() => void handleSaveNotes()}
+            />
+          )}
+        </View>
+
+        {status === "completed" && (
+          <>
             {existingInvoiceId ? (
               <View className="rounded-2xl bg-slate-100 p-4 gap-2">
                 <Text variant="body" weight="semibold">
@@ -249,8 +381,8 @@ export function JobDetailScreen({
               </View>
               {!hasQuote && (
                 <Text variant="caption" color="secondary">
-                  This job has no quote attached — add the job's line items below before
-                  creating the invoice.
+                  This job has no quote attached — add the job's line items below, or build the
+                  invoice with AI.
                 </Text>
               )}
               {items.map((item) => (
@@ -292,7 +424,7 @@ export function JobDetailScreen({
               </View>
               <View className="flex-row justify-between">
                 <Text variant="caption" color="secondary">
-                  VAT (20%)
+                  VAT ({((vatRate ?? 0.2) * 100).toFixed(0)}%)
                 </Text>
                 <Text variant="caption" color="secondary">
                   £{totals.vat.toFixed(2)}
@@ -309,15 +441,6 @@ export function JobDetailScreen({
             </View>
             )}
           </>
-        ) : (
-          <View className="rounded-2xl bg-slate-100 p-4 gap-2">
-            <Text variant="body" weight="semibold">
-              Notes
-            </Text>
-            <Text variant="body" color="secondary">
-              Add any job notes here.
-            </Text>
-          </View>
         )}
       </ScrollView>
 
@@ -348,16 +471,26 @@ export function JobDetailScreen({
                 onPress={onViewInvoice}
               />
             ) : (
-              <Button
-                testID="job-create-invoice"
-                title={
-                  submitting
-                    ? "Creating invoice…"
-                    : `Create & send invoice · £${totals.total.toFixed(2)}`
-                }
-                disabled={submitting}
-                onPress={handleSubmitInvoice}
-              />
+              <>
+                {!hasQuote && onCreateInvoiceAi && (
+                  <Button
+                    testID="job-create-invoice-ai"
+                    title="Create invoice with AI"
+                    onPress={onCreateInvoiceAi}
+                  />
+                )}
+                <Button
+                  testID="job-create-invoice"
+                  title={
+                    submitting
+                      ? "Creating invoice…"
+                      : `Create & send invoice · £${totals.total.toFixed(2)}`
+                  }
+                  variant={!hasQuote && onCreateInvoiceAi ? "outline" : "primary"}
+                  disabled={submitting}
+                  onPress={handleSubmitInvoice}
+                />
+              </>
             )}
             <Button title="Close" variant="outline" onPress={onClose} />
           </>

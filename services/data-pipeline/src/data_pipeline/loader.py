@@ -6,6 +6,7 @@ from datetime import datetime
 from decimal import Decimal
 from typing import Any
 
+import structlog
 from qdrant_client.models import PointStruct
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -26,6 +27,8 @@ from data_pipeline.normalizer.unified_product import (
 from data_pipeline.qdrant import ensure_collection, get_qdrant_client
 from data_pipeline.scrapers.screwfix_scraper import ScrewfixScraper
 from data_pipeline.scrapers.toolstation_scraper import ToolstationScraper
+
+logger = structlog.get_logger(__name__)
 
 TRADE = "electrical"
 REGION = "UK"
@@ -286,10 +289,20 @@ async def _index_in_qdrant(items: list[CostItem]) -> None:
         return
 
     qdrant = get_qdrant_client()
+    vector_size = get_embedding_dimension()
+    # Ingest must agree with the API's retrieval path on collection + vector
+    # dimensions; log both loudly so a mismatch is visible in deploy logs.
+    logger.info(
+        "qdrant_index_start",
+        collection=settings.qdrant_collection_name,
+        embedding_model=settings.embedding_model,
+        dims=vector_size,
+        item_count=len(items),
+    )
     await ensure_collection(
         qdrant,
         settings.qdrant_collection_name,
-        vector_size=get_embedding_dimension(),
+        vector_size=vector_size,
     )
 
     vectors = await embed_texts([item.description for item in items])

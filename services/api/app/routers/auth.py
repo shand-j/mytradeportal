@@ -1,13 +1,16 @@
 """Authentication endpoints for the back-office UI and native clients."""
 
 import hashlib
+import os
 import secrets
 from datetime import datetime, timedelta
+from typing import Any
+from uuid import UUID
 
 import httpx
 import structlog
-from fastapi import APIRouter, HTTPException, Request, Response, status
-from sqlalchemy import select
+from fastapi import APIRouter, HTTPException, Query, Request, Response, status
+from sqlalchemy import select, update
 
 from app.dependencies import (
     ActiveUserDep,
@@ -55,6 +58,42 @@ _RESET_TOKEN_BYTES = 32
 def _hash_reset_token(token: str) -> str:
     """SHA-256 the raw token; the DB only ever stores this hash."""
     return hashlib.sha256(token.encode()).hexdigest()
+
+
+def _build_reset_url(request: Request, raw_token: str) -> str:
+    """Build the emailed reset link against the public landing site.
+
+    ``PASSWORD_RESET_BASE_URL`` (env) must point at the marketing site
+    (``https://www.mytradeportal.co.uk`` in production) — app users cannot
+    reset on the back-office app or the Django admin that ``APP_PUBLIC_URL``
+    may target. Falls back to ``APP_PUBLIC_URL``, then the API's own origin,
+    so local dev keeps working without extra config.
+    """
+    from app.config import settings as _settings
+
+    base = (
+        os.environ.get("PASSWORD_RESET_BASE_URL", "").strip()
+        or _settings.app_public_url
+        or str(request.base_url).rstrip("/")
+    ).rstrip("/")
+    return f"{base}/reset-password?token={raw_token}"
+
+
+async def _invalidate_reset_tokens(db: DbDep, owner_type: str, owner_id: UUID) -> None:
+    """Mark every outstanding token for the account as used.
+
+    Called when a fresh token is issued (only the newest emailed link stays
+    valid) and again after a successful reset (defence in depth).
+    """
+    await db.execute(
+        update(PasswordResetToken)
+        .where(
+            PasswordResetToken.owner_type == owner_type,
+            PasswordResetToken.owner_id == owner_id,
+            PasswordResetToken.used_at.is_(None),
+        )
+        .values(used_at=datetime.utcnow())
+    )
 
 
 def _has_explicit_tenant_context(request: Request, data: UserLogin) -> bool:
@@ -242,6 +281,52 @@ async def me(current_user: ActiveUserDep) -> UserRead:
     return UserRead.model_validate(current_user)
 
 
+@router.get("/tenant-status")
+async def tenant_status(current_user: ActiveUserDep, db: DbDep) -> dict[str, Any]:
+    """Subscription gate check for the authenticated staff user's tenant.
+
+    This is the tenant-status half of the app-access paywall (the other half
+    is :class:`app.middleware.SubscriptionPaywallMiddleware`, which returns
+    402 on staff endpoints for lapsed tenants). The mobile/web app calls this
+    at session load to decide between routing to the dashboard or the
+    paywall.
+
+    Beta-friendly semantics (mirrors the middleware):
+    - No subscription row → legacy beta tenant, comped: access "active".
+    - ``beta_comped`` in tenant settings → explicitly comped: "active".
+    - Row present → live states (trialing within trial, active, past_due
+      dunning grace) pass; incomplete/paused/canceled/expired-trial get
+      ``access="payment_required"`` and the app shows the paywall.
+    """
+    from app.models import Subscription
+    from app.routers.billing import is_subscription_active
+
+    await set_tenant_in_session(db, current_user.tenant_id)
+    tenant = await db.get(Tenant, current_user.tenant_id)
+    subscription = await db.scalar(
+        select(Subscription).where(Subscription.tenant_id == current_user.tenant_id)
+    )
+
+    settings_comped = bool(tenant.settings.get("beta_comped")) if tenant else False
+    beta_comped = settings_comped or subscription is None
+    access = "active" if beta_comped or is_subscription_active(subscription) else "payment_required"
+
+    return {
+        "tenant_id": str(current_user.tenant_id),
+        "tenant_slug": tenant.slug if tenant else None,
+        "tenant_name": tenant.name if tenant else None,
+        "tenant_status": tenant.status if tenant else None,
+        "subscription_status": subscription.status if subscription else None,
+        "trial_ends_at": (
+            subscription.trial_ends_at.isoformat()
+            if subscription and subscription.trial_ends_at
+            else None
+        ),
+        "access": access,
+        "beta_comped": beta_comped,
+    }
+
+
 @router.post("/password-reset/request")
 @limiter.limit("5/hour")
 async def password_reset_request(
@@ -279,6 +364,9 @@ async def password_reset_request(
         logger.info("password_reset_no_account", email_hash=_hash_reset_token(email))
         return generic
 
+    # Only the newest emailed link stays valid — retire any earlier tokens.
+    await _invalidate_reset_tokens(db, owner_type, owner_id)
+
     raw = secrets.token_urlsafe(_RESET_TOKEN_BYTES)
     record = PasswordResetToken(
         tenant_id=tenant_id,
@@ -296,14 +384,7 @@ async def password_reset_request(
     elif customer is not None:
         display_name = customer.full_name.split()[0] if customer.full_name else None
 
-    from app.config import settings as _settings
-
-    app_origin = (
-        _settings.app_public_url.rstrip("/")
-        if _settings.app_public_url
-        else str(request.base_url).rstrip("/")
-    )
-    reset_url = f"{app_origin}/reset-password?token={raw}"
+    reset_url = _build_reset_url(request, raw)
     subject, html, text = password_reset_template(name=display_name, reset_url=reset_url)
     # Transactional security mail goes out platform-branded from the no-reply
     # sender (see ``_resend_from``); it must not impersonate the tenant or
@@ -336,6 +417,42 @@ async def password_reset_request(
             error=str(exc)[:300],
         )
     return generic
+
+
+@router.get("/password-reset/inspect")
+@limiter.limit("30/hour")
+async def password_reset_inspect(
+    request: Request,
+    db: DbDep,
+    token: str = Query(min_length=32, max_length=128),
+) -> dict[str, str]:
+    """Return the account email for a valid reset token.
+
+    The landing-site reset page calls this on load so the user can see whose
+    password they are resetting before choosing a new one. Reading the token
+    does **not** consume it — only ``/password-reset/confirm`` does.
+    """
+    await bypass_rls_for_transaction(db)
+    record = await db.scalar(
+        select(PasswordResetToken).where(PasswordResetToken.token_hash == _hash_reset_token(token))
+    )
+    if record is None or record.used_at is not None or record.expires_at < datetime.utcnow():
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid or expired token"
+        )
+
+    email: str | None = None
+    if record.owner_type == "staff":
+        owner = await db.get(User, record.owner_id)
+        email = owner.email if owner is not None else None
+    else:
+        owner_customer = await db.get(Customer, record.owner_id)
+        email = owner_customer.email if owner_customer is not None else None
+    if email is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid or expired token"
+        )
+    return {"email": email, "expires_at": record.expires_at.isoformat()}
 
 
 @router.post("/password-reset/confirm")
@@ -382,6 +499,8 @@ async def password_reset_confirm(
         customer.password_hash = new_hash
 
     record.used_at = datetime.utcnow()
+    # Defence in depth: retire any other outstanding tokens for the account.
+    await _invalidate_reset_tokens(db, record.owner_type, record.owner_id)
     await db.commit()
     logger.info(
         "password_reset_completed",

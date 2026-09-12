@@ -1,10 +1,14 @@
 """Tests for invoice lifecycle endpoints."""
 
 from typing import Any
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import pytest
+from app.models import Notification
+from app.rls import set_tenant_in_session
 from httpx import AsyncClient
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 pytestmark = pytest.mark.asyncio
 
@@ -86,7 +90,7 @@ async def test_issue_invoice_maps_to_sent(client: AsyncClient) -> None:
     assert response.json()["status"] == "sent"
 
 
-async def test_mark_invoice_paid(client: AsyncClient) -> None:
+async def test_mark_invoice_paid(client: AsyncClient, db: AsyncSession) -> None:
     tenant = await _create_tenant(client, f"inv-{uuid4().hex[:8]}")
     contact = await _create_contact(client, tenant["id"], "Invoice Payer")
     invoice = await _create_invoice(client, tenant["id"], contact["id"])
@@ -99,6 +103,17 @@ async def test_mark_invoice_paid(client: AsyncClient) -> None:
     data = response.json()
     assert data["status"] == "paid"
     assert data["paid_at"] is not None
+
+    # The staff notification deep-links to the invoice detail screen.
+    await set_tenant_in_session(db, UUID(tenant["id"]))
+    notification = await db.scalar(
+        select(Notification).where(
+            Notification.tenant_id == UUID(tenant["id"]),
+            Notification.type == "invoice_paid",
+        )
+    )
+    assert notification is not None
+    assert notification.link == f"/invoices/{invoice['id']}"
 
 
 async def test_cancel_invoice(client: AsyncClient) -> None:

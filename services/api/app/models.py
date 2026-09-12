@@ -205,6 +205,13 @@ class Contact(TenantScopedBase):
     address: Mapped[str | None] = mapped_column(Text, nullable=True)
     postcode: Mapped[str | None] = mapped_column(String(20), nullable=True)
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Site logistics + property details captured on the CRM record so quote and
+    # job creation can pre-fill them for repeat customers.
+    preferred_contact_method: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    property_type: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    bedrooms: Mapped[int | None] = mapped_column(nullable=True)
+    parking_notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    access_notes: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     quotes: Mapped[list[Quote]] = relationship(
         "Quote", back_populates="contact", cascade="all, delete-orphan"
@@ -451,6 +458,10 @@ class Job(TenantScopedBase):
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     contact: Mapped[Contact] = relationship("Contact", back_populates="jobs")
+    # Staff member the job is assigned to (display name surfaced on JobRead).
+    assignee: Mapped[User | None] = relationship("User", foreign_keys=[assigned_user_id])
+    # Photos/files carried over from the source quote's quote request.
+    media: Mapped[list[MediaAsset]] = relationship("MediaAsset", foreign_keys="MediaAsset.job_id")
 
 
 class Appointment(TenantScopedBase):
@@ -839,6 +850,10 @@ class Customer(TenantScopedBase):
     magic_link_expires_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     marketing_consent: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     preferred_contact_method: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    # Parking/access notes mirrored from the CRM contact so quote/job creation
+    # can pre-fill site logistics whichever record it reads.
+    parking_notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    access_notes: Mapped[str | None] = mapped_column(Text, nullable=True)
 
 
 class Property(TenantScopedBase):

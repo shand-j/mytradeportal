@@ -9,6 +9,7 @@ import httpx
 import structlog
 from litellm import aembedding
 from openai import APIError
+from qdrant_client import AsyncQdrantClient
 from qdrant_client.models import (
     FieldCondition,
     Filter,
@@ -26,7 +27,7 @@ from sqlalchemy import or_, select
 from app.config import settings
 from app.database import get_db_session
 from app.models import CostItem
-from app.qdrant import ensure_collection, get_qdrant_client
+from app.qdrant import get_qdrant_client
 from app.rag.intent import extract_query_intent
 
 FilterCondition = (
@@ -265,6 +266,57 @@ def get_embedding_dimension() -> int:
     return known_dimensions.get(settings.embedding_model, 1536)
 
 
+async def _verify_query_collection(
+    qdrant: AsyncQdrantClient,
+    collection_name: str,
+    vector_size: int,
+) -> bool:
+    """Read-only compatibility check for the retrieval (query) path.
+
+    Never creates or deletes collections — a read path must not mutate the
+    index. The old behaviour called ``ensure_collection`` here, which deleted
+    and recreated the whole collection whenever the configured embedding
+    dimensions changed (e.g. the text-embedding-3-small → 3-large bump),
+    silently wiping every indexed cost item and leaving retrieval to return
+    "no catalog match" forever. Returns ``True`` only when the collection
+    exists and its vector size matches the configured embedding model; any
+    other outcome is logged at error level with the cause and remediation.
+    """
+    try:
+        exists = await qdrant.collection_exists(collection_name)
+        if not exists:
+            logger.error(
+                "retrieval_collection_missing",
+                collection=collection_name,
+                remediation="run the data-pipeline ingest to (re)build the index",
+            )
+            return False
+        info = await qdrant.get_collection(collection_name)
+        current_size = info.config.params.vectors.size  # type: ignore[union-attr]
+        if current_size != vector_size:
+            logger.error(
+                "retrieval_collection_dimension_mismatch",
+                collection=collection_name,
+                collection_dims=current_size,
+                expected_dims=vector_size,
+                embedding_model=settings.embedding_model,
+                remediation=(
+                    "the collection was indexed with a different embedding model; "
+                    "re-index via the data-pipeline so ingest and query dimensions agree"
+                ),
+            )
+            return False
+    except Exception as exc:
+        logger.error(
+            "retrieval_collection_check_failed",
+            collection=collection_name,
+            error_type=type(exc).__name__,
+            error=str(exc),
+        )
+        return False
+    return True
+
+
 def _embedding_kwargs(texts: list[str]) -> dict[str, Any]:
     """Build the kwargs for litellm.aembedding."""
     kwargs: dict[str, Any] = {
@@ -352,22 +404,21 @@ async def search_knowledge_chunks(
         return []
     try:
         vector = await embed_text(query)
-    except Exception:
-        logger.warning("knowledge_embed_failed", query_chars=len(query))
+    except Exception as exc:
+        logger.error(
+            "knowledge_embed_failed",
+            query_chars=len(query),
+            error_type=type(exc).__name__,
+            error=str(exc),
+        )
         return []
 
     qdrant = get_qdrant_client()
-    try:
-        await ensure_collection(
-            qdrant,
-            collection_name=settings.qdrant_knowledge_collection_name,
-            vector_size=len(vector),
-        )
-    except Exception:
-        logger.warning(
-            "knowledge_collection_check_failed",
-            collection=settings.qdrant_knowledge_collection_name,
-        )
+    if not await _verify_query_collection(
+        qdrant,
+        settings.qdrant_knowledge_collection_name,
+        vector_size=len(vector),
+    ):
         return []
 
     must_conditions: list[FilterCondition] = []
@@ -384,11 +435,12 @@ async def search_knowledge_chunks(
             with_payload=True,
         )
     except Exception as exc:
-        logger.warning(
+        logger.error(
             "knowledge_retrieval_error",
             collection=settings.qdrant_knowledge_collection_name,
             duration_ms=round((time.perf_counter() - started) * 1000, 2),
             error_type=type(exc).__name__,
+            error=str(exc),
         )
         return []
 
@@ -442,7 +494,11 @@ async def search_cost_items_with_status(
     When no embedding API key is configured, retrieval falls back to a lexical
     token-overlap search of the Postgres ``cost_items`` table (the production
     LLM has no embeddings API). The lexical path searches all active sources
-    and ignores the ``sources`` filter.
+    and ignores the ``sources`` filter. The same lexical fallback runs when the
+    vector index is missing, dimension-incompatible, empty, or unreachable —
+    every such degradation is logged at error level with its cause. The query
+    path is strictly read-only: it never creates, deletes, or recreates the
+    Qdrant collection (ingest owns the index lifecycle).
 
     By default only ``domestic_pipeline`` (scraped supplier) items are returned
     so generated quotes are grounded in real catalogue prices.
@@ -458,11 +514,12 @@ async def search_cost_items_with_status(
     except Exception as exc:
         # Embedding provider blip (DNS/connection) must not 500 quote
         # generation — degrade to the Postgres lexical search instead.
-        logger.warning(
+        logger.error(
             "retrieval_fallback",
             reason="embedding_error",
             mode="lexical",
             error_type=type(exc).__name__,
+            error=str(exc),
         )
         return await _lexical_search_cost_items_with_status(
             query, trade=trade, region=region, top_k=top_k
@@ -470,6 +527,24 @@ async def search_cost_items_with_status(
     limit = top_k or settings.rag_top_k
 
     qdrant = get_qdrant_client()
+
+    expected_dims = get_embedding_dimension()
+    if not await _verify_query_collection(qdrant, settings.qdrant_collection_name, expected_dims):
+        # Missing or dimension-mismatched index (e.g. collection indexed with
+        # text-embedding-3-small while the API now embeds with 3-large). The
+        # cause was logged at error level by the verifier; degrade to the
+        # Postgres lexical search so quotes still generate.
+        logger.error(
+            "retrieval_fallback",
+            reason="collection_incompatible",
+            mode="lexical",
+            collection=settings.qdrant_collection_name,
+            expected_dims=expected_dims,
+            embedding_model=settings.embedding_model,
+        )
+        return await _lexical_search_cost_items_with_status(
+            query, trade=trade, region=region, top_k=top_k
+        )
 
     active_sources = sources if sources is not None else ["domestic_pipeline"]
     must_conditions: list[Any] = [
@@ -498,11 +573,6 @@ async def search_cost_items_with_status(
 
     started = time.perf_counter()
     try:
-        await ensure_collection(
-            qdrant,
-            settings.qdrant_collection_name,
-            vector_size=get_embedding_dimension(),
-        )
         response = await qdrant.query_points(
             collection_name=settings.qdrant_collection_name,
             query=vector,
@@ -513,17 +583,38 @@ async def search_cost_items_with_status(
     except Exception as exc:
         # Qdrant/DNS blips are transient and must not 500 quote generation —
         # degrade to the Postgres lexical search so quotes still generate.
-        logger.warning(
+        logger.error(
             "retrieval_fallback",
             reason="qdrant_error",
             mode="lexical",
             collection=settings.qdrant_collection_name,
             duration_ms=round((time.perf_counter() - started) * 1000, 2),
             error_type=type(exc).__name__,
+            error=str(exc),
         )
         return await _lexical_search_cost_items_with_status(
             query, trade=trade, region=region, top_k=top_k
         )
+
+    if not response.points:
+        # A vector search over a populated index always returns up to `limit`
+        # nearest points (no server-side score floor), so zero points means
+        # the index is empty — e.g. recreated after an embedding-model change
+        # but not yet re-ingested. That is the "no catalog match" failure
+        # mode: log loudly and degrade to the lexical search rather than
+        # silently reporting no_index.
+        logger.error(
+            "retrieval_index_empty",
+            collection=settings.qdrant_collection_name,
+            duration_ms=round((time.perf_counter() - started) * 1000, 2),
+            remediation="run the data-pipeline ingest to (re)populate the index",
+        )
+        lexical_items, lexical_status = await _lexical_search_cost_items_with_status(
+            query, trade=trade, region=region, top_k=top_k
+        )
+        if lexical_items:
+            return lexical_items, lexical_status
+        return [], "no_index"
 
     items = [
         {

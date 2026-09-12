@@ -543,3 +543,56 @@ async def test_ai_followup_skips_notification_without_account(
         )
     )
     assert count == 0
+
+
+async def test_legacy_customer_message_reads_back_inbound(
+    admin_client: AsyncClient, db: AsyncSession
+) -> None:
+    """C2: direction is tenant-relative. Rows written before the write-time
+    fix stored "outbound" for everything, so customer-authored rows are
+    normalised to inbound at read time; staff-logged inbound channels
+    (calls/emails) are left untouched."""
+    tenant_id = UUID(admin_client.headers["X-Tenant-ID"])
+    quote_request = await _create_lead(db, tenant_id)
+    legacy_customer_row = Communication(
+        tenant_id=tenant_id,
+        contact_id=quote_request.contact_id,
+        quote_request_id=quote_request.id,
+        channel="in_app_chat",
+        direction="outbound",  # legacy mis-stored value
+        sender_role="customer",
+        body="The breaker trips straight away",
+    )
+    staff_call_log = Communication(
+        tenant_id=tenant_id,
+        contact_id=quote_request.contact_id,
+        quote_request_id=quote_request.id,
+        channel="phone_call",
+        direction="inbound",  # legitimately inbound, business-authored log
+        sender_role="business",
+        body="Customer called about the quote",
+    )
+    db.add_all([legacy_customer_row, staff_call_log])
+    await db.commit()
+
+    response = await admin_client.get(f"/communications?quote_request_id={quote_request.id}")
+    assert response.status_code == 200, response.text
+    by_body = {row["body"]: row for row in response.json()}
+    assert by_body["The breaker trips straight away"]["direction"] == "inbound"
+    assert by_body["Customer called about the quote"]["direction"] == "inbound"
+
+    # New writes keep deriving direction from the actor (already covered by
+    # the create tests) — the AI's own messages stay outbound.
+    ai_row = Communication(
+        tenant_id=tenant_id,
+        quote_request_id=quote_request.id,
+        channel="in_app_chat",
+        direction="outbound",
+        sender_role="ai",
+        body="Where is the fuse board?",
+    )
+    db.add(ai_row)
+    await db.commit()
+    response = await admin_client.get(f"/communications?quote_request_id={quote_request.id}")
+    by_body = {row["body"]: row for row in response.json()}
+    assert by_body["Where is the fuse board?"]["direction"] == "outbound"

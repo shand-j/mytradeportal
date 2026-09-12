@@ -2,10 +2,14 @@
 
 from datetime import datetime, timedelta
 from typing import Any
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import pytest
+from app.models import Notification
+from app.rls import set_tenant_in_session
 from httpx import AsyncClient
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 pytestmark = pytest.mark.asyncio
 
@@ -40,6 +44,23 @@ async def _create_job(client: AsyncClient, tenant_id: str, contact_id: str) -> d
     assert response.status_code == 201
     data: dict[str, Any] = response.json()
     return data
+
+
+async def test_create_job_links_notification_to_job(client: AsyncClient, db: AsyncSession) -> None:
+    """job_scheduled stores /job/{id} so the staff bell row deep-links."""
+    tenant = await _create_tenant(client, f"job-{uuid4().hex[:8]}")
+    contact = await _create_contact(client, tenant["id"], "Job Notifier")
+    job = await _create_job(client, tenant["id"], contact["id"])
+
+    await set_tenant_in_session(db, UUID(tenant["id"]))
+    notification = await db.scalar(
+        select(Notification).where(
+            Notification.tenant_id == UUID(tenant["id"]),
+            Notification.type == "job_scheduled",
+        )
+    )
+    assert notification is not None
+    assert notification.link == f"/job/{job['id']}"
 
 
 async def test_update_job_schedule(client: AsyncClient) -> None:

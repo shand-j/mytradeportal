@@ -2,9 +2,10 @@
 
 from datetime import datetime
 from decimal import Decimal
+from typing import Any
 from uuid import uuid4
 
-from app.models import Contact, Quote, QuoteRequest, Tenant
+from app.models import Contact, Notification, Quote, QuoteRequest, Tenant
 from app.rls import bypass_rls_in_session, set_tenant_in_session
 from httpx import AsyncClient
 from sqlalchemy import select
@@ -387,6 +388,17 @@ async def test_accept_quote_reconfirms_preferred_dates(
     assert body["status"] == "approved"
     assert body["accepted_dates"] == ["Fri 12 Sep", "Mon 15 Sep"]
 
+    # The staff notification deep-links to the quote detail screen.
+    await set_tenant_in_session(db, tenant.id)
+    notification = await db.scalar(
+        select(Notification).where(
+            Notification.tenant_id == tenant.id,
+            Notification.type == "quote_accepted",
+        )
+    )
+    assert notification is not None
+    assert notification.link == f"/quotes/{quote.id}"
+
 
 async def test_draft_quote_hidden_until_electrician_sends(
     client: AsyncClient, db: AsyncSession
@@ -515,3 +527,208 @@ async def test_contact_has_account_flag(client: AsyncClient, db: AsyncSession) -
     flags = {c["email"]: c["has_account"] for c in response.json()}
     assert flags[email] is True
     assert flags["lead@example.com"] is False
+
+
+async def test_quote_visibility_allow_list_hides_unlisted_statuses(
+    client: AsyncClient, db: AsyncSession
+) -> None:
+    """C3: customer quote visibility is a positive allow-list — a quote in any
+    pre-send state (draft or a future "in_review") is hidden everywhere, while
+    terminal states the customer took part in (e.g. invoiced) stay visible."""
+    slug = f"cust-{uuid4().hex[:8]}"
+    tenant = await _create_tenant(db, slug)
+    email = f"jane-{uuid4().hex[:6]}@example.com"
+    reg = await client.post("/customer/register", json=_register_payload(slug, email))
+    assert reg.status_code == 201, reg.text
+    token = reg.json()["accessToken"]
+    customer_id = reg.json()["customer"]["id"]
+    headers = {"Authorization": f"Bearer {token}"}
+
+    await set_tenant_in_session(db, tenant.id)
+    contact = await db.scalar(
+        select(Contact).where(Contact.tenant_id == tenant.id, Contact.email == email)
+    )
+    assert contact is not None
+    quote = Quote(
+        tenant_id=tenant.id,
+        contact_id=contact.id,
+        title="Socket installation",
+        status="in_review",  # hypothetical future pre-send state
+    )
+    db.add(quote)
+    await db.flush()
+    db.add(
+        QuoteRequest(
+            tenant_id=tenant.id,
+            contact_id=contact.id,
+            customer_id=customer_id,
+            quote_id=quote.id,
+            source="app",
+            raw_text="New sockets",
+        )
+    )
+    await db.commit()
+
+    # Hidden from the history embed, the quotes list and the action endpoints.
+    history = await client.get("/customer/quote-requests", headers=headers)
+    assert history.status_code == 200, history.text
+    assert history.json()[0]["quote"] is None
+    quotes = await client.get("/customer/quotes", headers=headers)
+    assert quotes.status_code == 200, quotes.text
+    assert quotes.json() == []
+    accept = await client.post(f"/customer/quotes/{quote.id}/accept", headers=headers)
+    assert accept.status_code == 404
+
+    # Terminal states the customer participated in stay visible (an accepted
+    # quote that was converted to an invoice must not vanish from the portal).
+    await set_tenant_in_session(db, tenant.id)
+    quote.status = "invoiced"
+    await db.commit()
+    history = await client.get("/customer/quote-requests", headers=headers)
+    assert history.json()[0]["quote"]["status"] == "invoiced"
+    quotes = await client.get("/customer/quotes", headers=headers)
+    assert [q["id"] for q in quotes.json()] == [str(quote.id)]
+
+
+async def test_register_response_includes_current_tenant_association(
+    client: AsyncClient, db: AsyncSession
+) -> None:
+    """C12: register returns the tenant association list (single entry)."""
+    slug = f"cust-{uuid4().hex[:8]}"
+    tenant = await _create_tenant(db, slug)
+    reg = await client.post(
+        "/customer/register", json=_register_payload(slug, f"jane-{uuid4().hex[:6]}@example.com")
+    )
+    assert reg.status_code == 201, reg.text
+    tenants = reg.json()["tenants"]
+    assert len(tenants) == 1
+    assert tenants[0]["slug"] == slug
+    assert tenants[0]["tenant_id"] == str(tenant.id)
+    assert tenants[0]["name"] == tenant.name
+    assert tenants[0]["is_current"] is True
+
+
+async def test_login_resolves_tenant_post_auth_and_lists_associations(
+    client: AsyncClient, db: AsyncSession
+) -> None:
+    """C12: login needs no business selection — email+password auth first,
+    tenant resolved from the account afterwards (newest active account wins),
+    and every active tenant association rides on the response."""
+    from app.models import Customer
+    from app.security import get_password_hash
+
+    slug_a = f"cust-{uuid4().hex[:8]}"
+    slug_b = f"cust-{uuid4().hex[:8]}"
+    await _create_tenant(db, slug_a)
+    tenant_b = await _create_tenant(db, slug_b)
+    email = f"jane-{uuid4().hex[:6]}@example.com"
+
+    # Older account at tenant A via the public register endpoint.
+    reg = await client.post("/customer/register", json=_register_payload(slug_a, email))
+    assert reg.status_code == 201, reg.text
+
+    # Newer account for the same email at tenant B (duplicate emails across
+    # tenants are allowed — resolution must pick the newest).
+    await set_tenant_in_session(db, tenant_b.id)
+    db.add(
+        Customer(
+            tenant_id=tenant_b.id,
+            email=email,
+            full_name="Homeowner Jane",
+            password_hash=get_password_hash("homeowner-pass-123"),
+            is_active=True,
+        )
+    )
+    await db.commit()
+
+    # No slug supplied: the mobile app authenticates tenant-agnostically.
+    login = await client.post(
+        "/customer/login", json={"email": email, "password": "homeowner-pass-123"}
+    )
+    assert login.status_code == 200, login.text
+    body = login.json()
+    assert body["customer"]["tenant_id"] == str(tenant_b.id)
+    tenants = {entry["slug"]: entry for entry in body["tenants"]}
+    assert set(tenants) == {slug_a, slug_b}
+    assert tenants[slug_a]["is_current"] is False
+    assert tenants[slug_b]["is_current"] is True
+
+    # Wrong password reveals nothing (no tenant list, generic 401).
+    bad = await client.post("/customer/login", json={"email": email, "password": "nope-nope-123"})
+    assert bad.status_code == 401
+    assert "tenants" not in bad.json()
+
+
+async def test_quote_to_accountless_contact_persists_flagged_unregistered(
+    client: AsyncClient, db: AsyncSession
+) -> None:
+    """C4: a quote sent to a contact with no account persists on the lead and
+    reads back with has_account=False (email-only comms); once the homeowner
+    registers with the same email, the same staff read flips to True."""
+    slug = f"cust-{uuid4().hex[:8]}"
+    tenant = await _create_tenant(db, slug)
+    email = f"lead-{uuid4().hex[:6]}@example.com"
+
+    await set_tenant_in_session(db, tenant.id)
+    contact = Contact(tenant_id=tenant.id, name="Accountless Lead", email=email)
+    db.add(contact)
+    await db.flush()
+    quote = Quote(
+        tenant_id=tenant.id,
+        contact_id=contact.id,
+        title="EV charger install",
+        status="sent",
+        sent_at=datetime.utcnow(),
+    )
+    db.add(quote)
+    await db.flush()
+    quote_request = QuoteRequest(
+        tenant_id=tenant.id,
+        contact_id=contact.id,
+        quote_id=quote.id,
+        source="app",
+        raw_text="EV charger on the driveway",
+    )
+    db.add(quote_request)
+
+    # Staff session for the tenant.
+    from app.models import User
+    from app.security import get_password_hash
+
+    password = "admin-password-123"
+    db.add(
+        User(
+            tenant_id=tenant.id,
+            email="owner@test.local",
+            full_name="Owner",
+            role="admin",
+            password_hash=get_password_hash(password),
+            is_active=True,
+        )
+    )
+    await db.commit()
+    login = await client.post(
+        "/auth/login",
+        headers={"host": f"{slug}.localhost"},
+        json={"email": "owner@test.local", "password": password},
+    )
+    assert login.status_code == 200, login.text
+
+    async def _lead_entry() -> dict[str, Any]:
+        response = await client.get("/quote-requests", headers={"X-Tenant-ID": str(tenant.id)})
+        assert response.status_code == 200, response.text
+        return next(row for row in response.json() if row["id"] == str(quote_request.id))
+
+    entry = await _lead_entry()
+    # Quote + contact persist even though the customer never signed up…
+    assert entry["quote"] is not None
+    assert entry["quote"]["status"] == "sent"
+    assert entry["customer"]["email"] == email
+    # …and the unregistered flag tells the electrician comms are email-only.
+    assert entry["customer"]["has_account"] is False
+
+    # Homeowner registers with the same email → flag flips on the same read.
+    reg = await client.post("/customer/register", json=_register_payload(slug, email))
+    assert reg.status_code == 201, reg.text
+    entry = await _lead_entry()
+    assert entry["customer"]["has_account"] is True

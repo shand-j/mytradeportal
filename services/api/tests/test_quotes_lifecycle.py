@@ -6,7 +6,8 @@ from unittest.mock import AsyncMock, patch
 from uuid import UUID, uuid4
 
 import pytest
-from app.models import BillOfQuantities, Quote
+from app.models import BillOfQuantities, Contact, Customer, Notification, Quote, QuoteRequest
+from app.rls import set_tenant_in_session
 from httpx import AsyncClient
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -87,6 +88,66 @@ async def test_send_quote(client: AsyncClient) -> None:
     data = response.json()
     assert data["status"] == "sent"
     assert data["sent_at"] is not None
+
+
+async def test_send_quote_links_notification_to_quote(
+    client: AsyncClient, db: AsyncSession
+) -> None:
+    """quote_sent stores /quotes/{id} so the customer bell row deep-links."""
+    tenant = await _create_tenant(client, f"quote-{uuid4().hex[:8]}")
+    tenant_id = UUID(tenant["id"])
+    await set_tenant_in_session(db, tenant_id)
+    contact = Contact(tenant_id=tenant_id, name="Quote Recipient", email="qr@example.com")
+    db.add(contact)
+    await db.flush()
+    customer = Customer(
+        tenant_id=tenant_id,
+        contact_id=contact.id,
+        email="qr@example.com",
+        full_name="Quote Recipient",
+    )
+    db.add(customer)
+    await db.flush()
+    quote = Quote(
+        tenant_id=tenant_id,
+        contact_id=contact.id,
+        title="Fuse board upgrade",
+        status="draft",
+        subtotal=Decimal("100.00"),
+        vat_amount=Decimal("20.00"),
+        total=Decimal("120.00"),
+    )
+    db.add(quote)
+    await db.flush()
+    lead = QuoteRequest(
+        tenant_id=tenant_id,
+        contact_id=contact.id,
+        customer_id=customer.id,
+        quote_id=quote.id,
+        source="app",
+        raw_text="Fuse board upgrade",
+    )
+    db.add(lead)
+    await db.flush()
+    quote.quote_request_id = lead.id
+    await db.commit()
+
+    response = await client.post(
+        f"/quotes/{quote.id}/send",
+        headers={"X-Tenant-ID": tenant["id"]},
+    )
+    assert response.status_code == 200, response.text
+
+    notification = await db.scalar(
+        select(Notification).where(
+            Notification.tenant_id == tenant_id,
+            Notification.type == "quote_sent",
+        )
+    )
+    assert notification is not None
+    assert notification.recipient_type == "customer"
+    assert notification.recipient_id == customer.id
+    assert notification.link == f"/quotes/{quote.id}"
 
 
 async def test_reject_quote(client: AsyncClient) -> None:

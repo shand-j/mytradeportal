@@ -63,7 +63,7 @@ journey broken · P2 = polish · P3 = cosmetic.
 | Ref | Item | Priority | Notes / root-cause hypothesis | Status — AI | Status — User |
 |---|---|---|---|---|---|
 | N24 | "Could not find messages" error on existing coglabs.ai tenant | P1 | Tenant-scoped query returns nothing and surfaces an error instead of an empty inbox. | Pending | |
-| N25 | Can't edit customers; need customer detail screen with editable fields; parking/access persisted and auto-populated on quote/job creation | P1 | Carried: address not persisted (only postcode); contact phone/address empty in settings despite onboarding capture. Chain: customer → quote → job inherits parking/access. | Pending | |
+| N25 | Can't edit customers; need customer detail screen with editable fields; parking/access persisted and auto-populated on quote/job creation | P1 | Carried: address not persisted (only postcode); contact phone/address empty in settings despite onboarding capture. Chain: customer → quote → job inherits parking/access. | Implemented (wave-2 CRM, awaiting commit) — new editable customer detail screen (`mobile/app/(trade)/customer/[id].tsx` + `CustomerDetailScreen`, keyboard-avoiding); `parking_notes`/`access_notes`/`property_type`/`bedrooms`/`preferred_contact_method` added to Contact (+ parking/access on Customer); quote-intake pre-fills parking/access/property from the contact record; 11 API tests + `pnpm lint` pass | |
 | N26 | Badges: "Late Payer"/"Non-payer" (bad-debt history) and "Time Waster" (>2 quotes, never replied) — auto-set, manually overridable; block button to stop customer login/quotes/messages | P2 | Needs rules engine over invoices/quotes + `blocked` flag enforced in auth + quote creation. | Pending | |
 
 ## Invoices / payments
@@ -101,7 +101,7 @@ journey broken · P2 = polish · P3 = cosmetic.
 | C2 | Chat message direction all "outbound" | P1 | Direction must be tenant-relative: customer messages = inbound. | Pending | |
 | C3 | Customer can view quote before electrician review | P1 | Gate customer quote view on status (e.g. sent/accepted only). | Pending | |
 | C4 | Quotes sent to non-account customers: persist details, email-only comms, flag unregistered | P1 | Overlaps N4. Customer + quote must persist even if they never create an account; tenant sees flag setting comms expectation. | Pending | |
-| C5 | Customer address (not just postcode) persisted | P1 | Overlaps N25. | Pending | |
+| C5 | Customer address (not just postcode) persisted | P1 | Overlaps N25. | Implemented (wave-2 CRM, awaiting commit) — `CustomerCreate` accepts `address`/`postcode`, persisted on both customer and linked contact; `PATCH /customers/{id}` + `PATCH /contacts/{id}` round-trip full address; tested in `tests/test_customers_crm.py` | |
 | C6 | Line-item unit = 'job' | P2 | Demo now returns 'm'/'ea' — verify tenant quote path uses catalog units. | Pending | |
 | C7 | Quote "Request more info" → should open chat with customer | P2 | Currently navs to Quotes screen. | Pending | |
 | C8 | Keyboard hides content (quote screen, customer profile, chat input) | P1 | Recurring KeyboardAvoidingView class — audit with N17. | Pending | |
@@ -111,7 +111,7 @@ journey broken · P2 = polish · P3 = cosmetic.
 | C12 | Customer login should be tenant-agnostic (tenant resolved post-auth) | P1 | Hangover from the web sub-domain approach; future: multi-tenant customers. | Pending | |
 | C13 | AI first follow-up asks for detail already provided; no acknowledgement; should auto-trigger + notify customer | P1 | Follow-up must fire as an event on low-confidence first attempt and notify the customer (depends on N1). | Pending | |
 | C14 | Electrician notified on every customer AI-chat reply (noise at scale) | P2 | Summarise/digest instead of per-message notifications. | Pending | |
-| C15 | Duplicate users in coglabs tenant (9 duplicates for one person) | P2 | Data cleanup + dedupe guard on customer creation. | Pending | |
+| C15 | Duplicate users in coglabs tenant (9 duplicates for one person) | P2 | Data cleanup + dedupe guard on customer creation. | Guard implemented (wave-2 CRM, awaiting commit) — POST /contacts and POST /customers return 409 `duplicate_contact:email\|name_phone` / `duplicate_customer:email` on same email (case-insensitive) or same normalised name + phone digits within a tenant; customer creation merges/links an existing contact instead of duplicating; mobile `findOrCreateContact` mirrors the rule and reuses the match on 409. Prod data cleanup still owed by orchestrator | |
 | C16 | Three-dots settings menu missing on pages other than dashboard | P2 | **Regression** — was requested as visible on all main pages. | Pending | |
 | C17 | Bottom nav doesn't respect home-indicator safe area (slight cut-off) | P2 | Safe-area inset padding on the tab bar. | Pending | |
 | C18 | No chat item in bottom nav (chat only reachable via links) | P2 | Add chat tab for both roles. | Pending | |

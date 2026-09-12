@@ -36,6 +36,53 @@ async def _contacts_with_accounts(db: AsyncSession, tenant_id: UUID) -> set[UUID
     return {row for row in result.scalars().all() if row is not None}
 
 
+def _normalise_name(value: str | None) -> str:
+    return " ".join((value or "").split()).lower()
+
+
+def _phone_digits(value: str | None) -> str:
+    return "".join(ch for ch in (value or "") if ch.isdigit())
+
+
+async def find_duplicate_contact(
+    db: AsyncSession,
+    tenant_id: UUID,
+    *,
+    name: str | None,
+    email: str | None,
+    phone: str | None,
+) -> tuple[Contact, str] | None:
+    """Return ``(existing_contact, match_kind)`` when a create would duplicate.
+
+    Match kinds: ``email`` (same email, case-insensitive) or ``name_phone``
+    (same normalised name AND same phone digits). Guards against the repeat
+    sign-up / re-entry duplicates seen in beta tenants.
+    """
+    if email and email.strip():
+        result = await db.execute(
+            select(Contact).where(
+                Contact.tenant_id == tenant_id,
+                Contact.email.is_not(None),
+                Contact.email.ilike(email.strip()),
+            )
+        )
+        existing = result.scalars().first()
+        if existing is not None:
+            return existing, "email"
+
+    name_key = _normalise_name(name)
+    phone_key = _phone_digits(phone)
+    if name_key and phone_key:
+        result = await db.execute(select(Contact).where(Contact.tenant_id == tenant_id))
+        for candidate in result.scalars().all():
+            if (
+                _normalise_name(candidate.name) == name_key
+                and _phone_digits(candidate.phone) == phone_key
+            ):
+                return candidate, "name_phone"
+    return None
+
+
 @router.get("")
 async def list_contacts(tenant: TenantDep, db: DbDep) -> list[ContactRead]:
     """List contacts for the current tenant."""
@@ -58,6 +105,20 @@ async def create_contact(
 ) -> ContactRead:
     """Create a contact for the current tenant."""
     await set_tenant_in_session(db, tenant.id)
+    duplicate = await find_duplicate_contact(
+        db, tenant.id, name=data.name, email=data.email, phone=data.phone
+    )
+    if duplicate is not None:
+        existing, match_kind = duplicate
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                f"duplicate_contact:{match_kind}:{existing.id}: "
+                f"A contact named '{existing.name}' already exists with this "
+                f"{'email address' if match_kind == 'email' else 'name and phone number'}. "
+                "Edit the existing customer instead of creating a new one."
+            ),
+        )
     contact = Contact(tenant_id=tenant.id, **data.model_dump())
     db.add(contact)
     await db.flush()

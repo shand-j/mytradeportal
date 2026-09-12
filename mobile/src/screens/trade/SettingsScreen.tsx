@@ -155,6 +155,11 @@ export function SettingsScreen() {
       onPress: () => router.push("/(trade)/branding"),
     },
     {
+      title: "Payment details",
+      subtitle: "Bank transfer details shown on invoices",
+      onPress: () => router.push("/(trade)/payment-details"),
+    },
+    {
       title: "Follow-up settings",
       subtitle: "Quote & invoice reminders",
       onPress: () => router.push("/(trade)/follow-ups"),

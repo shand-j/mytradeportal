@@ -49,9 +49,19 @@ export type QuoteIntakeScreenProps = {
   /** When omitted, the intake creates a quote without a lead. */
   lead?: Lead;
   /** Lead-less mode: prefill the customer from a CRM contact. */
-  contact?: { id: string; name: string };
+  contact?: QuoteIntakeContact;
   onBack: () => void;
   onComplete: (intake: QuoteIntakeData) => void | Promise<void>;
+};
+
+/** CRM contact fields the intake pre-fills from (N25: customer → quote chain). */
+export type QuoteIntakeContact = {
+  id: string;
+  name: string;
+  parkingNotes?: string | null;
+  accessNotes?: string | null;
+  propertyType?: string | null;
+  bedrooms?: number | null;
 };
 
 function asRecord(value: unknown): Record<string, unknown> {
@@ -99,14 +109,16 @@ function matchCuLocation(value: unknown): string {
  * the electrician's own earlier intake, the customer wizard's property
  * profile/questionnaire, and facts the AI triage extracted from the chat.
  */
-function buildInitialIntake(lead?: Lead): QuoteIntakeData {
+function buildInitialIntake(lead?: Lead, contact?: QuoteIntakeContact): QuoteIntakeData {
   if (!lead) {
+    // Existing-customer chain: pre-fill site logistics + property details saved
+    // on the CRM record so repeat quotes don't re-ask for them.
     return {
-      propertyType: "",
-      bedrooms: "",
+      propertyType: matchPropertyType(contact?.propertyType),
+      bedrooms: matchBedrooms(contact?.bedrooms ?? ""),
       cuLocation: "",
-      parking: "",
-      access: "",
+      parking: asString(contact?.parkingNotes),
+      access: asString(contact?.accessNotes),
       notes: "",
       photoUrls: [],
     };
@@ -180,7 +192,7 @@ function buildInitialIntake(lead?: Lead): QuoteIntakeData {
 }
 
 export function QuoteIntakeScreen({ lead, contact, onBack, onComplete }: QuoteIntakeScreenProps) {
-  const initial = useMemo(() => buildInitialIntake(lead), [lead]);
+  const initial = useMemo(() => buildInitialIntake(lead, contact), [lead, contact]);
   const [customerName, setCustomerName] = useState(contact?.name ?? "");
   const [description, setDescription] = useState("");
   const [propertyType, setPropertyType] = useState(initial.propertyType);

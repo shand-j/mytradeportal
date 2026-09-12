@@ -1,7 +1,7 @@
 """Quote request capture, triage and AI interpretation endpoints."""
 
 from decimal import Decimal
-from typing import Annotated, cast
+from typing import Annotated
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
@@ -32,13 +32,43 @@ async def _set_tenant(db: AsyncSession, tenant_id: UUID) -> None:
     await set_tenant_in_session(db, tenant_id)
 
 
+async def _reads_with_account_flags(
+    db: AsyncSession, tenant_id: UUID, quote_requests: list[QuoteRequest]
+) -> list[QuoteRequestRead]:
+    """Serialise quote requests and flag contacts with no customer account.
+
+    Quotes sent to account-less contacts persist (contact + quote rows stand
+    on their own), but the electrician must see that comms with that customer
+    are email-only: ``customer.has_account`` is False until the homeowner
+    registers, True once an active customer account points at the contact.
+    """
+    reads = [QuoteRequestRead.model_validate(qr) for qr in quote_requests]
+    contact_ids = {read.customer.id for read in reads if read.customer is not None}
+    if not contact_ids:
+        return reads
+    result = await db.execute(
+        select(Customer.contact_id).where(
+            Customer.tenant_id == tenant_id,
+            Customer.contact_id.in_(contact_ids),
+            Customer.is_active.is_(True),
+        )
+    )
+    with_account = set(result.scalars().all())
+    return [
+        read.model_copy(update={"customer": read.customer.model_copy(update={"has_account": True})})
+        if read.customer is not None and read.customer.id in with_account
+        else read
+        for read in reads
+    ]
+
+
 @router.post("", status_code=status.HTTP_201_CREATED, response_model=QuoteRequestRead)
 async def create_quote_request(
     data: QuoteRequestCreate,
     tenant: TenantDep,
     current_user: CurrentUserDep,
     db: DbDep,
-) -> QuoteRequest:
+) -> QuoteRequestRead:
     """Create a quote request from any source (QR, web form, share extension)."""
     await _set_tenant(db, tenant.id)
 
@@ -68,7 +98,7 @@ async def create_quote_request(
     db.add(quote_request)
     await db.flush()
     await db.refresh(quote_request, ["contact"])
-    return quote_request
+    return (await _reads_with_account_flags(db, tenant.id, [quote_request]))[0]
 
 
 @router.get("", response_model=list[QuoteRequestRead])
@@ -76,7 +106,7 @@ async def list_quote_requests(
     tenant: TenantDep,
     current_user: CurrentUserDep,
     db: DbDep,
-) -> list[QuoteRequest]:
+) -> list[QuoteRequestRead]:
     """List quote requests for the current tenant (Leads tab)."""
     await _set_tenant(db, tenant.id)
     result = await db.execute(
@@ -92,7 +122,7 @@ async def list_quote_requests(
         .where(QuoteRequest.tenant_id == tenant.id)
         .order_by(QuoteRequest.created_at.desc())
     )
-    return list(result.scalars().all())
+    return await _reads_with_account_flags(db, tenant.id, list(result.scalars().all()))
 
 
 @router.get("/{quote_request_id}", response_model=QuoteRequestRead)
@@ -101,7 +131,7 @@ async def get_quote_request(
     tenant: TenantDep,
     current_user: CurrentUserDep,
     db: DbDep,
-) -> QuoteRequest:
+) -> QuoteRequestRead:
     """Get a single quote request."""
     await _set_tenant(db, tenant.id)
     quote_request = await db.scalar(
@@ -118,7 +148,7 @@ async def get_quote_request(
     )
     if quote_request is None or quote_request.tenant_id != tenant.id:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Quote request not found")
-    return quote_request
+    return (await _reads_with_account_flags(db, tenant.id, [quote_request]))[0]
 
 
 @router.patch("/{quote_request_id}", response_model=QuoteRequestRead)
@@ -128,7 +158,7 @@ async def update_quote_request(
     tenant: TenantDep,
     current_user: CurrentUserDep,
     db: DbDep,
-) -> QuoteRequest:
+) -> QuoteRequestRead:
     """Update a quote request (lead) with tradesperson review notes/edits.
 
     The caller can merge into ``structured_data`` by supplying the keys they
@@ -187,7 +217,7 @@ async def update_quote_request(
     )
     if quote_request is None:  # pragma: no cover - deleted between update and re-fetch
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Quote request not found")
-    return cast("QuoteRequest", quote_request)
+    return (await _reads_with_account_flags(db, tenant.id, [quote_request]))[0]
 
 
 @router.post("/{quote_request_id}/media", status_code=status.HTTP_201_CREATED)
@@ -225,7 +255,7 @@ async def create_quote_request_from_share(
     tenant: TenantDep,
     current_user: CurrentUserDep,
     db: DbDep,
-) -> QuoteRequest:
+) -> QuoteRequestRead:
     """Create a draft quote request from a forwarded message (iOS Share Extension)."""
     data.source = "sms_forward"
     return await create_quote_request(data, tenant, current_user, db)

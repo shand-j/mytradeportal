@@ -22,6 +22,7 @@ from app.rag.retrieval import (
     _embedding_cache,
     _lexical_cache,
     embed_texts,
+    get_embedding_dimension,
     search_cost_items,
     search_cost_items_with_status,
 )
@@ -29,6 +30,25 @@ from app.rag.validation import validate_generated_quote
 from sqlalchemy import delete as sa_delete
 from sqlalchemy import func as sa_func
 from sqlalchemy import select
+
+
+def _mock_qdrant_client(points: list[Any] | None = None) -> AsyncMock:
+    """Qdrant client mock whose collection exists with the configured dims.
+
+    The retrieval read path verifies the collection's vector size against the
+    configured embedding model before querying, so the mock must report a
+    matching size or the search degrades to the lexical fallback.
+    """
+    mock_client = AsyncMock()
+    mock_client.collection_exists.return_value = True
+    mock_info = MagicMock()
+    mock_info.config.params.vectors.size = get_embedding_dimension()
+    mock_client.get_collection.return_value = mock_info
+    if points is not None:
+        mock_query_response = MagicMock()
+        mock_query_response.points = points
+        mock_client.query_points.return_value = mock_query_response
+    return mock_client
 
 
 @pytest.mark.asyncio
@@ -47,12 +67,7 @@ async def test_search_cost_items() -> None:
     mock_point.payload = retrieved_payload
     mock_point.score = 0.95
 
-    mock_query_response = MagicMock()
-    mock_query_response.points = [mock_point]
-
-    mock_client = AsyncMock()
-    mock_client.collection_exists.return_value = True
-    mock_client.query_points.return_value = mock_query_response
+    mock_client = _mock_qdrant_client(points=[mock_point])
 
     with (
         patch("app.rag.retrieval.embed_text", new=AsyncMock(return_value=[0.1, 0.2])),
@@ -332,11 +347,7 @@ async def test_search_cost_items_with_status_reports_grounded() -> None:
     mock_point = MagicMock()
     mock_point.payload = {"code": "ELEC-CU", "description": "Consumer unit", "unit_price": "180.00"}
     mock_point.score = 0.9
-    mock_query_response = MagicMock()
-    mock_query_response.points = [mock_point]
-    mock_client = AsyncMock()
-    mock_client.collection_exists.return_value = True
-    mock_client.query_points.return_value = mock_query_response
+    mock_client = _mock_qdrant_client(points=[mock_point])
 
     with (
         patch("app.rag.retrieval.embed_text", new=AsyncMock(return_value=[0.1, 0.2])),
@@ -351,15 +362,16 @@ async def test_search_cost_items_with_status_reports_grounded() -> None:
 
 @pytest.mark.asyncio
 async def test_search_cost_items_with_status_reports_no_index() -> None:
-    mock_query_response = MagicMock()
-    mock_query_response.points = []
-    mock_client = AsyncMock()
-    mock_client.collection_exists.return_value = True
-    mock_client.query_points.return_value = mock_query_response
+    """Empty vector index + empty lexical fallback → no_index (never raises)."""
+    mock_client = _mock_qdrant_client(points=[])
 
     with (
         patch("app.rag.retrieval.embed_text", new=AsyncMock(return_value=[0.1, 0.2])),
         patch("app.rag.retrieval.get_qdrant_client", return_value=mock_client),
+        patch(
+            "app.rag.retrieval._lexical_search_cost_items_with_status",
+            new=AsyncMock(return_value=([], "no_index")),
+        ),
     ):
         generation_config.settings.openai_api_key = "sk-test"
         items, status = await search_cost_items_with_status("something obscure")
@@ -381,11 +393,7 @@ async def test_search_cost_items_with_status_reports_weak_match() -> None:
         }
         point.score = 0.20  # well below the default 0.45 floor
         points.append(point)
-    mock_query_response = MagicMock()
-    mock_query_response.points = points
-    mock_client = AsyncMock()
-    mock_client.collection_exists.return_value = True
-    mock_client.query_points.return_value = mock_query_response
+    mock_client = _mock_qdrant_client(points=points)
 
     with (
         patch("app.rag.retrieval.embed_text", new=AsyncMock(return_value=[0.1, 0.2])),

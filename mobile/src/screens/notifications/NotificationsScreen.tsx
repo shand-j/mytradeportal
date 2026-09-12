@@ -7,7 +7,7 @@ import { Text } from "../../components/ui/Text";
 import {
   AppNotification,
   NotificationRole,
-  quoteIdFromLink,
+  routeForNotificationLink,
   useMarkNotificationRead,
   useNotifications,
 } from "../../api/notifications";
@@ -15,7 +15,15 @@ import { formatDateUK } from "../../lib/format";
 
 const TYPE_ICONS: Record<string, IconName> = {
   quote_ready: "sparkles",
+  quote_sent: "sparkles",
+  quote_accepted: "circle-check",
   quote_failed: "warning",
+  chat_reply: "message",
+  chat_message: "message",
+  triage_closed: "message",
+  job_scheduled: "calendar",
+  invoice_sent: "document",
+  invoice_paid: "circle-check",
 };
 
 function iconFor(type: string): IconName {
@@ -27,7 +35,7 @@ export type NotificationsScreenProps = {
   onBack: () => void;
 };
 
-/** Notification inbox for one role: unread highlighted, tap marks read + follows the link. */
+/** Notification inbox for one role: unread highlighted, tap marks read + deep-links. */
 export function NotificationsScreen({ role, onBack }: NotificationsScreenProps) {
   const router = useRouter();
   const { data: notifications, isLoading } = useNotifications(role);
@@ -37,24 +45,11 @@ export function NotificationsScreen({ role, onBack }: NotificationsScreenProps) 
     if (!notification.readAt) {
       markRead.mutate(notification.id);
     }
-    const quoteId = quoteIdFromLink(notification.link);
-    const chatMatch = notification.link?.match(/\/chat\/([0-9a-f-]+)/i);
-    if (chatMatch) {
-      // Chat links open the thread directly on either side.
-      const path = role === "trade" ? "/(trade)/messages" : "/(customer)/messages";
-      router.push({ pathname: path, params: { quoteRequestId: chatMatch[1] } });
-      return;
-    }
-    if (role === "trade") {
-      if (quoteId) {
-        router.push(`/(trade)/quote/${quoteId}`);
-      } else {
-        const leadMatch = notification.link?.match(/\/quote-requests\/([0-9a-f-]+)/i);
-        if (leadMatch) router.push(`/(trade)/lead/${leadMatch[1]}`);
-      }
-    } else if (quoteId || notification.type.startsWith("quote")) {
-      // Customer quotes are reviewed inline on the requests screen.
-      router.push("/(customer)/requests");
+    // Unresolvable targets (e.g. quote_failed, customer invoices) navigate
+    // nowhere — the row just marks read instead of erroring.
+    const target = routeForNotificationLink(role, notification.link, notification.type);
+    if (target) {
+      router.push(target as never);
     }
   };
 

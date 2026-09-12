@@ -97,6 +97,7 @@ export function CRMScreen(_props: CRMScreenProps) {
             quotes={(quotes ?? []).filter((q) => q.customer?.id === contact.id)}
             onOpenLead={(id) => router.push(`/(trade)/lead/${id}`)}
             onOpenQuote={(id) => router.push(`/(trade)/quote/${id}`)}
+            onOpenDetail={() => router.push(`/(trade)/customer/${contact.id}`)}
             onCreateQuote={() =>
               router.push(
                 `/(trade)/quote-intake?contactId=${contact.id}&contactName=${encodeURIComponent(contact.name)}`
@@ -117,6 +118,7 @@ function ContactCard({
   quotes,
   onOpenLead,
   onOpenQuote,
+  onOpenDetail,
   onCreateQuote,
 }: {
   contact: Contact;
@@ -126,6 +128,7 @@ function ContactCard({
   quotes: ApiQuote[];
   onOpenLead: (id: string) => void;
   onOpenQuote: (id: string) => void;
+  onOpenDetail: () => void;
   onCreateQuote: () => void;
 }) {
   const subtitle = [contact.phone, contact.email, contact.postcode].filter(Boolean).join(" · ");
@@ -193,7 +196,13 @@ function ContactCard({
               </Text>
             )}
 
-            <View className="pt-1">
+            <View className="pt-1 gap-2">
+              <Button
+                testID={`contact-open-detail-${contact.id}`}
+                title="View & edit"
+                size="sm"
+                onPress={onOpenDetail}
+              />
               <Button
                 testID={`contact-create-quote-${contact.id}`}
                 title="Create quote"

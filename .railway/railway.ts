@@ -161,7 +161,13 @@ export default defineRailway(() => {
       MINIO_ACCESS_KEY: preserve(),
       MINIO_SECRET_KEY: preserve(),
       OPENAI_API_KEY: preserve(),
+      // Embedding config must match the data-pipeline service exactly — both
+      // read/write the same Qdrant collections. Dimensions are pinned
+      // explicitly so an EMBEDDING_MODEL bump can never silently drift from
+      // the indexed vector size (3-small=1536 vs 3-large=3072); a mismatch
+      // now fails loudly instead of wiping the index.
       EMBEDDING_MODEL: "text-embedding-3-large",
+      EMBEDDING_DIMENSIONS: "3072",
       // LiteLLM provider override. Set LLM_API_BASE + LLM_API_KEY to a Kimi /
       // Moonshot key and LLM_MODEL to "openai/kimi-k2.6" for the cheaper,
       // more reliable UK quote model. Leave blank to fall back to OpenAI.
@@ -306,10 +312,12 @@ export default defineRailway(() => {
       QDRANT_COLLECTION_NAME: "cost_items",
       QDRANT_KNOWLEDGE_COLLECTION_NAME: "quoting_knowledge",
       OPENAI_API_KEY: preserve(),
-      // Must match the api service's embedding model — both read/write the
-      // same Qdrant collections, and 3-small (1536 dims) vs 3-large (3072
-      // dims) would silently break retrieval.
+      // Must match the api service's embedding model AND dimensions — both
+      // read/write the same Qdrant collections, and 3-small (1536 dims) vs
+      // 3-large (3072 dims) would silently break retrieval. Keep
+      // EMBEDDING_DIMENSIONS pinned in both services.
       EMBEDDING_MODEL: "text-embedding-3-large",
+      EMBEDDING_DIMENSIONS: "3072",
       APIFY_API_TOKEN: preserve(),
       PIPELINE_DEMO_MODE: "false",
       SCREWFIX_START_URL: "https://www.screwfix.com/c/electrical-lighting/cat840780",

@@ -363,3 +363,117 @@ async def test_requote_skipped_when_quote_no_longer_draft(
         .all()
     )
     assert {li.description for li in rows} == {"AI labour", "Second line"}
+
+
+async def test_triage_description_acks_provided_detail() -> None:
+    """C13: the triage context renders everything the customer already gave —
+    property extras, questionnaire answers (booleans/lists included), budget,
+    contact preferences, photos, dates and previously confirmed facts — under
+    an explicit do-not-re-ask banner, so the follow-up cannot ask for symptoms
+    stated in the original request."""
+    from app.quote_automation import build_triage_description
+
+    quote_request = QuoteRequest(
+        tenant_id=uuid4(),
+        source="app",
+        raw_text="Fuse board keeps tripping when the kettle and shower run",
+        urgency="this_week",
+        media_urls=["https://cdn.example.com/1.jpg", "https://cdn.example.com/2.jpg"],
+        preferred_dates=[{"date": "2026-09-15"}],
+        structured_data={
+            "title": "Fuse board replacement",
+            "category": "consumer_unit",
+            "property": {
+                "type": "semi-detached",
+                "age": "1960s",
+                "bedrooms": 3,
+                "parking": True,
+                "fuseBoardStyle": "old rewireable fuses",
+                "knownIssues": ["burning smell"],
+                "flatAccess": None,
+            },
+            "questionnaire": {
+                "consumer_unit": {"location": "under the stairs", "circuits": 6, "rcd": False},
+                "notes": "Board is original to the house",
+            },
+            "budgetContext": {"budgetBand": "500-1000", "insuranceClaim": False},
+            "preferredContact": "in_app_chat",
+            "bestTimeToCall": ["morning"],
+            "ai_extracted": {"consumer_unit_location": "under the stairs"},
+            "marketing_consent": True,
+        },
+    )
+
+    description = build_triage_description(quote_request)
+
+    # The original detail is present, so the follow-up cannot re-ask for it.
+    assert "Fuse board keeps tripping" in description
+    assert "under the stairs" in description
+    assert "burning smell" in description
+    assert "old rewireable fuses" in description
+    assert "rcd: no" in description  # booleans render, previously dropped
+    assert "parking: yes" in description
+    assert "500-1000" in description
+    assert "in_app_chat" in description
+    assert "morning" in description
+    assert "Already confirmed during triage" in description
+    assert "Photos attached: 2" in description
+    assert "2026-09-15" in description
+    assert "this week" in description
+    # Explicit anti-repeat / acknowledgement guidance for the question writer.
+    assert "ALREADY PROVIDED" in description
+    assert "do NOT repeat" in description
+    # Empty/internal values are not rendered.
+    assert "flat access" not in description
+    assert "marketing" not in description
+
+
+async def test_triage_description_empty_request_falls_back() -> None:
+    """C13: a bare request still produces a usable (non-crashing) summary."""
+    from app.quote_automation import build_triage_description
+
+    assert build_triage_description(QuoteRequest(tenant_id=uuid4(), source="app")) == (
+        "Electrical work requested by a customer."
+    )
+
+
+async def test_start_ai_triage_uses_original_quote_detail(
+    admin_client: AsyncClient, db: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """C13: the auto-triage opening question is generated from the full
+    original request detail (raw text + questionnaire), so the first
+    follow-up acknowledges provided info instead of re-asking it."""
+    from app import quote_automation
+
+    tenant_id = UUID(admin_client.headers["X-Tenant-ID"])
+    await set_tenant_in_session(db, tenant_id)
+    tenant = await db.scalar(select(Tenant).where(Tenant.id == tenant_id))
+    assert tenant is not None
+    contact = Contact(tenant_id=tenant_id, name="Lead", email="lead@example.com")
+    db.add(contact)
+    await db.flush()
+    lead = QuoteRequest(
+        tenant_id=tenant_id,
+        contact_id=contact.id,
+        source="app",
+        raw_text="Lights flicker and the fuse board buzzes",
+        structured_data={
+            "title": "Flickering lights",
+            "category": "fault_finding",
+            "questionnaire": {"fault_finding": {"symptoms": "buzzing from the board"}},
+        },
+    )
+    db.add(lead)
+    await db.flush()
+
+    followup = AsyncMock(return_value={"confidence": 40, "complete": False, "message": "Q?"})
+    monkeypatch.setattr("app.rag.generate_followup", followup)
+    monkeypatch.setattr("app.quote_automation.email_triage_question", AsyncMock())
+
+    await quote_automation.start_ai_triage(db, tenant, lead.id, 0.5)
+
+    assert followup.await_args is not None
+    description = followup.await_args.args[0]
+    assert "Lights flicker and the fuse board buzzes" in description
+    assert "buzzing from the board" in description
+    assert "ALREADY PROVIDED" in description

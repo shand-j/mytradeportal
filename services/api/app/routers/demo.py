@@ -211,8 +211,7 @@ async def _demo_already_used(request: Request) -> bool:
     try:
         redis = get_redis()
         return bool(
-            await redis.get(_demo_used_key(request))
-            or await redis.get(_demo_used_ip_key(request))
+            await redis.get(_demo_used_key(request)) or await redis.get(_demo_used_ip_key(request))
         )
     except Exception as exc:  # cache down must not break the demo
         logger.warning(

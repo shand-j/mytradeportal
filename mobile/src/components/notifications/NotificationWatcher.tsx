@@ -7,7 +7,7 @@ import {
   NOTIFICATIONS_POLL_MS,
   NotificationRole,
   quoteIdFromLink,
-  routeForNotificationLink,
+  routeForPushData,
   useQuoteReadyWatcher,
 } from "../../api/notifications";
 import {
@@ -34,7 +34,8 @@ export function NotificationWatcher({ role }: { role: NotificationRole }) {
   }, [role]);
 
   // Deep-link taps on system push notifications (app backgrounded or killed).
-  // The backend sends the notification link in the push payload's `data`.
+  // The backend sends { type, id, link } in the push payload's `data`; taps
+  // resolve through the same route map as the in-app notification list.
   useEffect(() => {
     if (Platform.OS === "web") return;
     let cancelled = false;
@@ -42,16 +43,19 @@ export function NotificationWatcher({ role }: { role: NotificationRole }) {
     void (async () => {
       const Notifications = await import("expo-notifications");
       if (cancelled) return;
-      const follow = (link: unknown) => {
-        const target = routeForNotificationLink(role, typeof link === "string" ? link : null);
+      const follow = (data: unknown) => {
+        const target = routeForPushData(
+          role,
+          data as { link?: unknown; type?: unknown; id?: unknown }
+        );
         if (target) router.push(target as never);
       };
       const last = await Notifications.getLastNotificationResponseAsync();
       if (last) {
-        follow((last.notification.request.content.data as { link?: unknown })?.link);
+        follow(last.notification.request.content.data);
       }
       subscription = Notifications.addNotificationResponseReceivedListener((response) => {
-        follow((response.notification.request.content.data as { link?: unknown })?.link);
+        follow(response.notification.request.content.data);
       });
     })();
     return () => {

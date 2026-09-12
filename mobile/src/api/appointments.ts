@@ -50,6 +50,30 @@ export async function fetchMyAppointments(): Promise<ApiAppointment[]> {
   return api.get<ApiAppointment[]>("/customer/appointments");
 }
 
+/**
+ * Free 1-hour start slots (ISO datetimes) for a trade calendar date
+ * (GET /appointments/availability?date=YYYY-MM-DD). Appointments and scheduled
+ * jobs both block a slot.
+ */
+export async function fetchAvailability(date: string): Promise<string[]> {
+  return api.get<string[]>(`/appointments/availability?date=${date}`);
+}
+
+/** Suggested free slots for a date; disabled until a date is chosen. */
+export function useAvailability(date: string | null) {
+  const query = useQuery({
+    queryKey: ["availability", date],
+    queryFn: () => fetchAvailability(date as string),
+    enabled: !!date,
+  });
+
+  return {
+    slots: query.data ?? [],
+    isConnected: query.isSuccess,
+    isLoading: !!date && query.isLoading,
+  };
+}
+
 export async function createCustomerAppointment(input: {
   title: string;
   startAt: string;

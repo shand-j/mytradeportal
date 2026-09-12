@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Alert, Animated, Platform, ScrollView, StyleProp, TextInput, View, ViewStyle } from "react-native";
+import { Alert, Animated, ActionSheetIOS, Platform, ScrollView, StyleProp, TextInput, View, ViewStyle } from "react-native";
 import { useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "expo-router";
 import { Button } from "../../components/ui/Button";
@@ -228,6 +228,32 @@ export function QuoteEditScreen({
     } finally {
       setConverting(false);
     }
+  };
+
+  // iOS: one "Convert to…" button opens an ActionSheet; Job navigates to the
+  // prefilled new-job page, Invoice converts in place.
+  const handleConvertSheet = () => {
+    if (!seedQuote) return;
+    const actions: { label: string; run: () => void }[] = [];
+    if (showConvertToJob) {
+      actions.push({
+        label: "Job",
+        run: () => router.push({ pathname: "/(trade)/job/new", params: { quoteId: seedQuote.id } }),
+      });
+    }
+    if (showConvertToInvoice) {
+      actions.push({ label: "Invoice", run: () => void handleConvertToInvoice() });
+    }
+    ActionSheetIOS.showActionSheetWithOptions(
+      {
+        title: "Convert to…",
+        options: ["Cancel", ...actions.map((a) => a.label)],
+        cancelButtonIndex: 0,
+      },
+      (index) => {
+        if (index > 0) actions[index - 1].run();
+      }
+    );
   };
 
   const handleRefine = async () => {
@@ -567,22 +593,35 @@ export function QuoteEditScreen({
             onPress={() => router.push(`/(trade)/job/${existingJobId}`)}
           />
         )}
-        {showConvertToJob && (
-          <Button
-            testID="quote-convert-job"
-            title={converting ? "Converting…" : "Convert to job"}
-            disabled={converting}
-            onPress={handleConvertToJob}
-          />
-        )}
-        {showConvertToInvoice && (
-          <Button
-            testID="quote-convert-invoice"
-            title={converting ? "Converting…" : "Convert to invoice"}
-            variant="outline"
-            disabled={converting}
-            onPress={handleConvertToInvoice}
-          />
+        {Platform.OS === "web" ? (
+          <>
+            {showConvertToJob && (
+              <Button
+                testID="quote-convert-job"
+                title={converting ? "Converting…" : "Convert to job"}
+                disabled={converting}
+                onPress={handleConvertToJob}
+              />
+            )}
+            {showConvertToInvoice && (
+              <Button
+                testID="quote-convert-invoice"
+                title={converting ? "Converting…" : "Convert to invoice"}
+                variant="outline"
+                disabled={converting}
+                onPress={handleConvertToInvoice}
+              />
+            )}
+          </>
+        ) : (
+          (showConvertToJob || showConvertToInvoice) && (
+            <Button
+              testID="quote-convert"
+              title={converting ? "Converting…" : "Convert to…"}
+              disabled={converting}
+              onPress={handleConvertSheet}
+            />
+          )
         )}
       </View>
     </Screen>

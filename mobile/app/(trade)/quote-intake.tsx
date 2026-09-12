@@ -4,6 +4,7 @@ import { Header } from "../../src/components/ui/Header";
 import { Screen } from "../../src/components/ui/Screen";
 import { Text } from "../../src/components/ui/Text";
 import { useLead, updateLead } from "../../src/api/quoteRequests";
+import { useContact } from "../../src/api/contacts";
 import { generateQuoteAsync } from "../../src/api/quotes";
 import { useQuoteGenerationStore } from "../../src/stores/quoteGenerationStore";
 
@@ -24,12 +25,36 @@ export default function QuoteIntakeRoute() {
   const startGeneration = useQuoteGenerationStore((s) => s.start);
 
   const { lead: realLead, isLoading } = useLead(leadId);
+  // Lead-less mode with an existing customer: fetch the CRM record so parking,
+  // access and property details pre-fill the intake (N25 customer → quote chain).
+  const { contact: crmContact, isLoading: contactLoading } = useContact(
+    !leadId ? contactId : undefined
+  );
 
   // Lead-less mode: create a quote straight from a job description (optionally
   // attached to an existing CRM contact via contactId/contactName params).
   if (!leadId) {
+    // Hold rendering until the contact resolves so the pre-fill lands in the
+    // initial form state rather than racing the electrician's typing.
+    if (contactId && contactLoading) {
+      return (
+        <Screen>
+          <Header title="Quote intake" onBack={() => router.back()} />
+          <Text variant="caption" color="secondary" align="center">
+            Loading customer…
+          </Text>
+        </Screen>
+      );
+    }
     const contact = contactId
-      ? { id: contactId, name: contactName ?? "" }
+      ? {
+          id: contactId,
+          name: crmContact?.name ?? contactName ?? "",
+          parkingNotes: crmContact?.parkingNotes,
+          accessNotes: crmContact?.accessNotes,
+          propertyType: crmContact?.propertyType,
+          bedrooms: crmContact?.bedrooms,
+        }
       : undefined;
 
     const handleComplete = async (intake: QuoteIntakeData) => {

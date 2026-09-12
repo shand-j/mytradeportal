@@ -8,6 +8,7 @@ coverage are verified without network access.
 import json
 from datetime import datetime
 from decimal import Decimal
+from typing import Any
 from uuid import UUID, uuid4
 
 import pytest
@@ -24,19 +25,19 @@ pytestmark = pytest.mark.asyncio
 
 
 class _FakeExpoResponse:
-    def __init__(self, status_code: int = 200, payload: dict | None = None):
+    def __init__(self, status_code: int = 200, payload: dict[str, Any] | None = None):
         self.status_code = status_code
         self._payload = payload if payload is not None else {"data": []}
         self.text = json.dumps(self._payload)
 
-    def json(self) -> dict:
+    def json(self) -> dict[str, Any]:
         return self._payload
 
 
 class _FakeExpoClient:
     """Stand-in for httpx.AsyncClient that records POSTs to the Expo API."""
 
-    def __init__(self, calls: list[dict], response: _FakeExpoResponse):
+    def __init__(self, calls: list[dict[str, Any]], response: _FakeExpoResponse):
         self._calls = calls
         self._response = response
 
@@ -51,9 +52,11 @@ class _FakeExpoClient:
         return self._response
 
 
-def _stub_expo(monkeypatch: pytest.MonkeyPatch, response: _FakeExpoResponse) -> list[dict]:
+def _stub_expo(
+    monkeypatch: pytest.MonkeyPatch, response: _FakeExpoResponse
+) -> list[dict[str, Any]]:
     """Patch the httpx client used by app.push; returns the recorded calls."""
-    calls: list[dict] = []
+    calls: list[dict[str, Any]] = []
     monkeypatch.setattr(
         "app.push.httpx.AsyncClient",
         lambda **kwargs: _FakeExpoClient(calls, response),

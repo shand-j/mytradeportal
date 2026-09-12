@@ -2,9 +2,10 @@ import { useMemo } from "react";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { JobDetailScreen } from "../../../src/screens/trade/JobDetailScreen";
-import { useJobDetail, useJobActions } from "../../../src/api/jobs";
+import { useJobDetail, useJobActions, useUpdateJob } from "../../../src/api/jobs";
 import { createAndSendInvoice, fetchInvoices } from "../../../src/api/invoices";
 import { useQuote } from "../../../src/api/quotes";
+import { useUsersList } from "../../../src/api/users";
 
 export default function JobDetailRoute() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -12,6 +13,8 @@ export default function JobDetailRoute() {
   const queryClient = useQueryClient();
   const { job: realJob, raw } = useJobDetail(id);
   const { start, complete } = useJobActions(id);
+  const updateJob = useUpdateJob(id);
+  const { users } = useUsersList();
   const invoicesQuery = useQuery({ queryKey: ["invoices"], queryFn: fetchInvoices });
   // The job's invoice inherits the source quote's VAT rate server-side; the
   // preview must show the same rate (0% for non-VAT-registered tenants).
@@ -44,6 +47,18 @@ export default function JobDetailRoute() {
     router.push(`/(trade)/invoice/${invoice.id}`);
   };
 
+  const handleCreateInvoiceAi = () => {
+    router.push({
+      pathname: "/(trade)/invoice/new",
+      params: {
+        jobId: raw.id,
+        contactId: raw.customer.id,
+        title: raw.title,
+        customerName: raw.customer.name,
+      },
+    });
+  };
+
   return (
     <JobDetailScreen
       job={realJob}
@@ -52,6 +67,7 @@ export default function JobDetailRoute() {
       onComplete={() => complete.mutateAsync().then(() => undefined)}
       busy={start.isPending || complete.isPending}
       onSubmitInvoice={handleSubmitInvoice}
+      onCreateInvoiceAi={handleCreateInvoiceAi}
       existingInvoiceId={existingInvoiceId}
       vatRate={sourceQuote?.vatRate}
       onViewInvoice={
@@ -59,6 +75,12 @@ export default function JobDetailRoute() {
           ? () => router.push(`/(trade)/invoice/${existingInvoiceId}`)
           : undefined
       }
+      onUpdateJob={async (patch) => {
+        await updateJob.mutateAsync(patch);
+      }}
+      members={users.map((u) => ({ id: u.id, fullName: u.fullName }))}
+      initialNotes={raw.notes}
+      photos={raw.photos ?? []}
     />
   );
 }

@@ -12,7 +12,8 @@ import structlog
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, status
 from fastapi.responses import StreamingResponse
 from fpdf import FPDF
-from sqlalchemy import select
+from sqlalchemy import or_, select
+from sqlalchemy import update as sa_update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -30,6 +31,7 @@ from app.models import (
     Contact,
     Event,
     Job,
+    MediaAsset,
     Quote,
     QuoteLineItem,
     QuoteRequest,
@@ -230,7 +232,7 @@ async def send_quote(
                 kind="quote_sent",
                 title="Your quote is ready to review",
                 body=f"Your electrician sent you a quote for '{quote.title}'.",
-                link=f"/customer/quote/{quote.id}",
+                link=f"/quotes/{quote.id}",
             )
     # Email the customer a review link. Non-fatal — if delivery fails they
     # can still open the quote from the mobile app via the notification. The
@@ -1251,10 +1253,26 @@ async def convert_quote_to_job(
         )
 
     schedule = data or JobConvertRequest()
+    if schedule.assigned_user_id is not None:
+        assignee = await db.get(User, schedule.assigned_user_id)
+        if assignee is None or assignee.tenant_id != tenant.id or not assignee.is_active:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid assignee")
+
     dates_note = ""
     if quote.accepted_dates:
         dates_note = "Customer confirmed preferred dates: " + ", ".join(quote.accepted_dates)
     notes_parts = [p for p in [schedule.notes, dates_note] if p]
+
+    # Carry the AI quote's assumptions/footnotes into the job notes so the
+    # electrician sees on-site what the estimator assumed.
+    rag = quote.extra_data.get("rag") if isinstance(quote.extra_data, dict) else None
+    if isinstance(rag, dict):
+        assumptions = [a for a in (rag.get("assumptions") or []) if a]
+        if assumptions:
+            notes_parts.append("AI quote assumptions:\n" + "\n".join(f"- {a}" for a in assumptions))
+        ai_notes = rag.get("notes")
+        if ai_notes:
+            notes_parts.append(f"AI notes: {ai_notes}")
 
     job = Job(
         tenant_id=tenant.id,
@@ -1264,10 +1282,24 @@ async def convert_quote_to_job(
         description=quote.description,
         scheduled_start=schedule.scheduled_start,
         scheduled_end=schedule.scheduled_end,
+        assigned_user_id=schedule.assigned_user_id,
         notes="\n\n".join(notes_parts) or None,
     )
     db.add(job)
     await db.flush()
+
+    # Photos uploaded against the quote's quote request (or the quote itself)
+    # carry through to the job record.
+    media_conditions = []
+    if quote.quote_request_id is not None:
+        media_conditions.append(MediaAsset.quote_request_id == quote.quote_request_id)
+    media_conditions.append(MediaAsset.quote_id == quote.id)
+    await db.execute(
+        sa_update(MediaAsset)
+        .where(MediaAsset.tenant_id == tenant.id, or_(*media_conditions))
+        .values(job_id=job.id)
+    )
+
     await write_audit_log(
         db,
         tenant_id=tenant.id,
@@ -1279,7 +1311,13 @@ async def convert_quote_to_job(
     )
     await db.commit()
     refreshed = await db.scalar(
-        select(Job).options(selectinload(Job.contact)).where(Job.id == job.id)
+        select(Job)
+        .options(
+            selectinload(Job.contact),
+            selectinload(Job.assignee),
+            selectinload(Job.media),
+        )
+        .where(Job.id == job.id)
     )
     return JobRead.model_validate(refreshed)
 
