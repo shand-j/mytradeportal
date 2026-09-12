@@ -210,6 +210,10 @@ def test_create_metabase_role_is_read_only_bypassrls_and_idempotent() -> None:
     engine = _sync_engine()
     try:
         with engine.begin() as conn:
+            # Probe table created BEFORE the role so GRANT SELECT ON ALL TABLES
+            # covers it — keeps the privilege assertions independent of whether
+            # the app schema happens to exist in this database (CI vs local).
+            conn.exec_driver_sql("CREATE TABLE IF NOT EXISTS _recon_metabase_probe (id integer)")
             init_db._create_metabase_role(conn)
             # Idempotent: a second run (e.g. every preDeploy) must not fail.
             init_db._create_metabase_role(conn)
@@ -225,15 +229,17 @@ def test_create_metabase_role_is_read_only_bypassrls_and_idempotent() -> None:
             assert tuple(row) == (True, False, True, False, False)
 
             can_select = conn.execute(
-                text("SELECT has_table_privilege(:role, 'public.tenants', 'SELECT')"),
+                text("SELECT has_table_privilege(:role, 'public._recon_metabase_probe', 'SELECT')"),
                 {"role": init_db.METABASE_ROLE},
             ).scalar_one()
             assert can_select is True
 
             can_insert = conn.execute(
-                text("SELECT has_table_privilege(:role, 'public.tenants', 'INSERT')"),
+                text("SELECT has_table_privilege(:role, 'public._recon_metabase_probe', 'INSERT')"),
                 {"role": init_db.METABASE_ROLE},
             ).scalar_one()
             assert can_insert is False
     finally:
+        with engine.begin() as conn:
+            conn.exec_driver_sql("DROP TABLE IF EXISTS _recon_metabase_probe")
         engine.dispose()

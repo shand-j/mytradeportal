@@ -11,7 +11,7 @@ from app.ai_pricing import estimate_cost
 from app.config import settings
 from app.models import AiCallEvent, Contact, DemoQuoteEvent, Quote, Tenant
 from app.rls import set_tenant_in_session
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 SCRIPTS = Path(__file__).resolve().parents[3] / "scripts"
@@ -112,6 +112,12 @@ async def test_backfill_skips_quotes_without_usage(db: AsyncSession) -> None:
 
 @pytest.mark.asyncio
 async def test_demo_backfill_records_generation_seconds_only(db: AsyncSession) -> None:
+    # Other suites leave demo_quote events + DemoQuoteEvent rows behind (shared
+    # session DB) — clear both so the counts below are deterministic.
+    await db.execute(delete(AiCallEvent).where(AiCallEvent.feature == "demo_quote"))
+    await db.execute(delete(DemoQuoteEvent))
+    await db.commit()
+
     demo = DemoQuoteEvent(ip_hash="a" * 64, generation_seconds=2.5)
     db.add(demo)
     await db.commit()
