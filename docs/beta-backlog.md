@@ -1,6 +1,21 @@
 # Beta Backlog — My Trade Portal
 
-Last triaged: 2026-09-11
+Last triaged: 2026-09-12
+
+> **Release status (2026-09-12):** all three execution waves complete — 56/56
+> items carry a validated Status — AI. API, landing and data-pipeline are
+> deployed on Railway at `b60ee15`; iOS build `551a225c` is submitted to
+> TestFlight (processing at App Store Connect). Every item is ready for
+> on-device verification — mark Status — User as you test.
+>
+> **Blocking user actions (owner: John):**
+> 1. **APNs key** for push notifications (N1) — Apple Developer portal → Keys
+>    → APNs, then `cd mobile && eas credentials -p ios --profile production`
+>    and upload the `.p8`. No rebuild needed.
+> 2. **`APIFY_API_TOKEN`** on the Railway `data-pipeline` service, then restart
+>    it — the catalog reindex (N21) runs automatically on boot; the
+>    `--run-on-start` trigger stays armed until the index is confirmed, then
+>    the orchestrator reverts it.
 
 Consolidated defect & feature backlog for the beta. Combines the latest
 defect/refinement report with everything carried from earlier pre-beta and
@@ -111,7 +126,7 @@ journey broken · P2 = polish · P3 = cosmetic.
 | C12 | Customer login should be tenant-agnostic (tenant resolved post-auth) | P1 | Hangover from the web sub-domain approach; future: multi-tenant customers. | Done `535100f` — slug-less login resolves tenant post-auth (newest active wins); response lists tenant associations for future multi-tenant | |
 | C13 | AI first follow-up asks for detail already provided; no acknowledgement; should auto-trigger + notify customer | P1 | Follow-up must fire as an event on low-confidence first attempt and notify the customer (depends on N1). | Done `535100f` — triage description renders all provided answers under ALREADY-PROVIDED banner + no-repeat rule; 3 tests | |
 | C14 | Electrician notified on every customer AI-chat reply (noise at scale) | P2 | Summarise/digest instead of per-message notifications. | Done `7c15cf9` — staff bell once per customer burst, re-armed by staff/AI reply | |
-| C15 | Duplicate users in coglabs tenant (9 duplicates for one person) | P2 | Data cleanup + dedupe guard on customer creation. | Done (guard) `535100f` — 409 on email or name+phone duplicates, merge-backfill on create; PROD CLEANUP of coglabs dupes still pending |name_phone` / `duplicate_customer:email` on same email (case-insensitive) or same normalised name + phone digits within a tenant; customer creation merges/links an existing contact instead of duplicating; mobile `findOrCreateContact` mirrors the rule and reuses the match on 409. Prod data cleanup still owed by orchestrator | |
+| C15 | Duplicate users in coglabs tenant (9 duplicates for one person) | P2 | Data cleanup + dedupe guard on customer creation. | Done (guard) `535100f` — 409 on duplicate email or normalised name+phone within a tenant (`duplicate_contact:*`), customer creation merges/links the existing contact, mobile mirrors the rule; 11 tests. PROD CLEANUP of the 9 coglabs duplicates still owed |name_phone` / `duplicate_customer:email` on same email (case-insensitive) or same normalised name + phone digits within a tenant; customer creation merges/links an existing contact instead of duplicating; mobile `findOrCreateContact` mirrors the rule and reuses the match on 409. Prod data cleanup still owed by orchestrator | |
 | C16 | Three-dots settings menu missing on pages other than dashboard | P2 | **Regression** — was requested as visible on all main pages. | Done (verified) `7c15cf9` — settings menu present on all 5 trade tab pages; customer role uses Profile tab instead | |
 | C17 | Bottom nav doesn't respect home-indicator safe area (slight cut-off) | P2 | Safe-area inset padding on the tab bar. | Done (verified) `7c15cf9` — safe-area padding already in BottomTabBar | |
 | C18 | No chat item in bottom nav (chat only reachable via links) | P2 | Add chat tab for both roles. | Done `7c15cf9` — chat tabs exist both roles; fixed active-tab highlight (route-group path mismatch) | |
@@ -123,11 +138,25 @@ journey broken · P2 = polish · P3 = cosmetic.
 
 ---
 
-## Execution waves
+## Execution waves — all complete
 
-1. **Wave 1 — P0 stability:** N1 push · N4/N3 customer emails · N14 photo 503 · N18 silent-failure · C23 + C1 verification
-2. **Wave 2 — P1 core journeys:** jobs cluster (N9, N11, N13, N15, N17, N19, N23) · N25 CRM · N27 payment details · N2 notification nav · N21 catalog retrieval · N8 brand audit · N28 password-reset page · C2/C3/C4/C5/C8/C12/C13/C22
-3. **Wave 3 — P2/P3 polish:** N6 reminders (scheduler build) · N26 badges/block · N22 rounding · dashboard set (N30–33) · remaining carried items
+1. **Wave 1 — P0 stability** ✅ `6929dd4` — N1 push · N4/N3 customer emails · N14 photo 503 · N18 silent-failure · C23 + C1
+2. **Wave 2 — P1 core journeys** ✅ `535100f` — jobs cluster · N25 CRM · N27 payment details · N2 notification nav · N21 retrieval · N28 reset page · C2–C5/C12/C13/C22
+3. **Wave 2b — brand** ✅ `a767cba` — N8 full-app sweep to slate/yellow
+4. **Wave 3 — P2/P3 polish** ✅ `7c15cf9` — N6 scheduler · N26 badges/block · N22 rounding · dashboard · messages · calendar · customer UX
+
+**Deployed:** Railway api/landing/data-pipeline SUCCESS at `b60ee15` · 441 API
+tests green · ruff + mypy clean · mobile tsc clean · CI green.
+
+## Deferred to post-beta (non-blocking, by design)
+
+- N21 follow-up: move embedding model→dimension map into `packages/shared/py` (single source of truth for api + data-pipeline)
+- N22 follow-up: render a "rounded" indicator in the quote UI when `rounding_adjustment > 0` (data is exposed)
+- N26 follow-ups: block check for the anonymous public lead form; (done: live-token chat enforcement)
+- C15 follow-up: prod cleanup of the 9 duplicate coglabs contacts (guard prevents new ones)
+- C21 follow-up: photo attach in the chat composer (customers can add via the request card)
+- Push hardening: Expo push receipts (`getReceipts`) for late `DeviceNotRegistered`
+- e2e maintenance: `mobile/e2e/regression.spec.ts` section E needs the new invoice-create step
 
 ## Hygiene rules
 
