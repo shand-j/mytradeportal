@@ -31,7 +31,7 @@ journey broken · P2 = polish · P3 = cosmetic.
 
 | Ref | Item | Priority | Notes / root-cause hypothesis | Status — AI | Status — User |
 |---|---|---|---|---|---|
-| N8 | Revenue screen and dashboard metric highlights off-brand (yellow/green); full app needs brand audit | P1 | Brand is slate `#0F1E26` + yellow `#FFC107` (logo system). Audit every screen against `packages/shared/ts` tokens; replace ad-hoc metric colours. | Pending | |
+| N8 | Revenue screen and dashboard metric highlights off-brand (yellow/green); full app needs brand audit | P1 | Brand is slate `#0F1E26` + yellow `#FFC107` (logo system). Audit every screen against `packages/shared/ts` tokens; replace ad-hoc metric colours. | Done `a767cba` — token-level fix + 34-screen sweep; slate/yellow metric treatment, LiveBadge shared component, white-label intact | |
 
 ## Jobs
 
