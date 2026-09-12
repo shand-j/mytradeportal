@@ -191,6 +191,9 @@ export default defineRailway(() => {
       // Public URL the reset-password + quote links resolve to. Update to
       // the App Store / landing page domain once available.
       APP_PUBLIC_URL: preserve(),
+      // Where password-reset email links point: the landing site's
+      // /reset-password page (NOT the back office).
+      PASSWORD_RESET_BASE_URL: "https://www.mytradeportal.co.uk",
       // Public browser origins: the Django admin and the marketing landing
       // (which hosts the no-login AI quote demo calling /demo/*). The native
       // app sends no Origin header, so it needs no entry.
@@ -242,6 +245,8 @@ export default defineRailway(() => {
       RAILPACK_SPA_OUTPUT_DIR: "dist",
       // Public by design (present in every browser bundle); values live in the
       // dashboard, picked up here via preserve().
+      // API origin for browser calls (demo quote endpoints, password reset).
+      VITE_API_URL: "https://api-production-65db.up.railway.app",
       VITE_PADDLE_ENV: "sandbox",
       VITE_PADDLE_CLIENT_TOKEN: preserve(),
       VITE_PADDLE_PRICE_STARTER_MONTH: preserve(),
@@ -303,7 +308,7 @@ export default defineRailway(() => {
   const dataPipeline = service("data-pipeline", {
     source: github(GITHUB_REPO),
     build: { builder: "DOCKERFILE", dockerfilePath: "services/data-pipeline/Dockerfile" },
-    start: "newrelic-admin run-program python -m data_pipeline.scheduler",
+    start: "newrelic-admin run-program python -m data_pipeline.scheduler --run-on-start",
     healthcheck: "/health",
     regions: { [TARGET_REGION]: 1 },
     env: {
