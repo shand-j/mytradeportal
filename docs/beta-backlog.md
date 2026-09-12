@@ -20,7 +20,7 @@ journey broken · P2 = polish · P3 = cosmetic.
 | Ref | Item | Priority | Notes / root-cause hypothesis | Status — AI | Status — User |
 |---|---|---|---|---|---|
 | N1 | Push notifications never arrive on iOS (no banner/badge/sound when app closed; in-app banner only) | P0 | Reported ~5× across beta. Token plumbing exists (`mobile/src/lib/pushNotifications.ts`, `services/api/app/push.py`). Suspect Expo APNs production credentials or token/environment mismatch. Needs end-to-end trace: token registration → DB → Expo push API response. | Done (code) `6929dd4` — ticket errors now parsed (were logged as success), sound/high-priority + deep-link data, customer gets quote-ready push, dead-token cleanup; 7 tests. Needs APNs creds on EAS + on-device verify | |
-| N2 | Bell-icon notification list items don't navigate to the notified thing | P1 | Nav targets missing on notification rows; each notification type needs a deep-link route. Carried: triage-complete / quote-refreshed notifications had the same complaint. | Pending | |
+| N2 | Bell-icon notification list items don't navigate to the notified thing | P1 | Nav targets missing on notification rows; each notification type needs a deep-link route. Carried: triage-complete / quote-refreshed notifications had the same complaint. | Done `535100f` — shared type→route map for in-app rows + push taps; broken stored links fixed (`/quote/` → `/quotes/`); graceful no-op on dead ends; 38 tests | |
 | N3 | Emails fail silently when customer has no contact information | P1 | Silent failure must become logged + surfaced; sending path should no-op with a warning, not drop. Related to N4. | Done `6929dd4` — no-contact case logs `email_skipped_no_contact_email` warning instead of dropping; tested | |
 | N4 | Customer emails broadly don't work (no quote-ready notifications, no reset emails received) | P0 | Resend vars are set (`RESEND_FROM_EMAIL=quotes@mytradeportal.co.uk`). Customer-facing event emails (quote ready, reset) appear unsent or unlogged. Trace `communications.py` send paths + Resend API responses; add delivery logging. Carried: "no email arrives" reported for password reset earlier. | Done `6929dd4` — send_event_email wrapper + welcome/triage-question/quote-accepted emails, Resend errors logged loudly; 14 tests. Live-delivery verify pending | |
 | N5 | Job-detail message button opens iOS Messages | P2 | Should respect customer contact preference (Email or in-app Chat); SMS options were removed earlier. | Pending | |
@@ -37,46 +37,46 @@ journey broken · P2 = polish · P3 = cosmetic.
 
 | Ref | Item | Priority | Notes / root-cause hypothesis | Status — AI | Status — User |
 |---|---|---|---|---|---|
-| N9 | Job creation only allows existing customers | P1 | Add inline "new customer" path in job creation (quote agreed off-app). | Pending | |
+| N9 | Job creation only allows existing customers | P1 | Add inline "new customer" path in job creation (quote agreed off-app). | Done `535100f` — inline New customer toggle on job create (dedupe-aware) | |
 | N10 | Navigation forces Apple Maps install | P2 | Use platform-neutral map URLs so the default maps app handles it. | Pending | |
-| N11 | Job detail "assigned to" uneditable and undefinable at creation; job notes not editable | P1 | Add assignee selection (tenant members) + editable notes on job detail. | Pending | |
-| N12 | AI quote assumptions/footnotes should appear in job notes | P2 | Copy assumptions + notes into the job's notes when converting quote → job. | Pending | |
-| N13 | Uploaded images should appear attached to the job | P1 | Photos uploaded on the quote should carry through to the job record. | Pending | |
+| N11 | Job detail "assigned to" uneditable and undefinable at creation; job notes not editable | P1 | Add assignee selection (tenant members) + editable notes on job detail. | Done `535100f` — assignee chips at create + Change editor on detail, persisted notes editor; server validates same-tenant staff | |
+| N12 | AI quote assumptions/footnotes should appear in job notes | P2 | Copy assumptions + notes into the job's notes when converting quote → job. | Done `535100f` — convert-to-job appends AI assumptions + notes to job notes | |
+| N13 | Uploaded images should appear attached to the job | P1 | Photos uploaded on the quote should carry through to the job record. | Done `535100f` — quote photos linked to job on convert; thumbnail row on job detail | |
 | N14 | Photo upload returns 503 | P0 | Regression — likely from the MinIO private-endpoint change (`minio.railway.internal`). Verify `files.py` + storage config end-to-end. | Done `6929dd4` — MinIO bare host dialed :80; endpoint normalizer adds :9000, IaC pinned to private domain:9000; 9 tests. Live upload verify pending | |
-| N15 | Job creation needs date picker + time picker + duration; pre-fill duration from quoted hours | P1 | e.g. 3 lines × 10h → job spans 30 working hours. Duration derived from quote line items, editable. | Pending | |
+| N15 | Job creation needs date picker + time picker + duration; pre-fill duration from quoted hours | P1 | e.g. 3 lines × 10h → job spans 30 working hours. Duration derived from quote line items, editable. | Done `535100f` — native date/time pickers, duration prefilled from quoted hours, editable | |
 | N16 | Working hours configurable in the app | P2 | Feeds duration suggestion and calendar slot logic. | Pending | |
-| N17 | New-job page has no keyboard-avoiding layout | P1 | Recurring class — quote screen, customer profile, chat input all had this. Audit KeyboardAvoidingView across form screens. | Pending | |
-| N18 | New job: select a quote → prefill duration/date/customer/start time/notes from calendar slots; without a quote "complete and send invoice" silently fails | P0 | Silent failure is the P0; prefill is P1. Disable/redirect the invoice action when no quote is attached. | P0 half done `6929dd4` — swallowed rejections now alert with backend detail; quote-less invoice guarded + explained. Prefill half moves to wave 2 jobs agent | |
-| N19 | Jobs with no quote → AI create-invoice page | P1 | Reuse quote-generation UI (editable, AI-built) but the CTA creates an invoice directly and navs to the invoice send page. | Pending | |
+| N17 | New-job page has no keyboard-avoiding layout | P1 | Recurring class — quote screen, customer profile, chat input all had this. Audit KeyboardAvoidingView across form screens. | Done `535100f` — KeyboardAvoidingView on job create + invoice create | |
+| N18 | New job: select a quote → prefill duration/date/customer/start time/notes from calendar slots; without a quote "complete and send invoice" silently fails | P0 | Silent failure is the P0; prefill is P1. Disable/redirect the invoice action when no quote is attached. | Done `535100f` — quote selection prefills title/customer/duration + first-free-slot suggestion; silent-failure half shipped in `6929dd4` | |
+| N19 | Jobs with no quote → AI create-invoice page | P1 | Reuse quote-generation UI (editable, AI-built) but the CTA creates an invoice directly and navs to the invoice send page. | Done `535100f` — AI create-invoice page (reuses generation pipeline, editable lines, direct invoice → send page) | |
 | N20 | Calendar "New job" button → plain `+` symbol, no border | P3 | Cosmetic. | Pending | |
 
 ## Quotes / AI
 
 | Ref | Item | Priority | Notes / root-cause hypothesis | Status — AI | Status — User |
 |---|---|---|---|---|---|
-| N21 | Quotes assume "no catalog match" for items known to be in the cost-item DB (consumer units, sockets, twin & earth) | P1 | Retrieval/index regression. Data was ported to prod Qdrant; suspect embedding model mismatch or index not hit by tenant retrieval. Investigate `app/rag/retrieval.py`. | Pending | |
+| N21 | Quotes assume "no catalog match" for items known to be in the cost-item DB (consumer units, sockets, twin & earth) | P1 | Retrieval/index regression. Data was ported to prod Qdrant; suspect embedding model mismatch or index not hit by tenant retrieval. Investigate `app/rag/retrieval.py`. | Done `535100f` — root cause: retrieval read-path wiped the index on the embedding-model bump; now read-only + loud errors. PROD REINDEX REQUIRED (data-pipeline import) | |
 | N22 | Configurable toggle: round quote totals up to nearest £5 or £10 | P2 | e.g. £1236.40 → £1240. Setting lives in tenant settings; applies to quote + invoice totals. | Pending | |
-| N23 | Quote convert button → "Convert to…" iOS action sheet (Job or Invoice) | P1 | Replace single convert-to-invoice action with an ActionSheet navigating to the right page. | Pending | |
+| N23 | Quote convert button → "Convert to…" iOS action sheet (Job or Invoice) | P1 | Replace single convert-to-invoice action with an ActionSheet navigating to the right page. | Done `535100f` — Convert to… ActionSheet (Job / Invoice) on iOS | |
 
 ## Customers / CRM
 
 | Ref | Item | Priority | Notes / root-cause hypothesis | Status — AI | Status — User |
 |---|---|---|---|---|---|
 | N24 | "Could not find messages" error on existing coglabs.ai tenant | P1 | Tenant-scoped query returns nothing and surfaces an error instead of an empty inbox. | Pending | |
-| N25 | Can't edit customers; need customer detail screen with editable fields; parking/access persisted and auto-populated on quote/job creation | P1 | Carried: address not persisted (only postcode); contact phone/address empty in settings despite onboarding capture. Chain: customer → quote → job inherits parking/access. | Implemented (wave-2 CRM, awaiting commit) — new editable customer detail screen (`mobile/app/(trade)/customer/[id].tsx` + `CustomerDetailScreen`, keyboard-avoiding); `parking_notes`/`access_notes`/`property_type`/`bedrooms`/`preferred_contact_method` added to Contact (+ parking/access on Customer); quote-intake pre-fills parking/access/property from the contact record; 11 API tests + `pnpm lint` pass | |
+| N25 | Can't edit customers; need customer detail screen with editable fields; parking/access persisted and auto-populated on quote/job creation | P1 | Carried: address not persisted (only postcode); contact phone/address empty in settings despite onboarding capture. Chain: customer → quote → job inherits parking/access. | Done `535100f` — editable customer detail screen; parking/access/property persisted + pre-fill quote intake; contact payload contract documented | |
 | N26 | Badges: "Late Payer"/"Non-payer" (bad-debt history) and "Time Waster" (>2 quotes, never replied) — auto-set, manually overridable; block button to stop customer login/quotes/messages | P2 | Needs rules engine over invoices/quotes + `blocked` flag enforced in auth + quote creation. | Pending | |
 
 ## Invoices / payments
 
 | Ref | Item | Priority | Notes / root-cause hypothesis | Status — AI | Status — User |
 |---|---|---|---|---|---|
-| N27 | Invoice payment details in the email; payment details configurable in settings | P1 | Confirmed: no bank/payment-details config exists anywhere. Add settings fields (account name, sort code, account number, reference format) + include in invoice email template. | Pending | |
+| N27 | Invoice payment details in the email; payment details configurable in settings | P1 | Confirmed: no bank/payment-details config exists anywhere. Add settings fields (account name, sort code, account number, reference format) + include in invoice email template. | Done `535100f` — bank details settings UI + invoice email block (reference = invoice number); 5 tests | |
 
 ## Auth
 
 | Ref | Item | Priority | Notes / root-cause hypothesis | Status — AI | Status — User |
 |---|---|---|---|---|---|
-| N28 | Reset-password email links to the admin portal (back office) | P1 | Build reset page on mytradeportal.co.uk: new password + reconfirm, displays user email, signed single-use token, only for app-requested resets. Landing site addition + API token issuing change. | Pending | |
+| N28 | Reset-password email links to the admin portal (back office) | P1 | Build reset page on mytradeportal.co.uk: new password + reconfirm, displays user email, signed single-use token, only for app-requested resets. Landing site addition + API token issuing change. | Done `535100f` — /reset-password on mytradeportal.co.uk (email shown, new+confirm, single-use token, newest-link-only); PASSWORD_RESET_BASE_URL set in prod | |
 
 ## Messages
 
@@ -98,27 +98,27 @@ journey broken · P2 = polish · P3 = cosmetic.
 | Ref | Item | Priority | Notes / root-cause hypothesis | Status — AI | Status — User |
 |---|---|---|---|---|---|
 | C1 | VAT still applied when tenant is not VAT registered | P1 | **Regression — re-verify.** Believed fixed twice; latest report says still broken. Check VAT rate resolution in quote + invoice generation against tenant flag. | Done `6929dd4` — schema default 0.20 made the tenant fallback dead code; fixed via model_fields_set; 7 VAT tests | |
-| C2 | Chat message direction all "outbound" | P1 | Direction must be tenant-relative: customer messages = inbound. | Pending | |
-| C3 | Customer can view quote before electrician review | P1 | Gate customer quote view on status (e.g. sent/accepted only). | Pending | |
-| C4 | Quotes sent to non-account customers: persist details, email-only comms, flag unregistered | P1 | Overlaps N4. Customer + quote must persist even if they never create an account; tenant sees flag setting comms expectation. | Pending | |
-| C5 | Customer address (not just postcode) persisted | P1 | Overlaps N25. | Implemented (wave-2 CRM, awaiting commit) — `CustomerCreate` accepts `address`/`postcode`, persisted on both customer and linked contact; `PATCH /customers/{id}` + `PATCH /contacts/{id}` round-trip full address; tested in `tests/test_customers_crm.py` | |
-| C6 | Line-item unit = 'job' | P2 | Demo now returns 'm'/'ea' — verify tenant quote path uses catalog units. | Pending | |
+| C2 | Chat message direction all "outbound" | P1 | Direction must be tenant-relative: customer messages = inbound. | Done `535100f` — legacy customer messages normalised to inbound at read; optional SQL backfill noted | |
+| C3 | Customer can view quote before electrician review | P1 | Gate customer quote view on status (e.g. sent/accepted only). | Done `535100f` — positive allow-list for customer-visible quote statuses | |
+| C4 | Quotes sent to non-account customers: persist details, email-only comms, flag unregistered | P1 | Overlaps N4. Customer + quote must persist even if they never create an account; tenant sees flag setting comms expectation. | Done `535100f` — account-less quotes persist; has_account flag on every lead read | |
+| C5 | Customer address (not just postcode) persisted | P1 | Overlaps N25. | Done `535100f` — full address + postcode persist on contact + customer, kept in sync | |
+| C6 | Line-item unit = 'job' | P2 | Demo now returns 'm'/'ea' — verify tenant quote path uses catalog units. | Done `535100f` — grounded lines take catalogue units (m/ea); only fallback lines default | |
 | C7 | Quote "Request more info" → should open chat with customer | P2 | Currently navs to Quotes screen. | Pending | |
 | C8 | Keyboard hides content (quote screen, customer profile, chat input) | P1 | Recurring KeyboardAvoidingView class — audit with N17. | Pending | |
 | C9 | Capture electrician quote edits as fine-tuning dataset | P2 | Log edit events (before/after) for AI training data. | Pending | |
 | C10 | AI refine: dynamic placeholder animation + leave-page banner | P3 | Greyed placeholders for lines/assumptions/price; notify-on-complete banner. | Pending | |
 | C11 | Membership type not persisted in onboarding object | P2 | Verify onboarding payload → tenant record. | Done (verified) — membership_type persists as `membership` in tenant.settings (onboarding.py:137) | |
-| C12 | Customer login should be tenant-agnostic (tenant resolved post-auth) | P1 | Hangover from the web sub-domain approach; future: multi-tenant customers. | Pending | |
-| C13 | AI first follow-up asks for detail already provided; no acknowledgement; should auto-trigger + notify customer | P1 | Follow-up must fire as an event on low-confidence first attempt and notify the customer (depends on N1). | Pending | |
+| C12 | Customer login should be tenant-agnostic (tenant resolved post-auth) | P1 | Hangover from the web sub-domain approach; future: multi-tenant customers. | Done `535100f` — slug-less login resolves tenant post-auth (newest active wins); response lists tenant associations for future multi-tenant | |
+| C13 | AI first follow-up asks for detail already provided; no acknowledgement; should auto-trigger + notify customer | P1 | Follow-up must fire as an event on low-confidence first attempt and notify the customer (depends on N1). | Done `535100f` — triage description renders all provided answers under ALREADY-PROVIDED banner + no-repeat rule; 3 tests | |
 | C14 | Electrician notified on every customer AI-chat reply (noise at scale) | P2 | Summarise/digest instead of per-message notifications. | Pending | |
-| C15 | Duplicate users in coglabs tenant (9 duplicates for one person) | P2 | Data cleanup + dedupe guard on customer creation. | Guard implemented (wave-2 CRM, awaiting commit) — POST /contacts and POST /customers return 409 `duplicate_contact:email\|name_phone` / `duplicate_customer:email` on same email (case-insensitive) or same normalised name + phone digits within a tenant; customer creation merges/links an existing contact instead of duplicating; mobile `findOrCreateContact` mirrors the rule and reuses the match on 409. Prod data cleanup still owed by orchestrator | |
+| C15 | Duplicate users in coglabs tenant (9 duplicates for one person) | P2 | Data cleanup + dedupe guard on customer creation. | Done (guard) `535100f` — 409 on email or name+phone duplicates, merge-backfill on create; PROD CLEANUP of coglabs dupes still pending |name_phone` / `duplicate_customer:email` on same email (case-insensitive) or same normalised name + phone digits within a tenant; customer creation merges/links an existing contact instead of duplicating; mobile `findOrCreateContact` mirrors the rule and reuses the match on 409. Prod data cleanup still owed by orchestrator | |
 | C16 | Three-dots settings menu missing on pages other than dashboard | P2 | **Regression** — was requested as visible on all main pages. | Pending | |
 | C17 | Bottom nav doesn't respect home-indicator safe area (slight cut-off) | P2 | Safe-area inset padding on the tab bar. | Pending | |
 | C18 | No chat item in bottom nav (chat only reachable via links) | P2 | Add chat tab for both roles. | Pending | |
 | C19 | Checkout email prefill + lock to account email | P3 | Verify landed. | Pending | |
 | C20 | Customer dashboard "you are not connected" empty state is confusing | P2 | Should read "N quote(s) generating. We'll notify you if we need anything else." | Pending | |
 | C21 | Customer quote photos: single upload point; customers can add photos | P2 | Photos currently requested in two places; electrician-only upload. | Pending | |
-| C22 | Tenant dashboard accessible before payment (subscription gating) | P1 | Security: gate app access on active subscription (beta free, but enforce the check). | Pending | |
+| C22 | Tenant dashboard accessible before payment (subscription gating) | P1 | Security: gate app access on active subscription (beta free, but enforce the check). | Done `535100f` — GET /auth/tenant-status gate: no-row/legacy + beta_comped + trialing/active/past_due pass; incomplete/paused/canceled paywalled; 5 tests | |
 | C23 | Plan selection 500 on POST /tenants (step 9/10) | P0 | Believed fixed — verify on latest TestFlight build. | Done `6929dd4` — Supabase admin_create_user failures were unhandled 500s at plan selection; now 502/503 with clear messages; 2 tests | |
 
 ---
