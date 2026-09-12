@@ -146,6 +146,7 @@ export function QuotesScreen(_props: QuotesScreenProps) {
           {FILTERS.map((filter) => (
             <Pressable key={filter.key} onPress={() => setActiveFilter(filter.key)}>
               <View
+                testID={`quotes-filter-${filter.key}`}
                 className={`rounded-full px-3 py-1.5 ${activeFilter === filter.key ? "bg-primary-100" : "bg-gray-100"}`}
               >
                 <Text variant="caption" color={activeFilter === filter.key ? "text" : "secondary"}>

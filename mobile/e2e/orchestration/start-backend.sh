@@ -65,4 +65,19 @@ for i in $(seq 1 60); do
   sleep 2
 done
 
+echo "Ensuring database schema is current (additive column reconciliation)..."
+docker compose ${COMPOSE_FILES} exec -T api python scripts/init_db.py
+
+echo "Ensuring MinIO bucket exists..."
+docker compose ${COMPOSE_FILES} exec -T api python - <<'PYEOF'
+from app.config import settings
+from app.routers.files import s3_client
+
+client = s3_client()
+buckets = [b["Name"] for b in client.list_buckets().get("Buckets", [])]
+if settings.minio_bucket not in buckets:
+    client.create_bucket(Bucket=settings.minio_bucket)
+print(f"minio bucket ok: {settings.minio_bucket}")
+PYEOF
+
 echo "Backend stack ready."

@@ -15,10 +15,10 @@ async function globalSetup(): Promise<void> {
   const page = await browser.newPage();
   try {
     await page.goto(BASE_URL, { waitUntil: "networkidle", timeout: 240000 });
-    // The generic build opens on "My Trade Portal"; a white-label build opens on
-    // the branded "Your electrician" entry. Wait for whichever renders.
+    // The generic build opens on the "Get started" role select; a white-label
+    // build opens on the branded "Your electrician" entry. Wait for either.
     await page
-      .getByText(/My Trade Portal|Your electrician/)
+      .getByText(/Get started|Your electrician/)
       .first()
       .waitFor({ state: "visible", timeout: 240000 });
   } finally {

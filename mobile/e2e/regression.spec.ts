@@ -27,6 +27,16 @@ import {
 
 const CUSTOMER_PASSWORD = "E2E-Customer-1";
 
+// Node's global Buffer exists at runtime under Playwright, but the app
+// tsconfig doesn't include node types — declare the single use here.
+declare const Buffer: { from(data: string, encoding: "base64"): any };
+
+// 1x1 transparent PNG — the smallest valid upload for the photo flows.
+const TINY_PNG = Buffer.from(
+  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==",
+  "base64"
+);
+
 // Config sets ``fullyParallel: true`` and ``workers > 1`` so different
 // describes can run on different workers. Individual describes below use
 // ``test.describe.serial`` for the ones that share ``beforeAll`` tenant
@@ -54,7 +64,9 @@ test.describe.serial("A — Trade owner login & settings", () => {
 });
 
 test.describe.serial("B — Customer quote request + account creation", () => {
+  const JANE_EMAIL = "jane-homeowner@e2e.example.com";
   let tenant: Tenant;
+  let leadId: string;
 
   test.beforeAll(async () => {
     tenant = await createTestTenant("customer-quote");
@@ -63,7 +75,11 @@ test.describe.serial("B — Customer quote request + account creation", () => {
 
   test("customer submits a quote request and creates an account", async ({ page }) => {
     await page.goto("/", { waitUntil: "networkidle" });
-    await waitText(page, "My Trade Portal", 120000);
+    // The app opens on a splash → role-select sequence; pick the customer role.
+    await page
+      .locator('[data-testid="role-select"]')
+      .waitFor({ state: "visible", timeout: 120000 });
+    await tap(page, "role-customer");
 
     // Look up the business by its 6-digit customer code.
     for (let i = 0; i < 6; i++) {
@@ -81,7 +97,7 @@ test.describe.serial("B — Customer quote request + account creation", () => {
     // Contact
     await fill(page, "quote-name-input", "E2E Jane Homeowner");
     await fill(page, "quote-phone-input", "07700 900123");
-    await fill(page, "quote-email-input", "jane-homeowner@e2e.example.com");
+    await fill(page, "quote-email-input", JANE_EMAIL);
     await tapText(page, "Online chat");
     await tap(page, "quote-contact-continue");
 
@@ -129,8 +145,65 @@ test.describe.serial("B — Customer quote request + account creation", () => {
     // Account creation logs the customer in and lands them on requests.
     await waitText(page, "Request a new quote", 60000);
 
-    const lead = await waitForLead(tenant, "Consumer unit", 30000);
+    const lead = (await waitForLead(tenant, "Consumer unit", 30000)) as { id: string };
     expect(lead).toBeTruthy();
+    leadId = lead.id;
+  });
+
+  test("customer logs back in without the electrician code (C12)", async ({ page }) => {
+    // Log in via the business code first so there is a session to log out of.
+    await loginAsCustomer(page, tenant, { email: JANE_EMAIL, password: CUSTOMER_PASSWORD });
+    await tap(page, "tab-profile");
+    await tapText(page, "Log out");
+
+    // Back on the role select: go straight to customer login — no business
+    // code. Login is tenant-agnostic (the account is located by email).
+    await page
+      .locator('[data-testid="role-select"]')
+      .waitFor({ state: "visible", timeout: 30000 });
+    await tap(page, "role-customer");
+    await tap(page, "entry-customer-login");
+    await waitText(page, "Customer login");
+    await fill(page, "login-email", JANE_EMAIL);
+    await fill(page, "login-password", CUSTOMER_PASSWORD);
+    await tap(page, "login-submit");
+
+    // Lands in the portal with the earlier request listed.
+    await page
+      .locator('[data-testid="request-new-quote"]')
+      .waitFor({ state: "visible", timeout: 30000 });
+    await page
+      .locator(`[data-testid="request-card-${leadId}"]`)
+      .waitFor({ state: "visible", timeout: 30000 });
+  });
+
+  test("customer with no requests sees the welcoming empty state (C20)", async ({ page }) => {
+    const email = `empty-${Date.now()}@e2e.example.com`;
+    await seedCustomer(tenant, {
+      email,
+      password: CUSTOMER_PASSWORD,
+      fullName: "E2E Empty State",
+      phone: "07700 900555",
+    });
+    await loginAsCustomer(page, tenant, { email, password: CUSTOMER_PASSWORD });
+    await waitText(page, "No requests yet");
+    await waitText(page, "Tap “Request a new quote” to send your first request");
+  });
+
+  test("customer adds a photo to an in-progress request (C21)", async ({ page }) => {
+    await loginAsCustomer(page, tenant, { email: JANE_EMAIL, password: CUSTOMER_PASSWORD });
+    await page
+      .locator(`[data-testid="request-add-photos-${leadId}"]`)
+      .waitFor({ state: "visible", timeout: 30000 });
+
+    // The web build's image picker opens a native file chooser.
+    const [chooser] = await Promise.all([
+      page.waitForEvent("filechooser", { timeout: 30000 }),
+      tap(page, `request-add-photos-${leadId}`),
+    ]);
+    await chooser.setFiles({ name: "e2e-photo.png", mimeType: "image/png", buffer: TINY_PNG });
+
+    await waitText(page, "1 photo sent to your electrician.", 60000);
   });
 });
 
@@ -298,8 +371,31 @@ test.describe.serial("E — Trade job lifecycle + invoice", () => {
     await tap(page, "job-complete");
     await waitForJob(tenant, "E2E Lifecycle job", "completed", 30000);
 
+    // Quote-less job: job-create-invoice no longer invoices inline — it opens
+    // the AI invoice-create page (review/adjust lines → submit). Jobs that DO
+    // have a quote still convert their quote lines in place; this seeded job
+    // has none, which is the path that regressed.
     await tap(page, "job-create-invoice");
-    await waitText(page, "Invoice");
+    await waitText(page, "New invoice");
+    // Add one line by hand so the group stays deterministic (no live LLM).
+    await fill(page, "invoice-line-description-0", "E2E Lifecycle job");
+    await fill(page, "invoice-line-price-0", "480.00");
+    await tap(page, "invoice-create-submit");
+
+    // Submit lands on the invoice detail page (draft); send it from there.
+    await page
+      .locator('[data-testid="invoice-send"]')
+      .waitFor({ state: "visible", timeout: 30000 });
+    await tap(page, "invoice-send");
+    const sent = (await waitForInvoice(tenant, "E2E Lifecycle job", "sent", 30000)) as {
+      id: string;
+    };
+
+    // Sending navigates back to the job; reopen the invoice and mark it paid.
+    await page.goto(`/(trade)/invoice/${sent.id}`, { waitUntil: "networkidle" });
+    await page
+      .locator('[data-testid="invoice-mark-paid"]')
+      .waitFor({ state: "visible", timeout: 30000 });
     await tap(page, "invoice-mark-paid");
     await waitText(page, "Payment received");
 
@@ -412,9 +508,72 @@ test.describe.serial("G — Fresh business signup", () => {
     // wizard rather than a broken dead-end. The wizard header shows
     // "Onboarding" until the business name is set, so we anchor on that.
     await page.goto("/", { waitUntil: "networkidle" });
-    await waitText(page, "My Trade Portal", 120000);
+    await page
+      .locator('[data-testid="role-select"]')
+      .waitFor({ state: "visible", timeout: 120000 });
+    await tap(page, "role-electrician");
     await tap(page, "entry-register-trade");
     await waitText(page, "Onboarding", 30000);
+  });
+
+  test("owner drives the signup wizard to plan selection without a 500 (C23)", async ({ page }) => {
+    const email = `signup-${Date.now()}@e2e.example.com`;
+    await page.goto("/", { waitUntil: "networkidle" });
+    await page
+      .locator('[data-testid="role-select"]')
+      .waitFor({ state: "visible", timeout: 120000 });
+    await tap(page, "role-electrician");
+    await tap(page, "entry-register-trade");
+    await waitText(page, "Onboarding", 30000);
+
+    // Welcome → account. The wizard's FormFields have no testIDs, so the
+    // steps are driven by their placeholders/button copy.
+    await tapText(page, "Create my account");
+    await waitText(page, "Create your account");
+    await page.getByPlaceholder("Full name").fill("E2E Signup Owner");
+    await page.getByPlaceholder("you@business.com").fill(email);
+    await page.getByPlaceholder("07700 123 456").fill("07700 900777");
+    await page.getByPlaceholder("At least 8 characters").fill("E2E-Signup-1");
+    await tapText(page, "I accept the Terms of Service");
+    await tapText(page, "Continue");
+
+    // Business identity — only the trading name is required.
+    await waitText(page, "Business identity");
+    await page.getByPlaceholder("e.g. Smith Electrical Ltd").fill("E2E Signup Electrical");
+    await tapText(page, "Continue");
+
+    // Address & service area — postcode + address are required.
+    await waitText(page, "Address & service area");
+    await page.getByPlaceholder("e.g. SK8 3NJ").fill("SK8 3NJ");
+    await page.getByPlaceholder("Full trading address").fill("1 E2E Way, Cheadle");
+    await tapText(page, "Continue");
+
+    // Tax & VAT (defaults to not VAT-registered) and Compliance (all optional).
+    await waitText(page, "Tax & VAT");
+    await tapText(page, "Continue");
+    await waitText(page, "Compliance & credentials");
+    await tapText(page, "Continue");
+
+    // Services — at least one selection is required.
+    await waitText(page, "Services offered");
+    await tapText(page, "Consumer unit");
+    await tapText(page, "Continue");
+
+    // Branding — keep the default colour.
+    await waitText(page, "Branding");
+    await tap(page, "branding-continue");
+
+    // Review & launch — this provisions the tenant (finishRegistration).
+    await waitText(page, "Review & launch");
+    await tap(page, "onboarding-choose-plan");
+
+    // The plan step must render the plan options with no internal-error
+    // surface. Paddle checkout itself stays manual (device checklist).
+    await waitText(page, "Choose your plan", 60000);
+    await page.locator('[data-testid="plan-starter"]').waitFor({ state: "visible", timeout: 30000 });
+    await page.locator('[data-testid="plan-pro"]').waitFor({ state: "visible", timeout: 30000 });
+    await page.locator('[data-testid="plan-business"]').waitFor({ state: "visible", timeout: 30000 });
+    expect(await bodyText(page)).not.toMatch(/internal server error|\b500\b|payment setup failed/i);
   });
 });
 
@@ -457,6 +616,15 @@ test.describe.serial("H — Refine quote round-trip", () => {
     await fill(page, "refine-instructions", "Add a second RCBO on the new circuit for redundancy.");
     await tap(page, "refine-submit");
 
+    // While the refine runs, the line items are replaced by a skeleton with a
+    // leave-page banner (C10).
+    await page
+      .locator('[data-testid="refine-skeleton"]')
+      .waitFor({ state: "visible", timeout: 30000 });
+    await page
+      .locator('[data-testid="refine-banner"]')
+      .waitFor({ state: "visible", timeout: 30000 });
+
     // Refine calls Kimi (60-120s). Poll the API for the total to change.
     let after = before;
     const deadline = Date.now() + 240_000;
@@ -466,6 +634,11 @@ test.describe.serial("H — Refine quote round-trip", () => {
       await sleep(3000);
     }
     expect(after.total, "refine did not change quote total").not.toBe(before.total);
+
+    // The skeleton clears once the refined quote comes back.
+    await page
+      .locator('[data-testid="refine-skeleton"]')
+      .waitFor({ state: "detached", timeout: 30000 });
   });
 });
 
@@ -493,7 +666,10 @@ test.describe.serial("I — Multi-user tenant (owner + engineer)", () => {
   test("engineer logs in and lands on the dashboard", async ({ page }) => {
     // Engineer login reuses the trade login form; only the identity differs.
     await page.goto("/", { waitUntil: "networkidle" });
-    await waitText(page, "My Trade Portal", 120000);
+    await page
+      .locator('[data-testid="role-select"]')
+      .waitFor({ state: "visible", timeout: 120000 });
+    await tap(page, "role-electrician");
     await tap(page, "entry-trade-login");
     await waitText(page, "Electrician login");
     await fill(page, "login-email", engineerEmail);

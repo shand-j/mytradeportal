@@ -35,7 +35,11 @@ async def list_users(
 ) -> list[UserRead]:
     """List staff users for the current tenant."""
     await _set_user_tenant(db, current_user)
-    result = await db.execute(select(User).order_by(User.full_name))
+    # Explicit tenant filter on top of RLS: environments connecting as a
+    # superuser (e.g. e2e compose) bypass RLS entirely.
+    result = await db.execute(
+        select(User).where(User.tenant_id == current_user.tenant_id).order_by(User.full_name)
+    )
     return [UserRead.model_validate(u) for u in result.scalars().all()]
 
 

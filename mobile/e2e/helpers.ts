@@ -84,10 +84,22 @@ async function resetAppState(page: Page): Promise<void> {
   });
 }
 
-export async function loginAsTradeOwner(page: Page, tenant: Tenant): Promise<void> {
+/**
+ * Open the generic entry screen and choose a role card. The app opens on a
+ * splash → role-select sequence ("I'm an Electrician" / "I'm a Customer"), so
+ * every unauthenticated flow starts here.
+ */
+export async function gotoEntryRole(page: Page, role: "trade" | "customer"): Promise<void> {
   await resetAppState(page);
   await page.goto("/", { waitUntil: "networkidle" });
-  await waitText(page, "My Trade Portal", 120000);
+  await page
+    .locator('[data-testid="role-select"]')
+    .waitFor({ state: "visible", timeout: 120000 });
+  await tap(page, role === "trade" ? "role-electrician" : "role-customer");
+}
+
+export async function loginAsTradeOwner(page: Page, tenant: Tenant): Promise<void> {
+  await gotoEntryRole(page, "trade");
   await tap(page, "entry-trade-login");
   await waitText(page, "Electrician login");
   await fill(page, "login-email", tenant.adminEmail);
@@ -101,9 +113,7 @@ export async function loginAsCustomer(
   tenant: Tenant,
   credentials: LoginCredentials
 ): Promise<void> {
-  await resetAppState(page);
-  await page.goto("/", { waitUntil: "networkidle" });
-  await waitText(page, "My Trade Portal", 120000);
+  await gotoEntryRole(page, "customer");
   await fillBusinessCode(page, tenant.code);
   await tap(page, "entry-find-business");
   await waitText(page, "Your electrician", 30000);
