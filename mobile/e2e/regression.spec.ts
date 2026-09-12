@@ -570,9 +570,9 @@ test.describe.serial("G — Fresh business signup", () => {
     // The plan step must render the plan options with no internal-error
     // surface. Paddle checkout itself stays manual (device checklist).
     await waitText(page, "Choose your plan", 60000);
-    await page.locator('[data-testid="plan-starter"]').waitFor({ state: "visible", timeout: 30000 });
+    await page.locator('[data-testid="plan-sole_trader"]').waitFor({ state: "visible", timeout: 30000 });
     await page.locator('[data-testid="plan-pro"]').waitFor({ state: "visible", timeout: 30000 });
-    await page.locator('[data-testid="plan-business"]').waitFor({ state: "visible", timeout: 30000 });
+    await page.locator('[data-testid="plan-team"]').waitFor({ state: "visible", timeout: 30000 });
     expect(await bodyText(page)).not.toMatch(/internal server error|\b500\b|payment setup failed/i);
   });
 });

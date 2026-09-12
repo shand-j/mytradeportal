@@ -23,9 +23,17 @@ import structlog
 from litellm import acompletion
 from openai import APIError
 
-from app.config import LLM_COST_PER_1K_TOKENS_USD, settings
+from app.ai_pricing import estimate_cost
+from app.ai_telemetry import AiCallContext, AiCallTracker
+from app.config import settings
 
 logger = structlog.get_logger("api.rag")
+
+# Prompt versions recorded on every ai_call_events row. Bump whenever the
+# prompts above change materially so quality/cost can be compared across
+# prompt iterations.
+QUOTE_DRAFT_PROMPT_VERSION = "quote-draft.v8"
+TRIAGE_FOLLOWUP_PROMPT_VERSION = "triage-followup.v3"
 
 
 def _extract_usage(response: Any) -> dict[str, int] | None:
@@ -37,26 +45,29 @@ def _extract_usage(response: Any) -> dict[str, int] | None:
     completion_tokens = getattr(usage, "completion_tokens", None)
     if prompt_tokens is None and completion_tokens is None:
         return None
-    return {
+    result = {
         "prompt_tokens": int(prompt_tokens or 0),
         "completion_tokens": int(completion_tokens or 0),
     }
+    # Prompt-cache hits (OpenAI-style ``prompt_tokens_details.cached_tokens``)
+    # are billed at a cheaper rate, so the telemetry writer prices them apart.
+    details = getattr(usage, "prompt_tokens_details", None)
+    cached_tokens = getattr(details, "cached_tokens", None) if details is not None else None
+    if cached_tokens:
+        result["cached_tokens"] = int(cached_tokens)
+    return result
 
 
 def estimate_llm_cost_usd(model: str, prompt_tokens: int, completion_tokens: int) -> float | None:
-    """Estimate the USD cost of an LLM call from the per-1K-token price map.
+    """Estimate the USD cost of an LLM call from the date-versioned price list.
 
-    Returns ``None`` when the model is not in the pricing map — the caller
-    still records the token counts, just without a cost estimate.
+    Thin backwards-compatible wrapper over :func:`app.ai_pricing.estimate_cost`
+    (callers unchanged). Returns ``None`` when the model is not in the pricing
+    list — the caller still records the token counts, just without a cost
+    estimate.
     """
-    prices = next(
-        (price for key, price in LLM_COST_PER_1K_TOKENS_USD.items() if key in model.lower()),
-        None,
-    )
-    if prices is None:
-        return None
-    cost = (prompt_tokens * prices["prompt"] + completion_tokens * prices["completion"]) / 1000
-    return round(cost, 6)
+    cost = estimate_cost(model, prompt_tokens, completion_tokens)
+    return None if cost is None else float(cost)
 
 
 def _model_allows_custom_temperature(model: str) -> bool:
@@ -459,6 +470,7 @@ async def generate_followup(
     job_description: str,
     prior_messages: list[dict[str, str]],
     final_turn: bool = False,
+    telemetry: AiCallContext | None = None,
 ) -> dict[str, Any]:
     """Call the configured LLM to produce the next chat turn for the homeowner.
 
@@ -470,6 +482,10 @@ async def generate_followup(
     electrician could ask on a call, ≤60 chars each) are included too.
     ``final_turn`` tells the model this is its last question, so it should
     close with ``suggested_questions`` when confidence stays low.
+
+    ``telemetry`` optionally carries the call-site context (feature, trace,
+    tenant) recorded by :class:`app.ai_telemetry.AiCallTracker` — this is what
+    captures the token usage that used to be computed then dropped here.
     """
     if not settings.resolved_llm_api_key:
         raise RuntimeError("LLM API key is not configured")
@@ -491,9 +507,17 @@ async def generate_followup(
     if settings.llm_api_base:
         completion_kwargs["api_base"] = settings.llm_api_base
 
+    tracker = AiCallTracker(
+        telemetry,
+        model=settings.llm_model,
+        prompt_version=TRIAGE_FOLLOWUP_PROMPT_VERSION,
+        prompt_text="\n".join(m["content"] for m in messages) if telemetry is not None else None,
+    )
     try:
         started = time.perf_counter()
-        response = await acompletion(**completion_kwargs)
+        async with tracker:
+            response = await acompletion(**completion_kwargs)
+            tracker.set_usage(_extract_usage(response))
     except APIError as exc:
         logger.error(
             "llm_error",
@@ -562,6 +586,9 @@ async def generate_followup(
         "options": options,
         "suggested_questions": suggested_questions,
         "usage": _extract_usage(response),
+        # Actual model used — callers recording spend must not assume
+        # settings.llm_model on override paths (the model-label bug).
+        "model": settings.llm_model,
     }
 
 
@@ -575,6 +602,7 @@ async def generate_quote_from_prompt(
     model: str | None = None,
     api_base: str | None = None,
     api_key: str | None = None,
+    telemetry: AiCallContext | None = None,
 ) -> dict[str, Any]:
     """Call the configured LLM and return parsed guide-priced line items.
 
@@ -590,6 +618,11 @@ async def generate_quote_from_prompt(
     ``None`` → the configured pipeline is used unchanged. Pass ``api_base=""``
     to suppress a configured non-OpenAI base (e.g. Kimi) and hit the
     OpenAI defaults instead.
+
+    ``telemetry`` optionally carries the call-site context (feature, trace_id,
+    parent_event_id, ...) recorded by :class:`app.ai_telemetry.AiCallTracker`
+    around the LiteLLM call. The returned dict's ``model`` key is the ACTUAL
+    model used (override-resolved) so spend recording never mislabels.
     """
     resolved_model = model or settings.llm_model
     resolved_api_key = api_key or settings.resolved_llm_api_key
@@ -630,9 +663,17 @@ async def generate_quote_from_prompt(
     if resolved_api_base:
         completion_kwargs["api_base"] = resolved_api_base
 
+    tracker = AiCallTracker(
+        telemetry,
+        model=resolved_model,
+        prompt_version=QUOTE_DRAFT_PROMPT_VERSION,
+        prompt_text=prompt if telemetry is not None else None,
+    )
     try:
         started = time.perf_counter()
-        response = await acompletion(**completion_kwargs)
+        async with tracker:
+            response = await acompletion(**completion_kwargs)
+            tracker.set_usage(_extract_usage(response))
     except APIError as exc:
         logger.error(
             "llm_error",
@@ -661,6 +702,9 @@ async def generate_quote_from_prompt(
 
     parsed = _parse_json_response(content)
     parsed["usage"] = _extract_usage(response)
+    # The ACTUAL model used (override-resolved) — fixes spend mislabelling on
+    # override paths where callers previously assumed settings.llm_model.
+    parsed["model"] = resolved_model
     ref_stats = _resolve_catalogue_refs(parsed, cost_items)
     logger.info(
         "llm_quote_generated",

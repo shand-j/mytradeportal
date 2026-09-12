@@ -3,8 +3,9 @@
 
 This is the single source of truth for the API schema (there are no Alembic
 migrations). It creates the SQLAlchemy-managed tables from the current models,
-creates the non-privileged application role used by the API, and applies the
-Row-Level Security policies that enforce tenant isolation.
+creates the non-privileged application role used by the API plus the read-only
+``mtp_metabase`` BI role, and applies the Row-Level Security policies that
+enforce tenant isolation.
 
 The script is idempotent and is intended to run as the API preDeploy command
 (and optionally as the admin preDeploy command for Django's own tables).
@@ -47,6 +48,12 @@ _shared_settings = get_settings()
 APP_ROLE = _shared_settings.app_role_name
 APP_ROLE_PASSWORD = _shared_settings.app_role_password
 
+# Read-only BI role used by the local Metabase container (compose profile
+# ``observability``). The default password is dev-only; production deployments
+# must set METABASE_DB_PASSWORD.
+METABASE_ROLE = os.environ.get("METABASE_DB_USER", "mtp_metabase")
+METABASE_ROLE_PASSWORD = os.environ.get("METABASE_DB_PASSWORD", "mtp_metabase")
+
 DATABASE_URL = os.environ["DATABASE_URL"]
 
 
@@ -76,6 +83,44 @@ def _create_app_role(conn: Connection) -> None:
     )
     conn.exec_driver_sql(
         f"ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT USAGE, SELECT ON SEQUENCES TO {APP_ROLE}"
+    )
+
+
+def _create_metabase_role(conn: Connection) -> None:
+    """Create the read-only BI role used by Metabase (BI-only, not for the API).
+
+    RLS is ``FORCE``d on every tenant-scoped table, so a regular role would
+    see zero rows; the role therefore carries ``BYPASSRLS`` and must stay
+    strictly read-only on application data — it is granted ``SELECT`` on all
+    current tables and via default privileges on future ones.
+
+    The one exception is ``CREATE ON SCHEMA public``: Metabase stores its own
+    metadata (users, dashboards, the Liquibase changelog) in the database
+    named by ``MB_DB_DBNAME`` and refuses to boot if it cannot migrate. As
+    owner of the tables it creates, the role can maintain its metadata while
+    remaining unable to write to any application table.
+    """
+    existing = conn.execute(
+        text("SELECT 1 FROM pg_roles WHERE rolname = :role"),
+        {"role": METABASE_ROLE},
+    ).first()
+    if existing is None:
+        conn.exec_driver_sql(
+            f"CREATE ROLE {METABASE_ROLE} WITH LOGIN PASSWORD '{METABASE_ROLE_PASSWORD}' "
+            f"NOSUPERUSER BYPASSRLS NOCREATEDB NOCREATEROLE"
+        )
+    else:
+        # Keep the password and BYPASSRLS flag in sync in case either changed
+        # after the role was first created.
+        conn.exec_driver_sql(
+            f"ALTER ROLE {METABASE_ROLE} WITH LOGIN PASSWORD '{METABASE_ROLE_PASSWORD}' "
+            f"NOSUPERUSER BYPASSRLS NOCREATEDB NOCREATEROLE"
+        )
+    conn.exec_driver_sql(f"GRANT USAGE ON SCHEMA public TO {METABASE_ROLE}")
+    conn.exec_driver_sql(f"GRANT CREATE ON SCHEMA public TO {METABASE_ROLE}")
+    conn.exec_driver_sql(f"GRANT SELECT ON ALL TABLES IN SCHEMA public TO {METABASE_ROLE}")
+    conn.exec_driver_sql(
+        f"ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT ON TABLES TO {METABASE_ROLE}"
     )
 
 
@@ -206,6 +251,7 @@ def init_api_schema() -> None:
         # added to the models since the last deploy.
         sync_missing_columns(conn, Base.metadata)
         _create_app_role(conn)
+        _create_metabase_role(conn)
         apply_tenant_rls_sync(conn)
 
     # Sanity check: every expected tenant-scoped table must have RLS + FORCE.

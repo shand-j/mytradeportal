@@ -248,6 +248,6 @@ async def test_ai_insights_reports_ai_spend(admin_client: AsyncClient) -> None:
     perf = response.json()["ai_quote_performance"]
 
     assert perf["ai_quotes_with_usage"] == 1
-    # The default test model is not in the pricing map → tokens recorded but
-    # no cost estimate → total is null.
-    assert perf["total_ai_cost_usd"] is None
+    # The default test model (gpt-4o-mini) is in the date-versioned price list
+    # (app.ai_pricing): (1000 x $0.00015 + 500 x $0.0006) / 1k.
+    assert perf["total_ai_cost_usd"] == 0.00045

@@ -7,7 +7,7 @@ subscription read model; state mutations happen exclusively via webhooks
 """
 
 from datetime import datetime
-from typing import Annotated
+from typing import Annotated, Any
 from uuid import UUID
 
 import structlog
@@ -21,6 +21,7 @@ from app.database import get_db
 from app.dependencies import CurrentUserDep, TenantDep
 from app.models import Subscription, Tenant
 from app.paddle_client import create_subscription_transaction, get_or_create_customer
+from app.plans import PLANS, plan_to_public_dict
 from app.rls import set_tenant_in_session
 from app.schemas import BillingCheckoutCreate, BillingCheckoutRead, SubscriptionRead
 
@@ -133,6 +134,21 @@ async def _get_or_create_subscription(
     else:
         existing.plan_key = plan_key
     return existing
+
+
+@router.get("/plans")
+async def list_plans() -> list[dict[str, Any]]:
+    """Return the subscription tier catalog for clients (mobile onboarding).
+
+    Public by design — the onboarding plan step renders before checkout and
+    must never be blocked by auth/tenant state. Each tier carries its key,
+    display name, monthly/annual GBP list prices, the env var NAMES that hold
+    the Paddle price IDs (the IDs themselves stay server-side), the monthly AI
+    allowance, overage behavior/price, featured flag, seat rules, and trial
+    terms. Mobile renders from this and falls back to a static copy of the
+    same numbers if the fetch fails.
+    """
+    return [plan_to_public_dict(plan) for plan in PLANS]
 
 
 @router.post("/checkout")

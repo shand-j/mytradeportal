@@ -139,6 +139,29 @@ service it references now has its Dockerfile and source in the tree:
 
 Only the commented-out `ocerp` block references a service that no longer exists.
 
+### Observability tooling
+
+An opt-in compose profile `observability` adds local BI/tracing without
+bloating the default stack — `docker compose up` stays lean; start it with
+`docker compose --profile observability up -d`:
+
+- **Metabase** (`metabase/metabase:latest`, http://localhost:3001) — BI
+  dashboards over the operational database. It connects as the dedicated
+  read-only **`mtp_metabase`** role created by `scripts/init_db.py`
+  (`BYPASSRLS` + `SELECT`-only, because RLS is `FORCE`d on every tenant table;
+  password from `METABASE_DB_PASSWORD`, dev-only default). The role also has
+  `CREATE ON SCHEMA public` so Metabase can maintain its own metadata tables
+  in the same database — it still cannot write to any application table.
+- **Langfuse** (`langfuse/langfuse:2`, http://localhost:3002) with its own
+  `langfuse-postgres` (host port 5440) and `clickhouse` (host ports 8124/9003
+  — 8123/9000 clash with MinIO). Named volumes `langfuse_postgres_data` and
+  `clickhouse_data`. API-side emission is guarded and off unless
+  `LANGFUSE_PUBLIC_KEY`/`LANGFUSE_SECRET_KEY` are set.
+
+Product analytics go through `app/analytics.py::track` (writes `analytics.*`
+rows to the existing `events` table, fail-open, with an optional PostHog
+passthrough when `POSTHOG_API_KEY` is set).
+
 ### Deployment target
 
 - **Railway** via Infrastructure as Code in `.railway/railway.ts`.

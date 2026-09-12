@@ -3,6 +3,50 @@ import { api } from "../lib/apiClient";
 
 export type PlanKey = "starter" | "pro" | "business";
 
+// Current tier keys from GET /billing/plans. The checkout endpoint still
+// speaks the legacy keys until the W2-B Paddle catalog work lands, so plan
+// selections are mapped back when creating a checkout.
+export type BillingPlanKey = "sole_trader" | "pro" | "team";
+
+export const CHECKOUT_PLAN_KEY: Record<BillingPlanKey, PlanKey> = {
+  sole_trader: "starter",
+  pro: "pro",
+  team: "business",
+};
+
+export type BillingPlan = {
+  key: BillingPlanKey;
+  name: string;
+  monthlyPriceEnv: string;
+  annualPriceEnv: string;
+  monthlyPriceGbp: number;
+  annualPriceGbp: number;
+  aiAllowanceMonthly: number;
+  overageBehavior: "block" | "metered";
+  overagePricePence: number;
+  minSeats: number;
+  pooledAllowance: boolean;
+  featured: boolean;
+  trialDays: number;
+  trialExtensionDays: number;
+  trialExtensionSentAiQuotes: number;
+};
+
+export async function getBillingPlans(): Promise<BillingPlan[]> {
+  return api.get<BillingPlan[]>("/billing/plans");
+}
+
+export function useBillingPlans() {
+  return useQuery({
+    queryKey: ["billing", "plans"],
+    queryFn: getBillingPlans,
+    // Static catalog; callers fall back to a local copy on failure, so one
+    // retry is plenty and a stale cache is harmless.
+    staleTime: 1000 * 60 * 60,
+    retry: 1,
+  });
+}
+
 export type SubscriptionRead = {
   id: string;
   planKey: PlanKey;

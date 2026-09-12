@@ -19,9 +19,10 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.ai_telemetry import record_quote_outcome
 from app.config import settings
 from app.database import engine
-from app.models import Invoice, Payment, ProcessedWebhook, Subscription
+from app.models import Invoice, Payment, ProcessedWebhook, Quote, Subscription
 from app.paddle_client import parse_webhook_event, verify_webhook_signature
 
 router = APIRouter(prefix="/webhooks", tags=["Webhooks"])
@@ -68,6 +69,22 @@ async def _record_payment(invoice_id: str, event_data: dict[str, Any]) -> None:
         invoice.paddle_transaction_id = transaction_id
         session.add(payment)
         session.add(invoice)
+        # Close the AI funnel when the paid invoice traces back to an
+        # AI-drafted quote (fail-open; committed with this session).
+        if invoice.quote_id is not None:
+            source_quote = await session.get(Quote, invoice.quote_id)
+            if source_quote is not None:
+                await record_quote_outcome(
+                    session,
+                    outcome="invoice_paid",
+                    tenant_id=invoice.tenant_id,
+                    quote=source_quote,
+                    extra_payload={
+                        "invoice_id": str(invoice.id),
+                        "actor": "paddle_webhook",
+                        "provider_transaction_id": transaction_id,
+                    },
+                )
         await session.commit()
 
 

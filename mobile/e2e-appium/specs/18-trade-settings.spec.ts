@@ -94,9 +94,9 @@ describe("18: trade settings, branding, billing, logout", () => {
     }
     await tapId(cta);
     await waitForText("Choose your plan", 25000);
-    await waitForId("plan-starter", 15000);
+    await waitForId("plan-sole_trader", 15000);
     await waitForId("plan-pro", 15000);
-    await waitForId("plan-business", 15000);
+    await waitForId("plan-team", 15000);
     await tapId("back-button", 8000);
     await waitForText("Settings", 15000);
   });

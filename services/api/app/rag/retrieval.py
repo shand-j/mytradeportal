@@ -24,6 +24,7 @@ from qdrant_client.models import (
 )
 from sqlalchemy import or_, select
 
+from app.ai_telemetry import FEATURE_EMBEDDING, AiCallContext, AiCallTracker
 from app.config import settings
 from app.database import get_db_session
 from app.models import CostItem
@@ -333,7 +334,13 @@ def _embedding_kwargs(texts: list[str]) -> dict[str, Any]:
 
 
 async def embed_texts(texts: list[str]) -> list[list[float]]:
-    """Return embedding vectors for the supplied texts (cached per text)."""
+    """Return embedding vectors for the supplied texts (cached per text).
+
+    Remote embedding calls are recorded as ``ai_call_events`` rows
+    (feature=``embedding``) via a telemetry-owned DB session — this is the
+    token tracking that used to be dropped entirely. Cache hits skip both the
+    remote call and the event (no spend incurred).
+    """
     if not texts:
         return []
     if not settings.resolved_embedding_api_key:
@@ -350,8 +357,15 @@ async def embed_texts(texts: list[str]) -> list[list[float]]:
 
     if missing:
         started = time.perf_counter()
+        tracker = AiCallTracker(
+            AiCallContext(feature=FEATURE_EMBEDDING),
+            model=settings.embedding_model,
+            prompt_text="\n".join(text for _, text in missing),
+        )
         try:
-            response = await aembedding(**_embedding_kwargs([text for _, text in missing]))
+            async with tracker:
+                response = await aembedding(**_embedding_kwargs([text for _, text in missing]))
+                tracker.set_usage(_extract_embedding_usage(response))
         except APIError as exc:
             logger.error(
                 "llm_error",
@@ -381,6 +395,17 @@ async def embed_texts(texts: list[str]) -> list[list[float]]:
             results[index] = vector
 
     return [results[index] for index in range(len(texts))]
+
+
+def _extract_embedding_usage(response: Any) -> dict[str, int] | None:
+    """Pull token counts off a LiteLLM embedding response, when reported."""
+    usage = getattr(response, "usage", None)
+    if usage is None:
+        return None
+    prompt_tokens = getattr(usage, "prompt_tokens", None)
+    if prompt_tokens is None:
+        return None
+    return {"prompt_tokens": int(prompt_tokens or 0), "completion_tokens": 0}
 
 
 async def embed_text(text: str) -> list[float]:

@@ -9,6 +9,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from app.ai_telemetry import AiCallContext
 from app.config import settings as settings
 from app.database import get_db
 from app.dependencies import TenantDep, _extract_token
@@ -375,6 +376,13 @@ async def ai_followup(
             description,
             prior_messages,
             final_turn=ai_turn_count + 1 >= max_followup_turns,
+            telemetry=AiCallContext(
+                feature="triage_followup",
+                db=db,
+                tenant_id=tenant.id,
+                user_id=actor.id if isinstance(actor, User) else None,
+                quote_request_id=quote_request_id,
+            ),
         )
     except RuntimeError as exc:
         raise HTTPException(
@@ -542,8 +550,7 @@ async def find_or_create_direct_thread(
         select(QuoteRequest)
         .where(
             QuoteRequest.tenant_id == tenant.id,
-            (QuoteRequest.customer_id == customer.id)
-            | (QuoteRequest.contact_id == contact.id),
+            (QuoteRequest.customer_id == customer.id) | (QuoteRequest.contact_id == contact.id),
         )
         .order_by(QuoteRequest.created_at.desc())
         .limit(1)

@@ -22,12 +22,16 @@ REMINDER_SCHEDULER_ENABLED: bool = os.environ.get(
 # after startup so a fresh deploy never immediately blasts customers.
 REMINDER_TICK_SECONDS: int = int(os.environ.get("REMINDER_TICK_SECONDS", "3600"))
 
-# Estimated LLM list prices (USD per 1K tokens) used only for internal AI
-# spend attribution on quotes — never for customer billing. Keys are matched
-# as substrings of the configured model id (e.g. "openai/kimi-k2.6" matches
-# "kimi-k2.6"). Models missing from the map still record token counts, with
-# est_cost_usd=None.
-LLM_COST_PER_1K_TOKENS_USD: dict[str, dict[str, float]] = {
-    # Moonshot Kimi K2.6 list-price estimate (prompt / completion per 1K tokens).
-    "kimi-k2.6": {"prompt": 0.0006, "completion": 0.0025},
+# Global kill-switch for AI-usage entitlement enforcement (W2-A). When false
+# (the default until the Paddle price mapping is proven in sandbox), the
+# ``require_ai_allowance`` dependency is a no-op pass-through and no tenant is
+# ever blocked or warned. Set ENTITLEMENTS_ENABLED=true to enforce.
+ENTITLEMENTS_ENABLED: bool = os.environ.get("ENTITLEMENTS_ENABLED", "false").strip().lower() in {
+    "1",
+    "true",
+    "yes",
+    "on",
 }
+
+# LLM/embedding list prices moved to ``app.ai_pricing`` (date-versioned price
+# lists; ``estimate_llm_cost_usd`` in ``app.rag.generation`` delegates there).

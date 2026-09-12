@@ -28,6 +28,15 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from app.ai_telemetry import (
+    FEATURE_QUOTE_REFINE,
+    FEATURE_TRIAGE_FOLLOWUP,
+    AiCallContext,
+    get_last_event_id,
+    get_or_create_trace_id,
+    next_attempt_no,
+    set_last_event_id,
+)
 from app.audit import Actions, write_audit_log
 from app.calculations import apply_quote_rounding, calculate_quote_totals
 from app.database import get_db_session
@@ -245,8 +254,23 @@ async def start_ai_triage(
         return
 
     description = build_triage_description(quote_request)
+    # Join the quote-level trace when the triage follows an AI draft so the
+    # follow-up call lands in the same funnel.
+    triage_trace_id: str | None = None
+    if quote_request.quote_id is not None:
+        linked_quote = await db.get(Quote, quote_request.quote_id)
+        if linked_quote is not None:
+            triage_trace_id = get_or_create_trace_id(linked_quote)
+    telemetry = AiCallContext(
+        feature=FEATURE_TRIAGE_FOLLOWUP,
+        db=db,
+        tenant_id=tenant.id,
+        trace_id=triage_trace_id,
+        quote_id=quote_request.quote_id,
+        quote_request_id=quote_request_id,
+    )
     try:
-        result = await generate_followup(description, [])
+        result = await generate_followup(description, [], telemetry=telemetry)
     except RuntimeError as exc:
         logger.warning(
             "auto_triage_followup_failed",
@@ -541,6 +565,17 @@ async def requote_after_triage_close(tenant_id: UUID, quote_request_id: UUID) ->
             )
 
             started = time.perf_counter()
+            # Same trace as the original draft, linked as a child regeneration.
+            requote_telemetry = AiCallContext(
+                feature=FEATURE_QUOTE_REFINE,
+                db=db,
+                tenant_id=tenant_id,
+                trace_id=get_or_create_trace_id(quote),
+                parent_event_id=get_last_event_id(quote),
+                attempt_no=next_attempt_no(quote),
+                quote_id=quote.id,
+                quote_request_id=quote_request_id,
+            )
             retrieved, retrieval_status = await quotes_router.search_cost_items_with_status(  # type: ignore[attr-defined]
                 description
             )
@@ -548,6 +583,7 @@ async def requote_after_triage_close(tenant_id: UUID, quote_request_id: UUID) ->
                 job_description=description,
                 cost_items=retrieved,
                 tenant_settings=tenant.settings,
+                telemetry=requote_telemetry,
             )
             completeness = quotes_router._intake_completeness(description, quote_request)
             validated = quotes_router.validate_generated_quote(  # type: ignore[attr-defined]
@@ -600,9 +636,11 @@ async def requote_after_triage_close(tenant_id: UUID, quote_request_id: UUID) ->
             llm_usage = quotes_router._accumulate_llm_usage(
                 previous_rag if isinstance(previous_rag, dict) else {},
                 generated.get("usage"),
+                generated.get("model"),
             )
             if llm_usage is not None:
                 quote.extra_data["rag"]["llm_usage"] = llm_usage
+            set_last_event_id(quote, requote_telemetry.event_id)
             quotes_router._snapshot_ai_draft(quote)
 
             await db.flush()

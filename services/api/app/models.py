@@ -2,12 +2,24 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime
 from decimal import Decimal
 from typing import Any
 from uuid import UUID, uuid4
 
-from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Numeric, String, Text
+from sqlalchemy import (
+    Boolean,
+    Date,
+    DateTime,
+    Float,
+    ForeignKey,
+    Index,
+    Integer,
+    Numeric,
+    String,
+    Text,
+    UniqueConstraint,
+)
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
@@ -1136,3 +1148,119 @@ class DemoQuoteEvent(Base):
     utm_medium: Mapped[str | None] = mapped_column(String(100), nullable=True)
     utm_campaign: Mapped[str | None] = mapped_column(String(100), nullable=True)
     generation_seconds: Mapped[float | None] = mapped_column(Float, nullable=True)
+
+
+# ---------------------------------------------------------------------------
+# W2-A ENTITLEMENTS — ai_usage_counters (owned by the entitlements workstream;
+# keep this block self-contained — ai_call_events from the telemetry
+# workstream is added in its own separate block).
+# ---------------------------------------------------------------------------
+
+
+class AIUsageCounter(TenantScopedBase):
+    """Per-tenant monthly counter of billable AI actions.
+
+    One row per (tenant, period) where ``period`` is ``YYYY-MM`` (UTC). Only
+    billable features increment it (see ``app.plans.BILLABLE_AI_FEATURES``);
+    embeddings and demo quotes never touch this table. Read by the
+    ``require_ai_allowance`` dependency to enforce each plan's monthly AI
+    allowance. Tenant-scoped: registered in ``app.rls.TENANT_SCOPED_TABLES``.
+    """
+
+    __tablename__ = "ai_usage_counters"
+
+    period: Mapped[str] = mapped_column(String(7), nullable=False)  # YYYY-MM (UTC)
+    ai_actions: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+
+    __table_args__ = (
+        UniqueConstraint("tenant_id", "period", name="uq_ai_usage_counters_tenant_period"),
+    )
+
+
+# ---------------------------------------------------------------------------
+# W1-A AI TELEMETRY — ai_call_events + fx_rates (owned by the telemetry
+# workstream). Both are plain ``Base`` tables, NOT tenant-scoped (same
+# rationale as ``DemoQuoteEvent``: cross-tenant ops/BI queries over AI spend
+# must work without an RLS context; ``tenant_id`` is a plain indexed column,
+# not an RLS key). Do NOT add either table to ``app.rls.TENANT_SCOPED_TABLES``.
+# ---------------------------------------------------------------------------
+
+
+class AiCallEvent(Base):
+    """One recorded AI call (or funnel outcome) for spend/quality observability.
+
+    Column names follow the OpenTelemetry GenAI semantic conventions where one
+    applies (``gen_ai_*``) so external tooling recognises the shape. Written
+    exclusively by ``app.ai_telemetry.record_ai_event`` — never instantiate
+    directly from routers. ``feature`` vocabulary:
+    ``quote_draft | quote_refine | triage_followup | embedding | demo_quote |
+    outcome``. ``status`` vocabulary: ``success | timeout | error |
+    abandoned``. Outcome rows (quote_sent / quote_accepted / invoice_paid in
+    ``raw_payload["outcome"]``) carry no model/token/cost fields — they exist
+    so cost↔outcome joins run off this one table via ``trace_id``.
+    """
+
+    __tablename__ = "ai_call_events"
+
+    id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, default=datetime.utcnow, nullable=False, index=True
+    )
+    # Plain column (no FK, no RLS): NULL for demo/system calls, set for tenant
+    # calls so per-tenant spend rollups can group on it.
+    tenant_id: Mapped[UUID | None] = mapped_column(PGUUID(as_uuid=True), nullable=True, index=True)
+    # NULL for system/background/demo calls.
+    user_id: Mapped[UUID | None] = mapped_column(PGUUID(as_uuid=True), nullable=True)
+    feature: Mapped[str] = mapped_column(String(50), nullable=False, index=True)
+    gen_ai_provider_name: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    gen_ai_request_model: Mapped[str | None] = mapped_column(String(255), nullable=True, index=True)
+    gen_ai_usage_input_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    gen_ai_usage_output_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    gen_ai_usage_cached_input_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    est_cost_usd: Mapped[Decimal | None] = mapped_column(Numeric(10, 6), nullable=True)
+    cost_gbp: Mapped[Decimal | None] = mapped_column(Numeric(10, 4), nullable=True)
+    fx_rate: Mapped[Decimal | None] = mapped_column(Numeric(10, 6), nullable=True)
+    fx_rate_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    latency_seconds: Mapped[float | None] = mapped_column(Float, nullable=True)
+    status: Mapped[str] = mapped_column(String(20), default="success", nullable=False)
+    attempt_no: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
+    # Links regenerations/refines back to the generation they replaced.
+    parent_event_id: Mapped[UUID | None] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("ai_call_events.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    # Quote-level funnel root: minted on first generation, stored on
+    # ``Quote.ai_metadata["trace_id"]``, propagated to refines/outcomes.
+    trace_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    prompt_version: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    confidence: Mapped[float | None] = mapped_column(Float, nullable=True)
+    completeness: Mapped[float | None] = mapped_column(Float, nullable=True)
+    retrieval_status: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    # Plain columns (no FK): the events table must stay writable even when the
+    # referenced quote lives behind RLS or is later deleted.
+    quote_id: Mapped[UUID | None] = mapped_column(PGUUID(as_uuid=True), nullable=True, index=True)
+    quote_request_id: Mapped[UUID | None] = mapped_column(
+        PGUUID(as_uuid=True), nullable=True, index=True
+    )
+    raw_payload: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict, nullable=False)
+
+    __table_args__ = (
+        # The rollup query shape: per-tenant, per-feature, time-ordered.
+        Index("ix_ai_call_events_tenant_feature_created", "tenant_id", "feature", "created_at"),
+    )
+
+
+class FxRate(Base):
+    """Daily USD→GBP rate used to stamp ``AiCallEvent.cost_gbp`` at write time.
+
+    Populated by the weekly refresh job (separate workstream); until the first
+    row lands, ``app.fx.get_usd_gbp_rate`` falls back to
+    ``settings.fx_usd_gbp_fallback_rate``.
+    """
+
+    __tablename__ = "fx_rates"
+
+    rate_date: Mapped[date] = mapped_column(Date, primary_key=True)
+    usd_gbp: Mapped[Decimal] = mapped_column(Numeric(10, 6), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)

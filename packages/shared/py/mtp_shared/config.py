@@ -175,6 +175,12 @@ class Settings(BaseSettings):
     resend_from_email: str = Field(default="")
     resend_no_reply_email: str = Field(default="")
 
+    # PostHog product analytics (optional passthrough from ``app.analytics``).
+    # Empty ``posthog_api_key`` disables the integration entirely — events are
+    # still written to the local ``events`` table.
+    posthog_api_key: str = Field(default="")
+    posthog_host: str = Field(default="https://eu.i.posthog.com")
+
     # Public base URL used to build customer/staff email links. Falls back to
     # the API's own origin at runtime when unset.
     app_public_url: str = Field(default="")
@@ -204,6 +210,20 @@ class Settings(BaseSettings):
     # Rate limiting. Enabled by default; disabled in the E2E stack so a suite's
     # own repeated logins don't trip the per-IP auth limit.
     rate_limit_enabled: bool = Field(default=True)
+
+    # Langfuse LLM observability (optional). When ``langfuse_public_key`` is
+    # set, ``app.ai_telemetry`` mirrors each tracked AI call to Langfuse with
+    # the prompt text (prompt text never lands in Postgres). Empty in dev —
+    # emission is a no-op. ``langfuse_host`` defaults to the Langfuse cloud
+    # when blank; set it for self-hosted installs.
+    langfuse_public_key: str = Field(default="")
+    langfuse_secret_key: str = Field(default="")
+    langfuse_host: str = Field(default="")
+
+    # USD→GBP conversion for AI cost attribution. Used only when the
+    # ``fx_rates`` table has no row yet (the weekly refresh job is responsible
+    # for keeping it populated); never for customer billing.
+    fx_usd_gbp_fallback_rate: float = Field(default=0.79)
 
     # Supabase Auth (optional — when set, email/password login is handled by Supabase)
     supabase_url: str = Field(default="")

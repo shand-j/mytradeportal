@@ -3,12 +3,18 @@ import { Linking, Pressable, ScrollView, View } from "react-native";
 import { Button } from "../../../components/ui/Button";
 import { Icon } from "../../../components/ui/Icon";
 import { Text } from "../../../components/ui/Text";
-import { createBillingCheckout, type PlanKey } from "../../../api/billing";
+import {
+  CHECKOUT_PLAN_KEY,
+  createBillingCheckout,
+  useBillingPlans,
+  type BillingPlan,
+  type BillingPlanKey,
+} from "../../../api/billing";
 import { config } from "../../../lib/config";
 import { NetworkError } from "../../../lib/apiClient";
 
 type Plan = {
-  key: PlanKey;
+  key: BillingPlanKey;
   name: string;
   price: string;
   cadence: string;
@@ -22,46 +28,114 @@ type PlanPaymentStepProps = {
   onNext: (data?: Record<string, unknown>) => void;
 };
 
-const PLANS: Plan[] = [
+// Static copy of the confirmed tier catalog — mirrors GET /billing/plans.
+// Used verbatim when the endpoint is unreachable (onboarding must never be
+// blocked on this fetch) and as the source of taglines/feature copy when it
+// succeeds (the endpoint carries numbers, not marketing copy).
+const FALLBACK_PLANS: BillingPlan[] = [
   {
-    key: "starter",
-    name: "Starter",
-    price: "£29",
-    cadence: "/mo",
-    tagline: "For sole traders getting started",
-    features: ["Unlimited quote requests", "AI-drafted quotes", "Calendar & jobs"],
+    key: "sole_trader",
+    name: "Sole Trader",
+    monthlyPriceEnv: "PADDLE_PRICE_ID_SOLE_TRADER_MONTH",
+    annualPriceEnv: "PADDLE_PRICE_ID_SOLE_TRADER_YEAR",
+    monthlyPriceGbp: 25,
+    annualPriceGbp: 250,
+    aiAllowanceMonthly: 30,
+    overageBehavior: "block",
+    overagePricePence: 6,
+    minSeats: 1,
+    pooledAllowance: false,
+    featured: false,
+    trialDays: 14,
+    trialExtensionDays: 30,
+    trialExtensionSentAiQuotes: 3,
   },
   {
     key: "pro",
     name: "Pro",
-    price: "£59",
-    cadence: "/mo",
-    tagline: "For growing electrical businesses",
-    features: [
-      "Everything in Starter",
+    monthlyPriceEnv: "PADDLE_PRICE_ID_PRO_MONTH",
+    annualPriceEnv: "PADDLE_PRICE_ID_PRO_YEAR",
+    monthlyPriceGbp: 39,
+    annualPriceGbp: 390,
+    aiAllowanceMonthly: 100,
+    overageBehavior: "metered",
+    overagePricePence: 6,
+    minSeats: 1,
+    pooledAllowance: false,
+    featured: true,
+    trialDays: 14,
+    trialExtensionDays: 30,
+    trialExtensionSentAiQuotes: 3,
+  },
+  {
+    key: "team",
+    name: "Team",
+    monthlyPriceEnv: "PADDLE_PRICE_ID_TEAM_MONTH",
+    annualPriceEnv: "PADDLE_PRICE_ID_TEAM_YEAR",
+    monthlyPriceGbp: 29,
+    annualPriceGbp: 290,
+    aiAllowanceMonthly: 100,
+    overageBehavior: "metered",
+    overagePricePence: 6,
+    minSeats: 3,
+    pooledAllowance: true,
+    featured: false,
+    trialDays: 14,
+    trialExtensionDays: 30,
+    trialExtensionSentAiQuotes: 3,
+  },
+];
+
+const TAGLINES: Record<BillingPlanKey, string> = {
+  sole_trader: "For sole traders getting started",
+  pro: "For growing electrical businesses",
+  team: "For multi-engineer teams",
+};
+
+function toDisplayPlan(plan: BillingPlan): Plan {
+  const allowanceLine = plan.pooledAllowance
+    ? `${plan.aiAllowanceMonthly} AI quotes/seat included/mo, pooled — extras ${plan.overagePricePence}p each`
+    : `${plan.aiAllowanceMonthly} AI quotes included/mo — extras ${plan.overagePricePence}p each`;
+  const featuresByKey: Record<BillingPlanKey, string[]> = {
+    sole_trader: ["Unlimited quote requests", allowanceLine, "Calendar & jobs"],
+    pro: [
+      "Everything in Sole Trader",
+      allowanceLine,
       "Invoicing & payments",
       "Team assignment",
       "Branded customer portal",
     ],
-    highlighted: true,
-  },
-  {
-    key: "business",
-    name: "Business",
-    price: "£99",
-    cadence: "/mo",
-    tagline: "For multi-engineer teams",
-    features: ["Everything in Pro", "Up to 10 engineers", "Priority support", "Accounting sync"],
-  },
-];
+    team: [
+      "Everything in Pro",
+      allowanceLine,
+      ...(plan.minSeats > 1 ? [`Minimum ${plan.minSeats} seats`] : []),
+      "Priority support",
+      "Accounting sync",
+    ],
+  };
+  return {
+    key: plan.key,
+    name: plan.name,
+    price: `£${plan.monthlyPriceGbp}`,
+    cadence: plan.minSeats > 1 ? `/user/mo · min ${plan.minSeats} seats` : "/user/mo",
+    tagline: TAGLINES[plan.key],
+    features: featuresByKey[plan.key],
+    highlighted: plan.featured,
+  };
+}
 
 export function PlanPaymentStep({ data, onNext }: PlanPaymentStepProps) {
-  const initial = (data?.plan as PlanKey | undefined) ?? "pro";
-  const [selected, setSelected] = useState<PlanKey>(initial);
+  const initial = (data?.plan as BillingPlanKey | undefined) ?? "pro";
+  const [selected, setSelected] = useState<BillingPlanKey>(initial);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
-  const plan = PLANS.find((p) => p.key === selected) ?? PLANS[1];
+  const plansQuery = useBillingPlans();
+  const catalog = plansQuery.data ?? FALLBACK_PLANS;
+  const plans = catalog.map(toDisplayPlan);
+
+  const plan = plans.find((p) => p.key === selected) ?? plans[1];
+  const trialDays = catalog[0]?.trialDays ?? 14;
 
   const startCheckout = () => {
     setError(null);
@@ -72,7 +146,12 @@ export function PlanPaymentStep({ data, onNext }: PlanPaymentStepProps) {
         // checkout.url is <our page>?_ptxn=<txn>, and that page must run
         // Paddle.js. The API serves one at /billing/checkout-page.
         const checkoutPageUrl = `${config.apiBaseUrl}/billing/checkout-page`;
-        const { checkoutUrl } = await createBillingCheckout(plan.key, checkoutPageUrl);
+        // The checkout endpoint still speaks the legacy plan keys until the
+        // Paddle catalog work lands, so map the new tier key back here.
+        const { checkoutUrl } = await createBillingCheckout(
+          CHECKOUT_PLAN_KEY[plan.key],
+          checkoutPageUrl
+        );
         onNext({ plan: plan.key, checkoutStarted: true });
         // Kick the user out to the checkout page; Paddle.js renders the
         // overlay there and shows a return-to-app message on completion.
@@ -101,11 +180,11 @@ export function PlanPaymentStep({ data, onNext }: PlanPaymentStepProps) {
           Choose your plan
         </Text>
         <Text variant="body" color="secondary">
-          Free during beta. No charge on your card until we come out of beta —
-          you'll get an email before anything is billed.
+          {trialDays}-day free trial — full features, no card needed. Send 3 AI quotes during
+          your trial and we'll extend it to 30 days.
         </Text>
 
-        {PLANS.map((p) => {
+        {plans.map((p) => {
           const active = selected === p.key;
           return (
             <Pressable
@@ -127,7 +206,7 @@ export function PlanPaymentStep({ data, onNext }: PlanPaymentStepProps) {
                   {p.highlighted && (
                     <View className="rounded-full bg-accent-500 px-2 py-0.5">
                       <Text variant="caption" style={{ color: "#0F1E26", fontSize: 10 }}>
-                        POPULAR
+                        MOST POPULAR
                       </Text>
                     </View>
                   )}
@@ -171,7 +250,7 @@ export function PlanPaymentStep({ data, onNext }: PlanPaymentStepProps) {
           title={
             loading
               ? "Opening secure checkout…"
-              : `Continue · £0 during beta (then ${plan.price}${plan.cadence})`
+              : `Continue — ${trialDays} days free, then ${plan.price}${plan.cadence}`
           }
           onPress={startCheckout}
           disabled={loading}

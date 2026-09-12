@@ -194,3 +194,46 @@ def test_sync_missing_columns_backfills_not_null_without_server_default() -> Non
         with engine.begin() as conn:
             conn.exec_driver_sql('DROP TABLE IF EXISTS "_recon_test_not_null"')
         engine.dispose()
+
+
+@pytest.mark.usefixtures("test_database_url")
+def test_create_metabase_role_is_read_only_bypassrls_and_idempotent() -> None:
+    """The BI role can log in, bypasses RLS, and holds SELECT-only privileges.
+
+    Metabase (compose profile ``observability``) connects as ``mtp_metabase``;
+    because RLS is ``FORCE``d on every tenant-scoped table the role must carry
+    ``BYPASSRLS`` to see any rows, which makes its SELECT-only grants the only
+    write protection. Running the creation step twice must be a no-op.
+    """
+    init_db = _load_init_db_module()
+
+    engine = _sync_engine()
+    try:
+        with engine.begin() as conn:
+            init_db._create_metabase_role(conn)
+            # Idempotent: a second run (e.g. every preDeploy) must not fail.
+            init_db._create_metabase_role(conn)
+
+        with engine.connect() as conn:
+            row = conn.execute(
+                text(
+                    "SELECT rolcanlogin, rolsuper, rolbypassrls, rolcreatedb, rolcreaterole "
+                    "FROM pg_roles WHERE rolname = :role"
+                ),
+                {"role": init_db.METABASE_ROLE},
+            ).one()
+            assert tuple(row) == (True, False, True, False, False)
+
+            can_select = conn.execute(
+                text("SELECT has_table_privilege(:role, 'public.tenants', 'SELECT')"),
+                {"role": init_db.METABASE_ROLE},
+            ).scalar_one()
+            assert can_select is True
+
+            can_insert = conn.execute(
+                text("SELECT has_table_privilege(:role, 'public.tenants', 'INSERT')"),
+                {"role": init_db.METABASE_ROLE},
+            ).scalar_one()
+            assert can_insert is False
+    finally:
+        engine.dispose()

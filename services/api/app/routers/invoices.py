@@ -11,6 +11,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from app.ai_telemetry import record_quote_outcome
 from app.audit import Actions, write_audit_log
 from app.calculations import build_invoice_from_quote, calculate_invoice_totals, tenant_vat_rate
 from app.database import get_db
@@ -351,6 +352,18 @@ async def mark_invoice_paid(
         body=f"Invoice {invoice.invoice_number} for £{invoice.total} has been marked paid.",
         link=f"/invoices/{invoice.id}",
     )
+    # Close the AI funnel when the invoice traces back to an AI-drafted quote.
+    if invoice.quote_id is not None:
+        source_quote = await db.get(Quote, invoice.quote_id)
+        if source_quote is not None:
+            await record_quote_outcome(
+                db,
+                outcome="invoice_paid",
+                tenant_id=tenant.id,
+                quote=source_quote,
+                user_id=current_user.id if current_user is not None else None,
+                extra_payload={"invoice_id": str(invoice.id), "actor": "staff"},
+            )
     await db.commit()
     return InvoiceRead.model_validate(await _get_invoice(db, tenant.id, invoice.id))
 

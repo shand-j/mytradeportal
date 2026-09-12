@@ -851,9 +851,7 @@ async def test_direct_thread_rejects_customer_actor(
 async def test_direct_thread_rejects_unknown_contact(
     admin_client: AsyncClient, db: AsyncSession
 ) -> None:
-    response = await admin_client.post(
-        "/communications/threads", json={"contact_id": str(uuid4())}
-    )
+    response = await admin_client.post("/communications/threads", json={"contact_id": str(uuid4())})
     assert response.status_code == 400
 
 

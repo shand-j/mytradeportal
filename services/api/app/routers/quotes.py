@@ -6,7 +6,7 @@ from datetime import datetime, timedelta
 from decimal import Decimal
 from io import BytesIO
 from typing import Annotated, Any
-from uuid import UUID
+from uuid import UUID, uuid4
 
 import structlog
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, status
@@ -17,6 +17,16 @@ from sqlalchemy import update as sa_update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from app.ai_telemetry import (
+    FEATURE_QUOTE_DRAFT,
+    FEATURE_QUOTE_REFINE,
+    AiCallContext,
+    get_last_event_id,
+    get_or_create_trace_id,
+    next_attempt_no,
+    record_quote_outcome,
+    set_last_event_id,
+)
 from app.audit import Actions, write_audit_log
 from app.calculations import (
     apply_quote_rounding,
@@ -26,7 +36,7 @@ from app.calculations import (
 )
 from app.config import settings
 from app.database import get_db
-from app.dependencies import CurrentUserDep, TenantDep
+from app.dependencies import AiAllowanceDep, CurrentUserDep, TenantDep
 from app.email import send_event_email
 from app.email_templates import quote_ready as quote_ready_template
 from app.limiter import limiter, tenant_key
@@ -267,6 +277,13 @@ async def send_quote(
         entity_type="quote",
         entity_id=quote.id,
     )
+    await record_quote_outcome(
+        db,
+        outcome="quote_sent",
+        tenant_id=tenant.id,
+        quote=quote,
+        user_id=current_user.id if current_user is not None else None,
+    )
     # Notify the linked homeowner (when the quote is linked to a customer
     # account via its quote_request) so their bell + push fires as soon as the
     # electrician sends.
@@ -369,6 +386,15 @@ async def approve_quote(
         entity_id=quote.id,
         payload={"approved": data.approved},
     )
+    if data.approved:
+        await record_quote_outcome(
+            db,
+            outcome="quote_accepted",
+            tenant_id=tenant.id,
+            quote=quote,
+            user_id=current_user.id if current_user is not None else None,
+            extra_payload={"actor": "staff"},
+        )
     await db.commit()
     return QuoteRead.model_validate(await _get_quote(db, tenant.id, quote.id))
 
@@ -382,6 +408,7 @@ async def refine_quote(
     tenant: TenantDep,
     current_user: CurrentUserDep,
     db: DbDep,
+    allowance: AiAllowanceDep,
 ) -> QuoteRead:
     """Regenerate the AI-drafted line items from the electrician's instructions.
 
@@ -421,6 +448,20 @@ async def refine_quote(
     )
 
     started = time.perf_counter()
+    # Link this regeneration to the original AI generation: same trace_id,
+    # parent_event_id = the previous generation's event, bumped attempt.
+    refine_trace_id = get_or_create_trace_id(quote)
+    telemetry = AiCallContext(
+        feature=FEATURE_QUOTE_REFINE,
+        db=db,
+        tenant_id=tenant.id,
+        user_id=current_user.id if current_user is not None else None,
+        trace_id=refine_trace_id,
+        parent_event_id=get_last_event_id(quote),
+        attempt_no=next_attempt_no(quote),
+        quote_id=quote.id,
+        quote_request_id=quote.quote_request_id,
+    )
     try:
         retrieved, retrieval_status = await search_cost_items_with_status(
             f"{quote.title} {data.instructions}"
@@ -429,6 +470,7 @@ async def refine_quote(
             job_description=description,
             cost_items=retrieved,
             tenant_settings=tenant.settings,
+            telemetry=telemetry,
         )
     except RuntimeError as exc:
         raise HTTPException(
@@ -505,9 +547,11 @@ async def refine_quote(
     llm_usage = _accumulate_llm_usage(
         previous_rag if isinstance(previous_rag, dict) else {},
         generated.get("usage"),
+        generated.get("model"),
     )
     if llm_usage is not None:
         quote.extra_data["rag"]["llm_usage"] = llm_usage
+    set_last_event_id(quote, telemetry.event_id)
     _snapshot_ai_draft(quote)
 
     await db.flush()
@@ -895,7 +939,9 @@ def _intake_completeness(
 
 
 def _accumulate_llm_usage(
-    existing_rag: dict[str, Any], usage: dict[str, Any] | None
+    existing_rag: dict[str, Any],
+    usage: dict[str, Any] | None,
+    model: str | None = None,
 ) -> dict[str, Any] | None:
     """Merge one LLM call's token usage into the rag ``llm_usage`` record.
 
@@ -904,14 +950,19 @@ def _accumulate_llm_usage(
     reflects the quote's total AI spend. Returns the existing record
     unchanged when the provider did not report usage, or ``None`` when no
     usage has ever been recorded.
+
+    ``model`` must be the ACTUAL model the call used (``generated["model"]``);
+    it falls back to ``settings.llm_model`` only when the caller does not know
+    — passing the configured model unconditionally was the mislabel bug on
+    override paths (e.g. the demo's gpt-4o-mini recorded as the prod model).
     """
     existing = existing_rag.get("llm_usage")
     if usage is None:
         return existing if isinstance(existing, dict) else None
-    model = settings.llm_model
+    resolved_model = model or settings.llm_model
     prompt_tokens = int(usage.get("prompt_tokens") or 0)
     completion_tokens = int(usage.get("completion_tokens") or 0)
-    cost = estimate_llm_cost_usd(model, prompt_tokens, completion_tokens)
+    cost = estimate_llm_cost_usd(resolved_model, prompt_tokens, completion_tokens)
     if isinstance(existing, dict):
         prompt_tokens += int(existing.get("prompt_tokens") or 0)
         completion_tokens += int(existing.get("completion_tokens") or 0)
@@ -919,7 +970,7 @@ def _accumulate_llm_usage(
         if cost is not None or previous_cost is not None:
             cost = round(float(cost or 0.0) + float(previous_cost or 0.0), 6)
     return {
-        "model": model,
+        "model": resolved_model,
         "prompt_tokens": prompt_tokens,
         "completion_tokens": completion_tokens,
         "est_cost_usd": cost,
@@ -931,6 +982,7 @@ async def _generate_rag_quote(
     data: QuoteGenerateRequest,
     tenant: TenantDep,
     quote_request: QuoteRequest | None = None,
+    telemetry: AiCallContext | None = None,
 ) -> None:
     """Populate a quote using the faster RAG path (retrieval + LLM)."""
     started = time.perf_counter()
@@ -941,6 +993,7 @@ async def _generate_rag_quote(
         tenant_settings=tenant.settings,
         property_type=data.property_type,
         site_survey=data.site_survey,
+        telemetry=telemetry,
     )
     generation_seconds = round(time.perf_counter() - started, 2)
     completeness = _intake_completeness(
@@ -975,9 +1028,15 @@ async def _generate_rag_quote(
     quote.extra_data = {**(quote.extra_data or {})}
     quote.extra_data["rag"]["generation_seconds"] = generation_seconds
     quote.extra_data["rag"]["completeness"] = completeness
-    llm_usage = _accumulate_llm_usage(quote.extra_data["rag"], generated.get("usage"))
+    llm_usage = _accumulate_llm_usage(
+        quote.extra_data["rag"], generated.get("usage"), generated.get("model")
+    )
     if llm_usage is not None:
         quote.extra_data["rag"]["llm_usage"] = llm_usage
+    if telemetry is not None:
+        # Cache the generation event id so a later refine/requote can link
+        # back via parent_event_id.
+        set_last_event_id(quote, telemetry.event_id)
     _snapshot_ai_draft(quote)
 
 
@@ -1116,9 +1175,25 @@ async def _generate_quote_impl(
         description=data.description,
         vat_rate=tenant_vat_rate(tenant),
     )
+    # Assign the id up-front (the column default would only fire at INSERT) so
+    # the telemetry event for the generation below can reference the quote.
+    quote.id = uuid4()
+    # Mint/persist the quote-level trace id on the previously-unused
+    # ai_metadata column; refines and outcomes join back on it.
+    trace_id = get_or_create_trace_id(quote)
+    telemetry = AiCallContext(
+        feature=FEATURE_QUOTE_DRAFT,
+        db=db,
+        tenant_id=tenant.id,
+        user_id=current_user.id if current_user is not None else None,
+        trace_id=trace_id,
+        attempt_no=next_attempt_no(quote),
+        quote_id=quote.id,
+        quote_request_id=quote_request.id if quote_request is not None else None,
+    )
 
     try:
-        await _generate_rag_quote(quote, data, tenant, quote_request)
+        await _generate_rag_quote(quote, data, tenant, quote_request, telemetry=telemetry)
         if not quote.line_items:
             raise RuntimeError(
                 "The AI did not return any line items for this job. Please try "
@@ -1170,6 +1245,7 @@ async def generate_quote(
     tenant: TenantDep,
     current_user: CurrentUserDep,
     db: DbDep,
+    allowance: AiAllowanceDep,
 ) -> QuoteRead:
     """Generate a draft quote from a natural-language job description.
 
@@ -1188,6 +1264,7 @@ async def generate_quote_async(
     tenant: TenantDep,
     current_user: CurrentUserDep,
     db: DbDep,
+    allowance: AiAllowanceDep,
 ) -> QuoteGenerateAsyncResponse:
     """Accept a quote-generation request and run it in a background worker.
 

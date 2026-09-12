@@ -16,6 +16,7 @@ from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from app.ai_telemetry import record_quote_outcome
 from app.database import get_db
 from app.dependencies import CurrentCustomerDep
 from app.email import send_event_email
@@ -569,6 +570,13 @@ async def accept_quote(
         title="Quote accepted",
         body=f"{customer.full_name} accepted quote '{quote.title}'.{dates_note}",
         link=f"/quotes/{quote.id}",
+    )
+    await record_quote_outcome(
+        db,
+        outcome="quote_accepted",
+        tenant_id=customer.tenant_id,
+        quote=quote,
+        extra_payload={"actor": "customer", "customer_id": str(customer.id)},
     )
     await db.commit()
     # Confirm the acceptance to the customer by email. No response is expected,

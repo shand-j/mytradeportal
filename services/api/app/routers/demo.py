@@ -31,6 +31,7 @@ from pydantic import BaseModel, Field
 from slowapi.util import get_remote_address
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.ai_telemetry import FEATURE_DEMO_QUOTE, AiCallContext, new_trace_id
 from app.config import settings
 from app.database import get_db
 from app.limiter import limiter
@@ -377,6 +378,16 @@ async def demo_generate_quote(
         )
     started = time.perf_counter()
     llm_overrides = _demo_llm_overrides()
+    # Anonymous demo: tenant_id stays NULL; the visitor is identified only by
+    # the salted IP hash in raw_payload (same discipline as DemoQuoteEvent).
+    # The event is written through a telemetry-owned session so it survives
+    # even if the demo's own bookkeeping rolls back. The tracker inside
+    # generate_quote_from_prompt records the ACTUAL (override-resolved) model.
+    telemetry = AiCallContext(
+        feature=FEATURE_DEMO_QUOTE,
+        trace_id=new_trace_id(),
+        extra_payload={"ip_hash": _client_ip_hash(request), "kind": "generate"},
+    )
     try:
         retrieved, retrieval_status = await search_cost_items_with_status(data.description)
         generated = await generate_quote_from_prompt(
@@ -385,6 +396,7 @@ async def demo_generate_quote(
             tenant_settings=DEMO_TENANT_SETTINGS,
             property_type=data.property_type,
             site_survey=data.site_survey,
+            telemetry=telemetry,
             **llm_overrides,
         )
     except RuntimeError as exc:
@@ -473,6 +485,11 @@ async def demo_refine_quote(
 
     started = time.perf_counter()
     llm_overrides = _demo_llm_overrides()
+    telemetry = AiCallContext(
+        feature=FEATURE_DEMO_QUOTE,
+        trace_id=new_trace_id(),
+        extra_payload={"ip_hash": _client_ip_hash(request), "kind": "refine"},
+    )
     try:
         retrieved, retrieval_status = await search_cost_items_with_status(
             f"{data.description} {data.instructions}"
@@ -483,6 +500,7 @@ async def demo_refine_quote(
             tenant_settings=DEMO_TENANT_SETTINGS,
             property_type=data.property_type,
             site_survey=data.site_survey,
+            telemetry=telemetry,
             **llm_overrides,
         )
     except RuntimeError as exc:

@@ -8,8 +8,15 @@ from mtp_shared import get_settings
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app import config as app_config
 from app.database import get_db
-from app.models import Customer, Tenant, User
+from app.models import Customer, Subscription, Tenant, User
+from app.plans import (
+    DEFAULT_PLAN_KEY,
+    AllowanceInfo,
+    get_ai_usage,
+    get_plan,
+)
 from app.rls import set_tenant_in_session
 from app.security import AUTH_COOKIE_NAME, decode_access_token
 
@@ -216,3 +223,74 @@ class RoleChecker:
 
 RequireAdminDep = Annotated[User, Depends(RoleChecker({"admin"}))]
 RequireManagerDep = Annotated[User, Depends(RoleChecker({"admin", "manager"}))]
+
+
+async def require_ai_allowance(tenant: TenantDep, db: DbDep) -> AllowanceInfo:
+    """Enforce the tenant's monthly AI allowance (W2-A entitlements).
+
+    Wire into the staff AI endpoints (generate / generate-async / refine) as::
+
+        allowance: AiAllowanceDep  # +2 lines in the handler to surface the warning
+
+    Behaviour:
+    - Kill switch: while ``ENTITLEMENTS_ENABLED`` is false (the default) this
+      is a no-op pass-through — no DB reads, always allowed.
+    - Plan resolution: the tenant's Subscription.plan_key via the plan catalog
+      (legacy starter|pro|business keys map onto the current tiers); tenants
+      with no subscription default to ``sole_trader`` (beta tenants are
+      beta_comped anyway, so this is inert during beta).
+    - 80%+ of the allowance used → returned with ``warning`` set; handlers
+      surface it (e.g. an ``X-AI-Allowance-Warning`` header or the quote's
+      ``ai_warnings``).
+    - 100%+ on a ``block`` plan (Sole Trader) → HTTP 402 with a structured
+      detail payload ``{"detail": "ai_allowance_exceeded", "allowance": N,
+      "used": M}`` (FastAPI wraps it under the top-level ``detail`` key).
+    - 100%+ on a ``metered`` plan (Pro / Team) → allowed, with
+      ``over_limit=True`` so the telemetry writer can flag overage rows for
+      billing.
+
+    The counter itself is incremented on success by the telemetry writer via
+    ``app.plans.increment_ai_usage`` — never here, so failed/abandoned calls
+    do not consume allowance.
+    """
+    if not app_config.ENTITLEMENTS_ENABLED:
+        plan = get_plan(DEFAULT_PLAN_KEY)
+        return AllowanceInfo(
+            plan=plan,
+            used=0,
+            allowance=plan.ai_allowance_monthly,
+            allowed=True,
+            warning=None,
+            over_limit=False,
+        )
+
+    sub = await db.scalar(select(Subscription).where(Subscription.tenant_id == tenant.id))
+    plan = get_plan(sub.plan_key) if sub is not None else get_plan(DEFAULT_PLAN_KEY)
+    allowance = plan.ai_allowance_monthly
+    used = await get_ai_usage(db, tenant.id)
+
+    warning: str | None = None
+    if allowance > 0 and used >= 0.8 * allowance:
+        warning = f"AI allowance nearly exhausted: {used}/{allowance} actions used this month"
+
+    if used >= allowance and plan.overage_behavior == "block":
+        raise HTTPException(
+            status_code=status.HTTP_402_PAYMENT_REQUIRED,
+            detail={
+                "detail": "ai_allowance_exceeded",
+                "allowance": allowance,
+                "used": used,
+            },
+        )
+
+    return AllowanceInfo(
+        plan=plan,
+        used=used,
+        allowance=allowance,
+        allowed=True,
+        warning=warning,
+        over_limit=used >= allowance,
+    )
+
+
+AiAllowanceDep = Annotated[AllowanceInfo, Depends(require_ai_allowance)]
