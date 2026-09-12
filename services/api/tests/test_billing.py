@@ -205,3 +205,171 @@ async def test_paywall_allows_tenant_without_subscription_row(admin_client: Asyn
     """Beta semantics: no subscription row (legacy/seed tenants) = allowed."""
     response = await admin_client.get("/quotes")
     assert response.status_code == 200
+
+
+# --- W2-B plan mapping: per-interval env vars, legacy fallback, seats --------
+
+_NEW_PRICE_ENV_VARS = (
+    "PADDLE_PRICE_ID_SOLE_TRADER_MONTH",
+    "PADDLE_PRICE_ID_SOLE_TRADER_YEAR",
+    "PADDLE_PRICE_ID_PRO_MONTH",
+    "PADDLE_PRICE_ID_PRO_YEAR",
+    "PADDLE_PRICE_ID_TEAM_MONTH",
+    "PADDLE_PRICE_ID_TEAM_YEAR",
+)
+
+
+@pytest.fixture
+def clean_price_env(monkeypatch: pytest.MonkeyPatch) -> pytest.MonkeyPatch:
+    """Clear the new per-interval price env vars so each test controls them."""
+    for name in _NEW_PRICE_ENV_VARS:
+        monkeypatch.delenv(name, raising=False)
+    return monkeypatch
+
+
+async def test_price_id_prefers_new_env_over_legacy(
+    clean_price_env: pytest.MonkeyPatch,
+) -> None:
+    from app.routers.billing import _price_id_for_plan
+
+    clean_price_env.setenv("PADDLE_PRICE_ID_PRO_MONTH", "pri_new_pro_m")
+    clean_price_env.setattr("app.routers.billing.settings.paddle_price_id_pro", "pri_legacy_pro")
+
+    assert _price_id_for_plan("pro") == "pri_new_pro_m"
+
+
+async def test_price_id_reads_annual_interval(clean_price_env: pytest.MonkeyPatch) -> None:
+    from app.routers.billing import _price_id_for_plan
+
+    clean_price_env.setenv("PADDLE_PRICE_ID_PRO_MONTH", "pri_new_pro_m")
+    clean_price_env.setenv("PADDLE_PRICE_ID_PRO_YEAR", "pri_new_pro_y")
+
+    assert _price_id_for_plan("pro", "month") == "pri_new_pro_m"
+    assert _price_id_for_plan("pro", "year") == "pri_new_pro_y"
+
+
+async def test_price_id_resolves_legacy_plan_keys_to_new_env(
+    clean_price_env: pytest.MonkeyPatch,
+) -> None:
+    from app.routers.billing import _price_id_for_plan
+
+    clean_price_env.setenv("PADDLE_PRICE_ID_SOLE_TRADER_MONTH", "pri_new_st_m")
+    clean_price_env.setenv("PADDLE_PRICE_ID_TEAM_MONTH", "pri_new_team_m")
+
+    assert _price_id_for_plan("starter") == "pri_new_st_m"
+    assert _price_id_for_plan("business") == "pri_new_team_m"
+
+
+async def test_price_id_falls_back_to_legacy_vars(clean_price_env: pytest.MonkeyPatch) -> None:
+    from app.routers.billing import _price_id_for_plan
+
+    clean_price_env.setattr(
+        "app.routers.billing.settings.paddle_price_id_starter", "pri_legacy_starter"
+    )
+    clean_price_env.setattr("app.routers.billing.settings.paddle_price_id_pro", "pri_legacy_pro")
+    clean_price_env.setattr(
+        "app.routers.billing.settings.paddle_price_id_business", "pri_legacy_business"
+    )
+
+    assert _price_id_for_plan("starter") == "pri_legacy_starter"
+    assert _price_id_for_plan("sole_trader") == "pri_legacy_starter"
+    assert _price_id_for_plan("pro") == "pri_legacy_pro"
+    assert _price_id_for_plan("team") == "pri_legacy_business"
+    # Annual interval with only legacy (monthly) prices configured still falls
+    # back so beta checkouts keep working until the new catalog is wired.
+    assert _price_id_for_plan("pro", "year") == "pri_legacy_pro"
+
+
+async def test_price_id_rejects_unconfigured_plan(clean_price_env: pytest.MonkeyPatch) -> None:
+    from app.routers.billing import _price_id_for_plan
+    from fastapi import HTTPException
+
+    clean_price_env.setattr("app.routers.billing.settings.paddle_price_id_pro", "")
+
+    with pytest.raises(HTTPException) as excinfo:
+        _price_id_for_plan("pro")
+    assert excinfo.value.status_code == 400
+
+
+async def test_price_id_rejects_unknown_plan(clean_price_env: pytest.MonkeyPatch) -> None:
+    from app.routers.billing import _price_id_for_plan
+    from fastapi import HTTPException
+
+    with pytest.raises(HTTPException) as excinfo:
+        _price_id_for_plan("enterprise")
+    assert excinfo.value.status_code == 400
+
+
+async def test_checkout_quantity_enforces_team_seat_minimum(
+    clean_price_env: pytest.MonkeyPatch,
+) -> None:
+    from app.routers.billing import _checkout_quantity
+    from fastapi import HTTPException
+
+    assert _checkout_quantity("team", None) == 3
+    assert _checkout_quantity("team", 5) == 5
+    with pytest.raises(HTTPException) as excinfo:
+        _checkout_quantity("team", 2)
+    assert excinfo.value.status_code == 400
+    # Legacy "business" resolves to team and inherits its seat rules.
+    assert _checkout_quantity("business", None) == 3
+    # Fixed-seat plans default to one.
+    assert _checkout_quantity("sole_trader", None) == 1
+
+
+async def test_checkout_team_sends_seat_quantity_and_new_price(
+    admin_client: AsyncClient,
+    clean_price_env: pytest.MonkeyPatch,
+    paddle_customer: AsyncMock,
+) -> None:
+    """POST /billing/checkout for team maps env price + seat count to Paddle."""
+    clean_price_env.setenv("PADDLE_PRICE_ID_TEAM_MONTH", "pri_new_team_m")
+    clean_price_env.setattr("app.routers.billing.settings.paddle_beta_discount_id", "")
+
+    fake = AsyncMock(
+        return_value={"transaction_id": "txn_team", "checkout_url": "https://pay.paddle.com/t"}
+    )
+    with patch("app.routers.billing.create_subscription_transaction", new=fake):
+        response = await admin_client.post(
+            "/billing/checkout", json={"plan_key": "team", "seats": 5}
+        )
+
+    assert response.status_code == 200, response.text
+    _, kwargs = fake.call_args
+    assert kwargs["price_id"] == "pri_new_team_m"
+    assert kwargs["quantity"] == 5
+
+
+async def test_checkout_team_below_min_seats_rejected(
+    admin_client: AsyncClient,
+    clean_price_env: pytest.MonkeyPatch,
+    paddle_customer: AsyncMock,
+) -> None:
+    clean_price_env.setenv("PADDLE_PRICE_ID_TEAM_MONTH", "pri_new_team_m")
+
+    response = await admin_client.post("/billing/checkout", json={"plan_key": "team", "seats": 1})
+
+    assert response.status_code == 400
+
+
+async def test_checkout_annual_interval_uses_year_price(
+    admin_client: AsyncClient,
+    clean_price_env: pytest.MonkeyPatch,
+    paddle_customer: AsyncMock,
+) -> None:
+    clean_price_env.setenv("PADDLE_PRICE_ID_PRO_MONTH", "pri_new_pro_m")
+    clean_price_env.setenv("PADDLE_PRICE_ID_PRO_YEAR", "pri_new_pro_y")
+    clean_price_env.setattr("app.routers.billing.settings.paddle_beta_discount_id", "")
+
+    fake = AsyncMock(
+        return_value={"transaction_id": "txn_year", "checkout_url": "https://pay.paddle.com/y"}
+    )
+    with patch("app.routers.billing.create_subscription_transaction", new=fake):
+        response = await admin_client.post(
+            "/billing/checkout", json={"plan_key": "pro", "interval": "year"}
+        )
+
+    assert response.status_code == 200, response.text
+    _, kwargs = fake.call_args
+    assert kwargs["price_id"] == "pri_new_pro_y"
+    assert kwargs["quantity"] == 1

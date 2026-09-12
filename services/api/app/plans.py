@@ -12,9 +12,9 @@ catalog (starter→sole_trader, pro→pro, business→team) so existing rows kee
 working unchanged.
 
 Trial: 14 days, full features, no card (``TRIAL_DAYS``). Sending 3 AI quotes
-during the trial extends it to 30 days total (``TRIAL_EXTENSION_*``) — the
-extension job itself is a later workstream; the constants live here so every
-consumer agrees on the numbers.
+during the trial extends it to 30 days from that moment (``TRIAL_EXTENSION_*``)
+— implemented in ``app/trial.py``; the constants live here so every consumer
+agrees on the numbers.
 """
 
 from __future__ import annotations

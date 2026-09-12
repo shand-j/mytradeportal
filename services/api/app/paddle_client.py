@@ -10,6 +10,7 @@ import httpx
 from mtp_shared import get_settings
 
 from app.models import Invoice
+from app.plans import OVERAGE_PRICE_PENCE
 
 settings = get_settings()
 
@@ -149,6 +150,7 @@ async def create_subscription_transaction(
     success_url: str | None = None,
     discount_id: str | None = None,
     customer_id: str | None = None,
+    quantity: int = 1,
 ) -> dict[str, str]:
     """Create a Paddle Billing transaction for a subscription checkout.
 
@@ -157,16 +159,19 @@ async def create_subscription_transaction(
     checkout to a Paddle customer so the email is prefilled and non-editable;
     when omitted, Paddle collects the email at checkout. ``discount_id``
     auto-applies a Paddle discount at checkout (used by the beta cohort to
-    make plans free).
+    make plans free). ``quantity`` is the seat count for per-seat prices
+    (Team); it must respect the quantity limits set on the price.
     """
     if not settings.paddle_api_key:
         raise RuntimeError("Paddle API key is not configured")
     if not price_id:
         raise RuntimeError("Paddle price id is not configured for this plan")
+    if quantity < 1:
+        raise ValueError("quantity must be >= 1")
     _ = customer_email  # contact email lives on the bound customer record
 
     payload: dict[str, Any] = {
-        "items": [{"price_id": price_id, "quantity": 1}],
+        "items": [{"price_id": price_id, "quantity": quantity}],
         "collection_mode": "automatic",
         "custom_data": {
             "tenant_id": str(tenant_id),
@@ -192,6 +197,79 @@ async def create_subscription_transaction(
     return {
         "transaction_id": data["id"],
         "checkout_url": checkout_url,
+    }
+
+
+_METERED_EFFECTIVE_FROM = frozenset({"immediately", "next_billing_period"})
+
+
+async def report_metered_usage(
+    subscription_id: str,
+    quantity: int,
+    *,
+    unit_price_pence: int | None = None,
+    description: str | None = None,
+    effective_from: str = "next_billing_period",
+) -> dict[str, Any]:
+    """Report metered AI-overage usage against a subscription.
+
+    Paddle Billing has no native metered/usage-based price type (verified
+    against the sandbox API 2026-09-12: price ``type`` only accepts
+    ``standard``/``custom``, and native usage-based billing is waitlist-only).
+    The supported overage pattern is a one-time charge on the subscription:
+    ``POST /subscriptions/{id}/charge`` with a non-catalog price, billed with
+    the next renewal by default (``effective_from="next_billing_period"``) or
+    collected right away with ``"immediately"``. The catalog price
+    ``PADDLE_PRICE_ID_AI_OVERAGE`` (£0.06/unit, recurring) documents the unit
+    rate in the Paddle dashboard; the actual charge carries the same rate
+    inline.
+
+    ``quantity`` is the number of overage AI actions for the period;
+    ``unit_price_pence`` defaults to the catalog overage rate
+    (``plans.OVERAGE_PRICE_PENCE``). Returns the created transaction's id and
+    status.
+    """
+    if not settings.paddle_api_key:
+        raise RuntimeError("Paddle API key is not configured")
+    if quantity < 1:
+        raise ValueError("quantity must be >= 1")
+    if effective_from not in _METERED_EFFECTIVE_FROM:
+        raise ValueError(f"effective_from must be one of {sorted(_METERED_EFFECTIVE_FROM)}")
+
+    pence = unit_price_pence if unit_price_pence is not None else OVERAGE_PRICE_PENCE
+    if pence < 1:
+        raise ValueError("unit_price_pence must be >= 1")
+
+    payload: dict[str, Any] = {
+        "effective_from": effective_from,
+        "items": [
+            {
+                "price": {
+                    "description": (
+                        description or f"AI overage — {quantity} actions @ £{pence / 100:.2f}"
+                    )[:500],
+                    "unit_price": {
+                        "amount": str(pence),
+                        "currency_code": settings.paddle_default_currency_code,
+                    },
+                    "product": {
+                        "name": "My Trade Portal — AI Overage",
+                        "tax_category": "saas",
+                    },
+                },
+                "quantity": quantity,
+            }
+        ],
+    }
+
+    async with httpx.AsyncClient(base_url=_paddle_base_url(), headers=_headers()) as client:
+        response = await client.post(f"/subscriptions/{subscription_id}/charge", json=payload)
+        response.raise_for_status()
+        data = response.json()["data"]
+
+    return {
+        "transaction_id": data["id"],
+        "status": data.get("status"),
     }
 
 

@@ -220,9 +220,23 @@ export default defineRailway(() => {
       PADDLE_SANDBOX: "true",
       // Paddle Billing catalog IDs. Created via the paddle-sandbox MCP; wire
       // once, keep in the dashboard, IaC picks them up via preserve().
+      // Legacy beta-era single monthly prices — still live for existing
+      // subscribers; used as fallback by the API plan mapping.
       PADDLE_PRICE_ID_STARTER: preserve(),
       PADDLE_PRICE_ID_PRO: preserve(),
       PADDLE_PRICE_ID_BUSINESS: preserve(),
+      // W2-B catalog (2026-09): per-interval prices for the new tiers
+      // (sole_trader/pro/team, month+year) plus the metered AI-overage
+      // reference price/product. Billing code falls back to the legacy vars
+      // while these are unset.
+      PADDLE_PRICE_ID_SOLE_TRADER_MONTH: preserve(),
+      PADDLE_PRICE_ID_SOLE_TRADER_YEAR: preserve(),
+      PADDLE_PRICE_ID_PRO_MONTH: preserve(),
+      PADDLE_PRICE_ID_PRO_YEAR: preserve(),
+      PADDLE_PRICE_ID_TEAM_MONTH: preserve(),
+      PADDLE_PRICE_ID_TEAM_YEAR: preserve(),
+      PADDLE_PRICE_ID_AI_OVERAGE: preserve(),
+      PADDLE_PRODUCT_ID_AI_OVERAGE: preserve(),
       // Auto-applies a 100% recurring discount to every checkout while set;
       // unset to charge full price once the beta closes.
       PADDLE_BETA_DISCOUNT_ID: preserve(),
@@ -251,9 +265,19 @@ export default defineRailway(() => {
       VITE_API_URL: "https://api-production-65db.up.railway.app",
       VITE_PADDLE_ENV: "sandbox",
       VITE_PADDLE_CLIENT_TOKEN: preserve(),
+      // Legacy price vars kept until the pricing page cutover is fully rolled
+      // out; the landing reads the SOLE_TRADER/PRO/TEAM names below.
       VITE_PADDLE_PRICE_STARTER_MONTH: preserve(),
       VITE_PADDLE_PRICE_PRO_MONTH: preserve(),
       VITE_PADDLE_PRICE_BUSINESS_MONTH: preserve(),
+      // W2-B tier price IDs read by the landing pricing page
+      // (web/landing pricing-tiers.ts).
+      VITE_PADDLE_PRICE_SOLE_TRADER_MONTH: preserve(),
+      VITE_PADDLE_PRICE_SOLE_TRADER_YEAR: preserve(),
+      VITE_PADDLE_PRICE_PRO_MONTH: preserve(),
+      VITE_PADDLE_PRICE_PRO_YEAR: preserve(),
+      VITE_PADDLE_PRICE_TEAM_MONTH: preserve(),
+      VITE_PADDLE_PRICE_TEAM_YEAR: preserve(),
       VITE_TESTFLIGHT_URL: "https://testflight.apple.com/join/bDFK3bPU",
       // The hero demo calls the public demo endpoints on the api service.
       VITE_DEMO_API_URL: "https://${{api.RAILWAY_PUBLIC_DOMAIN}}",

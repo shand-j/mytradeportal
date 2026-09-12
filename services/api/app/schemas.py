@@ -2,7 +2,7 @@
 
 from datetime import UTC, datetime
 from decimal import Decimal, InvalidOperation
-from typing import Any
+from typing import Any, Literal
 from uuid import UUID
 
 from pydantic import (
@@ -855,8 +855,12 @@ class PaddleCheckoutRead(BaseModel):
 
 
 class BillingCheckoutCreate(BaseModel):
-    plan_key: str  # starter | pro | business
+    plan_key: str  # sole_trader | pro | team (legacy: starter | pro | business)
     success_url: str | None = None
+    interval: Literal["month", "year"] = "month"
+    # Seat count for per-seat plans (team, min 3). Ignored for fixed-seat
+    # plans; defaults to the plan's minimum seats.
+    seats: int | None = Field(default=None, ge=1, le=100)
 
 
 class BillingCheckoutRead(BaseModel):

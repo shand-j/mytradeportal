@@ -30,6 +30,7 @@ class _FakeAsyncClient:
     def __init__(self) -> None:
         self.queue: list[_FakeResponse] = []
         self.requests: list[tuple[str, Any]] = []
+        self.urls: list[str] = []
 
     async def __aenter__(self) -> "_FakeAsyncClient":
         return self
@@ -39,10 +40,12 @@ class _FakeAsyncClient:
 
     async def get(self, url: str, params: Any = None) -> _FakeResponse:
         self.requests.append(("GET", params))
+        self.urls.append(url)
         return self.queue.pop(0)
 
     async def post(self, url: str, json: Any = None) -> _FakeResponse:
         self.requests.append(("POST", json))
+        self.urls.append(url)
         return self.queue.pop(0)
 
 
@@ -107,3 +110,98 @@ async def test_raises_when_create_fails_and_no_customer_appears(
 
     with pytest.raises(httpx.HTTPStatusError):
         await paddle_client.get_or_create_customer("a@b.co")
+
+
+async def test_subscription_transaction_defaults_to_single_seat(
+    fake_client: _FakeAsyncClient,
+) -> None:
+    """create_subscription_transaction keeps quantity=1 for fixed-seat plans."""
+    fake_client.queue.append(
+        _FakeResponse(200, {"data": {"id": "txn_1", "checkout": {"url": "https://pay.x/1"}}})
+    )
+
+    result = await paddle_client.create_subscription_transaction("pri_x", "tenant", "pro")
+
+    assert result == {"transaction_id": "txn_1", "checkout_url": "https://pay.x/1"}
+    _, payload = fake_client.requests[0]
+    assert payload["items"] == [{"price_id": "pri_x", "quantity": 1}]
+
+
+async def test_subscription_transaction_passes_seat_quantity(
+    fake_client: _FakeAsyncClient,
+) -> None:
+    """Team checkouts send the seat count as the item quantity."""
+    fake_client.queue.append(
+        _FakeResponse(200, {"data": {"id": "txn_2", "checkout": {"url": "https://pay.x/2"}}})
+    )
+
+    await paddle_client.create_subscription_transaction(
+        "pri_team_month", "tenant", "team", quantity=5
+    )
+
+    _, payload = fake_client.requests[0]
+    assert payload["items"] == [{"price_id": "pri_team_month", "quantity": 5}]
+
+
+async def test_subscription_transaction_rejects_zero_quantity(
+    fake_client: _FakeAsyncClient,
+) -> None:
+    with pytest.raises(ValueError, match="quantity"):
+        await paddle_client.create_subscription_transaction("pri_x", "tenant", "pro", quantity=0)
+
+
+async def test_report_metered_usage_payload_shape(fake_client: _FakeAsyncClient) -> None:
+    """Overage reporting posts a one-time charge to /subscriptions/{id}/charge.
+
+    Defaults: catalog overage rate (£0.06), GBP, billed with the next renewal.
+    """
+    fake_client.queue.append(
+        _FakeResponse(200, {"data": {"id": "txn_ovg_1", "status": "completed"}})
+    )
+
+    result = await paddle_client.report_metered_usage("sub_abc", 42)
+
+    assert result == {"transaction_id": "txn_ovg_1", "status": "completed"}
+    assert fake_client.urls == ["/subscriptions/sub_abc/charge"]
+    _, payload = fake_client.requests[0]
+    assert payload["effective_from"] == "next_billing_period"
+    (item,) = payload["items"]
+    assert item["quantity"] == 42
+    assert item["price"]["unit_price"] == {"amount": "6", "currency_code": "GBP"}
+    assert item["price"]["product"] == {
+        "name": "My Trade Portal — AI Overage",
+        "tax_category": "saas",
+    }
+    assert "42" in item["price"]["description"]
+
+
+async def test_report_metered_usage_immediate_with_custom_rate(
+    fake_client: _FakeAsyncClient,
+) -> None:
+    fake_client.queue.append(_FakeResponse(200, {"data": {"id": "txn_ovg_2", "status": "billed"}}))
+
+    result = await paddle_client.report_metered_usage(
+        "sub_abc",
+        7,
+        unit_price_pence=10,
+        description="AI overage — September",
+        effective_from="immediately",
+    )
+
+    assert result["transaction_id"] == "txn_ovg_2"
+    _, payload = fake_client.requests[0]
+    assert payload["effective_from"] == "immediately"
+    (item,) = payload["items"]
+    assert item["price"]["unit_price"]["amount"] == "10"
+    assert item["price"]["description"] == "AI overage — September"
+
+
+async def test_report_metered_usage_validates_inputs(fake_client: _FakeAsyncClient) -> None:
+    with pytest.raises(ValueError, match="quantity"):
+        await paddle_client.report_metered_usage("sub_abc", 0)
+    with pytest.raises(ValueError, match="effective_from"):
+        await paddle_client.report_metered_usage("sub_abc", 1, effective_from="yesterday")
+    with pytest.raises(ValueError, match="unit_price_pence"):
+        await paddle_client.report_metered_usage("sub_abc", 1, unit_price_pence=0)
+    # No HTTP call should have been made for the invalid inputs.
+    assert fake_client.requests == []

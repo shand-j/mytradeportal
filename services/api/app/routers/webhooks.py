@@ -8,6 +8,7 @@ return 500 — both cause a retry, which is what we want when a secret has
 just been rotated or a downstream store blipped.
 """
 
+import os
 from datetime import datetime
 from decimal import Decimal
 from typing import Any
@@ -24,6 +25,7 @@ from app.config import settings
 from app.database import engine
 from app.models import Invoice, Payment, ProcessedWebhook, Quote, Subscription
 from app.paddle_client import parse_webhook_event, verify_webhook_signature
+from app.plans import PLANS, resolve_plan_key
 
 router = APIRouter(prefix="/webhooks", tags=["Webhooks"])
 logger = structlog.get_logger("api.webhooks")
@@ -38,6 +40,57 @@ def _parse_dt(value: str | None) -> datetime | None:
 def _first_item(event_data: dict[str, Any]) -> dict[str, Any]:
     items = event_data.get("items") or []
     return items[0] if items else {}
+
+
+def _price_id_plan_map() -> dict[str, str]:
+    """Map every configured Paddle price id to its current plan key.
+
+    Covers the per-interval catalog vars (``PADDLE_PRICE_ID_{TIER}_{MONTH,
+    YEAR}``, read from the process environment because the settings object
+    predates them) and the legacy beta-era single-price vars. Values resolve
+    to current catalog keys (``sole_trader``/``pro``/``team``).
+    """
+    mapping: dict[str, str] = {}
+    for plan in PLANS:
+        for env_name in (plan.monthly_price_env, plan.annual_price_env):
+            price_id = os.environ.get(env_name, "").strip()
+            if price_id:
+                mapping[price_id] = plan.key
+    legacy: tuple[tuple[str, str], ...] = (
+        (settings.paddle_price_id_starter, "starter"),
+        (settings.paddle_price_id_pro, "pro"),
+        (settings.paddle_price_id_business, "business"),
+    )
+    for price_id, plan_key in legacy:
+        if price_id and price_id not in mapping:
+            mapping[price_id] = resolve_plan_key(plan_key)
+    return mapping
+
+
+def _plan_key_for_price_id(price_id: str | None) -> str | None:
+    """Resolve a Paddle price id to a current plan key, or None if unknown."""
+    if not price_id:
+        return None
+    return _price_id_plan_map().get(price_id)
+
+
+def _is_overage_item(item: dict[str, Any]) -> bool:
+    """Detect a metered AI-overage line on a transaction.
+
+    Overage is billed via ``paddle_client.report_metered_usage`` (one-time
+    charge, non-catalog price). A line counts as overage when its price id
+    or product id matches the configured overage catalog entities, or when
+    its (non-catalog) price carries the overage description prefix.
+    """
+    price = item.get("price") or {}
+    overage_price_id = os.environ.get("PADDLE_PRICE_ID_AI_OVERAGE", "").strip()
+    overage_product_id = os.environ.get("PADDLE_PRODUCT_ID_AI_OVERAGE", "").strip()
+    if overage_price_id and price.get("id") == overage_price_id:
+        return True
+    if overage_product_id and price.get("product_id") == overage_product_id:
+        return True
+    description = str(price.get("description") or "")
+    return description.startswith("AI overage")
 
 
 async def _record_payment(invoice_id: str, event_data: dict[str, Any]) -> None:
@@ -88,6 +141,78 @@ async def _record_payment(invoice_id: str, event_data: dict[str, Any]) -> None:
         await session.commit()
 
 
+async def _record_overage_billing(event_data: dict[str, Any]) -> None:
+    """Record a billed metered-overage transaction on the subscription row.
+
+    Triggered by ``transaction.billed`` for one-time charges created via
+    ``paddle_client.report_metered_usage``. The usage/cost summary is folded
+    into ``Subscription.provider_payload["ai_overage_billing"]`` (keyed on the
+    Paddle transaction id, so at-least-once delivery is idempotent) — no new
+    table. Transactions without overage line items (plain renewals) are
+    ignored.
+    """
+    subscription_id = event_data.get("subscription_id")
+    if not subscription_id:
+        return
+
+    overage_items = [item for item in (event_data.get("items") or []) if _is_overage_item(item)]
+    if not overage_items:
+        return
+
+    quantity = sum(int(item.get("quantity") or 0) for item in overage_items)
+    amount_pence = 0
+    currency = event_data.get("currency_code", settings.paddle_default_currency_code)
+    for item in overage_items:
+        unit_price = ((item.get("price") or {}).get("unit_price")) or {}
+        try:
+            unit_amount = int(unit_price.get("amount") or 0)
+        except (TypeError, ValueError):
+            unit_amount = 0
+        currency = unit_price.get("currency_code") or currency
+        amount_pence += unit_amount * int(item.get("quantity") or 0)
+
+    transaction_id = event_data.get("id") or "unknown"
+
+    async with AsyncSession(engine) as session:
+        sub = await session.scalar(
+            select(Subscription).where(Subscription.paddle_subscription_id == subscription_id)
+        )
+        if sub is None:
+            logger.warning(
+                "paddle_overage_orphan",
+                paddle_subscription_id=subscription_id,
+                transaction_id=transaction_id,
+            )
+            return
+
+        payload = dict(sub.provider_payload or {})
+        ledger = dict(payload.get("ai_overage_billing") or {})
+        ledger[str(transaction_id)] = {
+            "transaction_id": transaction_id,
+            "billed_at": event_data.get("billed_at") or event_data.get("updated_at"),
+            # Raw ISO strings — provider_payload is JSONB, so no datetimes.
+            "period_start": (event_data.get("billing_period") or {}).get("starts_at"),
+            "period_end": (event_data.get("billing_period") or {}).get("ends_at"),
+            "actions": quantity,
+            "amount_pence": amount_pence,
+            "currency_code": currency,
+        }
+        payload["ai_overage_billing"] = ledger
+        sub.provider_payload = payload  # reassign so SQLAlchemy sees the change
+        session.add(sub)
+        log_tenant_id = str(sub.tenant_id)  # snapshot before commit expires the row
+        await session.commit()
+
+        logger.info(
+            "paddle_overage_recorded",
+            tenant_id=log_tenant_id,
+            paddle_subscription_id=subscription_id,
+            transaction_id=transaction_id,
+            actions=quantity,
+            amount_pence=amount_pence,
+        )
+
+
 async def _upsert_subscription(event_type: str, event_data: dict[str, Any]) -> None:
     """Mirror a Paddle subscription onto our ``subscriptions`` row.
 
@@ -135,6 +260,12 @@ async def _upsert_subscription(event_type: str, event_data: dict[str, Any]) -> N
         sub.paddle_customer_id = event_data.get("customer_id") or sub.paddle_customer_id
         sub.paddle_price_id = price.get("id") or sub.paddle_price_id
         sub.paddle_product_id = price.get("product_id") or sub.paddle_product_id
+        # The price id is the source of truth for the plan: re-derive on every
+        # event so plan changes (upgrades/downgrades, annual switches) and
+        # checkout-time drift self-heal. Unknown price ids keep the stored key.
+        derived_plan_key = _plan_key_for_price_id(sub.paddle_price_id)
+        if derived_plan_key:
+            sub.plan_key = derived_plan_key
         sub.status = event_data.get("status") or sub.status
         trial_dates = first_item.get("trial_dates") or {}
         if trial_dates.get("ends_at"):
@@ -147,16 +278,27 @@ async def _upsert_subscription(event_type: str, event_data: dict[str, Any]) -> N
         sub.scheduled_change_at = _parse_dt(scheduled_change.get("effective_at"))
         if event_type == "subscription.canceled":
             sub.canceled_at = _parse_dt(event_data.get("canceled_at")) or datetime.utcnow()
+        # Preserve the locally-maintained overage ledger across payload
+        # overwrites (subscription events carry Paddle's view, not ours).
+        overage_ledger = (sub.provider_payload or {}).get("ai_overage_billing")
         sub.provider_payload = event_data
+        if overage_ledger:
+            sub.provider_payload = {**event_data, "ai_overage_billing": overage_ledger}
         session.add(sub)
+        # Snapshot log fields before commit: commit() expires the ORM object
+        # and post-commit attribute access would trigger a lazy refresh
+        # outside a greenlet (MissingGreenlet).
+        log_tenant_id = str(sub.tenant_id)
+        log_status = sub.status
+        log_plan_key = sub.plan_key
         await session.commit()
 
         logger.info(
             "paddle_subscription_synced",
             event_type=event_type,
-            tenant_id=str(sub.tenant_id),
-            status=sub.status,
-            plan_key=sub.plan_key,
+            tenant_id=log_tenant_id,
+            status=log_status,
+            plan_key=log_plan_key,
         )
 
 
@@ -216,5 +358,7 @@ async def paddle_webhook(
         invoice_id = custom_data.get("invoice_id")
         if invoice_id:
             await _record_payment(invoice_id, event_data)
+    elif event_type == "transaction.billed":
+        await _record_overage_billing(event_data)
 
     return {"status": "ok"}

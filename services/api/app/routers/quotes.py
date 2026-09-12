@@ -82,6 +82,7 @@ from app.schemas import (
     QuoteTrainingEventRead,
     QuoteUpdate,
 )
+from app.trial import maybe_extend_trial
 
 router = APIRouter(prefix="/quotes", tags=["Quotes"])
 DbDep = Annotated[AsyncSession, Depends(get_db)]
@@ -278,6 +279,11 @@ async def send_quote(
     # the background keep-rate worker can compare draft vs as-sent.
     feedback_id = await finalize_draft_feedback(db, quote)
     await db.flush()
+    # Trial extension hook: a trialing tenant that has now sent enough
+    # AI-drafted quotes gets the trial extended (see app/trial.py). No-op for
+    # non-trialing tenants and once the extension has fired. Committed below
+    # with the rest of the send.
+    await maybe_extend_trial(db, tenant.id)
     await write_audit_log(
         db,
         tenant_id=tenant.id,

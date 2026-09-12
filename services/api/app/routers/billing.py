@@ -6,6 +6,7 @@ subscription read model; state mutations happen exclusively via webhooks
 (:mod:`app.routers.webhooks`).
 """
 
+import os
 from datetime import datetime
 from typing import Annotated, Any
 from uuid import UUID
@@ -21,7 +22,7 @@ from app.database import get_db
 from app.dependencies import CurrentUserDep, TenantDep
 from app.models import Subscription, Tenant
 from app.paddle_client import create_subscription_transaction, get_or_create_customer
-from app.plans import PLANS, plan_to_public_dict
+from app.plans import PLANS, get_plan, plan_to_public_dict
 from app.rls import set_tenant_in_session
 from app.schemas import BillingCheckoutCreate, BillingCheckoutRead, SubscriptionRead
 
@@ -108,19 +109,54 @@ async def checkout_page() -> HTMLResponse:
     return HTMLResponse(html)
 
 
-def _price_id_for_plan(plan_key: str) -> str:
-    mapping: dict[str, str] = {
-        "starter": settings.paddle_price_id_starter,
+def _legacy_price_id_for_plan(plan_key: str) -> str:
+    """Beta-era single-price env vars, keyed on the resolved current tier."""
+    legacy: dict[str, str] = {
+        "sole_trader": settings.paddle_price_id_starter,
         "pro": settings.paddle_price_id_pro,
-        "business": settings.paddle_price_id_business,
+        "team": settings.paddle_price_id_business,
     }
-    price_id = mapping.get(plan_key)
+    return legacy.get(plan_key, "")
+
+
+def _price_id_for_plan(plan_key: str, interval: str = "month") -> str:
+    """Resolve the Paddle price id for a plan key and billing interval.
+
+    Reads the per-interval env vars declared on the plan catalog
+    (``PADDLE_PRICE_ID_{SOLE_TRADER,PRO,TEAM}_{MONTH,YEAR}`` — the settings
+    object predates them, so they are read from the process environment
+    directly), falling back to the legacy beta-era vars
+    (``PADDLE_PRICE_ID_STARTER``/``PRO``/``BUSINESS``) so existing checkouts
+    keep working until the new catalog IDs are wired. Legacy plan keys
+    (``starter``/``business``) resolve through the plan catalog.
+    """
+    try:
+        plan = get_plan(plan_key)
+    except KeyError:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Unknown or unconfigured plan: {plan_key}",
+        ) from None
+    env_name = plan.monthly_price_env if interval == "month" else plan.annual_price_env
+    price_id = os.environ.get(env_name, "").strip() or _legacy_price_id_for_plan(plan.key)
     if not price_id:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Unknown or unconfigured plan: {plan_key}",
         )
     return price_id
+
+
+def _checkout_quantity(plan_key: str, seats: int | None) -> int:
+    """Seat count for the checkout item, enforcing the plan's seat minimum."""
+    plan = get_plan(plan_key)  # key already validated by _price_id_for_plan
+    quantity = seats if seats is not None else plan.min_seats
+    if quantity < plan.min_seats:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Plan {plan.key} requires at least {plan.min_seats} seats",
+        )
+    return quantity
 
 
 async def _get_or_create_subscription(
@@ -164,7 +200,8 @@ async def create_checkout(
     and Paddle bounces back to ``success_url`` (or the app default) on
     completion. Subscription state is written by the webhook, not here.
     """
-    price_id = _price_id_for_plan(data.plan_key)
+    price_id = _price_id_for_plan(data.plan_key, data.interval)
+    quantity = _checkout_quantity(data.plan_key, data.seats)
     if current_user is None:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -191,6 +228,7 @@ async def create_checkout(
             success_url=data.success_url,
             discount_id=settings.paddle_beta_discount_id or None,
             customer_id=customer_id,
+            quantity=quantity,
         )
     except Exception as exc:
         logger.error(

@@ -1,5 +1,6 @@
 """Tenant management endpoints."""
 
+from datetime import datetime, timedelta
 from typing import Annotated, Any
 from uuid import UUID
 
@@ -12,7 +13,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.audit import Actions, write_audit_log
 from app.database import get_db
 from app.dependencies import ActiveUserDep, TenantDep
-from app.models import Tenant, User
+from app.models import Subscription, Tenant, User
+from app.plans import DEFAULT_PLAN_KEY, TRIAL_DAYS
 from app.rls import bypass_rls_for_transaction, set_tenant_in_session
 from app.schemas import TenantBootstrapRead, TenantCreate, TenantRead, TenantUpdate, UserRead
 from app.security import get_password_hash
@@ -102,6 +104,22 @@ async def create_tenant(
         tenant.settings = tenant_settings
     db.add(tenant)
     await db.flush()
+
+    # No-card trial: every new tenant starts on a full-feature trial with no
+    # Paddle interaction. When the tenant later completes Paddle checkout,
+    # ``_get_or_create_subscription`` (checkout) and ``_upsert_subscription``
+    # (webhook) both key on tenant_id and update THIS row in place — plan_key
+    # is corrected to the chosen plan at checkout time. ``subscriptions`` is
+    # not RLS-scoped, so no tenant declaration is needed for this insert.
+    db.add(
+        Subscription(
+            tenant_id=tenant.id,
+            plan_key=DEFAULT_PLAN_KEY,
+            status="trialing",
+            trial_ends_at=datetime.utcnow() + timedelta(days=TRIAL_DAYS),
+            provider_payload={"source": "signup_trial"},
+        )
+    )
 
     admin_user: User | None = None
     if data.admin_email and data.admin_password and data.admin_name:
