@@ -10,6 +10,7 @@ import { Contact, useContactsList } from "../../api/contacts";
 import { ApiQuote, fetchQuotes } from "../../api/quotes";
 import { ApiQuoteRequest, fetchLeads } from "../../api/quoteRequests";
 import { SettingsMenuButton } from "../../components/ui/SettingsMenuButton";
+import { CustomerBadges } from "../../components/trade/CustomerBadges";
 import { formatDateUK } from "../../lib/format";
 
 export type CRMScreenProps = {
@@ -143,6 +144,7 @@ function ContactCard({
             {subtitle}
           </Text>
         )}
+        <CustomerBadges badges={contact.badges ?? []} isBlocked={contact.isBlocked} />
         {expanded && (
           <View className="mt-2 gap-2 border-t border-gray-100 pt-2">
             {contact.address ? (

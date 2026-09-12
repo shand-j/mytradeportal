@@ -1,11 +1,20 @@
 import { useEffect, useState } from "react";
-import { KeyboardAvoidingView, Platform, ScrollView, TextInput, View } from "react-native";
+import { Alert, KeyboardAvoidingView, Platform, ScrollView, TextInput, View } from "react-native";
 import { useQueryClient } from "@tanstack/react-query";
 import { Button } from "../../components/ui/Button";
 import { Header } from "../../components/ui/Header";
 import { Screen } from "../../components/ui/Screen";
 import { Text } from "../../components/ui/Text";
-import { Contact, updateContact } from "../../api/contacts";
+import { CustomerBadges } from "../../components/trade/CustomerBadges";
+import {
+  Contact,
+  TRUST_BADGES,
+  TrustBadge,
+  blockContact,
+  setBadgeOverride,
+  unblockContact,
+  updateContact,
+} from "../../api/contacts";
 import { ApiError } from "../../lib/apiClient";
 import { formatDateUK } from "../../lib/format";
 
@@ -42,6 +51,8 @@ export function CustomerDetailScreen({ contact, onBack, onCreateQuote }: Custome
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [badgeBusy, setBadgeBusy] = useState(false);
+  const [blockBusy, setBlockBusy] = useState(false);
 
   // Re-sync the form when the query cache delivers a fresher record.
   useEffect(() => {
@@ -96,6 +107,68 @@ export function CustomerDetailScreen({ contact, onBack, onCreateQuote }: Custome
     }
   };
 
+  // Badge/block mutations return the full contact; push it straight into the
+  // detail cache and refresh the CRM list in the background.
+  const applyContactUpdate = (updated: Contact) => {
+    queryClient.setQueryData(["contact", contact.id], updated);
+    void queryClient.invalidateQueries({ queryKey: ["contacts"] });
+  };
+
+  const handleBadgeOverride = async (badge: TrustBadge, value: boolean | null) => {
+    if (badgeBusy) return;
+    setBadgeBusy(true);
+    setError(null);
+    try {
+      applyContactUpdate(await setBadgeOverride(contact.id, badge, value));
+    } catch (err) {
+      setError(
+        err instanceof ApiError ? err.detail : "Couldn't update the badge. Please try again."
+      );
+    } finally {
+      setBadgeBusy(false);
+    }
+  };
+
+  const performBlockToggle = async () => {
+    setBlockBusy(true);
+    setError(null);
+    try {
+      applyContactUpdate(
+        contact.isBlocked ? await unblockContact(contact.id) : await blockContact(contact.id)
+      );
+    } catch (err) {
+      setError(
+        err instanceof ApiError
+          ? err.detail
+          : `Couldn't ${contact.isBlocked ? "unblock" : "block"} the customer. Please try again.`
+      );
+    } finally {
+      setBlockBusy(false);
+    }
+  };
+
+  const handleBlockToggle = () => {
+    if (contact.isBlocked) {
+      Alert.alert(
+        "Unblock customer?",
+        `${contact.name} will be able to log in, request quotes and message you again.`,
+        [
+          { text: "Cancel", style: "cancel" },
+          { text: "Unblock", onPress: () => void performBlockToggle() },
+        ]
+      );
+    } else {
+      Alert.alert(
+        "Block customer?",
+        `${contact.name} will not be able to log in, request quotes or message you. You can unblock them at any time.`,
+        [
+          { text: "Cancel", style: "cancel" },
+          { text: "Block", style: "destructive", onPress: () => void performBlockToggle() },
+        ]
+      );
+    }
+  };
+
   return (
     <Screen>
       <Header testID="customer-detail-back" title="Customer" onBack={onBack} />
@@ -113,6 +186,20 @@ export function CustomerDetailScreen({ contact, onBack, onCreateQuote }: Custome
             Customer since {formatDateUK(contact.createdAt)}
             {contact.hasAccount ? " · has app account" : " · no app account (email-only)"}
           </Text>
+          <CustomerBadges badges={contact.badges ?? []} isBlocked={contact.isBlocked} />
+
+          {contact.isBlocked && (
+            <View testID="customer-blocked-banner" className="rounded-2xl bg-amber-50 p-4 gap-1">
+              <Text variant="body" weight="semibold" color="warning">
+                Customer blocked
+              </Text>
+              <Text variant="caption" color="secondary">
+                They cannot log in, request quotes or message you.
+                {contact.blockedAt ? ` Blocked ${formatDateUK(contact.blockedAt)}.` : ""}
+                {contact.blockedReason ? ` Reason: ${contact.blockedReason}` : ""}
+              </Text>
+            </View>
+          )}
 
           <View className="rounded-2xl bg-slate-100 p-4 gap-3">
             <Text variant="body" weight="semibold">
@@ -250,6 +337,66 @@ export function CustomerDetailScreen({ contact, onBack, onCreateQuote }: Custome
               placeholder="Anything else worth remembering…"
               multiline
               textAlignVertical="top"
+            />
+          </View>
+
+          <View className="rounded-2xl bg-slate-100 p-4 gap-3">
+            <Text variant="body" weight="semibold">
+              Trust badges
+            </Text>
+            <Text variant="caption" color="secondary">
+              Set automatically from invoice and quote history. Override a badge to force it on
+              or off; Auto follows the history again.
+            </Text>
+            {TRUST_BADGES.map((badge) => {
+              const override = contact.badgeOverrides?.[badge.key];
+              const mode = override === undefined ? "auto" : override ? "on" : "off";
+              const autoOn = (contact.autoBadges ?? []).includes(badge.key);
+              const options: { key: "auto" | "on" | "off"; label: string; value: boolean | null }[] = [
+                { key: "auto", label: `Auto (${autoOn ? "on" : "off"})`, value: null },
+                { key: "on", label: "On", value: true },
+                { key: "off", label: "Off", value: false },
+              ];
+              return (
+                <View key={badge.key} className="gap-1">
+                  <Text variant="caption" weight="semibold" color="secondary">
+                    {badge.label} · {badge.hint}
+                  </Text>
+                  <View className="flex-row flex-wrap gap-2">
+                    {options.map((option) => (
+                      <Button
+                        key={option.key}
+                        testID={`badge-${badge.key}-${option.key}`}
+                        title={option.label}
+                        size="sm"
+                        variant={mode === option.key ? "primary" : "outline"}
+                        disabled={badgeBusy}
+                        onPress={() => void handleBadgeOverride(badge.key, option.value)}
+                      />
+                    ))}
+                  </View>
+                </View>
+              );
+            })}
+          </View>
+
+          <View className="rounded-2xl bg-slate-100 p-4 gap-2">
+            <Text variant="body" weight="semibold">
+              Blocking
+            </Text>
+            <Text variant="caption" color="secondary">
+              {contact.isBlocked
+                ? "This customer is blocked. Unblock to let them log in, request quotes and message you again."
+                : "Block this customer to stop them logging in, requesting quotes or messaging you."}
+            </Text>
+            <Button
+              testID={contact.isBlocked ? "customer-unblock" : "customer-block"}
+              title={
+                blockBusy ? "Working…" : contact.isBlocked ? "Unblock customer" : "Block customer"
+              }
+              variant="outline"
+              disabled={blockBusy}
+              onPress={handleBlockToggle}
             />
           </View>
 

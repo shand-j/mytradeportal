@@ -79,6 +79,8 @@ export type Quote = {
   leadId: string;
   /** Backend quote_request_id; used to open the linked chat thread. */
   quoteRequestId?: string;
+  /** CRM contact id; lets the chat button find-or-create a thread (C7). */
+  customerId?: string;
   customerName: string;
   title: string;
   postcode: string;

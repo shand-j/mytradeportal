@@ -9,6 +9,7 @@ import { useAuth } from "../../contexts/AuthContext";
 import { useBusiness } from "../../theme/ThemeProvider";
 import { useSubscription } from "../../api/billing";
 import { api, ApiError } from "../../lib/apiClient";
+import { openCalendarSubscription } from "../../api/calendar";
 
 function SubscriptionCard() {
   const { data, isLoading } = useSubscription();
@@ -110,8 +111,7 @@ export function SettingsScreen() {
     setCalendarLinkError(null);
     setCalendarLinkLoading(true);
     try {
-      const { url } = await api.get<{ url: string }>("/calendar/feed-link");
-      await Share.share({ message: url });
+      await openCalendarSubscription();
     } catch (error) {
       setCalendarLinkError(
         error instanceof ApiError && error.status === 402
@@ -161,8 +161,13 @@ export function SettingsScreen() {
     },
     {
       title: "Follow-up settings",
-      subtitle: "Quote & invoice reminders",
+      subtitle: "Quote & invoice reminders, total rounding",
       onPress: () => router.push("/(trade)/follow-ups"),
+    },
+    {
+      title: "Working hours",
+      subtitle: "Working day times & days for scheduling",
+      onPress: () => router.push("/(trade)/working-hours"),
     },
   ];
 

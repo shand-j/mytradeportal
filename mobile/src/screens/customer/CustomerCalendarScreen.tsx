@@ -11,7 +11,7 @@ import { useBusiness } from "../../theme/ThemeProvider";
 export function CustomerCalendarScreen() {
   const { business } = useBusiness();
   const router = useRouter();
-  const { appointments: liveAppointments, isConnected } = useMyAppointments();
+  const { appointments: liveAppointments, isConnected, isLoading } = useMyAppointments();
   const upcoming = liveAppointments.filter((a) => a.status === "confirmed" || a.status === "completed");
   const businessName = business?.name ?? "your electrician";
 
@@ -31,7 +31,13 @@ export function CustomerCalendarScreen() {
           Upcoming appointments and bookings with {businessName}.
         </Text>
 
-        {!isConnected && (
+        {isLoading && (
+          <Text variant="caption" color="secondary" align="center">
+            Loading your appointments…
+          </Text>
+        )}
+
+        {!isConnected && !isLoading && (
           <View className="items-center rounded-2xl border border-slate-200 bg-slate-50 p-6">
             <Text variant="body" color="secondary" align="center">
               Not connected

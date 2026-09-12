@@ -1,6 +1,6 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Pressable, ScrollView, View } from "react-native";
-import { useRouter } from "expo-router";
+import { useLocalSearchParams, useRouter } from "expo-router";
 import { Button } from "../../components/ui/Button";
 import { Header } from "../../components/ui/Header";
 import { LiveBadge } from "../../components/ui/LiveBadge";
@@ -56,7 +56,17 @@ export type QuotesScreenProps = {
 
 export function QuotesScreen(_props: QuotesScreenProps) {
   const router = useRouter();
-  const [activeFilter, setActiveFilter] = useState<FilterKey>("all");
+  // Deep links (e.g. dashboard "Outstanding quotes") arrive with ?filter=&sort=
+  const params = useLocalSearchParams<{ filter?: string; sort?: string }>();
+  const [activeFilter, setActiveFilter] = useState<FilterKey>(() =>
+    FILTERS.some((f) => f.key === params.filter) ? (params.filter as FilterKey) : "all"
+  );
+  useEffect(() => {
+    if (FILTERS.some((f) => f.key === params.filter)) {
+      setActiveFilter(params.filter as FilterKey);
+    }
+  }, [params.filter]);
+  const fifo = params.sort === "fifo";
 
   const { quotes: liveQuotes, isLoading: quotesLoading } = useQuotesList();
   const { leads: liveLeads, isLoading: leadsLoading } = useLeadsList();
@@ -86,10 +96,16 @@ export function QuotesScreen(_props: QuotesScreenProps) {
 
   const filteredLeads = useMemo(() => {
     if (activeFilter === "all") return sortedLeads;
-    if (activeFilter === "new") return sortedLeads.filter((l) => l.badge === "New" || l.status === "new");
+    if (activeFilter === "new") {
+      const newLeads = sortedLeads.filter((l) => l.badge === "New" || l.status === "new");
+      // FIFO by submission time when deep-linked with sort=fifo
+      return fifo
+        ? [...newLeads].sort((a, b) => a.createdAt.localeCompare(b.createdAt))
+        : newLeads;
+    }
     if (activeFilter === "flagged") return sortedLeads.filter((l) => l.badge === "Flagged");
     return [];
-  }, [activeFilter, sortedLeads]);
+  }, [activeFilter, sortedLeads, fifo]);
 
   const filteredQuotes = useMemo(() => {
     if (activeFilter === "all") return sortedQuotes;

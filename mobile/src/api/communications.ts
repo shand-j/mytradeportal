@@ -100,6 +100,16 @@ export async function generateAiFollowup(
   return mapCommunication(row);
 }
 
+/**
+ * Find or start the chat thread with a CRM contact (POST /communications/threads).
+ *
+ * Throws ApiError(400) when the contact has no customer app account — in-app
+ * chat only reaches registered customers.
+ */
+export async function startDirectThread(contactId: string): Promise<{ quoteRequestId: string }> {
+  return api.post<{ quoteRequestId: string }>("/communications/threads", { contactId });
+}
+
 export function useCommunications(
   quoteRequestId: string | undefined,
   senderRole: ChatSenderRole

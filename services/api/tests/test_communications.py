@@ -596,3 +596,331 @@ async def test_legacy_customer_message_reads_back_inbound(
     response = await admin_client.get(f"/communications?quote_request_id={quote_request.id}")
     by_body = {row["body"]: row for row in response.json()}
     assert by_body["Where is the fuse board?"]["direction"] == "outbound"
+
+
+# ---------------------------------------------------------------------------
+# N24 — legacy threads (customer_id unset) must not 403 for the linked customer
+# ---------------------------------------------------------------------------
+
+
+async def _make_legacy_lead_for_customer(
+    db: AsyncSession, tenant_id: UUID, customer: Any
+) -> QuoteRequest:
+    """A lead captured before the customer registered: contact-linked only."""
+    await set_tenant_in_session(db, tenant_id)
+    quote_request = QuoteRequest(
+        tenant_id=tenant_id,
+        contact_id=customer.contact_id,
+        customer_id=None,  # legacy row — the link did not exist at capture time
+        source="web_form",
+        raw_text="Socket in the garage stopped working",
+        structured_data={"category": "other", "title": "Garage socket dead"},
+    )
+    db.add(quote_request)
+    await db.flush()
+    return quote_request
+
+
+async def test_customer_reads_contact_linked_legacy_thread(
+    admin_client: AsyncClient, db: AsyncSession
+) -> None:
+    """N24: a legacy lead (customer_id NULL) whose contact matches the customer
+    account is that customer's own thread — an empty inbox, never a 403."""
+    tenant_id = UUID(admin_client.headers["X-Tenant-ID"])
+    customer = await _make_customer(db, tenant_id)
+    quote_request = await _make_legacy_lead_for_customer(db, tenant_id, customer)
+    await db.commit()
+
+    headers = _customer_headers(tenant_id, customer)
+    list_response = await admin_client.get(
+        f"/communications?quote_request_id={quote_request.id}", headers=headers
+    )
+    assert list_response.status_code == 200, list_response.text
+    assert list_response.json() == []
+
+    post_response = await admin_client.post(
+        "/communications",
+        headers=headers,
+        json={
+            "quote_request_id": str(quote_request.id),
+            "channel": "in_app_chat",
+            "body": "It sparked once and then died",
+        },
+    )
+    assert post_response.status_code == 201, post_response.text
+    assert post_response.json()["sender_role"] == "customer"
+
+
+async def test_customer_cannot_read_other_customers_thread(
+    admin_client: AsyncClient, db: AsyncSession
+) -> None:
+    """The contact-link fallback must not widen access to unrelated threads."""
+    tenant_id = UUID(admin_client.headers["X-Tenant-ID"])
+    customer = await _make_customer(db, tenant_id)
+    other_lead = await _create_lead(db, tenant_id)  # different contact, no customer
+    await db.commit()
+
+    response = await admin_client.get(
+        f"/communications?quote_request_id={other_lead.id}",
+        headers=_customer_headers(tenant_id, customer),
+    )
+    assert response.status_code == 403
+
+
+# ---------------------------------------------------------------------------
+# C14 — staff notification quiet rule for customer chat replies
+# ---------------------------------------------------------------------------
+
+
+async def _staff_chat_reply_notifications(db: AsyncSession, tenant_id: UUID) -> int:
+    from app.models import Notification
+
+    count = await db.scalar(
+        select(func.count())
+        .select_from(Notification)
+        .where(
+            Notification.tenant_id == tenant_id,
+            Notification.recipient_type == "staff",
+            Notification.type == "chat_reply",
+        )
+    )
+    return int(count or 0)
+
+
+async def _seed_closed_triage_thread(
+    db: AsyncSession, tenant_id: UUID, quote_request: QuoteRequest
+) -> None:
+    """An AI closure message ends triage, arming staff reply notifications."""
+    db.add(
+        Communication(
+            tenant_id=tenant_id,
+            contact_id=quote_request.contact_id,
+            quote_request_id=quote_request.id,
+            channel="in_app_chat",
+            direction="outbound",
+            sender_role="ai",
+            body="Thanks — the electrician will review your request.",
+            ai_metadata={"complete": True, "confidence": 90},
+        )
+    )
+    await db.flush()
+
+
+async def test_customer_reply_burst_notifies_staff_once(
+    admin_client: AsyncClient, db: AsyncSession
+) -> None:
+    """C14: consecutive customer replies raise ONE staff notification; the bell
+    re-arms only after a non-customer (staff/AI) message in the thread."""
+    tenant_id = UUID(admin_client.headers["X-Tenant-ID"])
+    customer = await _make_customer(db, tenant_id)
+    quote_request = await _create_lead(db, tenant_id)
+    quote_request.customer_id = customer.id
+    await _seed_closed_triage_thread(db, tenant_id, quote_request)
+    await db.commit()
+
+    headers = _customer_headers(tenant_id, customer)
+    for body in ("First follow-up", "Second quick follow-up"):
+        response = await admin_client.post(
+            "/communications",
+            headers=headers,
+            json={
+                "quote_request_id": str(quote_request.id),
+                "channel": "in_app_chat",
+                "body": body,
+            },
+        )
+        assert response.status_code == 201, response.text
+
+    assert await _staff_chat_reply_notifications(db, tenant_id) == 1
+
+    # A staff reply re-arms the bell for the next customer message.
+    staff_reply = await admin_client.post(
+        "/communications",
+        json={
+            "quote_request_id": str(quote_request.id),
+            "channel": "in_app_chat",
+            "body": "Thanks — got it.",
+        },
+    )
+    assert staff_reply.status_code == 201, staff_reply.text
+
+    third = await admin_client.post(
+        "/communications",
+        headers=headers,
+        json={
+            "quote_request_id": str(quote_request.id),
+            "channel": "in_app_chat",
+            "body": "One more thing…",
+        },
+    )
+    assert third.status_code == 201, third.text
+    assert await _staff_chat_reply_notifications(db, tenant_id) == 2
+
+
+# ---------------------------------------------------------------------------
+# N29 — POST /communications/threads (find-or-start a direct customer thread)
+# ---------------------------------------------------------------------------
+
+
+async def test_direct_thread_creates_anchor_for_customer_with_account(
+    admin_client: AsyncClient, db: AsyncSession
+) -> None:
+    """No prior lead: a minimal direct_message quote request anchors the chat,
+    and the customer can immediately read/post on it."""
+    tenant_id = UUID(admin_client.headers["X-Tenant-ID"])
+    customer = await _make_customer(db, tenant_id)
+    await db.commit()
+
+    response = await admin_client.post(
+        "/communications/threads", json={"contact_id": str(customer.contact_id)}
+    )
+    assert response.status_code == 200, response.text
+    thread_id = response.json()["quote_request_id"]
+
+    await set_tenant_in_session(db, tenant_id)
+    anchor = await db.get(QuoteRequest, UUID(thread_id))
+    assert anchor is not None
+    assert anchor.customer_id == customer.id
+    assert anchor.contact_id == customer.contact_id
+    assert anchor.source == "direct_message"
+
+    customer_headers = _customer_headers(tenant_id, customer)
+    read = await admin_client.get(
+        f"/communications?quote_request_id={thread_id}", headers=customer_headers
+    )
+    assert read.status_code == 200, read.text
+
+    # Starting again returns the same thread (find, not duplicate-create).
+    again = await admin_client.post(
+        "/communications/threads", json={"contact_id": str(customer.contact_id)}
+    )
+    assert again.status_code == 200
+    assert again.json()["quote_request_id"] == thread_id
+
+
+async def test_direct_thread_finds_legacy_lead_and_backfills_customer_link(
+    admin_client: AsyncClient, db: AsyncSession
+) -> None:
+    """An existing contact-linked lead is reused and its missing customer_id
+    backfilled (the same legacy shape behind N24)."""
+    tenant_id = UUID(admin_client.headers["X-Tenant-ID"])
+    customer = await _make_customer(db, tenant_id)
+    legacy = await _make_legacy_lead_for_customer(db, tenant_id, customer)
+    await db.commit()
+
+    response = await admin_client.post(
+        "/communications/threads", json={"contact_id": str(customer.contact_id)}
+    )
+    assert response.status_code == 200, response.text
+    assert response.json()["quote_request_id"] == str(legacy.id)
+
+    await db.refresh(legacy)
+    assert legacy.customer_id == customer.id
+
+
+async def test_direct_thread_requires_customer_app_account(
+    admin_client: AsyncClient, db: AsyncSession
+) -> None:
+    """Contacts without a registered customer account can't be chatted in-app."""
+    tenant_id = UUID(admin_client.headers["X-Tenant-ID"])
+    quote_request = await _create_lead(db, tenant_id)  # contact, but no account
+    await db.commit()
+
+    response = await admin_client.post(
+        "/communications/threads", json={"contact_id": str(quote_request.contact_id)}
+    )
+    assert response.status_code == 400
+
+
+async def test_direct_thread_rejects_customer_actor(
+    admin_client: AsyncClient, db: AsyncSession
+) -> None:
+    """Customers start threads via their own quote requests, not this endpoint."""
+    tenant_id = UUID(admin_client.headers["X-Tenant-ID"])
+    customer = await _make_customer(db, tenant_id)
+    await db.commit()
+
+    response = await admin_client.post(
+        "/communications/threads",
+        headers=_customer_headers(tenant_id, customer),
+        json={"contact_id": str(customer.contact_id)},
+    )
+    assert response.status_code == 403
+
+
+async def test_direct_thread_rejects_unknown_contact(
+    admin_client: AsyncClient, db: AsyncSession
+) -> None:
+    response = await admin_client.post(
+        "/communications/threads", json={"contact_id": str(uuid4())}
+    )
+    assert response.status_code == 400
+
+
+async def test_staff_chat_message_notifies_linked_customer(
+    admin_client: AsyncClient, db: AsyncSession
+) -> None:
+    """A business chat message notifies the customer (persistent + push) so a
+    staff-started conversation doesn't sit unseen."""
+    from app.models import Notification
+
+    tenant_id = UUID(admin_client.headers["X-Tenant-ID"])
+    customer = await _make_customer(db, tenant_id)
+    quote_request = await _create_lead(db, tenant_id)
+    quote_request.customer_id = customer.id
+    await db.commit()
+
+    response = await admin_client.post(
+        "/communications",
+        json={
+            "quote_request_id": str(quote_request.id),
+            "channel": "in_app_chat",
+            "body": "Could you confirm access to the garage?",
+        },
+    )
+    assert response.status_code == 201, response.text
+
+    notification = await db.scalar(
+        select(Notification).where(
+            Notification.tenant_id == tenant_id,
+            Notification.recipient_type == "customer",
+            Notification.recipient_id == customer.id,
+            Notification.type == "chat_message",
+        )
+    )
+    assert notification is not None
+    assert notification.link == f"/customer/chat/{quote_request.id}"
+
+
+async def test_staff_non_chat_channel_does_not_notify_customer(
+    admin_client: AsyncClient, db: AsyncSession
+) -> None:
+    """Logged calls/emails stay silent — only in-app chat pings the customer."""
+    from app.models import Notification
+
+    tenant_id = UUID(admin_client.headers["X-Tenant-ID"])
+    customer = await _make_customer(db, tenant_id)
+    quote_request = await _create_lead(db, tenant_id)
+    quote_request.customer_id = customer.id
+    await db.commit()
+
+    response = await admin_client.post(
+        "/communications",
+        json={
+            "quote_request_id": str(quote_request.id),
+            "channel": "phone_call",
+            "direction": "inbound",
+            "body": "Customer called about dates",
+        },
+    )
+    assert response.status_code == 201, response.text
+
+    count = await db.scalar(
+        select(func.count())
+        .select_from(Notification)
+        .where(
+            Notification.tenant_id == tenant_id,
+            Notification.recipient_type == "customer",
+        )
+    )
+    assert count == 0

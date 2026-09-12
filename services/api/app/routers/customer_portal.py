@@ -34,6 +34,7 @@ from app.models import (
 )
 from app.push import notify_staff
 from app.rls import bypass_rls_for_transaction, set_tenant_in_session
+from app.routers.contacts import BLOCKED_CUSTOMER_DETAIL, contact_is_blocked
 from app.schemas import (
     AppointmentCreate,
     AppointmentRead,
@@ -348,6 +349,11 @@ async def login_customer(
         or not verify_password(data.password, customer.password_hash)
     ):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid credentials")
+
+    # Blocked customers (N26) are refused only after their credentials have
+    # verified, so the 403 cannot be used to enumerate block status.
+    if await contact_is_blocked(db, tenant.id, customer.contact_id):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=BLOCKED_CUSTOMER_DETAIL)
 
     # Post-auth tenant associations: only computed once credentials have
     # passed, and before _link_quote_requests_by_contact's commit ends the

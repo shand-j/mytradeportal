@@ -15,6 +15,7 @@ from app.dependencies import CurrentUserDep, TenantDep
 from app.limiter import limiter, tenant_key
 from app.models import BillOfQuantities, Customer, MediaAsset, Property, Quote, QuoteRequest
 from app.rls import set_tenant_in_session
+from app.routers.contacts import BLOCKED_CUSTOMER_DETAIL, contact_is_blocked
 from app.schemas import (
     AiInterpretLineItem,
     AiInterpretQuoteResponse,
@@ -76,6 +77,11 @@ async def create_quote_request(
         customer = await db.get(Customer, data.customer_id)
         if customer is None or customer.tenant_id != tenant.id:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid customer")
+        # Blocked customers (N26) cannot create quote requests.
+        if await contact_is_blocked(db, tenant.id, customer.contact_id):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN, detail=BLOCKED_CUSTOMER_DETAIL
+            )
 
     if data.property_id is not None:
         property_ = await db.get(Property, data.property_id)

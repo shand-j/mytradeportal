@@ -6,6 +6,8 @@ import { useJobDetail, useJobActions, useUpdateJob } from "../../../src/api/jobs
 import { createAndSendInvoice, fetchInvoices } from "../../../src/api/invoices";
 import { useQuote } from "../../../src/api/quotes";
 import { useUsersList } from "../../../src/api/users";
+import { useContact } from "../../../src/api/contacts";
+import { startDirectThread } from "../../../src/api/communications";
 
 export default function JobDetailRoute() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -19,6 +21,9 @@ export default function JobDetailRoute() {
   // The job's invoice inherits the source quote's VAT rate server-side; the
   // preview must show the same rate (0% for non-VAT-registered tenants).
   const { quote: sourceQuote } = useQuote(raw?.quoteId ?? undefined);
+  // Full CRM contact (preferred contact method, app-account flag) for the
+  // message button's channel routing.
+  const { contact } = useContact(raw?.customer.id);
 
   const existingInvoiceId = useMemo(
     () =>
@@ -81,6 +86,13 @@ export default function JobDetailRoute() {
       members={users.map((u) => ({ id: u.id, fullName: u.fullName }))}
       initialNotes={raw.notes}
       photos={raw.photos ?? []}
+      contactEmail={contact?.email ?? raw.customer.email}
+      preferredContactMethod={contact?.preferredContactMethod ?? null}
+      hasAccount={contact?.hasAccount ?? false}
+      onOpenChat={async () => {
+        const { quoteRequestId } = await startDirectThread(raw.customer.id);
+        router.push({ pathname: "/(trade)/messages", params: { quoteRequestId } });
+      }}
     />
   );
 }

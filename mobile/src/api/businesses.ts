@@ -34,6 +34,15 @@ type TenantSettings = {
   bankAccountName?: string;
   bankSortCode?: string;
   bankAccountNumber?: string;
+  quoteRemindersEnabled?: boolean;
+  quoteReminderMax?: number;
+  quoteReminderIntervalDays?: number;
+  invoiceRemindersEnabled?: boolean;
+  invoiceReminderIntervalDays?: number;
+  quoteRounding?: number;
+  workingDayStart?: string;
+  workingDayEnd?: string;
+  workingDays?: number[];
   [key: string]: unknown;
 };
 
@@ -144,4 +153,87 @@ export async function updatePaymentDetails(input: PaymentDetails): Promise<Payme
     bankSortCode: settings.bankSortCode ?? "",
     bankAccountNumber: settings.bankAccountNumber ?? "",
   };
+}
+
+export type FollowUpSettings = {
+  quoteRemindersEnabled: boolean;
+  /** How many quote reminders to send before giving up (1-10). */
+  quoteReminderMax: number;
+  /** Days between the quote being sent / last reminder and the next one. */
+  quoteReminderIntervalDays: number;
+  invoiceRemindersEnabled: boolean;
+  /** Days between the due date / last reminder and the next chase (recurs). */
+  invoiceReminderIntervalDays: number;
+  /** Round quote totals up to the nearest £5 or £10; 0 = off. */
+  quoteRounding: number;
+};
+
+function clampInt(value: unknown, fallback: number, min: number, max: number): number {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return fallback;
+  return Math.max(min, Math.min(max, Math.round(parsed)));
+}
+
+/** Fetch the tenant's quote/invoice follow-up + rounding settings. */
+export async function fetchFollowUpSettings(): Promise<FollowUpSettings> {
+  const data = await api.get<CurrentTenantResponse>("/tenants/me");
+  const s = data.settings ?? {};
+  const rounding = Number(s.quoteRounding);
+  return {
+    quoteRemindersEnabled: s.quoteRemindersEnabled !== false,
+    quoteReminderMax: clampInt(s.quoteReminderMax, 3, 1, 10),
+    quoteReminderIntervalDays: clampInt(s.quoteReminderIntervalDays, 3, 1, 90),
+    invoiceRemindersEnabled: s.invoiceRemindersEnabled !== false,
+    invoiceReminderIntervalDays: clampInt(s.invoiceReminderIntervalDays, 7, 1, 90),
+    quoteRounding: rounding === 5 || rounding === 10 ? rounding : 0,
+  };
+}
+
+/** Save follow-up + rounding settings into tenant settings (merged server-side). */
+export async function updateFollowUpSettings(input: FollowUpSettings): Promise<FollowUpSettings> {
+  await api.patch<CurrentTenantResponse>("/tenants/me", {
+    settings: {
+      quoteRemindersEnabled: input.quoteRemindersEnabled,
+      quoteReminderMax: input.quoteReminderMax,
+      quoteReminderIntervalDays: input.quoteReminderIntervalDays,
+      invoiceRemindersEnabled: input.invoiceRemindersEnabled,
+      invoiceReminderIntervalDays: input.invoiceReminderIntervalDays,
+      quoteRounding: input.quoteRounding,
+    },
+  });
+  return input;
+}
+
+export type WorkingHours = {
+  /** "HH:MM" 24-hour. */
+  workingDayStart: string;
+  workingDayEnd: string;
+  /** Weekday ints, Monday = 0 ... Sunday = 6. */
+  workingDays: number[];
+};
+
+/** Fetch the tenant's working hours (defaults: 08:00-18:00, every day). */
+export async function fetchWorkingHours(): Promise<WorkingHours> {
+  const data = await api.get<CurrentTenantResponse>("/tenants/me");
+  const s = data.settings ?? {};
+  const days = Array.isArray(s.workingDays)
+    ? s.workingDays.filter((d) => Number.isInteger(d) && d >= 0 && d <= 6)
+    : [];
+  return {
+    workingDayStart: typeof s.workingDayStart === "string" ? s.workingDayStart : "08:00",
+    workingDayEnd: typeof s.workingDayEnd === "string" ? s.workingDayEnd : "18:00",
+    workingDays: days.length > 0 ? days : [0, 1, 2, 3, 4, 5, 6],
+  };
+}
+
+/** Save working hours into tenant settings (merged server-side). */
+export async function updateWorkingHours(input: WorkingHours): Promise<WorkingHours> {
+  await api.patch<CurrentTenantResponse>("/tenants/me", {
+    settings: {
+      workingDayStart: input.workingDayStart,
+      workingDayEnd: input.workingDayEnd,
+      workingDays: input.workingDays,
+    },
+  });
+  return input;
 }

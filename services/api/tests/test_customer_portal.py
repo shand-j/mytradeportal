@@ -529,6 +529,47 @@ async def test_contact_has_account_flag(client: AsyncClient, db: AsyncSession) -
     assert flags["lead@example.com"] is False
 
 
+async def test_contacts_has_account_filter(client: AsyncClient, db: AsyncSession) -> None:
+    """N29: ?has_account=true narrows the list to app-registered customers."""
+    slug = f"cust-{uuid4().hex[:8]}"
+    tenant = await _create_tenant(db, slug)
+    email = f"jane-{uuid4().hex[:6]}@example.com"
+    reg = await client.post("/customer/register", json=_register_payload(slug, email))
+    assert reg.status_code == 201
+
+    await set_tenant_in_session(db, tenant.id)
+    db.add(Contact(tenant_id=tenant.id, name="No Account Lead", email="lead@example.com"))
+    from app.models import User
+    from app.security import get_password_hash
+
+    password = "admin-password-123"
+    db.add(
+        User(
+            tenant_id=tenant.id,
+            email="owner@test.local",
+            full_name="Owner",
+            role="admin",
+            password_hash=get_password_hash(password),
+            is_active=True,
+        )
+    )
+    await db.commit()
+    login = await client.post(
+        "/auth/login",
+        headers={"host": f"{slug}.localhost"},
+        json={"email": "owner@test.local", "password": password},
+    )
+    assert login.status_code == 200, login.text
+
+    response = await client.get(
+        "/contacts?has_account=true", headers={"X-Tenant-ID": str(tenant.id)}
+    )
+    assert response.status_code == 200
+    emails = {c["email"] for c in response.json()}
+    assert email in emails
+    assert "lead@example.com" not in emails
+
+
 async def test_quote_visibility_allow_list_hides_unlisted_statuses(
     client: AsyncClient, db: AsyncSession
 ) -> None:

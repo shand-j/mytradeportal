@@ -15,7 +15,7 @@ from fastapi.responses import PlainTextResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.config import settings
+from app.config import CALENDAR_FEED_BASE_URL, settings
 from app.database import get_db
 from app.dependencies import CurrentUserDep, TenantDep
 from app.models import Appointment, Tenant
@@ -35,13 +35,18 @@ def _ics_dt(value: datetime) -> str:
     return value.strftime("%Y%m%dT%H%M%S")
 
 
+def _feed_base_url(request: Request) -> str:
+    base = CALENDAR_FEED_BASE_URL or settings.app_public_url
+    return base.rstrip("/") if base else str(request.base_url).rstrip("/")
+
+
 def _feed_url(request: Request, token: str) -> str:
-    base = (
-        settings.app_public_url.rstrip("/")
-        if settings.app_public_url
-        else str(request.base_url).rstrip("/")
-    )
-    return f"{base}/calendar/feed.ics?token={token}"
+    return f"{_feed_base_url(request)}/calendar/feed.ics?token={token}"
+
+
+def _webcal_url(https_url: str) -> str:
+    """Rewrite an http(s) feed URL as webcal:// so iOS offers to subscribe."""
+    return "webcal://" + https_url.split("://", 1)[-1]
 
 
 @router.get("/feed-link")
@@ -51,7 +56,12 @@ async def get_feed_link(
     current_user: CurrentUserDep,
     db: DbDep,
 ) -> dict[str, str]:
-    """Return (minting on first use) this tenant's calendar feed URL."""
+    """Return (minting on first use) this tenant's calendar feed URL.
+
+    ``url`` is the plain https .ics feed (Google Calendar, manual copy);
+    ``webcal_url`` is the same URL with a webcal:// scheme, which makes iOS
+    show the native "Subscribe to this calendar?" prompt when opened.
+    """
     await set_tenant_in_session(db, tenant.id)
     tenant_settings = dict(tenant.settings or {})
     token = tenant_settings.get(_FEED_TOKEN_KEY)
@@ -60,7 +70,8 @@ async def get_feed_link(
         tenant_settings[_FEED_TOKEN_KEY] = token
         tenant.settings = tenant_settings
         await db.commit()
-    return {"url": _feed_url(request, token)}
+    url = _feed_url(request, token)
+    return {"url": url, "webcal_url": _webcal_url(url)}
 
 
 @router.get("/feed.ics", response_class=PlainTextResponse)
@@ -88,7 +99,12 @@ async def calendar_feed(token: str, db: DbDep) -> PlainTextResponse:
         "BEGIN:VCALENDAR",
         "VERSION:2.0",
         "PRODID:-//My Trade Portal//Calendar Feed//EN",
+        "CALSCALE:GREGORIAN",
+        "METHOD:PUBLISH",
         f"X-WR-CALNAME:{_ics_escape(tenant.name)} jobs",
+        # Hint hourly refresh so new/changed jobs reach subscribers promptly.
+        "REFRESH-INTERVAL;VALUE=DURATION:PT1H",
+        "X-PUBLISHED-TTL:PT1H",
     ]
     for appt in appointments:
         lines += [

@@ -29,7 +29,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.audit import Actions, write_audit_log
-from app.calculations import calculate_quote_totals
+from app.calculations import apply_quote_rounding, calculate_quote_totals
 from app.database import get_db_session
 from app.models import Quote, QuoteLineItem, QuoteRequest, Tenant
 from app.push import notify_customer, notify_staff
@@ -581,6 +581,7 @@ async def requote_after_triage_close(tenant_id: UUID, quote_request_id: UUID) ->
                     )
                 )
             calculate_quote_totals(quote)
+            apply_quote_rounding(quote, tenant.settings)
 
             previous_rag = (quote.extra_data or {}).get("rag")
             quote.extra_data = {

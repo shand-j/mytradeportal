@@ -1,7 +1,7 @@
 """Appointment endpoints."""
 
 from datetime import date, datetime, time, timedelta
-from typing import Annotated
+from typing import Annotated, Any
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -16,6 +16,36 @@ from app.schemas import AppointmentCreate, AppointmentRead, AppointmentUpdate
 
 router = APIRouter(prefix="/appointments", tags=["Appointments"])
 DbDep = Annotated[AsyncSession, Depends(get_db)]
+
+
+def _working_hours(settings: dict[str, Any] | None) -> tuple[time, time, set[int]]:
+    """Resolve the tenant's working hours from tenant settings.
+
+    Settings keys: ``working_day_start`` / ``working_day_end`` ("HH:MM") and
+    ``working_days`` (list of weekday ints, Monday=0). Defaults preserve the
+    historical behaviour: 08:00-18:00, every day of the week.
+    """
+
+    def _parse(value: Any, fallback: time) -> time:
+        try:
+            hour, minute = str(value).split(":")
+            parsed = time(int(hour), int(minute))
+        except (ValueError, AttributeError):
+            return fallback
+        return parsed
+
+    s = settings or {}
+    start = _parse(s.get("working_day_start", "08:00"), time(8, 0))
+    end = _parse(s.get("working_day_end", "18:00"), time(18, 0))
+    days: set[int] = set(range(7))
+    raw_days = s.get("working_days")
+    if isinstance(raw_days, list):
+        parsed_days = {
+            int(d) for d in raw_days if str(d).lstrip("-").isdigit() and 0 <= int(d) <= 6
+        }
+        if parsed_days:
+            days = parsed_days
+    return start, end, days
 
 
 async def _get_appointment(db: AsyncSession, tenant_id: UUID, appointment_id: UUID) -> Appointment:
@@ -72,12 +102,20 @@ async def get_availability(
     """Return free 1-hour appointment slots for the given date.
 
     Both appointments and scheduled jobs block a slot — a day that looks free
-    on the appointment calendar may already have a job booked.
+    on the appointment calendar may already have a job booked. Slots only
+    fall inside the tenant's configured working hours (``working_day_start`` /
+    ``working_day_end`` / ``working_days`` settings); days outside the working
+    week return no slots.
     """
     await set_tenant_in_session(db, tenant.id)
 
-    day_start = datetime.combine(date, time(8, 0))
-    day_end = datetime.combine(date, time(18, 0))
+    work_start, work_end, working_days = _working_hours(tenant.settings)
+    if date.weekday() not in working_days:
+        return []
+    day_start = datetime.combine(date, work_start)
+    day_end = datetime.combine(date, work_end)
+    if day_end <= day_start:
+        return []
 
     result = await db.execute(
         select(Appointment)

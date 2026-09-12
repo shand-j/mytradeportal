@@ -63,6 +63,7 @@ TENANT_SCOPED_TABLES: tuple[str, ...] = (
     "media_assets",
     "consents",
     "notifications",
+    "reminders",
     "push_tokens",
     "events",
 )

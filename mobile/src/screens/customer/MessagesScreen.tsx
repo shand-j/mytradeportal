@@ -7,6 +7,7 @@ import { Screen } from "../../components/ui/Screen";
 import { Text } from "../../components/ui/Text";
 import { useBusiness } from "../../theme/ThemeProvider";
 import { ChatMessage, ChatSenderRole, useCommunications } from "../../api/communications";
+import { ApiError } from "../../lib/apiClient";
 
 const clock = () => new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 
@@ -134,6 +135,12 @@ export function ChatThread({
     (senderRole === "business" && sender === "business");
 
   const isNetworkError = error instanceof Error && error.name === "NetworkError";
+  // A 404 means the thread itself is gone (deleted lead or a stale chat link
+  // from an old notification). That is an empty inbox, not a failure — show
+  // the empty state instead of an error banner; the composer stays disabled
+  // because the query never succeeded.
+  const isMissingThread = error instanceof ApiError && error.status === 404;
+  const threadError = error && !isMissingThread ? error : null;
 
   // Quick-reply chips from the latest AI message. Only shown while that AI
   // message is still the last in the thread — once the customer replies, the
@@ -167,7 +174,7 @@ export function ChatThread({
           </View>
         )}
 
-        {!!error && (
+        {!!threadError && (
           <View className="rounded-2xl border border-amber-200 bg-amber-50 p-4">
             <Text variant="caption" color="warning" align="center">
               {isNetworkError
@@ -183,7 +190,7 @@ export function ChatThread({
           </Text>
         )}
 
-        {!isLoading && !error && displayMessages.length === 0 && !typing && (
+        {!isLoading && !threadError && displayMessages.length === 0 && !typing && (
           <View className="rounded-2xl bg-slate-100 p-4">
             <Text variant="caption" color="secondary" align="center">
               No messages yet — start the conversation below.

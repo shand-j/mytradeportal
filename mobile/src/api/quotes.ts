@@ -301,6 +301,7 @@ export function mapQuote(q: ApiQuote): Quote {
     id: q.id,
     leadId: "",
     quoteRequestId: q.quoteRequestId ?? undefined,
+    customerId: q.customer?.id ?? undefined,
     customerName: q.customer?.name ?? "Customer",
     title: q.title,
     postcode: q.customer?.postcode ?? "",

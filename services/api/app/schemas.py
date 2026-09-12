@@ -160,6 +160,16 @@ class ContactUpdate(BaseModel):
     bedrooms: int | None = None
     parking_notes: str | None = None
     access_notes: str | None = None
+    # Manual trust-badge overrides (N26): {badge: true} forces a badge on,
+    # {badge: false} forces it off, {badge: null} clears the override so the
+    # auto rule decides again. Keys must be known badge slugs.
+    badge_overrides: dict[str, bool | None] | None = None
+
+
+class ContactBlockRequest(BaseModel):
+    """Optional reason recorded when blocking a customer (N26)."""
+
+    reason: str | None = Field(default=None, max_length=500)
 
 
 class ContactRead(BaseModel):
@@ -184,6 +194,15 @@ class ContactRead(BaseModel):
     # True when a customer account is linked to this contact. Unregistered
     # contacts are email-only for comms — the UI flags them so staff know.
     has_account: bool = False
+    # Trust badges (N26): ``badges`` is the effective list (manual override
+    # wins), ``auto_badges`` is what the rules computed from invoice/quote
+    # history, ``badge_overrides`` holds only the manual per-badge overrides.
+    badges: list[str] = Field(default_factory=list)
+    auto_badges: list[str] = Field(default_factory=list)
+    badge_overrides: dict[str, bool] = Field(default_factory=dict)
+    is_blocked: bool = False
+    blocked_at: datetime | None = None
+    blocked_reason: str | None = None
 
     @computed_field  # type: ignore[prop-decorator]
     @property
@@ -443,6 +462,9 @@ class QuoteRead(BaseModel):
     ai_assumptions: list[str] = Field(default_factory=list)
     ai_notes: str | None = None
     retrieval_status: str | None = None
+    # Uplift from the tenant's quote-rounding setting (0 when off). ``total``
+    # already includes it; the UI shows a "rounded up" indicator when > 0.
+    rounding_adjustment: Decimal = Decimal("0.00")
 
     @model_validator(mode="before")
     @classmethod
@@ -527,6 +549,25 @@ class QuoteGenerateAsyncResponse(BaseModel):
 
     status: str = "generating"
     quote_request_id: UUID | None = None
+
+
+class QuoteTrainingEventRead(BaseModel):
+    """One captured quote-edit event for the AI fine-tuning dataset.
+
+    ``payload`` carries ``before``/``after`` line-item snapshots (and
+    ``instructions`` for refine events) — the raw material for later export
+    into an AI training set.
+    """
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    tenant_id: UUID
+    event_type: str  # quote_lines_edited | quote_refined
+    entity_id: UUID  # the quote id
+    actor_id: UUID | None
+    payload: dict[str, Any]
+    created_at: datetime
 
 
 # ---------------------------------------------------------------------------
@@ -765,6 +806,8 @@ class InvoiceRead(BaseModel):
     vat_rate: Decimal
     vat_amount: Decimal
     total: Decimal
+    # Rounding uplift inherited from the source quote (0 for scratch invoices).
+    rounding_adjustment: Decimal = Decimal("0.00")
     paid_at: datetime | None
     notes: str | None
     paddle_checkout_id: str | None
@@ -924,6 +967,11 @@ class DashboardKPIs(BaseModel):
     quotes_expiring_soon: int
     average_rating: float
     review_count: int
+    # Quotes drafted by the AI pipeline (ai_draft snapshot or AI line items).
+    ai_generated_quotes: int = 0
+    # Estimated hours saved by AI drafting (ai_generated_quotes x per-quote
+    # manual drafting time; see AI_DRAFT_MANUAL_MINUTES in routers/analytics.py).
+    ai_time_saved_hours: float = 0.0
 
 
 class RevenueChartData(BaseModel):

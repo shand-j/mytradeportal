@@ -212,6 +212,15 @@ class Contact(TenantScopedBase):
     bedrooms: Mapped[int | None] = mapped_column(nullable=True)
     parking_notes: Mapped[str | None] = mapped_column(Text, nullable=True)
     access_notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Trust badges + blocking (N26). Auto badges (late_payer / non_payer /
+    # time_waster) are computed on read from invoice/quote history; only manual
+    # per-badge overrides are stored here ({badge: bool}) so the auto rules
+    # keep tracking reality. A blocked contact's customer account cannot log
+    # in, request quotes or message the business.
+    badge_overrides: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict, nullable=False)
+    is_blocked: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    blocked_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    blocked_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     quotes: Mapped[list[Quote]] = relationship(
         "Quote", back_populates="contact", cascade="all, delete-orphan"
@@ -242,6 +251,12 @@ class Quote(TenantScopedBase):
     vat_rate: Mapped[Decimal] = mapped_column(Numeric(5, 2), default=Decimal("0.20"))
     vat_amount: Mapped[Decimal] = mapped_column(Numeric(12, 2), default=Decimal("0.00"))
     total: Mapped[Decimal] = mapped_column(Numeric(12, 2), default=Decimal("0.00"))
+    # Amount added on top of the VAT-inclusive total when the tenant's
+    # quote-rounding setting rounds the total up to the nearest £5/£10. Zero
+    # when rounding is off; ``total`` always includes this adjustment.
+    rounding_adjustment: Mapped[Decimal] = mapped_column(
+        Numeric(12, 2), default=Decimal("0.00"), server_default="0"
+    )
     valid_until: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     approved_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     sent_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
@@ -528,6 +543,10 @@ class Invoice(TenantScopedBase):
     vat_rate: Mapped[Decimal] = mapped_column(Numeric(5, 2), default=Decimal("0.20"))
     vat_amount: Mapped[Decimal] = mapped_column(Numeric(12, 2), default=Decimal("0.00"))
     total: Mapped[Decimal] = mapped_column(Numeric(12, 2), default=Decimal("0.00"))
+    # Rounding uplift inherited from the source quote (see Quote.rounding_adjustment).
+    rounding_adjustment: Mapped[Decimal] = mapped_column(
+        Numeric(12, 2), default=Decimal("0.00"), server_default="0"
+    )
     paid_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     paddle_checkout_id: Mapped[str | None] = mapped_column(String(255), nullable=True, index=True)
     paddle_transaction_id: Mapped[str | None] = mapped_column(
@@ -1026,6 +1045,28 @@ class Notification(TenantScopedBase):
     body: Mapped[str] = mapped_column(Text, nullable=False)
     link: Mapped[str | None] = mapped_column(String(500), nullable=True)
     read_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+
+class Reminder(TenantScopedBase):
+    """One customer-facing reminder email sent for a quote or invoice.
+
+    The reminder scheduler appends a row per dispatched email; the row count
+    per entity is the "how many reminders have gone out" state (quotes stop
+    after the configured count) and ``created_at`` of the latest row is the
+    anchor for the next cadence interval. Kept as a dedicated table (rather
+    than a counter on the quote/invoice) so there is a full audit trail of
+    what was chased and when.
+    """
+
+    __tablename__ = "reminders"
+
+    entity_type: Mapped[str] = mapped_column(String(20), nullable=False)  # quote | invoice
+    # No FK: points at quotes.id or invoices.id depending on entity_type.
+    entity_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), nullable=False, index=True)
+    channel: Mapped[str] = mapped_column(String(20), default="email", nullable=False)
+    # 1-based sequence number of this reminder for the entity.
+    sequence: Mapped[int] = mapped_column(nullable=False, default=1)
+    payload: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict, nullable=False)
 
 
 class PushToken(TenantScopedBase):

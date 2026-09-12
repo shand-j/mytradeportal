@@ -32,6 +32,9 @@ type BottomTabBarProps = {
   variant: "trade" | "customer";
 };
 
+/** usePathname() strips route-group segments ("/(trade)/dashboard" → "/dashboard"). */
+const stripRouteGroup = (path: string) => path.replace(/^\/\((?:trade|customer)\)/, "");
+
 export function BottomTabBar({ variant }: BottomTabBarProps) {
   const router = useRouter();
   const pathname = usePathname();
@@ -45,7 +48,7 @@ export function BottomTabBar({ variant }: BottomTabBarProps) {
       style={{ paddingBottom: insets.bottom + 8 }}
     >
       {tabs.map((tab) => {
-        const isActive = pathname === tab.path;
+        const isActive = pathname === stripRouteGroup(tab.path);
         return (
           <Pressable
             key={tab.key}

@@ -10,6 +10,7 @@ import { Screen } from "../../components/ui/Screen";
 import { Text } from "../../components/ui/Text";
 import { Lead, Quote, QuoteLineItem } from "../../types";
 import { updateQuote, useRefineQuote, useSendQuote, useUpdateQuote } from "../../api/quotes";
+import { startDirectThread } from "../../api/communications";
 import { ApiError } from "../../lib/apiClient";
 import { formatMoneyGBP } from "../../lib/format";
 
@@ -68,6 +69,13 @@ function RefineSkeleton() {
       </View>
 
       <PulseBlock style={{ height: 56 }} />
+
+      {/* Assumptions / AI details placeholder */}
+      <View className="rounded-xl bg-slate-100 p-3 gap-2">
+        <PulseBlock style={{ height: 10, width: "78%" }} />
+        <PulseBlock style={{ height: 10, width: "64%" }} />
+        <PulseBlock style={{ height: 10, width: "71%" }} />
+      </View>
 
       {[0, 1, 2].map((row) => (
         <View
@@ -332,6 +340,27 @@ export function QuoteEditScreen({
   const quoteRequestId = seedQuote?.quoteRequestId ?? resolvedLead?.id;
   const isRefining = refineQuoteMutation.isPending;
 
+  // C7: "Request more info" opens the chat with the customer. Quotes without a
+  // linked thread (legacy/lead-less quotes) find-or-create one via the CRM
+  // contact; only contacts with no app account stay disabled.
+  const customerContactId = seedQuote?.customerId;
+  const canMessageCustomer = Boolean(quoteRequestId || customerContactId);
+  const openCustomerChat = async () => {
+    try {
+      const threadId =
+        quoteRequestId ??
+        (customerContactId ? (await startDirectThread(customerContactId)).quoteRequestId : null);
+      if (threadId) {
+        router.push({ pathname: "/(trade)/messages", params: { quoteRequestId: threadId } });
+      }
+    } catch (err) {
+      Alert.alert(
+        "Couldn't open the chat",
+        err instanceof ApiError ? err.detail : "Please try again."
+      );
+    }
+  };
+
   return (
     <Screen>
       <Header testID="quote-edit-back" title="Review quote" onBack={onClose} />
@@ -573,13 +602,10 @@ export function QuoteEditScreen({
           testID="quote-request-info"
           title={isSent ? "Send follow-up" : "Request more info"}
           variant="outline"
-          disabled={!quoteRequestId}
-          onPress={() => {
-            if (!quoteRequestId) return;
-            router.push({ pathname: "/(trade)/messages", params: { quoteRequestId } });
-          }}
+          disabled={!canMessageCustomer}
+          onPress={() => void openCustomerChat()}
         />
-        {!quoteRequestId && (
+        {!canMessageCustomer && (
           <Text testID="quote-request-info-empty" variant="caption" color="secondary" align="center">
             No linked customer conversation
           </Text>

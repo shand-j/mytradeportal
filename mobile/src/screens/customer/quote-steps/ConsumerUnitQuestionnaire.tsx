@@ -66,9 +66,9 @@ export function ConsumerUnitQuestionnaire({ formData, updateFormData, onNext }: 
         label="Number of circuits"
         value={data.circuits ?? ""}
         onChangeText={(text) => update("circuits", text.replace(/[^0-9]/g, ""))}
-        placeholder="Count the switches in your photo"
+        placeholder="Count the switches on your consumer unit"
         keyboardType="number-pad"
-        helper="Tip: count the switches in your consumer unit photo"
+        helper="Tip: you'll add a photo of your consumer unit on the next step — counting the switches now helps us size the replacement"
         testID="quote-cu-circuits"
       />
 

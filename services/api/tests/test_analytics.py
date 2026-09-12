@@ -182,6 +182,30 @@ async def test_ai_insights_reports_edit_feedback_after_update(admin_client: Asyn
     assert perf["avg_price_drift_pct"] == 33.33
 
 
+async def test_dashboard_kpis_include_ai_time_saved(admin_client: AsyncClient) -> None:
+    """AI-drafted quotes roll up into the dashboard's time-saved KPI."""
+    contact = await _create_contact(admin_client, "AI Time Saved Customer")
+    await _create_ai_quote(admin_client, contact["id"])
+
+    response = await admin_client.get("/analytics/dashboard")
+    assert response.status_code == 200
+    kpi = response.json()["kpi"]
+
+    assert kpi["ai_generated_quotes"] == 1
+    # 1 AI quote x 25 min manual drafting baseline = 0.4 hrs (rounded to 1dp).
+    assert kpi["ai_time_saved_hours"] == 0.4
+
+
+async def test_dashboard_kpis_ai_time_saved_defaults_zero(admin_client: AsyncClient) -> None:
+    """Tenants with no AI quotes get zero-valued time-saved KPIs."""
+    response = await admin_client.get("/analytics/dashboard")
+    assert response.status_code == 200
+    kpi = response.json()["kpi"]
+
+    assert kpi["ai_generated_quotes"] == 0
+    assert kpi["ai_time_saved_hours"] == 0.0
+
+
 async def test_ai_insights_reports_ai_spend(admin_client: AsyncClient) -> None:
     """LLM token usage recorded on quotes rolls up into spend totals."""
     contact = await _create_contact(admin_client, "AI Spend Customer")

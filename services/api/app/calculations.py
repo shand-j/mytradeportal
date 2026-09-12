@@ -1,13 +1,17 @@
 """Pricing and VAT calculations."""
 
 from datetime import datetime
-from decimal import Decimal
+from decimal import ROUND_CEILING, Decimal
+from typing import Any
 
 from app.models import Invoice, InvoiceLineItem, Quote, Tenant
 
 LINE_PRECISION = Decimal("0.0001")
 TOTAL_PRECISION = Decimal("0.01")
 DEFAULT_VAT_RATE = Decimal("0.20")
+
+# Tenant setting values (``settings["quote_rounding"]``) that enable rounding.
+ROUNDING_INCREMENTS = (Decimal("5"), Decimal("10"))
 
 
 def tenant_vat_rate(tenant: Tenant) -> Decimal:
@@ -26,6 +30,47 @@ def tenant_vat_rate(tenant: Tenant) -> Decimal:
         return Decimal(str(raw))
     except ArithmeticError:
         return DEFAULT_VAT_RATE
+
+
+def quote_rounding_increment(settings: dict[str, Any] | None) -> Decimal | None:
+    """Resolve the tenant's quote-total rounding increment (£5 or £10).
+
+    ``settings["quote_rounding"]`` is 0 (off), 5 or 10. Unrecognised values
+    are treated as off so a bad settings write never corrupts totals.
+    """
+    if not settings:
+        return None
+    raw = settings.get("quote_rounding")
+    try:
+        increment = Decimal(str(raw))
+    except ArithmeticError:
+        return None
+    if increment in ROUNDING_INCREMENTS:
+        return increment
+    return None
+
+
+def round_up_to_increment(total: Decimal, increment: Decimal) -> Decimal:
+    """Round ``total`` UP to the nearest multiple of ``increment`` (£1236.40 → £1240)."""
+    return (total / increment).to_integral_value(rounding=ROUND_CEILING) * increment
+
+
+def apply_quote_rounding(quote: Quote, settings: dict[str, Any] | None) -> None:
+    """Apply the tenant's rounding setting to a quote whose totals are fresh.
+
+    Must be called AFTER :func:`calculate_quote_totals` (which always rebuilds
+    the VAT-inclusive total from line items, excluding any previous
+    adjustment), so re-applying on every totals recompute is idempotent. The
+    uplift is stored in ``quote.rounding_adjustment`` so the UI can show a
+    visible "rounded up +£3.60" indicator; line items are never touched.
+    """
+    increment = quote_rounding_increment(settings)
+    if increment is None:
+        quote.rounding_adjustment = Decimal("0.00")
+        return
+    rounded = round_up_to_increment(quote.total, increment)
+    quote.rounding_adjustment = (rounded - quote.total).quantize(TOTAL_PRECISION)
+    quote.total = rounded
 
 
 def calculate_quote_totals(quote: Quote) -> None:
@@ -82,4 +127,11 @@ def build_invoice_from_quote(
             )
         )
     calculate_invoice_totals(invoice)
+    # Inherit the quote's rounding uplift so the invoice total matches the
+    # total the customer accepted (rounding applies to quotes only; invoices
+    # created from scratch are never rounded).
+    adjustment = quote.rounding_adjustment or Decimal("0.00")
+    invoice.rounding_adjustment = adjustment
+    if adjustment:
+        invoice.total = invoice.total + adjustment
     return invoice

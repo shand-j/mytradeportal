@@ -1,5 +1,6 @@
 """FastAPI application entrypoint."""
 
+import asyncio
 import logging
 from contextlib import asynccontextmanager
 from typing import TYPE_CHECKING
@@ -11,7 +12,7 @@ from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
 from sqlalchemy import text
 
-from app.config import settings
+from app.config import REMINDER_SCHEDULER_ENABLED, settings
 from app.database import engine
 from app.limiter import limiter
 from app.logging import configure_logging
@@ -49,6 +50,7 @@ from app.routers import (
     users,
     webhooks,
 )
+from app.scheduler import reminder_loop
 
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator
@@ -85,7 +87,18 @@ async def lifespan(app: FastAPI) -> "AsyncIterator[None]":
             "allowed_origins": settings.allowed_origins,
         },
     )
+    # In-process reminder scheduler (quote/invoice follow-up emails). Runs as
+    # a background asyncio task; stopped cleanly on shutdown. The first sweep
+    # happens one full tick after startup.
+    reminder_stop: asyncio.Event | None = None
+    reminder_task: asyncio.Task[None] | None = None
+    if REMINDER_SCHEDULER_ENABLED:
+        reminder_stop = asyncio.Event()
+        reminder_task = asyncio.create_task(reminder_loop(reminder_stop))
     yield
+    if reminder_stop is not None and reminder_task is not None:
+        reminder_stop.set()
+        await asyncio.gather(reminder_task, return_exceptions=True)
     await engine.dispose()
     await close_redis()
 

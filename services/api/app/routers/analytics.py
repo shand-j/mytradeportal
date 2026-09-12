@@ -5,7 +5,7 @@ from datetime import datetime, timedelta
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
@@ -25,6 +25,11 @@ from app.schemas import (
 
 router = APIRouter(prefix="/analytics", tags=["Analytics"])
 DbDep = Annotated[AsyncSession, Depends(get_db)]
+
+# Time-saved assumption: drafting a comparable quote manually (turning site
+# notes into priced line items) takes an electrician ~25 minutes; the AI draft
+# needs only a quick review, treated as negligible against that baseline.
+AI_DRAFT_MANUAL_MINUTES = 25
 
 
 _SERVICE_COLORS = [
@@ -139,6 +144,22 @@ async def dashboard(tenant: TenantDep, db: DbDep) -> DashboardData:
         )
     )
     quotes_expiring_soon = expiring_soon_result.scalar() or 0
+
+    # AI-drafted quotes: quotes carrying the ai_draft snapshot, plus any quote
+    # with an AI-flagged line item (older drafts predate the snapshot).
+    ai_quotes_result = await db.execute(
+        select(func.count(func.distinct(Quote.id)))
+        .outerjoin(QuoteLineItem, QuoteLineItem.quote_id == Quote.id)
+        .where(
+            Quote.tenant_id == tenant.id,
+            or_(
+                Quote.extra_data.has_key("ai_draft"),
+                QuoteLineItem.ai_generated.is_(True),
+            ),
+        )
+    )
+    ai_generated_quotes = ai_quotes_result.scalar() or 0
+    ai_time_saved_hours = round(ai_generated_quotes * AI_DRAFT_MANUAL_MINUTES / 60, 1)
 
     # Reviews
     review_stats = await db.execute(
@@ -272,6 +293,8 @@ async def dashboard(tenant: TenantDep, db: DbDep) -> DashboardData:
             quotes_expiring_soon=quotes_expiring_soon,
             average_rating=average_rating,
             review_count=review_count,
+            ai_generated_quotes=ai_generated_quotes,
+            ai_time_saved_hours=ai_time_saved_hours,
         ),
         revenue_chart=RevenueChartData(
             labels=[label for _, label, _ in months],

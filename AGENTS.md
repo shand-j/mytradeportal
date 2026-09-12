@@ -61,6 +61,24 @@ domestic jobs scored on kind coverage, keyword hit-rate, guide price band, and
 line-count sanity. Offline mode replays canned fixtures (no API keys); `--live`
 calls the real LLM. Run it from `services/api` with `python -m evals.run_evals`.
 
+### Reminder scheduler and tenant scheduling settings
+
+`services/api/app/scheduler.py` is an in-process asyncio scheduler started from
+the FastAPI lifespan (`REMINDER_SCHEDULER_ENABLED` / `REMINDER_TICK_SECONDS` env
+vars; first sweep one tick after startup). It emails quote reminders (default 3,
+then stop) and invoice reminders (recur until paid) via `app/email.py`, records
+each send in the `reminders` table, and notifies staff in-app. Per-tenant
+cadence lives in the tenant `settings` JSONB (`quote_reminders_enabled`,
+`quote_reminder_max`, `quote_reminder_interval_days`,
+`invoice_reminders_enabled`, `invoice_reminder_interval_days`) and is edited
+from the mobile Follow-ups settings screen. Related tenant settings:
+`quote_rounding` (0/5/10 — round quote totals up; `rounding_adjustment` column
+on quotes/invoices carries the uplift) and `working_day_start` /
+`working_day_end` / `working_days` (drive `/appointments/availability`).
+Electrician quote edits are captured as `quote_lines_edited` / `quote_refined`
+rows in `events` (before/after snapshots) for AI fine-tuning; export via
+`GET /quotes/training-events` or the SQL in that endpoint's docstring.
+
 Deleted from the working tree but still referenced in config:
 
 - `services/ocerp` (OpenConstructionERP BoQ engine)

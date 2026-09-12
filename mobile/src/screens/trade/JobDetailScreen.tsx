@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Alert, Image, Linking, Pressable, ScrollView, TextInput, View } from "react-native";
+import { Alert, Image, Linking, Platform, Pressable, ScrollView, TextInput, View } from "react-native";
 import { Button } from "../../components/ui/Button";
 import { Header } from "../../components/ui/Header";
 import { Text } from "../../components/ui/Text";
@@ -59,6 +59,13 @@ type JobDetailScreenProps = {
   /** Photos carried over from the source quote. */
   photos?: string[];
   busy?: boolean;
+  /** Customer contact details for the message button (N5 contact preference). */
+  contactEmail?: string | null;
+  preferredContactMethod?: string | null;
+  /** True when the customer has a registered app account (in-app chat works). */
+  hasAccount?: boolean;
+  /** Open (find-or-create) the in-app chat thread with this customer. */
+  onOpenChat?: () => Promise<void>;
 };
 
 export function JobDetailScreen({
@@ -76,6 +83,10 @@ export function JobDetailScreen({
   initialNotes,
   photos,
   busy,
+  contactEmail,
+  preferredContactMethod,
+  hasAccount,
+  onOpenChat,
 }: JobDetailScreenProps) {
   const [status, setStatus] = useState<JobStatus>(job.status);
   const [notes, setNotes] = useState(initialNotes ?? "");
@@ -184,7 +195,17 @@ export function JobDetailScreen({
 
   const navigateToAddress = async () => {
     const address = encodeURIComponent(job.address);
-    const schemes = [`maps://?q=${address}`, `http://maps.apple.com/?q=${address}`];
+    // Platform-default routing: on iOS the universal maps URL is handed to the
+    // system, which opens the user's default maps app (Apple Maps if none was
+    // chosen); elsewhere geo: lets Android pick. The Apple scheme is only the
+    // last-resort fallback — never the first choice.
+    const schemes =
+      Platform.OS === "ios"
+        ? [`https://maps.apple.com/?q=${address}`, `maps://?q=${address}`]
+        : [
+            `geo:0,0?q=${address}`,
+            `https://www.google.com/maps/search/?api=1&query=${address}`,
+          ];
     for (const url of schemes) {
       const can = await Linking.canOpenURL(url);
       if (can) {
@@ -199,10 +220,50 @@ export function JobDetailScreen({
     Linking.openURL(`tel:${job.phone.replace(/\s/g, "")}`).catch(() =>
       Alert.alert("Cannot place call", "No dialler is available on this device.")
     );
-  const messageCustomer = () =>
-    Linking.openURL(`sms:${job.phone.replace(/\s/g, "")}`).catch(() =>
-      Alert.alert("Cannot send message", "No messaging app is available on this device.")
+
+  const emailCustomer = () =>
+    Linking.openURL(`mailto:${contactEmail}`).catch(() =>
+      Alert.alert("Cannot send email", "No mail app is available on this device.")
     );
+
+  const openChat = async () => {
+    if (!onOpenChat) return false;
+    try {
+      await onOpenChat();
+      return true;
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 400) return false;
+      Alert.alert("Couldn't open the chat", errorMessage(err, "Please try again."));
+      return true; // surfaced already — don't cascade into more fallbacks
+    }
+  };
+
+  /**
+   * N5: the message button honours the customer's preferred contact method.
+   * in_app_chat → the in-app conversation; email → mailto:; phone → tel:.
+   * Unset preference falls back to in-app chat (registered customers), then
+   * email; each preference degrades the same way when its channel is missing.
+   */
+  const messageCustomer = async () => {
+    const preference = preferredContactMethod ?? "";
+    if (preference === "phone") {
+      callCustomer();
+      return;
+    }
+    if (preference === "email" && contactEmail) {
+      await emailCustomer();
+      return;
+    }
+    if (hasAccount && (await openChat())) return;
+    if (contactEmail) {
+      await emailCustomer();
+      return;
+    }
+    Alert.alert(
+      "No way to message",
+      "This customer has no app account and no email address on file — try calling them instead."
+    );
+  };
 
   const addLineItem = () => {
     setItems((prev) => [
@@ -256,7 +317,7 @@ export function JobDetailScreen({
           </Text>
           <View className="flex-row gap-2 pt-1">
             <Button title="Call" variant="outline" size="sm" onPress={callCustomer} />
-            <Button title="Message" variant="outline" size="sm" onPress={messageCustomer} />
+            <Button title="Message" variant="outline" size="sm" onPress={() => void messageCustomer()} />
           </View>
         </View>
 

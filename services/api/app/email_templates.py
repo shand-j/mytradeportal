@@ -153,6 +153,88 @@ def invoice_sent(
     return subject, html, text
 
 
+def quote_reminder(
+    *,
+    customer_name: str,
+    business_name: str,
+    quote_title: str,
+    quote_total: str,
+    view_url: str,
+) -> tuple[str, str, str]:
+    """Follow-up email for a sent-but-unanswered quote. (subject, html, text)."""
+    subject = f"Reminder: your quote from {business_name}"
+    text = (
+        f"Hi {customer_name},\n\n"
+        f"Just a friendly reminder that {business_name} sent you a quote for "
+        f"'{quote_title}'.\n"
+        f"Total: {quote_total}\n\n"
+        f"View and accept the quote here:\n{view_url}\n\n"
+        f"If you have any questions, just reply to this email.\n\n"
+        "— My Trade Portal"
+    )
+    html = f"""\
+<!doctype html>
+<html>
+  <body style="font-family:-apple-system,Segoe UI,Roboto,sans-serif;color:#0f172a;max-width:560px;margin:0 auto;padding:24px;">
+    <h1 style="font-size:22px;margin:0 0 12px;">Your quote is waiting</h1>
+    <p>Hi {customer_name},</p>
+    <p>Just a friendly reminder that <strong>{business_name}</strong> sent you a quote for <strong>{quote_title}</strong>.</p>
+    <p style="font-size:20px;font-weight:700;margin:16px 0;">Total: {quote_total}</p>
+    <p style="margin:24px 0;">
+      <a href="{view_url}" style="background:#4F46E5;color:#fff;padding:12px 20px;border-radius:8px;text-decoration:none;font-weight:600;">View quote</a>
+    </p>
+    <p style="color:#64748b;font-size:13px;">If the button doesn't work, copy and paste this link:<br><a href="{view_url}" style="color:#4F46E5;">{view_url}</a></p>
+    <p style="color:#64748b;font-size:13px;">If you have any questions, just reply to this email.</p>
+    <p style="color:#64748b;font-size:13px;margin-top:32px;">— My Trade Portal</p>
+  </body>
+</html>
+"""
+    return subject, html, text
+
+
+def invoice_reminder(
+    *,
+    customer_name: str,
+    business_name: str,
+    invoice_number: str,
+    invoice_total: str,
+    payment_details: dict[str, str] | None = None,
+) -> tuple[str, str, str]:
+    """Payment-chasing email for an unpaid sent invoice. (subject, html, text).
+
+    ``payment_details`` carries the tenant's bank-transfer details (same
+    shape as :func:`invoice_sent`); the block is omitted when unconfigured.
+    """
+    subject = f"Reminder: invoice {invoice_number} from {business_name}"
+    payment_text, payment_html = _payment_details_block(payment_details)
+    text = (
+        f"Hi {customer_name},\n\n"
+        f"This is a reminder that invoice {invoice_number} from {business_name} "
+        f"is still awaiting payment.\n"
+        f"Total due: {invoice_total}\n\n"
+        f"{payment_text}"
+        "Open the app to view and pay.\n\n"
+        f"If you have already paid, please ignore this reminder.\n\n"
+        "— My Trade Portal"
+    )
+    html = f"""\
+<!doctype html>
+<html>
+  <body style="font-family:-apple-system,Segoe UI,Roboto,sans-serif;color:#0f172a;max-width:560px;margin:0 auto;padding:24px;">
+    <h1 style="font-size:22px;margin:0 0 12px;">Payment reminder — invoice {invoice_number}</h1>
+    <p>Hi {customer_name},</p>
+    <p>This is a reminder that invoice <strong>{invoice_number}</strong> from <strong>{business_name}</strong> is still awaiting payment.</p>
+    <p style="font-size:20px;font-weight:700;margin:16px 0;">Total due: {invoice_total}</p>
+{payment_html}\
+    <p>Open the app to view and pay.</p>
+    <p style="color:#64748b;font-size:13px;">If you have already paid, please ignore this reminder.</p>
+    <p style="color:#64748b;font-size:13px;margin-top:32px;">— My Trade Portal</p>
+  </body>
+</html>
+"""
+    return subject, html, text
+
+
 def account_created(
     *,
     name: str | None,

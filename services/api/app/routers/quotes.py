@@ -18,7 +18,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.audit import Actions, write_audit_log
-from app.calculations import build_invoice_from_quote, calculate_quote_totals, tenant_vat_rate
+from app.calculations import (
+    apply_quote_rounding,
+    build_invoice_from_quote,
+    calculate_quote_totals,
+    tenant_vat_rate,
+)
 from app.config import settings
 from app.database import get_db
 from app.dependencies import CurrentUserDep, TenantDep
@@ -59,6 +64,7 @@ from app.schemas import (
     QuoteGenerateRequest,
     QuoteRead,
     QuoteRefineRequest,
+    QuoteTrainingEventRead,
     QuoteUpdate,
 )
 
@@ -131,6 +137,7 @@ async def create_quote(
         QuoteLineItem(tenant_id=tenant.id, **item.model_dump()) for item in data.line_items
     ]
     calculate_quote_totals(quote)
+    apply_quote_rounding(quote, tenant.settings)
 
     db.add(quote)
     await db.flush()
@@ -145,6 +152,46 @@ async def create_quote(
     )
     await db.commit()
     return QuoteRead.model_validate(await _get_quote(db, tenant.id, quote.id))
+
+
+@router.get("/training-events")
+async def list_quote_training_events(
+    tenant: TenantDep,
+    db: DbDep,
+    limit: int = 200,
+) -> list[QuoteTrainingEventRead]:
+    """Export the quote-edit fine-tuning dataset for this tenant.
+
+    Every manual edit to a quote's line items (``quote_lines_edited``) and
+    every AI refine (``quote_refined``) is captured as an event row with
+    before/after line-item snapshots (see ``_record_quote_training_event``).
+    This endpoint is the read path for that dataset: newest first, capped by
+    ``limit`` (max 1000).
+
+    For bulk offline export (e.g. building a training set), query the
+    ``events`` table directly::
+
+        SELECT created_at, event_type, entity_id AS quote_id, payload
+        FROM events
+        WHERE tenant_id = :tenant_id
+          AND event_type IN ('quote_lines_edited', 'quote_refined')
+        ORDER BY created_at;
+
+    ``payload.before`` / ``payload.after`` hold the line-item snapshots and
+    ``payload.instructions`` the electrician's refine instructions when present.
+    """
+    await set_tenant_in_session(db, tenant.id)
+    capped = max(1, min(limit, 1000))
+    result = await db.execute(
+        select(Event)
+        .where(
+            Event.tenant_id == tenant.id,
+            Event.event_type.in_({"quote_lines_edited", "quote_refined"}),
+        )
+        .order_by(Event.created_at.desc())
+        .limit(capped)
+    )
+    return [QuoteTrainingEventRead.model_validate(e) for e in result.scalars().all()]
 
 
 @router.get("/{quote_id}")
@@ -175,6 +222,7 @@ async def update_quote(
             await db.delete(item)
         quote.line_items = [QuoteLineItem(tenant_id=tenant.id, **item) for item in new_items]
         calculate_quote_totals(quote)
+        apply_quote_rounding(quote, tenant.settings)
 
     for key, value in update_data.items():
         setattr(quote, key, value)
@@ -432,6 +480,7 @@ async def refine_quote(
             )
         )
     calculate_quote_totals(quote)
+    apply_quote_rounding(quote, tenant.settings)
     _record_quote_training_event(
         db,
         tenant.id,
@@ -1080,6 +1129,9 @@ async def _generate_quote_impl(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail=str(exc),
         ) from exc
+
+    # Round the (freshly calculated) total up when the tenant enabled it.
+    apply_quote_rounding(quote, tenant.settings)
 
     db.add(quote)
     await db.flush()

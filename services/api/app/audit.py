@@ -54,6 +54,7 @@ class Actions:
     QUOTE_BOQ_REGENERATED = "quote.boq_regenerated"
     QUOTE_CONVERTED_TO_INVOICE = "quote.converted_to_invoice"
     QUOTE_CONVERTED_TO_JOB = "quote.converted_to_job"
+    QUOTE_REMINDER_SENT = "quote.reminder_sent"
 
     QUOTE_REQUEST_CREATED = "quote_request.created"
     QUOTE_REQUEST_UPDATED = "quote_request.updated"
@@ -66,6 +67,7 @@ class Actions:
     INVOICE_PAID = "invoice.paid"
     INVOICE_CANCELLED = "invoice.cancelled"
     INVOICE_DELETED = "invoice.deleted"
+    INVOICE_REMINDER_SENT = "invoice.reminder_sent"
 
     TENANT_CREATED = "tenant.created"
     TENANT_UPDATED = "tenant.updated"

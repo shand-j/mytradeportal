@@ -112,9 +112,10 @@ export function CalendarScreen(_props: CalendarScreenProps) {
             {!isLoading && <LiveBadge />}
             <Button
               testID="calendar-new-job"
-              title="+ New job"
+              title="+"
               size="sm"
-              variant="outline"
+              variant="ghost"
+              accessibilityLabel="New job"
               onPress={() => router.push("/(trade)/job/new")}
             />
             <IconButton

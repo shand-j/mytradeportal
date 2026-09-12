@@ -17,11 +17,21 @@ export type Contact = {
   accessNotes: string | null;
   hasAccount: boolean;
   createdAt: string;
+  /** Effective trust badges (manual override applied), e.g. "late_payer". */
+  badges: string[];
+  /** Badges the auto rules computed from invoice/quote history. */
+  autoBadges: string[];
+  /** Manual per-badge overrides only ({badge: boolean}). */
+  badgeOverrides: Record<string, boolean>;
+  isBlocked: boolean;
+  blockedAt: string | null;
+  blockedReason: string | null;
 };
 
-/** List the tenant's contacts (trade users). */
-export async function fetchContacts(): Promise<Contact[]> {
-  return api.get<Contact[]>("/contacts");
+/** List the tenant's contacts (trade users). `hasAccount` filters server-side. */
+export async function fetchContacts(hasAccount?: boolean): Promise<Contact[]> {
+  const suffix = hasAccount === undefined ? "" : `?has_account=${hasAccount}`;
+  return api.get<Contact[]>(`/contacts${suffix}`);
 }
 
 /** A single contact by id (GET /contacts/{id}). */
@@ -68,6 +78,37 @@ export async function updateContact(id: string, input: UpdateContactInput): Prom
   return api.patch<Contact>(`/contacts/${id}`, input);
 }
 
+/** Trust badge slugs the backend rules/overrides understand (N26). */
+export type TrustBadge = "late_payer" | "non_payer" | "time_waster";
+
+export const TRUST_BADGES: { key: TrustBadge; label: string; hint: string }[] = [
+  { key: "late_payer", label: "Late Payer", hint: "Paid late more than once" },
+  { key: "non_payer", label: "Non-payer", hint: "Invoice unpaid well past due" },
+  { key: "time_waster", label: "Time Waster", hint: "Several quotes, never replied" },
+];
+
+/**
+ * Set or clear a manual badge override (PATCH /contacts/{id}).
+ * true forces the badge on, false forces it off, null returns it to auto.
+ */
+export async function setBadgeOverride(
+  id: string,
+  badge: TrustBadge,
+  value: boolean | null
+): Promise<Contact> {
+  return api.patch<Contact>(`/contacts/${id}`, { badgeOverrides: { [badge]: value } });
+}
+
+/** Block a customer: they can no longer log in, request quotes or message (N26). */
+export async function blockContact(id: string, reason?: string | null): Promise<Contact> {
+  return api.post<Contact>(`/contacts/${id}/block`, { reason: reason ?? null });
+}
+
+/** Lift a customer block (POST /contacts/{id}/unblock). */
+export async function unblockContact(id: string): Promise<Contact> {
+  return api.post<Contact>(`/contacts/${id}/unblock`, {});
+}
+
 const digits = (value?: string | null) => (value ?? "").replace(/\D/g, "");
 const normaliseName = (value?: string | null) => (value ?? "").trim().replace(/\s+/g, " ").toLowerCase();
 const normaliseEmail = (value?: string | null) => (value ?? "").trim().toLowerCase();
@@ -108,11 +149,11 @@ export async function findOrCreateContact(input: CreateContactInput): Promise<Co
   }
 }
 
-/** Trade contacts list from the backend CRM. */
-export function useContactsList() {
+/** Trade contacts list from the backend CRM. Pass `hasAccount` to filter server-side. */
+export function useContactsList(hasAccount?: boolean) {
   const query = useQuery({
-    queryKey: ["contacts"],
-    queryFn: fetchContacts,
+    queryKey: ["contacts", { hasAccount: hasAccount ?? null }],
+    queryFn: () => fetchContacts(hasAccount),
   });
 
   return {

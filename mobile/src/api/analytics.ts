@@ -8,6 +8,10 @@ export type ApiDashboardKpis = {
   activeJobs: number;
   pendingQuotes: number;
   pendingQuotesValue: number;
+  /** Quotes drafted by the AI pipeline. Optional: older backends omit it. */
+  aiGeneratedQuotes?: number;
+  /** Estimated hours saved by AI drafting (aiGeneratedQuotes × ~25 min manual). */
+  aiTimeSavedHours?: number;
 };
 
 type ApiDashboard = {

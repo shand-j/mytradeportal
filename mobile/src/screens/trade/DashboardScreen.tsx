@@ -17,21 +17,21 @@ import { useOfflineStore } from "../../stores/offlineStore";
 import { useOutstandingQuotes } from "../../api/quotes";
 import { useJobsList } from "../../api/jobs";
 import { useLeadsList } from "../../api/quoteRequests";
-
-const URGENCY_ORDER: Record<string, number> = {
-  emergency_today: 0,
-  today: 1,
-  this_week: 2,
-  this_month: 3,
-  flexible: 4,
-  just_researching: 5,
-};
+import { useDashboardKpis } from "../../api/analytics";
+import { useInvoicesList } from "../../api/invoices";
+import { Lead } from "../../types";
 
 const DAY_LABELS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
+/** Day's jobs shown before the list collapses behind a "more" link. */
+const MAX_DAY_JOBS = 3;
+
+/** New quote requests surfaced in the "Top new quotes" section. */
+const TOP_NEW_QUOTES_COUNT = 2;
+
 /**
- * Rough typical job value (£) per lead category, used for the new-leads
- * banner's estimated-value figure. Client-side heuristic, not a quote.
+ * Rough typical job value (£) per quote category, used for estimated-value
+ * figures. Client-side heuristic, not a quote.
  */
 export const CATEGORY_TYPICAL_VALUE: Record<string, number> = {
   consumer_unit: 850,
@@ -49,6 +49,46 @@ export const CATEGORY_TYPICAL_VALUE: Record<string, number> = {
 };
 
 const DEFAULT_TYPICAL_VALUE = 500;
+
+function leadEstimatedValue(lead: Lead): number {
+  const category = lead.structuredData?.category as string | undefined;
+  return CATEGORY_TYPICAL_VALUE[category ?? "other"] ?? DEFAULT_TYPICAL_VALUE;
+}
+
+/** Intake completeness in [0, 1]: property type, postcode, ≥1 questionnaire answer. */
+function intakeCompleteness(lead: Lead): number {
+  const sd = lead.structuredData ?? {};
+  const questionnaire = sd.questionnaire as Record<string, unknown> | undefined;
+  const hasAnswers =
+    !!questionnaire &&
+    Object.values(questionnaire).some((v) => v !== undefined && v !== null && v !== "");
+  let points = 0;
+  if (sd.property) points += 1;
+  if (lead.postcode) points += 1;
+  if (hasAnswers) points += 1;
+  return points / 3;
+}
+
+/**
+ * Readiness-to-fulfil multiplier in [0, 1]:
+ * - base 0.5–1.0 scaled by intake completeness (a full intake can be quoted
+ *   and booked without chasing the customer);
+ * - halved when the AI triage requested a call-back (can't book until called);
+ * - zeroed while a safety review is pending (blocked until triaged).
+ */
+function leadReadiness(lead: Lead): number {
+  if (lead.badge === "Flagged") return 0;
+  const callbackFactor = lead.requiresCallback ? 0.5 : 1;
+  return (0.5 + 0.5 * intakeCompleteness(lead)) * callbackFactor;
+}
+
+/**
+ * Top-new-quotes ranking score: expected revenue × readiness to fulfil.
+ * High-value jobs with a complete intake and no blocking flags rank first.
+ */
+function leadScore(lead: Lead): number {
+  return leadEstimatedValue(lead) * leadReadiness(lead);
+}
 
 export type DashboardScreenProps = {
   navigation?: {
@@ -81,43 +121,48 @@ export function DashboardScreen(_props: DashboardScreenProps) {
     () => jobs.filter((_, index) => index % 7 === selectedDateIndex),
     [jobs, selectedDateIndex]
   );
+  const visibleDayJobs = selectedDayJobs.slice(0, MAX_DAY_JOBS);
+  const hiddenDayJobs = selectedDayJobs.length - visibleDayJobs.length;
 
   const { leads, isLoading: leadsLoading } = useLeadsList();
 
-  const sortedLeads = useMemo(
-    () =>
-      [...leads]
-        .filter((lead) => lead.status !== "dead")
-        .sort((a, b) => (URGENCY_ORDER[a.urgency] ?? 99) - (URGENCY_ORDER[b.urgency] ?? 99)),
-    [leads]
-  );
+  // New quote requests still waiting for a quote (converted/dead are excluded
+  // upstream; "new" = customer submitted, not yet quoted).
+  const newLeads = useMemo(() => leads.filter((lead) => lead.status === "new"), [leads]);
 
-  // Customer-generated leads still waiting for a quote (manual entries and
-  // converted leads are already excluded/handled elsewhere).
+  // Customer-submitted requests drive the banner (manual entries excluded).
   const newCustomerLeads = useMemo(
-    () => sortedLeads.filter((lead) => lead.status === "new" && lead.source !== "manual"),
-    [sortedLeads]
+    () => newLeads.filter((lead) => lead.source !== "manual"),
+    [newLeads]
   );
   const newLeadsEstValue = useMemo(
-    () =>
-      newCustomerLeads.reduce((sum, lead) => {
-        const category = lead.structuredData?.category as string | undefined;
-        return sum + (CATEGORY_TYPICAL_VALUE[category ?? "other"] ?? DEFAULT_TYPICAL_VALUE);
-      }, 0),
+    () => newCustomerLeads.reduce((sum, lead) => sum + leadEstimatedValue(lead), 0),
     [newCustomerLeads]
+  );
+
+  // Best new quotes by value × readiness; ties broken FIFO (oldest waiting first).
+  const topNewQuotes = useMemo(
+    () =>
+      [...newLeads]
+        .sort((a, b) => leadScore(b) - leadScore(a) || a.createdAt.localeCompare(b.createdAt))
+        .slice(0, TOP_NEW_QUOTES_COUNT),
+    [newLeads]
   );
 
   const { total: totalOutstanding, isLoading: outstandingLoading } = useOutstandingQuotes();
 
-  // "Time saved by AI": weekly quote volume × per-quote manual effort vs the
-  // ~2 minute AI draft. Only shown once the tenant shared their metrics.
-  const quotesPerWeek = business?.quotesPerWeek ?? 0;
-  const avgMinutesPerQuote = business?.avgMinutesPerQuote ?? 0;
-  const AI_DRAFT_MINUTES = 2;
-  const hoursSavedThisWeek =
-    quotesPerWeek > 0 && avgMinutesPerQuote > AI_DRAFT_MINUTES
-      ? (quotesPerWeek * (avgMinutesPerQuote - AI_DRAFT_MINUTES)) / 60
-      : 0;
+  // Revenue summary — same /analytics/dashboard source as the full report.
+  const { kpi, isLoading: kpiLoading } = useDashboardKpis();
+  const { invoices, isLoading: invoicesLoading } = useInvoicesList();
+  const outstandingInvoices = useMemo(
+    () => invoices.filter((i) => i.status === "sent").reduce((sum, i) => sum + i.amount, 0),
+    [invoices]
+  );
+
+  // Time saved by AI drafting: AI-generated quote count × ~25 min manual
+  // drafting time per quote (backend AI_DRAFT_MANUAL_MINUTES assumption).
+  const aiTimeSavedHours = kpi?.aiTimeSavedHours ?? 0;
+  const aiGeneratedQuotes = kpi?.aiGeneratedQuotes ?? 0;
 
   return (
     <Screen>
@@ -149,7 +194,9 @@ export function DashboardScreen(_props: DashboardScreenProps) {
         {newCustomerLeads.length > 0 && (
           <Pressable
             testID="dashboard-new-lead-banner"
-            onPress={() => router.push("/(trade)/quotes")}
+            onPress={() =>
+              router.push({ pathname: "/(trade)/quotes", params: { filter: "new", sort: "fifo" } })
+            }
           >
             <View className="flex-row items-center gap-3 rounded-2xl border border-primary-200 bg-primary-50 p-4">
               <View className="h-9 w-9 items-center justify-center rounded-full bg-primary">
@@ -157,8 +204,8 @@ export function DashboardScreen(_props: DashboardScreenProps) {
               </View>
               <View className="flex-1">
                 <Text variant="body" weight="semibold">
-                  {newCustomerLeads.length} new lead{newCustomerLeads.length === 1 ? "" : "s"} · est.
-                  value £{Math.round(newLeadsEstValue).toLocaleString("en-GB")}+
+                  {newCustomerLeads.length} new quote request{newCustomerLeads.length === 1 ? "" : "s"}{" "}
+                  · est. value £{Math.round(newLeadsEstValue).toLocaleString("en-GB")}+
                 </Text>
                 <Text variant="caption" color="secondary">
                   Review and quote
@@ -187,68 +234,124 @@ export function DashboardScreen(_props: DashboardScreenProps) {
         </View>
 
         <View className="flex-row gap-3">
-          <View className="flex-1 gap-1 rounded-2xl bg-primary-50 p-4">
-            <Text variant="caption" color="secondary">
-              Active leads
-            </Text>
-            {leadsLoading ? (
-              <View className="mt-1 h-8 w-10 rounded bg-primary-100" />
-            ) : (
-              <Text variant="title" weight="bold">
-                {sortedLeads.length}
-              </Text>
-            )}
-          </View>
-          <View className="flex-1 gap-1 rounded-2xl bg-accent-50 p-4">
-            <View className="flex-row items-center justify-between">
-              <Text variant="caption" color="secondary">
-                Outstanding quotes
-              </Text>
-              {!outstandingLoading && <LiveBadge compact />}
-            </View>
-            {outstandingLoading ? (
-              <View className="mt-1 h-8 w-20 rounded bg-accent-100" />
-            ) : (
-              <Text variant="title" weight="bold">
-                £{totalOutstanding.toFixed(0)}
-              </Text>
-            )}
-          </View>
-        </View>
-
-        {hoursSavedThisWeek > 0 && (
-          <View
-            testID="dashboard-time-saved-card"
-            className="flex-row items-center gap-3 rounded-2xl border border-accent-200 bg-accent-50 p-4"
+          <Pressable
+            testID="dashboard-outstanding-quotes-card"
+            className="flex-1"
+            onPress={() =>
+              router.push({ pathname: "/(trade)/quotes", params: { filter: "new", sort: "fifo" } })
+            }
           >
-            <View className="h-9 w-9 items-center justify-center rounded-full bg-primary">
-              <Icon name="flash" size={18} color="#FFC107" />
-            </View>
-            <View className="flex-1">
-              <Text variant="body" weight="semibold">
-                Time saved by AI
-              </Text>
+            <View className="flex-1 gap-1 rounded-2xl bg-accent-50 p-4">
+              <View className="flex-row items-center justify-between">
+                <Text variant="caption" color="secondary">
+                  Outstanding quotes
+                </Text>
+                {!outstandingLoading && <LiveBadge compact />}
+              </View>
+              {outstandingLoading ? (
+                <View className="mt-1 h-8 w-20 rounded bg-accent-100" />
+              ) : (
+                <Text variant="title" weight="bold">
+                  £{totalOutstanding.toFixed(0)}
+                </Text>
+              )}
               <Text variant="caption" color="secondary">
-                ≈ {hoursSavedThisWeek.toFixed(1)} hrs saved this week · {business?.quotesPerWeek} quotes
-                × {business?.avgMinutesPerQuote} min manual vs ~2 min AI draft
+                New requests, FIFO
               </Text>
             </View>
-          </View>
-        )}
+          </Pressable>
+          <Pressable
+            testID="dashboard-time-saved-card"
+            className="flex-1"
+            onPress={() => router.push("/(trade)/analytics")}
+          >
+            <View className="flex-1 gap-1 rounded-2xl bg-primary-50 p-4">
+              <View className="flex-row items-center justify-between">
+                <Text variant="caption" color="secondary">
+                  Hours saved by AI
+                </Text>
+                <Icon name="flash" size={14} color="#0F1E26" />
+              </View>
+              {kpiLoading ? (
+                <View className="mt-1 h-8 w-14 rounded bg-primary-100" />
+              ) : (
+                <Text variant="title" weight="bold">
+                  ≈{aiTimeSavedHours.toFixed(1)}
+                </Text>
+              )}
+              <Text variant="caption" color="secondary">
+                {aiGeneratedQuotes} AI draft{aiGeneratedQuotes === 1 ? "" : "s"} × ~25 min
+              </Text>
+            </View>
+          </Pressable>
+        </View>
 
         <View className="gap-3">
           <View className="flex-row items-center justify-between">
             <Text variant="body" weight="semibold">
-              Top leads
+              Revenue
             </Text>
-            <View className="flex-row items-center gap-2">
-              <Button title="View all" size="sm" variant="ghost" onPress={() => router.push("/(trade)/quotes")} />
-              <Button title="+ New lead" size="sm" variant="outline" onPress={() => router.push("/(trade)/manual-lead")} />
+            <Button
+              title="View report"
+              size="sm"
+              variant="ghost"
+              onPress={() => router.push("/(trade)/analytics")}
+            />
+          </View>
+          <View className="flex-row gap-3">
+            <View className="flex-1 gap-1 rounded-2xl bg-accent-50 p-4">
+              <Text variant="caption" color="secondary">
+                Paid this month
+              </Text>
+              {kpiLoading ? (
+                <View className="mt-1 h-8 w-20 rounded bg-accent-100" />
+              ) : (
+                <Text variant="title" weight="bold">
+                  £{(kpi?.revenueThisMonth ?? 0).toFixed(0)}
+                </Text>
+              )}
+              {!!kpi && kpi.revenueChange !== 0 && (
+                <Text variant="caption" color="secondary">
+                  {kpi.revenueChange > 0 ? "▲" : "▼"} {Math.abs(kpi.revenueChange).toFixed(0)}% vs
+                  last month
+                </Text>
+              )}
+            </View>
+            <View className="flex-1 gap-1 rounded-2xl bg-primary-50 p-4">
+              <Text variant="caption" color="secondary">
+                Outstanding invoices
+              </Text>
+              {invoicesLoading ? (
+                <View className="mt-1 h-8 w-20 rounded bg-primary-100" />
+              ) : (
+                <Text variant="title" weight="bold">
+                  £{outstandingInvoices.toFixed(0)}
+                </Text>
+              )}
             </View>
           </View>
-          {sortedLeads.slice(0, 3).map((lead) => (
+        </View>
+
+        <View className="gap-3">
+          <View className="flex-row items-center justify-between">
+            <Text variant="body" weight="semibold">
+              Top new quotes
+            </Text>
+            <Button
+              title="View all"
+              size="sm"
+              variant="ghost"
+              onPress={() => router.push("/(trade)/quotes")}
+            />
+          </View>
+          {topNewQuotes.map((lead) => (
             <LeadCard key={lead.id} lead={lead} onPress={() => router.push(`/(trade)/lead/${lead.id}`)} />
           ))}
+          {topNewQuotes.length === 0 && !leadsLoading && (
+            <Text variant="caption" color="secondary">
+              No new quote requests right now.
+            </Text>
+          )}
         </View>
 
         <View className="gap-3">
@@ -274,7 +377,7 @@ export function DashboardScreen(_props: DashboardScreenProps) {
               </Pressable>
             ))}
           </View>
-          {selectedDayJobs.map((job) => (
+          {visibleDayJobs.map((job) => (
             <Pressable
               key={job.id}
               testID={`dashboard-job-${job.id}`}
@@ -294,7 +397,14 @@ export function DashboardScreen(_props: DashboardScreenProps) {
               </View>
             </Pressable>
           ))}
-          {selectedDayJobs.length === 0 && (
+          {hiddenDayJobs > 0 && (
+            <Pressable onPress={() => router.push("/(trade)/calendar")}>
+              <Text variant="caption" color="secondary">
+                +{hiddenDayJobs} more — view calendar
+              </Text>
+            </Pressable>
+          )}
+          {selectedDayJobs.length === 0 && !jobsLoading && (
             <Text variant="caption" color="secondary">
               No bookings on this day.
             </Text>

@@ -4,6 +4,7 @@ from typing import Annotated, Any
 from uuid import UUID
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Request, status
+from pydantic import BaseModel
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -20,6 +21,7 @@ from app.quote_automation import (
 )
 from app.rag import generate_followup
 from app.rls import set_tenant_in_session
+from app.routers.contacts import BLOCKED_CUSTOMER_DETAIL, contact_is_blocked
 from app.schemas import CommunicationCreate, CommunicationRead
 from app.security import decode_access_token
 
@@ -53,6 +55,10 @@ async def _get_current_actor(
         if customer is None or not customer.is_active or customer.tenant_id != tenant_id:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED, detail="Not authenticated"
+            )
+        if await contact_is_blocked(db, tenant_id, customer.contact_id):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN, detail=BLOCKED_CUSTOMER_DETAIL
             )
         return customer
 
@@ -92,12 +98,22 @@ async def _get_quote_request(
 def _ensure_actor_can_access_quote_request(
     actor: User | Customer, quote_request: QuoteRequest
 ) -> None:
-    """Customers may only access their own quote requests; staff can access any."""
-    if isinstance(actor, Customer) and quote_request.customer_id != actor.id:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Not authorised to access this quote request",
+    """Customers may only access their own quote requests; staff can access any.
+
+    Legacy leads predate the ``customer_id`` link (the customer registered
+    after the lead was captured), so ownership also holds when the lead's
+    contact is the one the customer account points at — otherwise those
+    customers get a 403 ("could not load messages") on their own threads.
+    """
+    if isinstance(actor, Customer):
+        owns_request = quote_request.customer_id == actor.id or (
+            actor.contact_id is not None and quote_request.contact_id == actor.contact_id
         )
+        if not owns_request:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Not authorised to access this quote request",
+            )
 
 
 async def _notify_staff_customer_reply(
@@ -115,6 +131,32 @@ async def _notify_staff_customer_reply(
         title="Customer replied",
         body=snippet or "Customer sent a new chat message.",
         link=f"/chat/{quote_request.id}",
+    )
+
+
+async def _notify_customer_staff_message(
+    db: AsyncSession,
+    tenant_id: UUID,
+    tenant_name: str,
+    quote_request: QuoteRequest,
+    body: str,
+) -> None:
+    """Notify the customer that the business sent them a chat message.
+
+    Without this a staff-started thread (the new-message flow) is invisible to
+    the customer until they happen to open the app.
+    """
+    if quote_request.customer_id is None:
+        return
+    snippet = body[:80] + ("…" if len(body) > 80 else "")
+    await notify_customer(
+        db,
+        tenant_id,
+        quote_request.customer_id,
+        kind="chat_message",
+        title=f"New message from {tenant_name}",
+        body=snippet or "You have a new message.",
+        link=f"/customer/chat/{quote_request.id}",
     )
 
 
@@ -199,6 +241,7 @@ async def create_communication(
         if contact is None or contact.tenant_id != tenant.id:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid contact")
 
+    quote_request: QuoteRequest | None = None
     if data.quote_request_id:
         quote_request = await _get_quote_request(db, tenant.id, data.quote_request_id)
         _ensure_actor_can_access_quote_request(actor, quote_request)
@@ -213,16 +256,15 @@ async def create_communication(
     # customer-authored messages are inbound regardless of client payload.
     resolved_role = "customer" if isinstance(actor, Customer) else "business"
     direction = "inbound" if isinstance(actor, Customer) else "outbound"
-    communication = Communication(
-        tenant_id=tenant.id,
-        **data.model_dump(exclude={"sender_role", "direction"}),
-        sender_role=resolved_role,
-        direction=direction,
-    )
-    db.add(communication)
-    # Notify staff on a customer reply only once AI triage has closed — while
-    # the triage assistant is mid-conversation the electrician doesn't need a
-    # bell for every interim answer.
+
+    # Staff notification rule for customer chat replies, decided BEFORE the new
+    # row is added (autoflush would otherwise make it the latest message):
+    # notify only once AI triage has closed — while the triage assistant is
+    # mid-conversation the electrician doesn't need a bell for every interim
+    # answer — and only for the FIRST message of a customer burst. A reply
+    # following a staff/AI message re-arms the bell; consecutive customer
+    # messages don't (digest-style quiet rule).
+    should_notify_staff = False
     if resolved_role == "customer" and data.quote_request_id:
         triage_closed = await db.scalar(
             select(func.count())
@@ -235,7 +277,34 @@ async def create_communication(
             )
         )
         if triage_closed:
-            await _notify_staff_customer_reply(db, tenant.id, quote_request, data.body or "")
+            previous = await db.scalar(
+                select(Communication)
+                .where(
+                    Communication.tenant_id == tenant.id,
+                    Communication.quote_request_id == data.quote_request_id,
+                )
+                .order_by(Communication.created_at.desc())
+                .limit(1)
+            )
+            should_notify_staff = previous is None or previous.sender_role != "customer"
+
+    communication = Communication(
+        tenant_id=tenant.id,
+        **data.model_dump(exclude={"sender_role", "direction"}),
+        sender_role=resolved_role,
+        direction=direction,
+    )
+    db.add(communication)
+    if should_notify_staff and quote_request is not None:
+        await _notify_staff_customer_reply(db, tenant.id, quote_request, data.body or "")
+    if (
+        resolved_role == "business"
+        and communication.channel == "in_app_chat"
+        and quote_request is not None
+    ):
+        await _notify_customer_staff_message(
+            db, tenant.id, tenant.name, quote_request, data.body or ""
+        )
     await db.commit()
     await db.refresh(communication)
     return communication
@@ -415,3 +484,85 @@ async def ai_followup(
         background_tasks.add_task(requote_after_triage_close, tenant.id, quote_request_id)
 
     return assistant_message
+
+
+class DirectThreadCreate(BaseModel):
+    """Staff request to open a direct chat thread with a CRM contact."""
+
+    contact_id: UUID
+
+
+class DirectThreadRead(BaseModel):
+    """The thread anchor: chat threads are keyed by quote request."""
+
+    quote_request_id: UUID
+
+
+@router.post("/threads", status_code=status.HTTP_200_OK, response_model=DirectThreadRead)
+async def find_or_create_direct_thread(
+    data: DirectThreadCreate,
+    tenant: TenantDep,
+    actor: ActorDep,
+    db: DbDep,
+) -> DirectThreadRead:
+    """Find or start the chat thread with a CRM customer who has an app account.
+
+    Chat threads are anchored to a quote request, so this returns the most
+    recent quote request for the contact/customer, creating a minimal
+    ``direct_message`` one when none exists. Customer actors cannot start
+    threads with arbitrary contacts — they use their own quote requests.
+    Legacy leads (``customer_id`` unset) found via the contact are backfilled
+    with the customer-account link so the customer can read the thread.
+    """
+    if isinstance(actor, Customer):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Not authorised to start direct threads",
+        )
+    await set_tenant_in_session(db, tenant.id)
+
+    contact = await db.get(Contact, data.contact_id)
+    if contact is None or contact.tenant_id != tenant.id:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid contact")
+
+    customer = await db.scalar(
+        select(Customer).where(
+            Customer.tenant_id == tenant.id,
+            Customer.contact_id == contact.id,
+            Customer.is_active.is_(True),
+        )
+    )
+    if customer is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="This customer does not have an app account yet",
+        )
+
+    quote_request = await db.scalar(
+        select(QuoteRequest)
+        .where(
+            QuoteRequest.tenant_id == tenant.id,
+            (QuoteRequest.customer_id == customer.id)
+            | (QuoteRequest.contact_id == contact.id),
+        )
+        .order_by(QuoteRequest.created_at.desc())
+        .limit(1)
+    )
+    if quote_request is not None:
+        # Backfill the customer-account link on legacy leads so the customer
+        # side passes the ownership check on this thread.
+        if quote_request.customer_id is None:
+            quote_request.customer_id = customer.id
+            await db.commit()
+        return DirectThreadRead(quote_request_id=quote_request.id)
+
+    quote_request = QuoteRequest(
+        tenant_id=tenant.id,
+        contact_id=contact.id,
+        customer_id=customer.id,
+        source="direct_message",
+        structured_data={"title": f"Message — {contact.name}"},
+    )
+    db.add(quote_request)
+    await db.commit()
+    return DirectThreadRead(quote_request_id=quote_request.id)

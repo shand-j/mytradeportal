@@ -1,5 +1,7 @@
 import { useMemo, useState } from "react";
-import { Pressable, ScrollView, TextInput, View } from "react-native";
+import { KeyboardAvoidingView, Platform, Pressable, ScrollView, TextInput, View } from "react-native";
+import * as ImagePicker from "expo-image-picker";
+import { useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "expo-router";
 import { Button } from "../../components/ui/Button";
 import { Header } from "../../components/ui/Header";
@@ -13,6 +15,7 @@ import { useBusiness } from "../../theme/ThemeProvider";
 import { useMyRequests, CustomerRequest } from "../../api/quoteRequests";
 import { useAcceptCustomerQuote, useRejectCustomerQuote } from "../../api/quotes";
 import { useCreateCustomerAppointment } from "../../api/appointments";
+import { StagedPhoto, uploadCustomerPhotos } from "../../api/uploads";
 import type { Quote, QuoteStatus } from "../../types";
 
 type CustomerQuoteStatus = "awaiting_review" | "open" | "accepted" | "rejected" | "expired";
@@ -235,7 +238,15 @@ function RejectQuoteView({
     <Screen>
       <Header title="Decline quote" onBack={onBack} />
 
-      <ScrollView className="flex-1" contentContainerStyle={{ gap: 16, paddingBottom: 40 }}>
+      <KeyboardAvoidingView
+        style={{ flex: 1 }}
+        behavior={Platform.OS === "ios" ? "padding" : undefined}
+      >
+        <ScrollView
+          className="flex-1"
+          contentContainerStyle={{ gap: 16, paddingBottom: 40 }}
+          keyboardShouldPersistTaps="handled"
+        >
         <Text variant="body" color="secondary">
           You can let {business?.name ?? "your electrician"} know why you're declining this quote.
         </Text>
@@ -259,7 +270,8 @@ function RejectQuoteView({
         </View>
 
         <Button title="Confirm decline" variant="outline" onPress={() => onConfirm(reason)} />
-      </ScrollView>
+        </ScrollView>
+      </KeyboardAvoidingView>
     </Screen>
   );
 }
@@ -530,6 +542,75 @@ const REQUEST_BADGE: Record<CustomerRequest["status"], CustomerQuoteStatus> = {
   closed: "expired",
 };
 
+/**
+ * Lets the customer attach photos to an existing quote request — the same
+ * upload point as the intake flow's Photos step, available after submission
+ * (e.g. when the electrician or AI assistant asks for more photos).
+ */
+function AddRequestPhotos({ requestId }: { requestId: string }) {
+  const queryClient = useQueryClient();
+  const [uploading, setUploading] = useState(false);
+  const [feedback, setFeedback] = useState<string | null>(null);
+  const [feedbackIsError, setFeedbackIsError] = useState(false);
+
+  const addPhotos = async () => {
+    setFeedback(null);
+    setFeedbackIsError(false);
+    const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!permission.granted) {
+      setFeedback("Photo library access denied");
+      setFeedbackIsError(true);
+      return;
+    }
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ["images"],
+      quality: 0.7,
+      allowsMultipleSelection: true,
+    });
+    if (result.canceled || result.assets.length === 0) return;
+    const stamp = Date.now();
+    const photos: StagedPhoto[] = result.assets.map((asset, index) => ({
+      uri: asset.uri,
+      name: asset.fileName ?? `photo-${stamp}-${index}.jpg`,
+      type: asset.mimeType ?? "image/jpeg",
+      sizeBytes: asset.fileSize,
+    }));
+    setUploading(true);
+    try {
+      const { uploaded, failed } = await uploadCustomerPhotos(requestId, photos);
+      if (failed > 0) {
+        setFeedback(
+          `${uploaded} of ${photos.length} photos uploaded — ${failed} failed. Please try again.`
+        );
+        setFeedbackIsError(true);
+      } else {
+        setFeedback(`${uploaded} ${uploaded === 1 ? "photo" : "photos"} sent to your electrician.`);
+      }
+      queryClient.invalidateQueries({ queryKey: ["my-requests"] });
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  return (
+    <View className="gap-1">
+      <Button
+        testID={`request-add-photos-${requestId}`}
+        title={uploading ? "Uploading…" : "Add photos"}
+        variant="outline"
+        size="sm"
+        disabled={uploading}
+        onPress={() => void addPhotos()}
+      />
+      {feedback ? (
+        <Text variant="caption" color={feedbackIsError ? "warning" : "secondary"}>
+          {feedback}
+        </Text>
+      ) : null}
+    </View>
+  );
+}
+
 /** A card for a real (backend) customer quote request. */
 function CustomerRequestCard({
   request,
@@ -554,6 +635,7 @@ function CustomerRequestCard({
       <Text variant="caption" color="secondary">
         Submitted {new Date(request.createdAt).toLocaleDateString()}
       </Text>
+      <AddRequestPhotos requestId={request.id} />
     </View>
   );
 
@@ -627,7 +709,7 @@ export function RequestsScreen({ navigation }: RequestsScreenProps) {
   const { business, theme } = useBusiness();
   const router = useRouter();
 
-  const { requests: liveRequests, isConnected } = useMyRequests();
+  const { requests: liveRequests, isConnected, isLoading } = useMyRequests();
   const acceptMutation = useAcceptCustomerQuote();
   const rejectMutation = useRejectCustomerQuote();
   const createAppointmentMutation = useCreateCustomerAppointment();
@@ -828,6 +910,26 @@ export function RequestsScreen({ navigation }: RequestsScreenProps) {
           </View>
         </Pressable>
 
+        {isLoading && (
+          <Text variant="caption" color="secondary" align="center">
+            Loading your quotes…
+          </Text>
+        )}
+
+        {isConnected && generatingCount > 0 && (
+          <View
+            testID="quotes-generating-banner"
+            className="gap-2 rounded-2xl border border-slate-200 bg-white p-4"
+          >
+            <Text variant="body" weight="semibold">
+              {generatingCount} {generatingCount === 1 ? "quote" : "quotes"} generating
+            </Text>
+            <Text variant="caption" color="secondary">
+              We'll notify you if we need anything else.
+            </Text>
+          </View>
+        )}
+
         {isConnected &&
           liveRequests.map((req) =>
             req.quote && req.quoteStatus ? (
@@ -853,23 +955,13 @@ export function RequestsScreen({ navigation }: RequestsScreenProps) {
             </Text>
             <Text variant="caption" color="secondary">
               Tap “Request a new quote” to send your first request to{" "}
-              {business?.name ?? "your electrician"}.
+              {business?.name ?? "your electrician"} — we'll guide you through a few quick
+              questions and notify you when your quote is ready.
             </Text>
           </View>
         )}
 
-        {!isConnected && generatingCount > 0 && (
-          <View className="gap-2 rounded-2xl border border-slate-200 bg-white p-4">
-            <Text variant="body" weight="semibold">
-              {generatingCount} {generatingCount === 1 ? "quote" : "quotes"} generating
-            </Text>
-            <Text variant="caption" color="secondary">
-              We'll notify you if we need anything else.
-            </Text>
-          </View>
-        )}
-
-        {!isConnected && generatingCount === 0 && (
+        {!isConnected && !isLoading && (
           <View className="gap-2 rounded-2xl border border-slate-200 bg-white p-4">
             <Text variant="body" weight="semibold">
               You're offline
