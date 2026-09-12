@@ -8,6 +8,8 @@ from django.http import HttpRequest
 
 from operations.forms import TenantAdminForm, UserAdminForm
 from operations.models import (
+    AiCallEvent,
+    AiRollupUserDay,
     Appointment,
     AuditLog,
     Communication,
@@ -234,3 +236,106 @@ class AuditLogAdmin(admin.ModelAdmin):
     list_filter = ("tenant", "action", "entity_type")
     search_fields = ("entity_type", "entity_id")
     readonly_fields = ("id", "created_at", "updated_at")
+
+
+@admin.register(AiRollupUserDay)
+class AiRollupUserDayAdmin(admin.ModelAdmin):
+    """Per-user daily AI usage rollup — the monthly AI cost leaderboard.
+
+    Sort the changelist by date + cost (the default ordering) and use the
+    date hierarchy to drill into a month; filter by tenant to rank users.
+    Read-only: rows are folded nightly by the API's rollup job.
+    """
+
+    date_hierarchy = "date"
+    list_display = (
+        "date",
+        "tenant",
+        "user",
+        "feature",
+        "generations",
+        "cost_gbp",
+        "latency_p95",
+        "quotes_sent",
+    )
+    list_filter = ("tenant", "feature")
+    search_fields = ("tenant__name", "user__full_name", "user__email")
+    readonly_fields = (
+        "id",
+        "date",
+        "tenant",
+        "user",
+        "feature",
+        "generations",
+        "retries",
+        "tokens_input",
+        "tokens_output",
+        "tokens_cached",
+        "est_cost_usd",
+        "cost_gbp",
+        "latency_p50",
+        "latency_p95",
+        "avg_keep_rate",
+        "quotes_sent",
+        "created_at",
+        "updated_at",
+    )
+
+    def has_add_permission(self, request: HttpRequest) -> bool:
+        return False
+
+    def has_change_permission(self, request: HttpRequest, obj: object = None) -> bool:
+        return False
+
+
+@admin.register(AiCallEvent)
+class AiCallEventAdmin(admin.ModelAdmin):
+    """Raw AI call events behind the rollups (read-only drill-down)."""
+
+    date_hierarchy = "created_at"
+    list_display = (
+        "created_at",
+        "feature",
+        "status",
+        "gen_ai_request_model",
+        "est_cost_usd",
+        "cost_gbp",
+        "latency_seconds",
+        "trace_id",
+    )
+    list_filter = ("feature", "status", "gen_ai_request_model")
+    search_fields = ("trace_id", "quote_id", "tenant_id", "user_id")
+    readonly_fields = (
+        "id",
+        "created_at",
+        "tenant_id",
+        "user_id",
+        "feature",
+        "gen_ai_provider_name",
+        "gen_ai_request_model",
+        "gen_ai_usage_input_tokens",
+        "gen_ai_usage_output_tokens",
+        "gen_ai_usage_cached_input_tokens",
+        "est_cost_usd",
+        "cost_gbp",
+        "fx_rate",
+        "fx_rate_date",
+        "latency_seconds",
+        "status",
+        "attempt_no",
+        "parent_event_id",
+        "trace_id",
+        "prompt_version",
+        "confidence",
+        "completeness",
+        "retrieval_status",
+        "quote_id",
+        "quote_request_id",
+        "raw_payload",
+    )
+
+    def has_add_permission(self, request: HttpRequest) -> bool:
+        return False
+
+    def has_change_permission(self, request: HttpRequest, obj: object = None) -> bool:
+        return False

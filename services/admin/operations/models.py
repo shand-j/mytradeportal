@@ -503,3 +503,88 @@ class CostItem(models.Model):
 
     def __str__(self) -> str:
         return self.code
+
+
+class AiCallEvent(models.Model):
+    """Mirror of the FastAPI ``ai_call_events`` table (one row per AI call)."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    created_at = models.DateTimeField()
+    tenant_id = models.UUIDField(null=True, blank=True)
+    user_id = models.UUIDField(null=True, blank=True)
+    feature = models.CharField(max_length=50)
+    gen_ai_provider_name = models.CharField(max_length=100, null=True, blank=True)
+    gen_ai_request_model = models.CharField(max_length=255, null=True, blank=True)
+    gen_ai_usage_input_tokens = models.IntegerField(null=True, blank=True)
+    gen_ai_usage_output_tokens = models.IntegerField(null=True, blank=True)
+    gen_ai_usage_cached_input_tokens = models.IntegerField(null=True, blank=True)
+    est_cost_usd = models.DecimalField(max_digits=10, decimal_places=6, null=True, blank=True)
+    cost_gbp = models.DecimalField(max_digits=10, decimal_places=4, null=True, blank=True)
+    fx_rate = models.DecimalField(max_digits=10, decimal_places=6, null=True, blank=True)
+    fx_rate_date = models.DateField(null=True, blank=True)
+    latency_seconds = models.FloatField(null=True, blank=True)
+    status = models.CharField(max_length=20)
+    attempt_no = models.IntegerField(default=1)
+    parent_event_id = models.UUIDField(null=True, blank=True)
+    trace_id = models.CharField(max_length=64, null=True, blank=True)
+    prompt_version = models.CharField(max_length=100, null=True, blank=True)
+    confidence = models.FloatField(null=True, blank=True)
+    completeness = models.FloatField(null=True, blank=True)
+    retrieval_status = models.CharField(max_length=50, null=True, blank=True)
+    quote_id = models.UUIDField(null=True, blank=True)
+    quote_request_id = models.UUIDField(null=True, blank=True)
+    raw_payload = models.JSONField(default=dict)
+
+    class Meta:
+        managed = False
+        db_table = "ai_call_events"
+        ordering = ["-created_at"]
+
+    def __str__(self) -> str:
+        return f"{self.feature} ({self.status}) @ {self.created_at}"
+
+
+class AiRollupUserDay(models.Model):
+    """Mirror of the FastAPI ``ai_rollup_user_day`` nightly rollup table."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    date = models.DateField()
+    # Plain FK-by-value (no DB constraint): NULL for platform/demo events.
+    tenant = models.ForeignKey(
+        Tenant,
+        db_column="tenant_id",
+        on_delete=models.DO_NOTHING,
+        related_name="+",
+        null=True,
+        blank=True,
+    )
+    user = models.ForeignKey(
+        User,
+        db_column="user_id",
+        on_delete=models.DO_NOTHING,
+        related_name="+",
+        null=True,
+        blank=True,
+    )
+    feature = models.CharField(max_length=50)
+    generations = models.IntegerField(default=0)
+    retries = models.IntegerField(default=0)
+    tokens_input = models.IntegerField(default=0)
+    tokens_output = models.IntegerField(default=0)
+    tokens_cached = models.IntegerField(default=0)
+    est_cost_usd = models.DecimalField(max_digits=12, decimal_places=6, default=0)
+    cost_gbp = models.DecimalField(max_digits=12, decimal_places=4, default=0)
+    latency_p50 = models.FloatField(null=True, blank=True)
+    latency_p95 = models.FloatField(null=True, blank=True)
+    avg_keep_rate = models.DecimalField(max_digits=4, decimal_places=3, null=True, blank=True)
+    quotes_sent = models.IntegerField(default=0)
+    created_at = models.DateTimeField()
+    updated_at = models.DateTimeField()
+
+    class Meta:
+        managed = False
+        db_table = "ai_rollup_user_day"
+        ordering = ["-date", "-cost_gbp"]
+
+    def __str__(self) -> str:
+        return f"{self.date} {self.feature} £{self.cost_gbp}"

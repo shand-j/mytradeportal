@@ -32,20 +32,42 @@ Tenant settings keys (merged via ``PATCH /tenants/me``):
 from __future__ import annotations
 
 import asyncio
-from datetime import datetime, timedelta
+import math
+from datetime import date, datetime, timedelta
+from decimal import Decimal
 from typing import TYPE_CHECKING, Any
 
 import structlog
-from sqlalchemy import func, select, text
+from sqlalchemy import delete, func, select, text
 
+from app.alerting import fetch_usd_gbp_rate, send_alert
 from app.audit import Actions, write_audit_log
-from app.config import REMINDER_TICK_SECONDS
+from app.config import (
+    AI_MONTHLY_BUDGET_GBP,
+    FX_REFRESH_MAX_AGE_DAYS,
+    REMINDER_TICK_SECONDS,
+    ROLLUP_RUN_HOUR_UTC,
+    ROLLUP_RUN_MINUTE_UTC,
+    ROLLUP_TICK_SECONDS,
+)
 from app.config import settings as app_settings
 from app.database import AsyncSessionLocal
 from app.email import send_event_email
 from app.email_templates import invoice_reminder as invoice_reminder_template
 from app.email_templates import quote_reminder as quote_reminder_template
-from app.models import Contact, Invoice, Quote, Reminder, Tenant
+from app.fx import store_fx_rate
+from app.models import (
+    AiAlertState,
+    AiCallEvent,
+    AiRollupFeatureDay,
+    AiRollupUserDay,
+    Contact,
+    FxRate,
+    Invoice,
+    Quote,
+    Reminder,
+    Tenant,
+)
 from app.push import notify_staff
 from app.rls import set_tenant_in_session
 from app.routers.invoices import _tenant_payment_details
@@ -393,3 +415,508 @@ async def reminder_loop(stop: asyncio.Event) -> None:
                 error=str(exc)[:300],
             )
     logger.info("reminder_scheduler_stopped")
+
+
+# ---------------------------------------------------------------------------
+# W1-C NIGHTLY AI ROLLUP + ALERTS
+#
+# A second asyncio loop (``rollup_loop``) started from the lifespan next to
+# ``reminder_loop``. Once per UTC day (default 02:30) it:
+#
+# 1. Re-folds the previous UTC day from ``ai_call_events`` into
+#    ``ai_rollup_user_day`` (tenant/user/feature) and ``ai_rollup_feature_day``
+#    (platform-wide). The fold deletes and re-inserts that day's rows inside
+#    a global advisory lock, so it is idempotent and safe to re-run.
+# 2. Refreshes the USD→GBP rate when the newest ``fx_rates`` row is older
+#    than ``FX_REFRESH_MAX_AGE_DAYS`` (weekly cadence; failures keep the
+#    last-known rate).
+# 3. Fires budget alerts (50/80/100% of ``AI_MONTHLY_BUDGET_GBP``, each once
+#    per month) and anomaly alerts (daily cost > 3x trailing-7-day mean;
+#    daily latency p95 > 2x trailing-7-day p95, each once per day), deduped
+#    via the ``ai_alert_state`` table.
+#
+# The loop never raises; per-step failures are logged and the next step still
+# runs (alerts must not be lost because the FX endpoint is down).
+# ---------------------------------------------------------------------------
+
+# Advisory-lock namespace for the rollup job (distinct from the reminder
+# scheduler's 727). One global lock covers the whole fold: there is exactly
+# one (date) target per run, so per-tenant locking buys nothing here.
+_ROLLUP_LOCK_NAMESPACE = 728
+
+_OUTCOME_FEATURE = "outcome"
+_QUOTE_SENT_OUTCOME = "quote_sent"
+
+# Monthly budget thresholds, checked in ascending order; each fires once per
+# month via ai_alert_state.
+_BUDGET_THRESHOLDS: tuple[tuple[str, Decimal], ...] = (
+    ("budget_50", Decimal("0.50")),
+    ("budget_80", Decimal("0.80")),
+    ("budget_100", Decimal("1.00")),
+)
+
+_COST_SPIKE_FACTOR = Decimal("3")
+_LATENCY_SPIKE_FACTOR = 2.0
+# Require at least this many trailing days of data before anomaly detection
+# fires, so a quiet first week does not page anyone.
+_ANOMALY_MIN_TRAILING_DAYS = 3
+
+
+class _Measures:
+    """Accumulator for one rollup group (user-day or feature-day)."""
+
+    __slots__ = (
+        "cost_gbp",
+        "est_cost_usd",
+        "generations",
+        "latencies",
+        "quotes_sent",
+        "retries",
+        "tokens_cached",
+        "tokens_input",
+        "tokens_output",
+    )
+
+    def __init__(self) -> None:
+        self.generations = 0
+        self.retries = 0
+        self.tokens_input = 0
+        self.tokens_output = 0
+        self.tokens_cached = 0
+        self.est_cost_usd = Decimal("0")
+        self.cost_gbp = Decimal("0")
+        self.latencies: list[float] = []
+        self.quotes_sent = 0
+
+    def add(self, event: AiCallEvent) -> None:
+        if event.feature == _OUTCOME_FEATURE:
+            if (event.raw_payload or {}).get("outcome") == _QUOTE_SENT_OUTCOME:
+                self.quotes_sent += 1
+            return
+        if event.status == "success":
+            self.generations += 1
+        else:
+            self.retries += 1
+        self.tokens_input += event.gen_ai_usage_input_tokens or 0
+        self.tokens_output += event.gen_ai_usage_output_tokens or 0
+        self.tokens_cached += event.gen_ai_usage_cached_input_tokens or 0
+        self.est_cost_usd += event.est_cost_usd or Decimal("0")
+        self.cost_gbp += event.cost_gbp or Decimal("0")
+        if event.latency_seconds is not None:
+            self.latencies.append(event.latency_seconds)
+
+
+def _percentile(sorted_values: list[float], pct: int) -> float | None:
+    """Nearest-rank percentile of an ascending-sorted list (None when empty)."""
+    if not sorted_values:
+        return None
+    index = max(0, math.ceil(pct / 100 * len(sorted_values)) - 1)
+    return sorted_values[index]
+
+
+def _mean_decimal(values: list[Decimal]) -> Decimal:
+    """Arithmetic mean of a non-empty Decimal list."""
+    return sum(values, Decimal("0")) / Decimal(len(values))
+
+
+def fold_events(events: list[AiCallEvent]) -> dict[tuple[Any, ...], _Measures]:
+    """Group raw events into rollup measures keyed by (tenant_id, user_id, feature).
+
+    Pure function over already-fetched events so the fold math is unit-testable
+    without a database. Events with ``tenant_id=None`` (demo/embedding) are
+    excluded — they are platform-rollups-only and land in
+    :func:`fold_events_platform` instead.
+    """
+    groups: dict[tuple[Any, ...], _Measures] = {}
+    for event in events:
+        if event.tenant_id is None:
+            continue
+        key = (event.tenant_id, event.user_id, event.feature)
+        groups.setdefault(key, _Measures()).add(event)
+    return groups
+
+
+def fold_events_platform(events: list[AiCallEvent]) -> dict[str, _Measures]:
+    """Group raw events into platform-wide measures keyed by feature."""
+    groups: dict[str, _Measures] = {}
+    for event in events:
+        groups.setdefault(event.feature, _Measures()).add(event)
+    return groups
+
+
+async def _table_exists(db: AsyncSession, table_name: str) -> bool:
+    """True when ``table_name`` exists in the public schema.
+
+    Used to fold ``ai_draft_feedback`` defensively: that table is built by a
+    concurrent workstream, so the rollup must work whether or not it has
+    landed yet.
+    """
+    result = await db.scalar(select(func.to_regclass(f"public.{table_name}")))
+    return result is not None
+
+
+async def _load_keep_rates(
+    db: AsyncSession, day_start: datetime, day_end: datetime
+) -> tuple[dict[tuple[Any, ...], Decimal], dict[str, Decimal]]:
+    """Average keep_rate per group from ai_draft_feedback, when that table exists.
+
+    Feedback rows are attributed to the tenant/user/feature of the generation
+    event they reference (``generation_event_id`` → ``ai_call_events``). Raw
+    SQL because the ORM model lives in a different workstream's tree.
+    Returns (user_day_rates, feature_day_rates); both empty when the table is
+    absent.
+    """
+    if not await _table_exists(db, "ai_draft_feedback"):
+        return {}, {}
+    rows = (
+        await db.execute(
+            text(
+                "SELECT e.tenant_id, e.user_id, e.feature, AVG(f.keep_rate) "
+                "FROM ai_draft_feedback f "
+                "JOIN ai_call_events e ON e.id = f.generation_event_id "
+                "WHERE f.created_at >= :start AND f.created_at < :end "
+                "GROUP BY e.tenant_id, e.user_id, e.feature"
+            ),
+            {"start": day_start, "end": day_end},
+        )
+    ).all()
+    user_day: dict[tuple[Any, ...], Decimal] = {}
+    feature_day: dict[str, list[Decimal]] = {}
+    for tenant_id, user_id, feature, avg_keep in rows:
+        if avg_keep is None:
+            continue
+        rate = Decimal(str(avg_keep)).quantize(Decimal("0.001"))
+        if tenant_id is not None:
+            user_day[(tenant_id, user_id, feature)] = rate
+        feature_day.setdefault(feature, []).append(rate)
+    feature_rates = {
+        feature: _mean_decimal(rates).quantize(Decimal("0.001"))
+        for feature, rates in feature_day.items()
+    }
+    return user_day, feature_rates
+
+
+async def _events_for_day(
+    db: AsyncSession, day_start: datetime, day_end: datetime
+) -> list[AiCallEvent]:
+    return list(
+        (
+            await db.execute(
+                select(AiCallEvent).where(
+                    AiCallEvent.created_at >= day_start,
+                    AiCallEvent.created_at < day_end,
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
+
+
+def _user_day_row(
+    day: date, key: tuple[Any, ...], measures: _Measures, keep_rates: dict[tuple[Any, ...], Decimal]
+) -> AiRollupUserDay:
+    tenant_id, user_id, feature = key
+    ordered = sorted(measures.latencies)
+    return AiRollupUserDay(
+        date=day,
+        tenant_id=tenant_id,
+        user_id=user_id,
+        feature=feature,
+        generations=measures.generations,
+        retries=measures.retries,
+        tokens_input=measures.tokens_input,
+        tokens_output=measures.tokens_output,
+        tokens_cached=measures.tokens_cached,
+        est_cost_usd=measures.est_cost_usd.quantize(Decimal("0.000001")),
+        cost_gbp=measures.cost_gbp.quantize(Decimal("0.0001")),
+        latency_p50=_percentile(ordered, 50),
+        latency_p95=_percentile(ordered, 95),
+        avg_keep_rate=keep_rates.get(key),
+        quotes_sent=measures.quotes_sent,
+    )
+
+
+def _feature_day_row(
+    day: date, feature: str, measures: _Measures, keep_rates: dict[str, Decimal]
+) -> AiRollupFeatureDay:
+    ordered = sorted(measures.latencies)
+    return AiRollupFeatureDay(
+        date=day,
+        feature=feature,
+        generations=measures.generations,
+        retries=measures.retries,
+        tokens_input=measures.tokens_input,
+        tokens_output=measures.tokens_output,
+        tokens_cached=measures.tokens_cached,
+        est_cost_usd=measures.est_cost_usd.quantize(Decimal("0.000001")),
+        cost_gbp=measures.cost_gbp.quantize(Decimal("0.0001")),
+        latency_p50=_percentile(ordered, 50),
+        latency_p95=_percentile(ordered, 95),
+        avg_keep_rate=keep_rates.get(feature),
+        quotes_sent=measures.quotes_sent,
+    )
+
+
+async def run_rollup_for_day(db: AsyncSession, day: date) -> dict[str, int]:
+    """Idempotently re-fold one UTC day of ai_call_events into both rollup tables.
+
+    Takes the global rollup advisory lock for the transaction; a concurrent
+    replica folds nothing and reports ``locked=1``. Deletes + re-inserts the
+    day's rows so re-runs converge to the same state.
+    """
+    locked = (
+        await db.execute(
+            text("SELECT pg_try_advisory_xact_lock(:namespace, hashtext(:key))"),
+            {"namespace": _ROLLUP_LOCK_NAMESPACE, "key": "ai_rollup"},
+        )
+    ).scalar()
+    if not locked:
+        logger.info("rollup_locked_elsewhere", date=str(day))
+        return {"user_day_rows": 0, "feature_day_rows": 0, "locked": 1}
+
+    day_start = datetime(day.year, day.month, day.day)
+    day_end = day_start + timedelta(days=1)
+    events = await _events_for_day(db, day_start, day_end)
+    user_keep_rates, feature_keep_rates = await _load_keep_rates(db, day_start, day_end)
+
+    await db.execute(delete(AiRollupUserDay).where(AiRollupUserDay.date == day))
+    await db.execute(delete(AiRollupFeatureDay).where(AiRollupFeatureDay.date == day))
+
+    user_rows = [
+        _user_day_row(day, key, measures, user_keep_rates)
+        for key, measures in fold_events(events).items()
+    ]
+    feature_rows = [
+        _feature_day_row(day, feature, measures, feature_keep_rates)
+        for feature, measures in fold_events_platform(events).items()
+    ]
+    db.add_all(user_rows)
+    db.add_all(feature_rows)
+    await db.commit()
+    return {
+        "user_day_rows": len(user_rows),
+        "feature_day_rows": len(feature_rows),
+        "locked": 0,
+    }
+
+
+async def _maybe_refresh_fx(db: AsyncSession, today: date) -> str:
+    """Refresh USD→GBP when the newest stored rate is stale. Never raises."""
+    latest = await db.scalar(select(FxRate).order_by(FxRate.rate_date.desc()).limit(1))
+    if latest is not None and (today - latest.rate_date).days < FX_REFRESH_MAX_AGE_DAYS:
+        return "fresh"
+    rate = await fetch_usd_gbp_rate()
+    if rate is None:
+        logger.warning("fx_refresh_skipped", reason="fetch_failed_keeping_last_known")
+        return "fetch_failed"
+    await store_fx_rate(db, today, Decimal(str(rate)))
+    await db.commit()
+    logger.info("fx_rate_refreshed", rate_date=str(today), usd_gbp=rate)
+    return "refreshed"
+
+
+async def _fire_alert_once(
+    db: AsyncSession, period: str, threshold: str, subject: str, body: str
+) -> bool:
+    """Dispatch an alert unless (period, threshold) already fired. Returns fired?."""
+    existing = await db.scalar(
+        select(AiAlertState).where(
+            AiAlertState.period == period, AiAlertState.threshold == threshold
+        )
+    )
+    if existing is not None:
+        return False
+    db.add(
+        AiAlertState(period=period, threshold=threshold, payload={"subject": subject, "body": body})
+    )
+    await db.commit()
+    channels = await send_alert(subject, body)
+    logger.info("ai_alert_fired", period=period, threshold=threshold, channels=channels)
+    return True
+
+
+async def _check_budget_alerts(db: AsyncSession, day: date) -> list[str]:
+    """Fire 50/80/100% monthly-budget alerts against feature-day rollups."""
+    if not AI_MONTHLY_BUDGET_GBP:
+        return []
+    try:
+        budget = Decimal(AI_MONTHLY_BUDGET_GBP)
+    except Exception:
+        logger.warning("ai_budget_invalid", value=AI_MONTHLY_BUDGET_GBP)
+        return []
+    if budget <= 0:
+        return []
+    month_start = date(day.year, day.month, 1)
+    month_end = date(day.year + (day.month == 12), day.month % 12 + 1, 1)
+    spent = await db.scalar(
+        select(func.coalesce(func.sum(AiRollupFeatureDay.cost_gbp), 0)).where(
+            AiRollupFeatureDay.date >= month_start,
+            AiRollupFeatureDay.date < month_end,
+        )
+    )
+    spent_gbp = Decimal(str(spent or 0))
+    period = f"{day.year:04d}-{day.month:02d}"
+    fired: list[str] = []
+    for threshold_name, fraction in _BUDGET_THRESHOLDS:
+        if spent_gbp < budget * fraction:
+            break
+        subject = f"AI spend {fraction * 100:.0f}% of monthly budget ({period})"
+        body = (
+            f"Platform AI spend for {period} is £{spent_gbp:.2f} — "
+            f"{fraction * 100:.0f}% of the £{budget:.2f} monthly budget."
+        )
+        if await _fire_alert_once(db, period, threshold_name, subject, body):
+            fired.append(threshold_name)
+    return fired
+
+
+async def _daily_platform_latency_p95(
+    db: AsyncSession, start: date, end: date
+) -> dict[date, float]:
+    """Per-day platform latency p95 over non-outcome events in [start, end)."""
+    rows = (
+        await db.execute(
+            select(AiCallEvent.created_at, AiCallEvent.latency_seconds).where(
+                AiCallEvent.created_at >= datetime(start.year, start.month, start.day),
+                AiCallEvent.created_at < datetime(end.year, end.month, end.day),
+                AiCallEvent.feature != _OUTCOME_FEATURE,
+                AiCallEvent.latency_seconds.isnot(None),
+            )
+        )
+    ).all()
+    by_day: dict[date, list[float]] = {}
+    for created_at, latency in rows:
+        by_day.setdefault(created_at.date(), []).append(latency)
+    result: dict[date, float] = {}
+    for day, latencies in by_day.items():
+        p95 = _percentile(sorted(latencies), 95)
+        if p95 is not None:
+            result[day] = p95
+    return result
+
+
+async def _check_anomaly_alerts(db: AsyncSession, day: date) -> list[str]:
+    """Fire daily cost/latency anomaly alerts vs the trailing 7 days."""
+    fired: list[str] = []
+    period = day.isoformat()
+    trailing_start = day - timedelta(days=7)
+
+    cost_rows = (
+        await db.execute(
+            select(AiRollupFeatureDay.date, func.sum(AiRollupFeatureDay.cost_gbp))
+            .where(
+                AiRollupFeatureDay.date >= trailing_start,
+                AiRollupFeatureDay.date <= day,
+            )
+            .group_by(AiRollupFeatureDay.date)
+        )
+    ).all()
+    daily_cost = {row_date: Decimal(str(total)) for row_date, total in cost_rows}
+    trailing_costs = [total for row_date, total in daily_cost.items() if row_date < day]
+    today_cost = daily_cost.get(day, Decimal("0"))
+    if len(trailing_costs) >= _ANOMALY_MIN_TRAILING_DAYS:
+        mean_cost = _mean_decimal(trailing_costs)
+        if mean_cost > 0 and today_cost > mean_cost * _COST_SPIKE_FACTOR:
+            subject = f"AI daily cost spike ({period})"
+            body = (
+                f"Platform AI spend on {period} was £{today_cost:.2f} — more than "
+                f"{_COST_SPIKE_FACTOR}x the trailing-7-day mean of £{mean_cost:.2f}."
+            )
+            if await _fire_alert_once(db, period, "cost_spike", subject, body):
+                fired.append("cost_spike")
+
+    latency_end = day + timedelta(days=1)
+    daily_p95 = await _daily_platform_latency_p95(db, trailing_start, latency_end)
+    trailing_p95 = [p95 for row_date, p95 in daily_p95.items() if row_date < day]
+    today_p95 = daily_p95.get(day)
+    if (
+        today_p95 is not None
+        and len(trailing_p95) >= _ANOMALY_MIN_TRAILING_DAYS
+        and (mean_p95 := sum(trailing_p95) / len(trailing_p95)) > 0
+        and today_p95 > mean_p95 * _LATENCY_SPIKE_FACTOR
+    ):
+        subject = f"AI latency p95 spike ({period})"
+        body = (
+            f"Platform AI latency p95 on {period} was {today_p95:.2f}s — more than "
+            f"{_LATENCY_SPIKE_FACTOR}x the trailing-7-day mean of {mean_p95:.2f}s."
+        )
+        if await _fire_alert_once(db, period, "latency_p95_spike", subject, body):
+            fired.append("latency_p95_spike")
+    return fired
+
+
+async def _run_rollup_tick(db: AsyncSession, now: datetime) -> dict[str, Any]:
+    """One nightly pass: fold yesterday, refresh FX, evaluate alerts."""
+    yesterday = (now - timedelta(days=1)).date()
+    summary: dict[str, Any] = {"date": yesterday.isoformat()}
+    summary.update(await run_rollup_for_day(db, yesterday))
+    summary["fx"] = await _maybe_refresh_fx(db, now.date())
+    try:
+        summary["budget_alerts"] = await _check_budget_alerts(db, yesterday)
+        summary["anomaly_alerts"] = await _check_anomaly_alerts(db, yesterday)
+    except Exception as exc:
+        # Alert evaluation must not be lost with the fold — the rollup rows
+        # are already committed; log and continue.
+        await db.rollback()
+        summary["alert_error"] = type(exc).__name__
+        logger.error(
+            "ai_alert_check_failed",
+            error_type=type(exc).__name__,
+            error=str(exc)[:300],
+        )
+    return summary
+
+
+async def run_rollup_tick(
+    db: AsyncSession | None = None, now: datetime | None = None
+) -> dict[str, Any]:
+    """Run one nightly rollup+alert pass (``db`` injectable for tests)."""
+    now = now or datetime.utcnow()
+    if db is not None:
+        return await _run_rollup_tick(db, now)
+    async with AsyncSessionLocal() as session:
+        return await _run_rollup_tick(session, now)
+
+
+async def rollup_loop(stop: asyncio.Event) -> None:
+    """Scheduler task body: run the nightly pass once per UTC day.
+
+    Ticks every ``ROLLUP_TICK_SECONDS`` but only acts once the wall clock is
+    past ``ROLLUP_RUN_HOUR_UTC``:``ROLLUP_RUN_MINUTE_UTC`` (default 02:30
+    UTC); a process that boots after the run time catches up the missed fold
+    on its first tick. The fold itself is idempotent, so a crash between fold
+    and bookkeeping is harmless. The task never raises.
+    """
+    logger.info(
+        "rollup_scheduler_started",
+        tick_seconds=ROLLUP_TICK_SECONDS,
+        run_at_utc=f"{ROLLUP_RUN_HOUR_UTC:02d}:{ROLLUP_RUN_MINUTE_UTC:02d}",
+    )
+    last_run_date: date | None = None
+    while not stop.is_set():
+        try:
+            await asyncio.wait_for(stop.wait(), timeout=ROLLUP_TICK_SECONDS)
+            break
+        except TimeoutError:
+            pass
+        now = datetime.utcnow()
+        run_at = now.replace(
+            hour=ROLLUP_RUN_HOUR_UTC,
+            minute=ROLLUP_RUN_MINUTE_UTC,
+            second=0,
+            microsecond=0,
+        )
+        if now < run_at or last_run_date == now.date():
+            continue
+        try:
+            summary = await run_rollup_tick()
+            last_run_date = now.date()
+            logger.info("rollup_tick_complete", **summary)
+        except Exception as exc:
+            logger.error(
+                "rollup_tick_failed",
+                error_type=type(exc).__name__,
+                error=str(exc)[:300],
+            )
+    logger.info("rollup_scheduler_stopped")

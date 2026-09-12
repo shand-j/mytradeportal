@@ -4,7 +4,7 @@ import {
   type PricePreviewResponse,
 } from '@paddle/paddle-js'
 import { useEffect, useState } from 'react'
-import { configuredTiers } from '@/constants/pricing-tier'
+import { configuredTiers } from '@/constants/pricing-tiers'
 
 export type PaddlePrices = Record<string, string>
 

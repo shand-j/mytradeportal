@@ -12,7 +12,7 @@ from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
 from sqlalchemy import text
 
-from app.config import REMINDER_SCHEDULER_ENABLED, settings
+from app.config import REMINDER_SCHEDULER_ENABLED, ROLLUP_SCHEDULER_ENABLED, settings
 from app.database import engine
 from app.limiter import limiter
 from app.logging import configure_logging
@@ -50,7 +50,7 @@ from app.routers import (
     users,
     webhooks,
 )
-from app.scheduler import reminder_loop
+from app.scheduler import reminder_loop, rollup_loop
 
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator
@@ -95,10 +95,21 @@ async def lifespan(app: FastAPI) -> "AsyncIterator[None]":
     if REMINDER_SCHEDULER_ENABLED:
         reminder_stop = asyncio.Event()
         reminder_task = asyncio.create_task(reminder_loop(reminder_stop))
+    # Nightly AI rollup + alerts scheduler (W1-C): folds ai_call_events into
+    # the ai_rollup_* tables, refreshes the weekly FX rate, and fires
+    # budget/anomaly alerts. Runs once per UTC day (~02:30); idempotent.
+    rollup_stop: asyncio.Event | None = None
+    rollup_task: asyncio.Task[None] | None = None
+    if ROLLUP_SCHEDULER_ENABLED:
+        rollup_stop = asyncio.Event()
+        rollup_task = asyncio.create_task(rollup_loop(rollup_stop))
     yield
     if reminder_stop is not None and reminder_task is not None:
         reminder_stop.set()
         await asyncio.gather(reminder_task, return_exceptions=True)
+    if rollup_stop is not None and rollup_task is not None:
+        rollup_stop.set()
+        await asyncio.gather(rollup_task, return_exceptions=True)
     await engine.dispose()
     await close_redis()
 

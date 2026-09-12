@@ -1264,3 +1264,183 @@ class FxRate(Base):
     rate_date: Mapped[date] = mapped_column(Date, primary_key=True)
     usd_gbp: Mapped[Decimal] = mapped_column(Numeric(10, 6), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+
+
+# ---------------------------------------------------------------------------
+# W1-C AI ROLLUPS + ALERT STATE — ai_rollup_user_day / ai_rollup_feature_day /
+# ai_alert_state (owned by the rollups/alerts/ops workstream). All three are
+# plain ``Base`` tables, NOT tenant-scoped (same rationale as
+# ``AiCallEvent``: cross-tenant ops/BI queries over AI spend must work without
+# an RLS context; ``tenant_id`` is a plain indexed column, not an RLS key).
+# Do NOT add any of these tables to ``app.rls.TENANT_SCOPED_TABLES``.
+# ---------------------------------------------------------------------------
+
+
+class AiRollupUserDay(Base):
+    """Per-day, per-tenant, per-user, per-feature AI usage rollup.
+
+    Folded nightly from ``ai_call_events`` (+ ``ai_draft_feedback`` when that
+    table exists) by the rollup job in ``app.scheduler``; dashboards/BI read
+    this table instead of scanning raw events. Rows are deleted and re-folded
+    for the target day inside the job's advisory lock, so the fold is
+    idempotent. Measure semantics (all NULL-safe sums):
+
+    * ``generations`` — events with ``status='success'`` (outcome rows
+      excluded; they carry no tokens/cost and land in their own
+      ``feature='outcome'`` row).
+    * ``retries`` — non-outcome events with ``status != 'success'``
+      (timeout/error/abandoned).
+    * ``latency_p50`` / ``latency_p95`` — nearest-rank percentiles over
+      non-NULL ``latency_seconds`` of non-outcome events (NULL when none).
+    * ``avg_keep_rate`` — mean ``ai_draft_feedback.keep_rate`` attributed to
+      this group via ``generation_event_id`` (NULL when no feedback exists).
+    * ``quotes_sent`` — count of ``feature='outcome'`` events with
+      ``raw_payload["outcome"] = 'quote_sent'``.
+    """
+
+    __tablename__ = "ai_rollup_user_day"
+
+    id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
+    date: Mapped[date] = mapped_column(Date, nullable=False, index=True)
+    # Plain columns (no FK, no RLS): NULL for platform/demo/embedding events.
+    tenant_id: Mapped[UUID | None] = mapped_column(PGUUID(as_uuid=True), nullable=True, index=True)
+    user_id: Mapped[UUID | None] = mapped_column(PGUUID(as_uuid=True), nullable=True, index=True)
+    feature: Mapped[str] = mapped_column(String(50), nullable=False)
+    generations: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    retries: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    tokens_input: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    tokens_output: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    tokens_cached: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    est_cost_usd: Mapped[Decimal] = mapped_column(
+        Numeric(12, 6), default=Decimal("0"), nullable=False
+    )
+    cost_gbp: Mapped[Decimal] = mapped_column(Numeric(12, 4), default=Decimal("0"), nullable=False)
+    latency_p50: Mapped[float | None] = mapped_column(Float, nullable=True)
+    latency_p95: Mapped[float | None] = mapped_column(Float, nullable=True)
+    avg_keep_rate: Mapped[Decimal | None] = mapped_column(Numeric(4, 3), nullable=True)
+    quotes_sent: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False
+    )
+
+    __table_args__ = (
+        UniqueConstraint("date", "tenant_id", "user_id", "feature", name="uq_ai_rollup_user_day"),
+        Index("ix_ai_rollup_user_day_tenant_date", "tenant_id", "date"),
+    )
+
+
+class AiRollupFeatureDay(Base):
+    """Per-day, per-feature platform-wide AI usage rollup.
+
+    Same measures as :class:`AiRollupUserDay` but grouped only by
+    ``(date, feature)`` — includes tenant-NULL events (embeddings, demo
+    quotes), which only ever appear here and never in the per-user table's
+    tenant rows. This is the table budget/anomaly alerts read.
+    """
+
+    __tablename__ = "ai_rollup_feature_day"
+
+    id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
+    date: Mapped[date] = mapped_column(Date, nullable=False, index=True)
+    feature: Mapped[str] = mapped_column(String(50), nullable=False)
+    generations: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    retries: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    tokens_input: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    tokens_output: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    tokens_cached: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    est_cost_usd: Mapped[Decimal] = mapped_column(
+        Numeric(12, 6), default=Decimal("0"), nullable=False
+    )
+    cost_gbp: Mapped[Decimal] = mapped_column(Numeric(12, 4), default=Decimal("0"), nullable=False)
+    latency_p50: Mapped[float | None] = mapped_column(Float, nullable=True)
+    latency_p95: Mapped[float | None] = mapped_column(Float, nullable=True)
+    avg_keep_rate: Mapped[Decimal | None] = mapped_column(Numeric(4, 3), nullable=True)
+    quotes_sent: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False
+    )
+
+    __table_args__ = (UniqueConstraint("date", "feature", name="uq_ai_rollup_feature_day"),)
+
+
+class AiAlertState(Base):
+    """One row per fired alert so each alert fires exactly once per period.
+
+    ``period`` scopes the dedupe: ``YYYY-MM`` for monthly budget thresholds
+    (``threshold`` = ``budget_50`` / ``budget_80`` / ``budget_100``) and
+    ``YYYY-MM-DD`` for daily anomalies (``threshold`` = ``cost_spike`` /
+    ``latency_p95_spike``). The nightly job inserts a row before dispatching,
+    so a crashed/restarted job never double-fires the same alert.
+    """
+
+    __tablename__ = "ai_alert_state"
+
+    id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
+    period: Mapped[str] = mapped_column(String(10), nullable=False)
+    threshold: Mapped[str] = mapped_column(String(50), nullable=False)
+    fired_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+    payload: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict, nullable=False)
+
+    __table_args__ = (
+        UniqueConstraint("period", "threshold", name="uq_ai_alert_state_period_threshold"),
+    )
+
+
+# ---------------------------------------------------------------------------
+# W1-B AI QUALITY — ai_draft_feedback (owned by the feedback/quality
+# workstream). Tenant-scoped (registered in app.rls.TENANT_SCOPED_TABLES) so
+# per-tenant quality reads respect RLS; the cross-tenant rollup folds these
+# rows into ai_rollup_* via the scheduler's bypass context.
+# ---------------------------------------------------------------------------
+
+
+class AiDraftFeedback(TenantScopedBase):
+    """One AI draft's lifecycle from generation to send, with quality metrics.
+
+    Written by ``app.ai_quality.capture_draft_feedback`` at every generation
+    point (generate / refine / requote — wherever the router snapshots
+    ``extra_data["ai_draft"]``) and finalised by
+    ``app.ai_quality.finalize_draft_feedback`` from ``send_quote``.
+    ``compute_draft_quality`` (BackgroundTasks worker) then derives the
+    keep-rate metrics in place — recompute overwrites, never duplicates.
+
+    A quote has at most one OPEN row (``final_snapshot IS NULL``): a
+    regeneration updates the open row's ``generation_event_id`` +
+    ``draft_snapshot`` in place, so the metrics always compare the LATEST AI
+    draft against the quote as sent. A quote sent, re-drafted and re-sent
+    gets a second row, so each send is measured against the draft that
+    preceded it.
+    """
+
+    __tablename__ = "ai_draft_feedback"
+
+    # The ai_call_events row for the generation this draft came from. Plain
+    # FK (SET NULL) so cost↔quality joins work but event-table cleanup never
+    # breaks feedback rows.
+    generation_event_id: Mapped[UUID | None] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("ai_call_events.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    # Plain column (no FK): the feedback row must survive quote deletion so
+    # quality analytics keep their history.
+    quote_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), nullable=False, index=True)
+    trace_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    # Snapshot shape mirrors extra_data["ai_draft"]:
+    # {"line_items": [{"description", "quantity", "unit_price"}], "total"}.
+    draft_snapshot: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    final_snapshot: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
+    # Unchanged AI lines / total AI lines (exact description, quantity AND
+    # unit price). 0.000-1.000, quantised to 0.001.
+    keep_rate: Mapped[Decimal | None] = mapped_column(Numeric(4, 3), nullable=True)
+    # (sum matched final line totals - sum matched draft line totals) /
+    # sum matched draft line totals x 100. Only line-matched pairs count —
+    # added/removed lines never distort the drift percentage.
+    price_drift_pct: Mapped[Decimal | None] = mapped_column(Numeric(8, 2), nullable=True)
+    lines_added: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    lines_removed: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # Fuzzy-matched (difflib ratio ≥ 0.85) but not exact-description pairs.
+    description_rewrites: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    computed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)

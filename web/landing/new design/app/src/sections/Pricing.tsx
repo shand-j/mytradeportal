@@ -1,21 +1,16 @@
 import { type Environments, initializePaddle, type Paddle } from '@paddle/paddle-js'
 import { useEffect, useState } from 'react'
 import { usePaddlePrices } from '@/hooks/usePaddlePrices'
-import {
-  configuredTiers,
-  hasYearlyPricing,
-  PricingTier,
-} from '@/constants/pricing-tier'
+import { PricingTiers } from '@/constants/pricing-tiers'
 import { TESTFLIGHT_URL } from '@/lib/site'
 
 /**
  * Pricing — prices are pulled live from Paddle (PricePreview), localised to
- * the visitor's country with tax handled by Paddle. During beta every plan
- * is free; shown prices are the launch prices.
+ * the visitor's country with tax handled by Paddle, falling back to static
+ * GBP launch prices when Paddle isn't configured. During beta every plan is
+ * free; shown prices are the launch prices.
  */
 export default function Pricing() {
-  const tiers = configuredTiers.length > 0 ? configuredTiers : PricingTier
-  const showToggle = hasYearlyPricing
   const [frequency, setFrequency] = useState<'month' | 'year'>('month')
   const [paddle, setPaddle] = useState<Paddle | undefined>()
   const paddleConfigured = Boolean(import.meta.env.VITE_PADDLE_CLIENT_TOKEN)
@@ -42,52 +37,52 @@ export default function Pricing() {
               Every price on the page.
             </h2>
             <p className="reveal mt-[var(--space-md)] max-w-[44ch] text-[15.5px] leading-[1.75] text-[var(--muted)]" style={{ ['--i' as string]: 1 }}>
-              Free while we&apos;re in beta — join TestFlight and every plan is
-              unlocked. These are the launch prices, localised to your currency.
+              Free while we&apos;re in beta — these are the launch prices,
+              localised to your currency. Join TestFlight and every plan is
+              unlocked.
             </p>
           </div>
 
-          {showToggle && (
-            <div className="reveal self-end md:col-span-4 md:col-start-9" style={{ ['--i' as string]: 2 }}>
-              <div
-                role="group"
-                aria-label="Billing frequency"
-                className="flex w-fit border-[1.5px] border-[var(--ink)]"
+          <div className="reveal self-end md:col-span-4 md:col-start-9" style={{ ['--i' as string]: 2 }}>
+            <div
+              role="group"
+              aria-label="Billing frequency"
+              className="flex w-fit border-[1.5px] border-[var(--ink)]"
+            >
+              <button
+                type="button"
+                aria-pressed={frequency === 'month'}
+                onClick={() => setFrequency('month')}
+                className={`px-5 py-2.5 font-display text-[12px] font-bold uppercase tracking-[0.12em] transition-colors duration-[length:var(--dur-micro)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)] ${
+                  frequency === 'month'
+                    ? 'bg-[var(--ink)] text-[var(--paper)]'
+                    : 'text-[var(--muted)] hover:text-[var(--ink)]'
+                }`}
               >
-                <button
-                  type="button"
-                  aria-pressed={frequency === 'month'}
-                  onClick={() => setFrequency('month')}
-                  className={`px-5 py-2.5 font-display text-[12px] font-bold uppercase tracking-[0.12em] transition-colors duration-[length:var(--dur-micro)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)] ${
-                    frequency === 'month'
-                      ? 'bg-[var(--ink)] text-[var(--paper)]'
-                      : 'text-[var(--muted)] hover:text-[var(--ink)]'
-                  }`}
-                >
-                  Monthly
-                </button>
-                <button
-                  type="button"
-                  aria-pressed={frequency === 'year'}
-                  onClick={() => setFrequency('year')}
-                  className={`px-5 py-2.5 font-display text-[12px] font-bold uppercase tracking-[0.12em] transition-colors duration-[length:var(--dur-micro)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)] ${
-                    frequency === 'year'
-                      ? 'bg-[var(--ink)] text-[var(--paper)]'
-                      : 'text-[var(--muted)] hover:text-[var(--ink)]'
-                  }`}
-                >
-                  Yearly
-                </button>
-              </div>
+                Monthly
+              </button>
+              <button
+                type="button"
+                aria-pressed={frequency === 'year'}
+                onClick={() => setFrequency('year')}
+                className={`px-5 py-2.5 font-display text-[12px] font-bold uppercase tracking-[0.12em] transition-colors duration-[length:var(--dur-micro)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)] ${
+                  frequency === 'year'
+                    ? 'bg-[var(--ink)] text-[var(--paper)]'
+                    : 'text-[var(--muted)] hover:text-[var(--ink)]'
+                }`}
+              >
+                Yearly
+              </button>
             </div>
-          )}
+          </div>
         </div>
 
         <div className="grid gap-[var(--space-md)] lg:grid-cols-3">
-          {tiers.map((tier, i) => {
+          {PricingTiers.map((tier, i) => {
             const priceId = tier.priceId[frequency] || tier.priceId.month
             const formatted = priceId ? prices[priceId] : undefined
             const priceLoading = loading && formatted === undefined && paddleConfigured
+            const shown = formatted ?? tier.fallbackPrice[frequency]
             return (
               <div
                 key={tier.id}
@@ -107,32 +102,34 @@ export default function Pricing() {
                   {tier.name}
                 </h3>
                 <p className={`mt-1 text-[13.5px] ${tier.featured ? 'text-[var(--paper-on-dark-muted)]' : 'text-[var(--muted)]'}`}>
-                  {tier.description}
+                  {tier.tagline}
                 </p>
                 <p className="tnum mt-[var(--space-lg)] flex items-end gap-2" aria-live="polite">
                   {priceLoading ? (
                     <span className="font-display text-[clamp(2.8rem,4vw,3.75rem)] font-extrabold leading-none tracking-[-0.02em]">
                       ···
                     </span>
-                  ) : formatted ? (
+                  ) : (
                     <>
                       <span className="font-display text-[clamp(2.8rem,4vw,3.75rem)] font-extrabold leading-none tracking-[-0.02em]">
-                        {formatted}
+                        {shown}
                       </span>
                       <span className={`pb-1.5 text-[13px] font-medium ${tier.featured ? 'text-[var(--paper-on-dark-muted)]' : 'text-[var(--muted)]'}`}>
-                        /{frequency === 'year' ? 'yr' : 'mo'}
+                        per user /{frequency === 'year' ? 'yr' : 'mo'}
+                        {tier.minSeats ? ` · min ${tier.minSeats} seats` : ''}
                       </span>
                     </>
-                  ) : (
-                    <span className="font-display text-[clamp(2.8rem,4vw,3.75rem)] font-extrabold leading-none tracking-[-0.02em]">
-                      Beta — free
-                    </span>
                   )}
                 </p>
                 <p className={`spec-label mt-[var(--space-xs)] ${tier.featured ? 'text-[var(--accent)]' : 'text-[var(--accent-dark)]'}`}>
-                  {formatted && !priceLoading
-                    ? tier.audience
-                    : 'Beta — free during beta'}
+                  {tier.audience}
+                </p>
+                <p className={`mt-[var(--space-md)] border-[1.5px] px-3 py-2.5 text-[13px] leading-[1.6] ${
+                  tier.featured
+                    ? 'border-[var(--rule-on-dark)] text-[var(--paper-on-dark)]'
+                    : 'border-[var(--rule)] text-[var(--ink)]'
+                }`}>
+                  {tier.aiAllowance}
                 </p>
                 <ul className={`mt-[var(--space-lg)] flex-1 space-y-[var(--space-sm)] border-t pt-[var(--space-lg)] text-[14px] ${
                   tier.featured ? 'border-[var(--rule-on-dark)]' : 'border-[var(--rule)]'
@@ -166,10 +163,22 @@ export default function Pricing() {
           })}
         </div>
 
-        <p className="reveal mt-[var(--space-md)] text-[12.5px] leading-[1.7] text-[var(--muted)]" style={{ ['--i' as string]: 3 }}>
-          Prices shown with local tax where applicable, via Paddle. Plan features
-          are being finalised during beta — what you see now is what we intend to
-          ship.
+        <div
+          className="reveal mt-[var(--space-md)] border-[1.5px] border-[var(--ink)] bg-[var(--paper)] px-5 py-4 md:flex md:items-center md:justify-between md:gap-[var(--space-lg)]"
+          style={{ ['--i' as string]: 3 }}
+        >
+          <p className="font-display text-[13px] font-bold uppercase tracking-[0.12em] text-[var(--ink)]">
+            14 days free — full features, no card needed.
+          </p>
+          <p className="mt-1 text-[13.5px] leading-[1.6] text-[var(--muted)] md:mt-0 md:text-right">
+            Send 3 AI quotes during your trial and we&apos;ll extend you to 30 days.
+          </p>
+        </div>
+
+        <p className="reveal mt-[var(--space-md)] text-[12.5px] leading-[1.7] text-[var(--muted)]" style={{ ['--i' as string]: 4 }}>
+          On Pro and Team, overage is metered at 6p per AI action with a monthly
+          spend cap and usage alerts. Prices shown with local tax where
+          applicable, via Paddle.
         </p>
       </div>
     </section>

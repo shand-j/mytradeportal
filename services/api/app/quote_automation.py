@@ -28,6 +28,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from app.ai_quality import capture_draft_feedback
 from app.ai_telemetry import (
     FEATURE_QUOTE_REFINE,
     FEATURE_TRIAGE_FOLLOWUP,
@@ -642,6 +643,7 @@ async def requote_after_triage_close(tenant_id: UUID, quote_request_id: UUID) ->
                 quote.extra_data["rag"]["llm_usage"] = llm_usage
             set_last_event_id(quote, requote_telemetry.event_id)
             quotes_router._snapshot_ai_draft(quote)
+            await capture_draft_feedback(db, quote)
 
             await db.flush()
             await write_audit_log(

@@ -67,6 +67,7 @@ TENANT_SCOPED_TABLES: tuple[str, ...] = (
     "push_tokens",
     "events",
     "ai_usage_counters",
+    "ai_draft_feedback",
 )
 
 

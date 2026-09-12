@@ -17,6 +17,11 @@ from sqlalchemy import update as sa_update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from app.ai_quality import (
+    capture_draft_feedback,
+    compute_draft_quality,
+    finalize_draft_feedback,
+)
 from app.ai_telemetry import (
     FEATURE_QUOTE_DRAFT,
     FEATURE_QUOTE_REFINE,
@@ -259,6 +264,7 @@ async def update_quote(
 @router.post("/{quote_id}/send")
 async def send_quote(
     quote_id: UUID,
+    background_tasks: BackgroundTasks,
     tenant: TenantDep,
     current_user: CurrentUserDep,
     db: DbDep,
@@ -268,6 +274,9 @@ async def send_quote(
     quote.status = "sent"
     quote.sent_at = datetime.utcnow()
     _refresh_ai_feedback(quote)
+    # Finalise the AI draft feedback row (when the quote has an open one) so
+    # the background keep-rate worker can compare draft vs as-sent.
+    feedback_id = await finalize_draft_feedback(db, quote)
     await db.flush()
     await write_audit_log(
         db,
@@ -331,6 +340,9 @@ async def send_quote(
         },
     )
     await db.commit()
+    if feedback_id is not None:
+        # Runs after the response (and the commit above) with its own session.
+        background_tasks.add_task(compute_draft_quality, feedback_id, tenant.id)
     return QuoteRead.model_validate(await _get_quote(db, tenant.id, quote.id))
 
 
@@ -553,6 +565,7 @@ async def refine_quote(
         quote.extra_data["rag"]["llm_usage"] = llm_usage
     set_last_event_id(quote, telemetry.event_id)
     _snapshot_ai_draft(quote)
+    await capture_draft_feedback(db, quote)
 
     await db.flush()
     await write_audit_log(
@@ -978,6 +991,7 @@ def _accumulate_llm_usage(
 
 
 async def _generate_rag_quote(
+    db: AsyncSession,
     quote: Quote,
     data: QuoteGenerateRequest,
     tenant: TenantDep,
@@ -1038,6 +1052,7 @@ async def _generate_rag_quote(
         # back via parent_event_id.
         set_last_event_id(quote, telemetry.event_id)
     _snapshot_ai_draft(quote)
+    await capture_draft_feedback(db, quote)
 
 
 def _build_lead_description(quote_request: QuoteRequest) -> str:
@@ -1193,7 +1208,7 @@ async def _generate_quote_impl(
     )
 
     try:
-        await _generate_rag_quote(quote, data, tenant, quote_request, telemetry=telemetry)
+        await _generate_rag_quote(db, quote, data, tenant, quote_request, telemetry=telemetry)
         if not quote.line_items:
             raise RuntimeError(
                 "The AI did not return any line items for this job. Please try "
