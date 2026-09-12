@@ -3,6 +3,7 @@ import { Pressable, ScrollView, View } from "react-native";
 import { useRouter } from "expo-router";
 import { Button } from "../../components/ui/Button";
 import { Header } from "../../components/ui/Header";
+import { LiveBadge } from "../../components/ui/LiveBadge";
 import { Screen } from "../../components/ui/Screen";
 import { Text } from "../../components/ui/Text";
 import { LeadCard } from "../../components/trade/LeadCard";
@@ -33,9 +34,9 @@ const URGENCY_ORDER: Record<string, number> = {
 
 const STATUS_COLORS: Record<QuoteStatus, string> = {
   draft: "bg-gray-100",
-  sent: "bg-blue-100",
-  accepted: "bg-emerald-100",
-  rejected: "bg-red-100",
+  sent: "bg-info-100",
+  accepted: "bg-success-100",
+  rejected: "bg-danger-100",
   expired: "bg-gray-100",
 };
 
@@ -113,14 +114,7 @@ export function QuotesScreen(_props: QuotesScreenProps) {
         title="Quotes"
         rightAction={
           <View className="flex-row items-center gap-1">
-            {!isLoading && (
-              <View className="flex-row items-center gap-1 rounded-full bg-green-100 px-2 py-0.5">
-                <View className="h-1.5 w-1.5 rounded-full bg-green-600" />
-                <Text variant="caption" style={{ color: "#15803D", fontSize: 9 }}>
-                  LIVE
-                </Text>
-              </View>
-            )}
+            {!isLoading && <LiveBadge />}
             <SettingsMenuButton />
           </View>
         }
@@ -136,7 +130,7 @@ export function QuotesScreen(_props: QuotesScreenProps) {
           {FILTERS.map((filter) => (
             <Pressable key={filter.key} onPress={() => setActiveFilter(filter.key)}>
               <View
-                className={`rounded-full px-3 py-1.5 ${activeFilter === filter.key ? "bg-blue-100" : "bg-gray-100"}`}
+                className={`rounded-full px-3 py-1.5 ${activeFilter === filter.key ? "bg-primary-100" : "bg-gray-100"}`}
               >
                 <Text variant="caption" color={activeFilter === filter.key ? "text" : "secondary"}>
                   {filter.label}

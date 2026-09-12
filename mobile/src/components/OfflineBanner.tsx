@@ -57,9 +57,9 @@ export function OfflineBanner() {
     title = "Back online — syncing";
     subtitle = `Uploading ${pending || "your"} change${pending === 1 ? "" : "s"}…`;
   } else if (isOnline && justSynced) {
-    bg = "#15803D";
+    bg = "#0F1E26";
     iconName = "cloud-done";
-    iconColor = "#FFFFFF";
+    iconColor = "#FFC107";
     title = "All changes synced";
     subtitle = "Everything captured offline is saved to the cloud";
   }

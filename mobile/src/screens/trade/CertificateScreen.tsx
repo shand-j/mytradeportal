@@ -18,7 +18,7 @@ type CertificateScreenProps = {
 
 function CodeBadge({ code }: { code: CertObservation["code"] }) {
   const color =
-    code === "C1" ? "#DC2626" : code === "C2" ? "#EA580C" : code === "FI" ? "#7C3AED" : "#0F1E26";
+    code === "C1" ? "#DC2626" : code === "C2" ? "#EA580C" : code === "FI" ? "#B27E00" : "#0F1E26";
   return (
     <View className="rounded-md px-2 py-0.5" style={{ backgroundColor: color }}>
       <Text variant="caption" weight="bold" style={{ color: "#FFFFFF", fontSize: 11 }}>
@@ -44,15 +44,15 @@ function CircuitCard({
       onPress={onPress}
       disabled={!onPress}
       className="rounded-xl border p-3 gap-1"
-      style={{ borderColor: pass ? "#BBF7D0" : "#FECACA", backgroundColor: pass ? "#F0FDF4" : "#FEF2F2" }}
+      style={{ borderColor: pass ? "#A7F3D0" : "#FECACA", backgroundColor: pass ? "#ECFDF5" : "#FEF2F2" }}
     >
       <View className="flex-row items-center justify-between">
         <Text variant="body" weight="semibold" style={{ flex: 1 }} numberOfLines={1}>
           {row.circuit}
         </Text>
         <View className="flex-row items-center gap-1">
-          <Icon name={pass ? "circle-check" : "warning"} size={14} color={pass ? "#16A34A" : "#DC2626"} />
-          <Text variant="caption" weight="bold" style={{ color: pass ? "#16A34A" : "#DC2626" }}>
+          <Icon name={pass ? "circle-check" : "warning"} size={14} color={pass ? "#059669" : "#DC2626"} />
+          <Text variant="caption" weight="bold" style={{ color: pass ? "#059669" : "#DC2626" }}>
             {pass ? "PASS" : "FAIL"}
           </Text>
           {onDelete && (
@@ -248,8 +248,8 @@ export function CertificateScreen({ certificate, onClose, onIssued }: Certificat
             )}
 
             {issued && (
-              <View className="flex-row items-center gap-2 rounded-2xl border border-green-200 bg-green-50 p-4">
-                <Icon name="circle-check" size={20} color="#16A34A" />
+              <View className="flex-row items-center gap-2 rounded-2xl border border-success-200 bg-success-50 p-4">
+                <Icon name="circle-check" size={20} color="#059669" />
                 <Text variant="caption" color="secondary" style={{ flex: 1 }}>
                   Certificate issued
                 </Text>

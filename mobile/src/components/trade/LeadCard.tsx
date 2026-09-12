@@ -25,7 +25,7 @@ export function LeadCard({ lead, onPress }: LeadCardProps) {
               </Text>
             </View>
           )}
-          <View className={`rounded-lg px-2 py-0.5 ${isFlagged ? "bg-amber-100" : "bg-blue-100"}`}>
+          <View className={`rounded-lg px-2 py-0.5 ${isFlagged ? "bg-amber-100" : "bg-primary-100"}`}>
             <Text variant="caption" color="secondary">
               {lead.badge.toUpperCase()}
             </Text>

@@ -28,7 +28,7 @@ type RuleCheck = {
 };
 
 function RuleRow({ rule }: { rule: RuleCheck }) {
-  const color = rule.pass === null ? "#D97706" : rule.pass ? "#16A34A" : "#DC2626";
+  const color = rule.pass === null ? "#D97706" : rule.pass ? "#059669" : "#DC2626";
   const icon = rule.pass === null ? "help" : rule.pass ? "circle-check" : "warning";
   const label = rule.pass === null ? "—" : rule.pass ? "Pass" : "Fail";
   return (
@@ -219,8 +219,8 @@ export function CircuitFormScreen({ circuit, onSave, onCancel }: CircuitFormScre
         <View
           className="rounded-2xl border p-4 gap-1"
           style={{
-            borderColor: !allValid ? "#FDE68A" : overallPass ? "#BBF7D0" : "#FECACA",
-            backgroundColor: !allValid ? "#FFFBEB" : overallPass ? "#F0FDF4" : "#FEF2F2",
+            borderColor: !allValid ? "#FCD34D" : overallPass ? "#A7F3D0" : "#FECACA",
+            backgroundColor: !allValid ? "#FFFBEB" : overallPass ? "#ECFDF5" : "#FEF2F2",
           }}
         >
           <View className="flex-row items-center justify-between mb-1">
@@ -231,7 +231,7 @@ export function CircuitFormScreen({ circuit, onSave, onCancel }: CircuitFormScre
               testID="circuit-overall-result"
               variant="caption"
               weight="bold"
-              style={{ color: !allValid ? "#D97706" : overallPass ? "#16A34A" : "#DC2626" }}
+              style={{ color: !allValid ? "#D97706" : overallPass ? "#059669" : "#DC2626" }}
             >
               {!allValid ? "INCOMPLETE" : overallPass ? "PASS" : "FAIL"}
             </Text>

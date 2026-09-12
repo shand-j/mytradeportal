@@ -17,9 +17,9 @@ export function CertificatesScreen({ onBack, onNew }: CertificatesScreenProps) {
       <Header title="Certificates" onBack={onBack} />
 
       <ScrollView className="flex-1" contentContainerStyle={{ gap: 16, paddingBottom: 32 }}>
-        <View className="flex-row items-center gap-3 rounded-2xl border border-indigo-100 bg-indigo-50 p-4">
-          <View className="h-10 w-10 items-center justify-center rounded-full bg-indigo-600">
-            <Icon name="shield" size={20} color="#FFFFFF" />
+        <View className="flex-row items-center gap-3 rounded-2xl border border-primary-200 bg-primary-50 p-4">
+          <View className="h-10 w-10 items-center justify-center rounded-full bg-primary">
+            <Icon name="shield" size={20} color="#FFC107" />
           </View>
           <View style={{ flex: 1 }}>
             <Text variant="body" weight="semibold">

@@ -103,9 +103,9 @@ const styles = StyleSheet.create({
     width: 16,
     height: 16,
     borderRadius: 8,
-    backgroundColor: "#BFDBFE",
+    backgroundColor: "#C3CFD5",
   },
   launchDot: {
-    backgroundColor: "#10B981",
+    backgroundColor: "#FFC107",
   },
 });

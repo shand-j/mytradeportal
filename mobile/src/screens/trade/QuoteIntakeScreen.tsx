@@ -318,7 +318,7 @@ export function QuoteIntakeScreen({ lead, contact, onBack, onComplete }: QuoteIn
           </>
         )}
 
-        <View className="rounded-2xl bg-blue-50 p-4">
+        <View className="rounded-2xl bg-primary-50 p-4">
           <Text variant="caption" color="secondary">
             Everything below is optional. Leave a field on “Not sure” (or blank) and the AI will
             estimate it from the job description.

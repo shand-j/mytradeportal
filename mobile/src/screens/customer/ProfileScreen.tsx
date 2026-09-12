@@ -180,7 +180,7 @@ export function ProfileScreen({ navigation }: ProfileScreenProps) {
                   onPress={() => setPreferredContact(method.key)}
                   className="flex-row items-center gap-1 rounded-xl border px-3 py-2"
                   style={{
-                    backgroundColor: active ? "#EFF6FF" : "#F8FAFC",
+                    backgroundColor: active ? "#F2F5F6" : "#F8FAFC",
                     borderColor: active ? "#0F1E26" : "#E2E8F0",
                   }}
                 >
@@ -218,7 +218,7 @@ export function ProfileScreen({ navigation }: ProfileScreenProps) {
         </View>
 
         {saved && (
-          <View className="rounded-xl bg-green-50 p-3">
+          <View className="rounded-xl bg-success-50 p-3">
             <Text variant="body" color="success" align="center">
               Changes saved
             </Text>

@@ -37,8 +37,8 @@ const BADGE_COLORS: Record<
   },
   open: {
     label: "OPEN",
-    background: "#EFF6FF",
-    border: "#BFDBFE",
+    background: "#F2F5F6",
+    border: "#C3CFD5",
     text: "#0F1E26",
   },
   accepted: {
@@ -153,7 +153,7 @@ function BookDateView({
                   <View
                     className="h-16 w-12 items-center justify-center rounded-xl border"
                     style={{
-                      backgroundColor: active ? "#EFF6FF" : "#F8FAFC",
+                      backgroundColor: active ? "#F2F5F6" : "#F8FAFC",
                       borderColor: active ? "#0F1E26" : "#E2E8F0",
                     }}
                   >
@@ -190,7 +190,7 @@ function BookDateView({
                   <View
                     className="rounded-xl border px-4 py-2"
                     style={{
-                      backgroundColor: active ? "#EFF6FF" : "#F8FAFC",
+                      backgroundColor: active ? "#F2F5F6" : "#F8FAFC",
                       borderColor: active ? "#0F1E26" : "#E2E8F0",
                     }}
                   >
@@ -406,7 +406,7 @@ function CustomerQuoteView({
                       <View
                         className="rounded-xl border px-4 py-2"
                         style={{
-                          backgroundColor: active ? "#EFF6FF" : "#F8FAFC",
+                          backgroundColor: active ? "#F2F5F6" : "#F8FAFC",
                           borderColor: active ? "#0F1E26" : "#E2E8F0",
                         }}
                       >
@@ -460,7 +460,7 @@ function CustomerQuoteView({
           )}
 
           {isAccepted && (
-            <View className="gap-2 rounded-2xl border border-green-200 bg-green-50 p-4">
+            <View className="gap-2 rounded-2xl border border-success-200 bg-success-50 p-4">
               <Text variant="body" weight="semibold" color="success">
                 Quote accepted
               </Text>
@@ -587,8 +587,8 @@ function QuoteCard({
       <View
         className="gap-2 rounded-2xl border p-4"
         style={{
-          backgroundColor: status === "open" ? "#EFF6FF" : "#FFFFFF",
-          borderColor: status === "open" ? "#BFDBFE" : "#E5E7EB",
+          backgroundColor: status === "open" ? "#F2F5F6" : "#FFFFFF",
+          borderColor: status === "open" ? "#C3CFD5" : "#E5E7EB",
         }}
       >
         <View className="flex-row items-center justify-between gap-2">
@@ -824,7 +824,7 @@ export function RequestsScreen({ navigation }: RequestsScreenProps) {
                 A few quick questions to make your quote accurate — tap to reply
               </Text>
             </View>
-            <Icon name="messages" size={18} color="#4F46E5" />
+            <Icon name="messages" size={18} color="#B27E00" />
           </View>
         </Pressable>
 

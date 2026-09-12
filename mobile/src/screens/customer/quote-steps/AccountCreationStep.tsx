@@ -83,7 +83,7 @@ export function AccountCreationStep({
 
   return (
     <ScrollView contentContainerClassName="gap-4 pb-6">
-      <View className="rounded-2xl bg-indigo-50 p-4 gap-2">
+      <View className="rounded-2xl bg-accent-50 p-4 gap-2">
         <Text variant="body" weight="semibold">
           Create your account
         </Text>

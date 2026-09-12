@@ -116,7 +116,7 @@ export function PlanPaymentStep({ data, onNext }: PlanPaymentStepProps) {
               style={{
                 borderColor: active ? "#0F1E26" : "#E5E7EB",
                 borderWidth: active ? 2 : 1,
-                backgroundColor: active ? "#EFF6FF" : "#FFFFFF",
+                backgroundColor: active ? "#F2F5F6" : "#FFFFFF",
               }}
             >
               <View className="flex-row items-center justify-between">
@@ -125,8 +125,8 @@ export function PlanPaymentStep({ data, onNext }: PlanPaymentStepProps) {
                     {p.name}
                   </Text>
                   {p.highlighted && (
-                    <View className="rounded-full bg-blue-600 px-2 py-0.5">
-                      <Text variant="caption" style={{ color: "#FFFFFF", fontSize: 10 }}>
+                    <View className="rounded-full bg-accent-500 px-2 py-0.5">
+                      <Text variant="caption" style={{ color: "#0F1E26", fontSize: 10 }}>
                         POPULAR
                       </Text>
                     </View>

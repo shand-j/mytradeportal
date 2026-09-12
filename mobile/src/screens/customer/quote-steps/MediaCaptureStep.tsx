@@ -115,7 +115,7 @@ const styles = StyleSheet.create({
     gap: 8,
     padding: 12,
     borderRadius: 12,
-    backgroundColor: "#EFF6FF",
+    backgroundColor: "#F2F5F6",
   },
   mediaGrid: {
     flexDirection: "row",

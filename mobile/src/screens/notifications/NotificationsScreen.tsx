@@ -85,12 +85,12 @@ export function NotificationsScreen({ role, onBack }: NotificationsScreenProps) 
             >
               <View
                 className={`flex-row items-start gap-3 rounded-2xl border p-4 ${
-                  unread ? "border-blue-200 bg-blue-50" : "border-gray-200 bg-white"
+                  unread ? "border-primary-200 bg-primary-50" : "border-gray-200 bg-white"
                 }`}
               >
                 <View
                   className={`h-9 w-9 items-center justify-center rounded-full ${
-                    notification.type === "quote_failed" ? "bg-amber-100" : "bg-blue-100"
+                    notification.type === "quote_failed" ? "bg-amber-100" : "bg-primary-100"
                   }`}
                 >
                   <Icon
@@ -112,7 +112,7 @@ export function NotificationsScreen({ role, onBack }: NotificationsScreenProps) 
                     {formatDateUK(notification.createdAt)}
                   </Text>
                 </View>
-                {unread && <View className="mt-1.5 h-2 w-2 rounded-full bg-blue-600" />}
+                {unread && <View className="mt-1.5 h-2 w-2 rounded-full bg-accent-500" />}
               </View>
             </Pressable>
           );

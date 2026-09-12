@@ -125,7 +125,7 @@ export function ChatThread({
 
   const bubbleFor = (sender: ChatSenderRole | "agent") => {
     if (sender === "customer" || sender === "business") return { bg: "#0F1E26", fg: "#FFFFFF" };
-    if (sender === "agent" || sender === "ai") return { bg: "#EEF2FF", fg: "#111827" };
+    if (sender === "agent" || sender === "ai") return { bg: "#FEF9E8", fg: "#111827" };
     return { bg: "#F3F4F6", fg: "#111827" };
   };
 
@@ -159,8 +159,8 @@ export function ChatThread({
         keyboardShouldPersistTaps="handled"
       >
         {!hideBanner && (
-          <View className="flex-row items-center gap-2 rounded-2xl border border-indigo-100 bg-indigo-50 p-3">
-            <Icon name="sparkles" size={18} color="#4F46E5" />
+          <View className="flex-row items-center gap-2 rounded-2xl border border-accent-200 bg-accent-50 p-3">
+            <Icon name="sparkles" size={18} color="#B27E00" />
             <Text variant="caption" color="secondary" style={{ flex: 1 }}>
               {assistantName} helps refine your request so your quote is accurate.
             </Text>
@@ -204,7 +204,7 @@ export function ChatThread({
               <View className="max-w-[82%] gap-1">
                 {isAgent && (
                   <View className="flex-row items-center gap-1">
-                    <Icon name="sparkles" size={12} color="#4F46E5" />
+                    <Icon name="sparkles" size={12} color="#B27E00" />
                     <Text variant="caption" color="secondary" style={{ fontSize: 11 }}>
                       {assistantName}
                     </Text>
@@ -225,7 +225,7 @@ export function ChatThread({
 
         {typing && (
           <View className="flex-row justify-start">
-            <View className="rounded-2xl bg-indigo-50 px-4 py-3">
+            <View className="rounded-2xl bg-accent-50 px-4 py-3">
               <Text variant="body" color="secondary" testID="chat-typing">
                 {assistantName} is typing…
               </Text>
@@ -243,7 +243,7 @@ export function ChatThread({
               disabled={isSending || !isConnected}
               onPress={() => void handleSend(option)}
             >
-              <View className="rounded-full border border-indigo-200 bg-indigo-50 px-3 py-1.5">
+              <View className="rounded-full border border-accent-200 bg-accent-50 px-3 py-1.5">
                 <Text variant="caption" color="secondary">
                   {option}
                 </Text>
@@ -294,7 +294,7 @@ export function MessagesScreen({ quoteRequestId, senderRole, initialComposerText
         onBack={onBack}
         rightAction={
           <View className="flex-row items-center gap-1">
-            <Icon name="sparkles" size={16} color="#4F46E5" />
+            <Icon name="sparkles" size={16} color="#B27E00" />
             <Text variant="caption" color="secondary">
               AI
             </Text>

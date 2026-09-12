@@ -91,7 +91,7 @@ function Toggle({
       <View className="flex-row items-center justify-between py-1">
         <Text variant="body">{label}</Text>
         <View
-          className={`w-12 h-7 rounded-full px-0.5 justify-center ${value ? "bg-blue-600" : "bg-slate-200"}`}
+          className={`w-12 h-7 rounded-full px-0.5 justify-center ${value ? "bg-primary" : "bg-slate-200"}`}
         >
           <View
             className="w-6 h-6 rounded-full bg-white"

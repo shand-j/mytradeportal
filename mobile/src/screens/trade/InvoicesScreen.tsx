@@ -1,7 +1,9 @@
 import { useMemo } from "react";
 import { Pressable, ScrollView, StyleSheet, View } from "react-native";
 import { useRouter } from "expo-router";
+import { colors } from "@mtp/shared-ts";
 import { Header } from "../../components/ui/Header";
+import { LiveBadge } from "../../components/ui/LiveBadge";
 import { Screen } from "../../components/ui/Screen";
 import { Text } from "../../components/ui/Text";
 import { useInvoicesList } from "../../api/invoices";
@@ -29,20 +31,11 @@ export function InvoicesScreen({ onBack }: InvoicesScreenProps) {
       <Header
         title="Invoices"
         onBack={onBack}
-        rightAction={
-          !isLoading ? (
-            <View className="flex-row items-center gap-1 rounded-full bg-green-100 px-2 py-0.5">
-              <View className="h-1.5 w-1.5 rounded-full bg-green-600" />
-              <Text variant="caption" style={{ color: "#15803D", fontSize: 9 }}>
-                LIVE
-              </Text>
-            </View>
-          ) : undefined
-        }
+        rightAction={!isLoading ? <LiveBadge /> : undefined}
       />
 
       <View style={styles.summaryRow}>
-        <View style={[styles.summaryCard, { backgroundColor: "#FEF3C7" }]}>
+        <View style={[styles.summaryCard, { backgroundColor: colors.accentSurface }]}>
           <Text variant="caption" color="secondary">
             Outstanding
           </Text>
@@ -50,11 +43,11 @@ export function InvoicesScreen({ onBack }: InvoicesScreenProps) {
             £{totals.outstanding.toFixed(0)}
           </Text>
         </View>
-        <View style={[styles.summaryCard, { backgroundColor: "#D1FAE5" }]}>
+        <View style={[styles.summaryCard, { backgroundColor: colors.infoSurface }]}>
           <Text variant="caption" color="secondary">
             Paid
           </Text>
-          <Text variant="title" weight="bold">
+          <Text variant="title" weight="bold" style={{ color: colors.successText }}>
             £{totals.paid.toFixed(0)}
           </Text>
         </View>
@@ -139,12 +132,12 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   badge: {
-    backgroundColor: "#FEF3C7",
+    backgroundColor: colors.warningSurface,
     borderRadius: 8,
     paddingHorizontal: 8,
     paddingVertical: 2,
   },
   paidBadge: {
-    backgroundColor: "#D1FAE5",
+    backgroundColor: colors.successSurface,
   },
 });

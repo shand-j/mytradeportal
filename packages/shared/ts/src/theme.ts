@@ -18,12 +18,21 @@ export const colors = {
   success: "#10B981",
   warning: "#F59E0B",
   error: "#EF4444",
-  infoSurface: "#F2F5F6",
+  accentSurface: "#FEF9E8", // brand yellow tint — hero/highlight surfaces
+  accentBorder: "#FBE488",
+  accentText: "#8F6600",
+  infoSurface: "#F2F5F6", // light slate tint — neutral metric surfaces
   infoText: "#0F1E26",
+  infoBorder: "#C3CFD5",
   successSurface: "#ECFDF5",
+  successBorder: "#A7F3D0",
   successText: "#065F46",
   warningSurface: "#FFFBEB",
   warningBorder: "#FCD34D",
+  warningText: "#B45309",
+  errorSurface: "#FEF2F2",
+  errorBorder: "#FECACA",
+  errorText: "#B91C1C",
 } as const;
 
 export const spacing = {

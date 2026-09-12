@@ -1,10 +1,12 @@
 import { useMemo, useState } from "react";
 import { Pressable, ScrollView, View } from "react-native";
 import { useRouter } from "expo-router";
+import { colors } from "@mtp/shared-ts";
 import { Button } from "../../components/ui/Button";
 import { Header } from "../../components/ui/Header";
 import { IconButton } from "../../components/ui/IconButton";
 import { Icon } from "../../components/ui/Icon";
+import { LiveBadge } from "../../components/ui/LiveBadge";
 import { Screen } from "../../components/ui/Screen";
 import { Text } from "../../components/ui/Text";
 import { LeadCard } from "../../components/trade/LeadCard";
@@ -128,7 +130,7 @@ export function DashboardScreen(_props: DashboardScreenProps) {
               testID="offline-toggle"
               icon={isOnline ? "cloud-done" : "cloud-offline"}
               size={22}
-              color={isOnline ? "#16A34A" : "#B45309"}
+              color={isOnline ? colors.success : colors.warningText}
               onPress={toggleOnline}
               accessibilityLabel="Toggle connectivity"
             />
@@ -149,9 +151,9 @@ export function DashboardScreen(_props: DashboardScreenProps) {
             testID="dashboard-new-lead-banner"
             onPress={() => router.push("/(trade)/quotes")}
           >
-            <View className="flex-row items-center gap-3 rounded-2xl border border-blue-200 bg-blue-50 p-4">
-              <View className="h-9 w-9 items-center justify-center rounded-full bg-blue-600">
-                <Icon name="sparkles" size={18} color="#FFFFFF" />
+            <View className="flex-row items-center gap-3 rounded-2xl border border-primary-200 bg-primary-50 p-4">
+              <View className="h-9 w-9 items-center justify-center rounded-full bg-primary">
+                <Icon name="sparkles" size={18} color="#FFC107" />
               </View>
               <View className="flex-1">
                 <Text variant="body" weight="semibold">
@@ -185,34 +187,27 @@ export function DashboardScreen(_props: DashboardScreenProps) {
         </View>
 
         <View className="flex-row gap-3">
-          <View className="flex-1 gap-1 rounded-2xl bg-blue-100 p-4">
+          <View className="flex-1 gap-1 rounded-2xl bg-primary-50 p-4">
             <Text variant="caption" color="secondary">
               Active leads
             </Text>
             {leadsLoading ? (
-              <View className="mt-1 h-8 w-10 rounded bg-blue-200" />
+              <View className="mt-1 h-8 w-10 rounded bg-primary-100" />
             ) : (
               <Text variant="title" weight="bold">
                 {sortedLeads.length}
               </Text>
             )}
           </View>
-          <View className="flex-1 gap-1 rounded-2xl bg-amber-100 p-4">
+          <View className="flex-1 gap-1 rounded-2xl bg-accent-50 p-4">
             <View className="flex-row items-center justify-between">
               <Text variant="caption" color="secondary">
                 Outstanding quotes
               </Text>
-              {!outstandingLoading && (
-                <View className="flex-row items-center gap-1 rounded-full bg-green-100 px-1.5 py-0.5">
-                  <View className="h-1.5 w-1.5 rounded-full bg-green-600" />
-                  <Text variant="caption" style={{ color: "#15803D", fontSize: 9 }}>
-                    LIVE
-                  </Text>
-                </View>
-              )}
+              {!outstandingLoading && <LiveBadge compact />}
             </View>
             {outstandingLoading ? (
-              <View className="mt-1 h-8 w-20 rounded bg-amber-200" />
+              <View className="mt-1 h-8 w-20 rounded bg-accent-100" />
             ) : (
               <Text variant="title" weight="bold">
                 £{totalOutstanding.toFixed(0)}
@@ -224,10 +219,10 @@ export function DashboardScreen(_props: DashboardScreenProps) {
         {hoursSavedThisWeek > 0 && (
           <View
             testID="dashboard-time-saved-card"
-            className="flex-row items-center gap-3 rounded-2xl border border-emerald-200 bg-emerald-50 p-4"
+            className="flex-row items-center gap-3 rounded-2xl border border-accent-200 bg-accent-50 p-4"
           >
-            <View className="h-9 w-9 items-center justify-center rounded-full bg-emerald-600">
-              <Icon name="flash" size={18} color="#FFFFFF" />
+            <View className="h-9 w-9 items-center justify-center rounded-full bg-primary">
+              <Icon name="flash" size={18} color="#FFC107" />
             </View>
             <View className="flex-1">
               <Text variant="body" weight="semibold">
@@ -267,7 +262,7 @@ export function DashboardScreen(_props: DashboardScreenProps) {
             {nextDays.map((date, index) => (
               <Pressable key={index} className="flex-1" onPress={() => setSelectedDateIndex(index)}>
                 <View
-                  className={`items-center justify-center gap-1 rounded-xl py-2 ${selectedDateIndex === index ? "bg-blue-100" : "bg-gray-100"}`}
+                  className={`items-center justify-center gap-1 rounded-xl py-2 ${selectedDateIndex === index ? "bg-primary-100" : "bg-gray-100"}`}
                 >
                   <Text variant="caption" color={selectedDateIndex === index ? "text" : "secondary"}>
                     {DAY_LABELS[date.getDay()].slice(0, 1)}
@@ -286,7 +281,7 @@ export function DashboardScreen(_props: DashboardScreenProps) {
               onPress={() => router.push(`/(trade)/job/${job.id}`)}
             >
               <View className="flex-row items-center gap-3 rounded-2xl border border-gray-200 bg-white p-4">
-                <View className="h-10 w-1 rounded bg-emerald-500" />
+                <View className="h-10 w-1 rounded bg-accent-500" />
                 <View className="flex-1">
                   <Text variant="body" weight="semibold">
                     {job.time}

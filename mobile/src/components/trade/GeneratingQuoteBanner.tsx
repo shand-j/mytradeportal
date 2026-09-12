@@ -27,9 +27,9 @@ export function GeneratingQuoteBanner() {
           }
         }}
       >
-        <View className="flex-row items-center gap-3 rounded-2xl border border-emerald-200 bg-emerald-50 p-4">
-          <View className="h-9 w-9 items-center justify-center rounded-full bg-emerald-600">
-            <Icon name="checkmark" size={18} color="#FFFFFF" />
+        <View className="flex-row items-center gap-3 rounded-2xl border border-success-200 bg-success-50 p-4">
+          <View className="h-9 w-9 items-center justify-center rounded-full bg-primary">
+            <Icon name="checkmark" size={18} color="#FFC107" />
           </View>
           <View className="flex-1">
             <Text variant="body" weight="semibold">
@@ -81,10 +81,10 @@ export function GeneratingQuoteBanner() {
   return (
     <View
       testID="quote-generating-banner"
-      className="flex-row items-center gap-3 rounded-2xl border border-blue-200 bg-blue-50 p-4"
+      className="flex-row items-center gap-3 rounded-2xl border border-primary-200 bg-primary-50 p-4"
     >
-      <View className="h-9 w-9 items-center justify-center rounded-full bg-blue-600">
-        <Icon name="sparkles" size={18} color="#FFFFFF" />
+      <View className="h-9 w-9 items-center justify-center rounded-full bg-primary">
+        <Icon name="sparkles" size={18} color="#FFC107" />
       </View>
       <View className="flex-1">
         <Text variant="body" weight="semibold">

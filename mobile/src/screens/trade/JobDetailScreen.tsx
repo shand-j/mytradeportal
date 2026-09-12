@@ -21,10 +21,10 @@ const STATUS_COPY: Record<JobStatus, string> = {
 };
 
 const STATUS_COLORS: Record<JobStatus, string> = {
-  confirmed: "#DBEAFE",
-  in_progress: "#FEF3C7",
-  completed: "#D1FAE5",
-  cancelled: "#FEE2E2",
+  confirmed: "#E2E8EB", // info-100 slate
+  in_progress: "#FFFBEB", // warning surface
+  completed: "#ECFDF5", // success surface
+  cancelled: "#FEF2F2", // error surface
 };
 
 type InvoiceItem = { id: string; description: string; amount: number };

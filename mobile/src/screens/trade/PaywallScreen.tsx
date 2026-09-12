@@ -63,7 +63,7 @@ export function PaywallScreen() {
   return (
     <Screen>
       <View className="flex-1 items-center justify-center gap-4">
-        <View className="h-16 w-16 items-center justify-center rounded-full bg-blue-50">
+        <View className="h-16 w-16 items-center justify-center rounded-full bg-accent-50">
           <Icon name="shield" size={28} color="#0F1E26" />
         </View>
         <Text variant="title" weight="bold" align="center">

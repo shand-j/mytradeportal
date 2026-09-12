@@ -60,7 +60,7 @@ function RefineSkeleton() {
     <View testID="refine-skeleton" className="gap-3">
       <View
         testID="refine-banner"
-        className="rounded-xl border border-blue-100 bg-blue-50 p-3"
+        className="rounded-xl border border-primary-100 bg-primary-50 p-3"
       >
         <Text variant="caption" color="secondary" align="center">
           Regenerating… You can leave this page — you'll get a notification when the quote is ready.
@@ -350,7 +350,7 @@ export function QuoteEditScreen({
             {customerName} · {postcode}
           </Text>
           {confidence != null && (
-            <View className="self-start rounded-md bg-blue-100 px-2 py-1 mt-1">
+            <View className="self-start rounded-md bg-accent-100 px-2 py-1 mt-1">
               <Text variant="caption" color="secondary">
                 AI confidence {Math.round(confidence * 100)}%
               </Text>
@@ -361,7 +361,7 @@ export function QuoteEditScreen({
         {acceptedDates.length > 0 && (
           <View
             testID="quote-accepted-dates"
-            className="rounded-xl border border-green-100 bg-green-50 p-3 gap-1"
+            className="rounded-xl border border-success-100 bg-success-50 p-3 gap-1"
           >
             <Text variant="caption" weight="semibold" color="secondary">
               Customer's confirmed dates

@@ -29,7 +29,7 @@ export function AccountStep({ data, onNext }: AccountStepProps) {
 
   const strength = password.length === 0 ? 0 : password.length < 8 ? 1 : password.length < 12 ? 2 : 3;
   const strengthLabels = ["", "Weak", "Good", "Strong"];
-  const strengthColors = ["bg-slate-200", "bg-red-400", "bg-amber-400", "bg-emerald-500"];
+  const strengthColors = ["bg-slate-200", "bg-danger-400", "bg-amber-400", "bg-success-500"];
 
   return (
     <ScrollView className="flex-1" keyboardShouldPersistTaps="handled">

@@ -4,6 +4,7 @@ import { useRouter } from "expo-router";
 import { Button } from "../../components/ui/Button";
 import { Header } from "../../components/ui/Header";
 import { IconButton } from "../../components/ui/IconButton";
+import { LiveBadge } from "../../components/ui/LiveBadge";
 import { Screen } from "../../components/ui/Screen";
 import { Text } from "../../components/ui/Text";
 import { useJobsList } from "../../api/jobs";
@@ -108,14 +109,7 @@ export function CalendarScreen(_props: CalendarScreenProps) {
         title="Calendar"
         rightAction={
           <View className="flex-row items-center gap-2">
-            {!isLoading && (
-              <View className="flex-row items-center gap-1 rounded-full bg-green-100 px-2 py-0.5">
-                <View className="h-1.5 w-1.5 rounded-full bg-green-600" />
-                <Text variant="caption" style={{ color: "#15803D", fontSize: 9 }}>
-                  LIVE
-                </Text>
-              </View>
-            )}
+            {!isLoading && <LiveBadge />}
             <Button
               testID="calendar-new-job"
               title="+ New job"
@@ -187,7 +181,7 @@ export function CalendarScreen(_props: CalendarScreenProps) {
                 <Pressable key={toIsoDate(date)} className="flex-1" onPress={() => setSelectedDay(index)}>
                   <View
                     className={`items-center justify-center gap-1 rounded-xl py-2 ${
-                      selectedDay === index ? "bg-blue-100" : isToday ? "bg-blue-50" : "bg-gray-100"
+                      selectedDay === index ? "bg-primary-100" : isToday ? "bg-primary-50" : "bg-gray-100"
                     }`}
                   >
                     <Text variant="caption" color={selectedDay === index ? "text" : "secondary"}>
@@ -208,7 +202,7 @@ export function CalendarScreen(_props: CalendarScreenProps) {
             {dayBookings.map((booking) => (
               <Pressable key={booking.id} onPress={() => router.push(`/(trade)/job/${booking.id}`)}>
                 <View testID={`booking-${booking.id}`} className="flex-row items-center gap-3 rounded-2xl border border-gray-200 bg-white p-4">
-                  <View className="h-10 w-1 rounded bg-emerald-500" />
+                  <View className="h-10 w-1 rounded bg-accent-500" />
                   <View className="flex-1">
                     <Text variant="body" weight="semibold">
                       {booking.time}
@@ -242,14 +236,14 @@ export function CalendarScreen(_props: CalendarScreenProps) {
                   return (
                     <View
                       key={toIsoDate(date)}
-                      className={`items-center gap-0.5 border-b border-gray-200 p-2 ${isToday ? "bg-blue-50" : ""}`}
+                      className={`items-center gap-0.5 border-b border-gray-200 p-2 ${isToday ? "bg-primary-50" : ""}`}
                       style={{ width: 132 }}
                     >
                       <Text variant="caption" weight={isToday ? "bold" : "semibold"} align="center">
                         {DAYS[(date.getDay() + 6) % 7]}
                       </Text>
                       <View
-                        className={`h-7 w-7 items-center justify-center rounded-full ${isToday ? "bg-blue-600" : ""}`}
+                        className={`h-7 w-7 items-center justify-center rounded-full ${isToday ? "bg-primary" : ""}`}
                       >
                         <Text
                           variant="caption"
@@ -282,7 +276,7 @@ export function CalendarScreen(_props: CalendarScreenProps) {
                   return (
                     <View
                       key={toIsoDate(date)}
-                      className={`border-l border-gray-100 ${isToday ? "bg-blue-50/40" : ""}`}
+                      className={`border-l border-gray-100 ${isToday ? "bg-primary-50/40" : ""}`}
                       style={{
                         width: 132,
                         height: (GRID_END_HOUR - GRID_START_HOUR) * HOUR_HEIGHT,
@@ -313,7 +307,7 @@ export function CalendarScreen(_props: CalendarScreenProps) {
                             onPress={() => router.push(`/(trade)/job/${job.id}`)}
                             style={{ position: "absolute", top, left: 3, right: 3, height }}
                           >
-                            <View className="flex-1 gap-0.5 overflow-hidden rounded-lg border border-blue-200 bg-blue-50 p-1.5">
+                            <View className="flex-1 gap-0.5 overflow-hidden rounded-lg border border-primary-200 bg-primary-50 p-1.5">
                               <Text variant="caption" weight="semibold" numberOfLines={1} style={{ fontSize: 11 }}>
                                 {job.time}
                               </Text>

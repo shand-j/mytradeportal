@@ -427,13 +427,13 @@ export function InvoiceDetailScreen({
 function statusColor(status: Invoice["status"]): string {
   switch (status) {
     case "paid":
-      return "#D1FAE5";
+      return "#ECFDF5";
     case "sent":
-      return "#DBEAFE";
+      return "#E2E8EB";
     case "overdue":
-      return "#FEE2E2";
+      return "#FEF2F2";
     default:
-      return "#FEF3C7";
+      return "#FFFBEB";
   }
 }
 
@@ -455,7 +455,7 @@ const styles = StyleSheet.create({
   totalCard: {
     alignItems: "center",
     paddingVertical: 24,
-    backgroundColor: "#EFF6FF",
+    backgroundColor: "#FEF9E8",
   },
   lineRow: {
     flexDirection: "row",

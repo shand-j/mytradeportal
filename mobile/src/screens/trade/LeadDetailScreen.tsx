@@ -193,7 +193,7 @@ export function LeadDetailScreen({
               )}
               <View
                 className={`rounded-lg px-2 py-1 ${
-                  lead.badge === "Flagged" ? "bg-amber-100" : "bg-blue-100"
+                  lead.badge === "Flagged" ? "bg-amber-100" : "bg-primary-100"
                 }`}
               >
                 <Text variant="caption" color="secondary">
@@ -245,7 +245,7 @@ export function LeadDetailScreen({
         )}
 
         {suggestedQuestions.length > 0 && (
-          <View testID="lead-suggested-questions" className="rounded-2xl bg-indigo-50 p-4 gap-2">
+          <View testID="lead-suggested-questions" className="rounded-2xl bg-accent-50 p-4 gap-2">
             <Text variant="body" weight="semibold">
               AI-suggested questions for your call
             </Text>

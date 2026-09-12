@@ -90,7 +90,7 @@ export function PhotoPicker({ photos, onChange, maxPhotos = 5, testID }: PhotoPi
           canAdd ? "border-slate-300 bg-slate-50" : "border-slate-200 bg-slate-100 opacity-60"
         }`}
       >
-        <Icon name={uploading ? "cloud-done" : "image"} size={24} color="#4F46E5" />
+        <Icon name={uploading ? "cloud-done" : "image"} size={24} color="#B27E00" />
         <View className="flex-1">
           <Text variant="body" weight="semibold" numberOfLines={1}>
             {uploading ? "Uploading…" : "Add photo"}

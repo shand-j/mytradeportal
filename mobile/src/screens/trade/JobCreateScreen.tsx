@@ -286,7 +286,7 @@ export function JobCreateScreen({ onClose, initialQuoteId }: JobCreateScreenProp
                   >
                     <View
                       className={`rounded-xl border p-3 ${
-                        selected ? "border-blue-500 bg-blue-50" : "border-slate-200 bg-white"
+                        selected ? "border-primary bg-primary-50" : "border-slate-200 bg-white"
                       }`}
                     >
                       <Text variant="body" weight={selected ? "semibold" : "normal"}>
@@ -392,7 +392,7 @@ export function JobCreateScreen({ onClose, initialQuoteId }: JobCreateScreenProp
                           <View
                             className={`rounded-xl border p-3 ${
                               selected
-                                ? "border-blue-500 bg-blue-50"
+                                ? "border-primary bg-primary-50"
                                 : "border-slate-200 bg-white"
                             }`}
                           >
@@ -478,7 +478,7 @@ export function JobCreateScreen({ onClose, initialQuoteId }: JobCreateScreenProp
                   testID="job-create-suggested-slot"
                   onPress={() => setTime(toHHMM(new Date(suggestedSlot)))}
                 >
-                  <View className="rounded-xl border border-blue-100 bg-blue-50 p-3">
+                  <View className="rounded-xl border border-primary-100 bg-primary-50 p-3">
                     <Text variant="caption" color="secondary">
                       First free slot that day: {toHHMM(new Date(suggestedSlot))} — tap to use it.
                     </Text>

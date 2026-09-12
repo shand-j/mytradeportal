@@ -267,6 +267,6 @@ const styles = StyleSheet.create({
     marginTop: 8,
     padding: 12,
     borderRadius: 12,
-    backgroundColor: "#FEF3C7",
+    backgroundColor: "#FFFBEB",
   },
 });

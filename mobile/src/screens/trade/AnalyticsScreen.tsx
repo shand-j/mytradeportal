@@ -1,7 +1,9 @@
 import { useMemo } from "react";
 import { ScrollView, StyleSheet, View } from "react-native";
+import { colors } from "@mtp/shared-ts";
 import { Button } from "../../components/ui/Button";
 import { Header } from "../../components/ui/Header";
+import { LiveBadge } from "../../components/ui/LiveBadge";
 import { Screen } from "../../components/ui/Screen";
 import { Text } from "../../components/ui/Text";
 import { useDashboardKpis } from "../../api/analytics";
@@ -29,21 +31,12 @@ export function AnalyticsScreen({ onBack }: AnalyticsScreenProps) {
       <Header
         title="Revenue & costs"
         onBack={onBack}
-        rightAction={
-          !(kpiLoading || invoicesLoading) ? (
-            <View className="flex-row items-center gap-1 rounded-full bg-green-100 px-2 py-0.5">
-              <View className="h-1.5 w-1.5 rounded-full bg-green-600" />
-              <Text variant="caption" style={{ color: "#15803D", fontSize: 9 }}>
-                LIVE
-              </Text>
-            </View>
-          ) : undefined
-        }
+        rightAction={!(kpiLoading || invoicesLoading) ? <LiveBadge /> : undefined}
       />
 
       <ScrollView style={styles.scroll} contentContainerStyle={styles.scrollContent}>
         <View style={styles.grid}>
-          <View style={[styles.summaryCard, { backgroundColor: "#D1FAE5" }]}>
+          <View style={[styles.summaryCard, { backgroundColor: colors.accentSurface }]}>
             <Text variant="caption" color="secondary">
               Paid revenue
             </Text>
@@ -51,15 +44,15 @@ export function AnalyticsScreen({ onBack }: AnalyticsScreenProps) {
               £{revenue.toFixed(0)}
             </Text>
           </View>
-          <View style={[styles.summaryCard, { backgroundColor: "#FEF3C7" }]}>
+          <View style={[styles.summaryCard, { backgroundColor: colors.infoSurface }]}>
             <Text variant="caption" color="secondary">
               Outstanding
             </Text>
-            <Text variant="title" weight="bold">
+            <Text variant="title" weight="bold" style={{ color: colors.warningText }}>
               £{outstanding.toFixed(0)}
             </Text>
           </View>
-          <View style={[styles.summaryCard, { backgroundColor: "#DBEAFE" }]}>
+          <View style={[styles.summaryCard, { backgroundColor: colors.infoSurface }]}>
             <Text variant="caption" color="secondary">
               Quoted
             </Text>
@@ -67,21 +60,25 @@ export function AnalyticsScreen({ onBack }: AnalyticsScreenProps) {
               £{quoted.toFixed(0)}
             </Text>
           </View>
-          <View style={[styles.summaryCard, { backgroundColor: "#FEE2E2" }]}>
+          <View style={[styles.summaryCard, { backgroundColor: colors.infoSurface }]}>
             <Text variant="caption" color="secondary">
               Costs
             </Text>
-            <Text variant="title" weight="bold">
+            <Text variant="title" weight="bold" style={{ color: colors.errorText }}>
               £{costs.toFixed(0)}
             </Text>
           </View>
         </View>
 
-        <View style={[styles.card, { backgroundColor: profit >= 0 ? "#ECFDF5" : "#FEF2F2" }]}>
+        <View style={styles.card}>
           <Text variant="body" weight="semibold">
             Estimated profit
           </Text>
-          <Text variant="title" weight="bold" style={{ color: profit >= 0 ? "#059669" : "#DC2626" }}>
+          <Text
+            variant="title"
+            weight="bold"
+            style={{ color: profit >= 0 ? colors.successText : colors.errorText }}
+          >
             £{profit.toFixed(0)}
           </Text>
         </View>
@@ -114,7 +111,7 @@ const styles = StyleSheet.create({
   card: {
     padding: 16,
     borderRadius: 16,
-    backgroundColor: "#F3F4F6",
+    backgroundColor: colors.infoSurface,
     gap: 8,
   },
   jobRow: {
