@@ -308,7 +308,7 @@ export default defineRailway(() => {
   const dataPipeline = service("data-pipeline", {
     source: github(GITHUB_REPO),
     build: { builder: "DOCKERFILE", dockerfilePath: "services/data-pipeline/Dockerfile" },
-    start: "newrelic-admin run-program python -m data_pipeline.scheduler --run-on-start",
+    start: "newrelic-admin run-program python -m data_pipeline.scheduler",
     healthcheck: "/health",
     regions: { [TARGET_REGION]: 1 },
     env: {
