@@ -194,6 +194,8 @@ export default defineRailway(() => {
       // Where password-reset email links point: the landing site's
       // /reset-password page (NOT the back office).
       PASSWORD_RESET_BASE_URL: "https://www.mytradeportal.co.uk",
+      // JWT lifetime for staff + customer sessions: 90 days (129600 min).
+      AUTH_ACCESS_TOKEN_EXPIRE_MINUTES: "129600",
       // Public browser origins: the Django admin and the marketing landing
       // (which hosts the no-login AI quote demo calling /demo/*). The native
       // app sends no Origin header, so it needs no entry.
