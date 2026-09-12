@@ -132,7 +132,11 @@ export default defineRailway(() => {
 
   const api = service("api", {
     source: github(GITHUB_REPO),
-    build: { builder: "DOCKERFILE", dockerfilePath: "services/api/Dockerfile" },
+    build: {
+      builder: "DOCKERFILE",
+      dockerfilePath: "services/api/Dockerfile",
+      watchPatterns: ["services/api/**", "packages/shared/py/**", "scripts/**", "pyproject.toml"],
+    },
     healthcheck: "/health",
     preDeployCommand: "python scripts/init_api.py",
     regions: { [TARGET_REGION]: 1 },
@@ -254,7 +258,7 @@ export default defineRailway(() => {
   // dir gives client-side-route fallback (/blog/:slug deep links).
   const landing = service("landing", {
     source: github(GITHUB_REPO, { rootDirectory: "web/landing/new design/app" }),
-    build: { builder: "RAILPACK" },
+    build: { builder: "RAILPACK", watchPatterns: ["web/landing/new design/**"] },
     healthcheck: "/",
     regions: { [TARGET_REGION]: 1 },
     env: {
@@ -305,7 +309,11 @@ export default defineRailway(() => {
 
   const admin = service("admin", {
     source: github(GITHUB_REPO),
-    build: { builder: "DOCKERFILE", dockerfilePath: "services/admin/Dockerfile" },
+    build: {
+      builder: "DOCKERFILE",
+      dockerfilePath: "services/admin/Dockerfile",
+      watchPatterns: ["services/admin/**", "packages/shared/py/**", "scripts/init_db.py", "scripts/init_api.py"],
+    },
     healthcheck: "/health",
     preDeployCommand: "sh -c 'python manage.py migrate --noinput && python scripts/ensure_superuser.py'",
     regions: { [TARGET_REGION]: 1 },
@@ -333,7 +341,11 @@ export default defineRailway(() => {
 
   const dataPipeline = service("data-pipeline", {
     source: github(GITHUB_REPO),
-    build: { builder: "DOCKERFILE", dockerfilePath: "services/data-pipeline/Dockerfile" },
+    build: {
+      builder: "DOCKERFILE",
+      dockerfilePath: "services/data-pipeline/Dockerfile",
+      watchPatterns: ["services/data-pipeline/**", "packages/shared/py/**"],
+    },
     start: "newrelic-admin run-program python -m data_pipeline.scheduler",
     healthcheck: "/health",
     regions: { [TARGET_REGION]: 1 },
