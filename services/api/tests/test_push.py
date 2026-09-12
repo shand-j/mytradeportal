@@ -155,6 +155,19 @@ async def test_send_expo_push_posts_alert_payload(monkeypatch: pytest.MonkeyPatc
     assert message["sound"] == "default"
     assert message["priority"] == "high"
     assert message["data"] == {"type": "quote_ready", "id": "abc", "link": "/quotes/abc"}
+    # No badge unless the caller supplies one.
+    assert "badge" not in message
+
+
+async def test_send_expo_push_includes_badge_when_supplied(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The unread count rides in the payload so iOS badges the app icon."""
+    calls = _stub_expo(monkeypatch, _FakeExpoResponse(payload={"data": [{"status": "ok"}]}))
+
+    await send_expo_push(["ExponentPushToken[device1]"], "T", "B", badge=4)
+
+    assert calls[0]["json"][0]["badge"] == 4
 
 
 async def test_send_expo_push_http_error_does_not_raise(monkeypatch: pytest.MonkeyPatch) -> None:

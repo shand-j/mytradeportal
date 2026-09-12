@@ -14,7 +14,7 @@ from uuid import UUID
 
 import httpx
 import structlog
-from sqlalchemy import delete, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = structlog.get_logger("api.push")
@@ -45,6 +45,7 @@ async def send_expo_push(
     body: str,
     data: dict[str, str] | None = None,
     db: AsyncSession | None = None,
+    badge: int | None = None,
 ) -> None:
     """POST a batch of push messages to the Expo push API. Never raises.
 
@@ -65,6 +66,9 @@ async def send_expo_push(
             # omitted — the alert fields below make the push user-visible.
             "sound": "default",
             "priority": "high",
+            # App-icon badge: the recipient's unread notification count. iOS
+            # only badges the icon when the payload carries a number.
+            **({"badge": badge} if badge is not None else {}),
             "data": data or {},
         }
         for token in tokens
@@ -125,6 +129,27 @@ async def send_expo_push(
     logger.info("expo_push_sent", count=len(tokens), delivered=len(tokens) - failed)
 
 
+async def _unread_count(
+    db: AsyncSession,
+    tenant_id: UUID,
+    recipient_type: str,
+    recipient_id: UUID | None,
+) -> int:
+    """Unread notification count for the push badge, including the pending row."""
+    from app.models import Notification
+
+    conditions = [
+        Notification.tenant_id == tenant_id,
+        Notification.recipient_type == recipient_type,
+        Notification.read_at.is_(None),
+    ]
+    if recipient_id is not None:
+        conditions.append(Notification.recipient_id == recipient_id)
+    return int(
+        await db.scalar(select(func.count()).select_from(Notification).where(*conditions)) or 0
+    )
+
+
 async def notify_staff(
     db: AsyncSession,
     tenant_id: UUID,
@@ -165,7 +190,8 @@ async def notify_staff(
         .scalars()
         .all()
     )
-    await send_expo_push(list(tokens), title, body, data=_push_data(kind, link), db=db)
+    badge = await _unread_count(db, tenant_id, "staff", None)
+    await send_expo_push(list(tokens), title, body, data=_push_data(kind, link), db=db, badge=badge)
 
 
 async def notify_customer(
@@ -205,4 +231,5 @@ async def notify_customer(
         .scalars()
         .all()
     )
-    await send_expo_push(list(tokens), title, body, data=_push_data(kind, link), db=db)
+    badge = await _unread_count(db, tenant_id, "customer", customer_id)
+    await send_expo_push(list(tokens), title, body, data=_push_data(kind, link), db=db, badge=badge)
