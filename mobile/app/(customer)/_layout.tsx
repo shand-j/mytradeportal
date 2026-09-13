@@ -6,7 +6,7 @@ import { NotificationWatcher } from "../../src/components/notifications/Notifica
 // usePathname returns the path without route-group segments, e.g. "/requests"
 // — including "(customer)" here would never match and the tab bar would never
 // render.
-const MAIN_CUSTOMER_ROUTES = ["/requests", "/calendar", "/messages", "/profile"];
+const MAIN_CUSTOMER_ROUTES = ["/requests", "/invoices", "/calendar", "/messages", "/profile"];
 
 export default function CustomerLayout() {
   const pathname = usePathname();
@@ -17,6 +17,8 @@ export default function CustomerLayout() {
       <NotificationWatcher role="customer" />
       <Stack screenOptions={{ headerShown: false }}>
         <Stack.Screen name="requests" />
+        <Stack.Screen name="invoices" />
+        <Stack.Screen name="invoice/[id]" />
         <Stack.Screen name="calendar" />
         <Stack.Screen name="messages" />
         <Stack.Screen name="profile" />

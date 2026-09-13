@@ -23,6 +23,7 @@ const TRADE_TABS: TabItem[] = [
 
 const CUSTOMER_TABS: TabItem[] = [
   { key: "requests", label: "Quotes", icon: "document-text", path: "/(customer)/requests", testID: "tab-requests" },
+  { key: "invoices", label: "Invoices", icon: "receipt", path: "/(customer)/invoices", testID: "tab-invoices" },
   { key: "calendar", label: "Calendar", icon: "calendar", path: "/(customer)/calendar", testID: "tab-calendar" },
   { key: "messages", label: "Messages", icon: "chatbubble", path: "/(customer)/messages", testID: "tab-messages" },
   { key: "profile", label: "Profile", icon: "person", path: "/(customer)/profile", testID: "tab-profile" },

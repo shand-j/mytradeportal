@@ -806,7 +806,8 @@ class InvoiceRead(BaseModel):
     vat_rate: Decimal
     vat_amount: Decimal
     total: Decimal
-    # Rounding uplift inherited from the source quote (0 for scratch invoices).
+    # Rounding uplift: inherited from the source quote (from-quote invoices are
+    # never re-rounded) or applied once at creation for scratch invoices.
     rounding_adjustment: Decimal = Decimal("0.00")
     paid_at: datetime | None
     notes: str | None

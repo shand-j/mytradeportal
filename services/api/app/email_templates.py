@@ -119,21 +119,35 @@ def invoice_sent(
     invoice_number: str,
     invoice_total: str,
     payment_details: dict[str, str] | None = None,
+    view_url: str | None = None,
 ) -> tuple[str, str, str]:
     """Invoice-issued email. (subject, html, text).
 
     ``payment_details`` carries the tenant's bank-transfer details (keys:
     ``account_name``, ``sort_code``, ``account_number``, ``reference``); the
     block is omitted entirely when the tenant has not configured them.
+    ``view_url`` is the secure web page for the invoice (customers without
+    the app); when absent the email falls back to the app-only copy.
     """
     subject = f"Invoice {invoice_number} from {business_name}"
     payment_text, payment_html = _payment_details_block(payment_details)
+    if view_url:
+        text_cta = f"View your invoice online here:\n{view_url}\n\n"
+        html_cta = f"""\
+    <p style="margin:24px 0;">
+      <a href="{view_url}" style="background:#4F46E5;color:#fff;padding:12px 20px;border-radius:8px;text-decoration:none;font-weight:600;">View invoice</a>
+    </p>
+    <p style="color:#64748b;font-size:13px;">If the button doesn't work, copy and paste this link:<br><a href="{view_url}" style="color:#4F46E5;">{view_url}</a></p>
+"""
+    else:
+        text_cta = "Open the app to view and pay.\n\n"
+        html_cta = "    <p>Open the app to view and pay.</p>\n"
     text = (
         f"Hi {customer_name},\n\n"
         f"{business_name} has sent you invoice {invoice_number}.\n"
         f"Total due: {invoice_total}\n\n"
         f"{payment_text}"
-        "Open the app to view and pay.\n\n"
+        f"{text_cta}"
         "— My Trade Portal"
     )
     html = f"""\
@@ -145,7 +159,7 @@ def invoice_sent(
     <p><strong>{business_name}</strong> has sent you an invoice.</p>
     <p style="font-size:20px;font-weight:700;margin:16px 0;">Total due: {invoice_total}</p>
 {payment_html}\
-    <p>Open the app to view and pay.</p>
+{html_cta}\
     <p style="color:#64748b;font-size:13px;margin-top:32px;">— My Trade Portal</p>
   </body>
 </html>
@@ -199,21 +213,34 @@ def invoice_reminder(
     invoice_number: str,
     invoice_total: str,
     payment_details: dict[str, str] | None = None,
+    view_url: str | None = None,
 ) -> tuple[str, str, str]:
     """Payment-chasing email for an unpaid sent invoice. (subject, html, text).
 
     ``payment_details`` carries the tenant's bank-transfer details (same
     shape as :func:`invoice_sent`); the block is omitted when unconfigured.
+    When ``view_url`` is given (the secure web invoice page), it replaces the
+    "open the app" instruction — the link works with or without the app.
     """
     subject = f"Reminder: invoice {invoice_number} from {business_name}"
     payment_text, payment_html = _payment_details_block(payment_details)
+    if view_url:
+        action_text = f"View and pay online:\n{view_url}\n\n"
+        action_html = (
+            f'<p><a href="{view_url}" style="display:inline-block;background:#0F1E26;'
+            'color:#FFC107;padding:12px 24px;text-decoration:none;font-weight:700;">'
+            "View and pay online</a></p>"
+        )
+    else:
+        action_text = "Open the app to view and pay.\n\n"
+        action_html = "    <p>Open the app to view and pay.</p>"
     text = (
         f"Hi {customer_name},\n\n"
         f"This is a reminder that invoice {invoice_number} from {business_name} "
         f"is still awaiting payment.\n"
         f"Total due: {invoice_total}\n\n"
         f"{payment_text}"
-        "Open the app to view and pay.\n\n"
+        f"{action_text}"
         f"If you have already paid, please ignore this reminder.\n\n"
         "— My Trade Portal"
     )
@@ -226,7 +253,7 @@ def invoice_reminder(
     <p>This is a reminder that invoice <strong>{invoice_number}</strong> from <strong>{business_name}</strong> is still awaiting payment.</p>
     <p style="font-size:20px;font-weight:700;margin:16px 0;">Total due: {invoice_total}</p>
 {payment_html}\
-    <p>Open the app to view and pay.</p>
+{action_html}
     <p style="color:#64748b;font-size:13px;">If you have already paid, please ignore this reminder.</p>
     <p style="color:#64748b;font-size:13px;margin-top:32px;">— My Trade Portal</p>
   </body>

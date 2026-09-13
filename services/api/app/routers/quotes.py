@@ -68,6 +68,7 @@ from app.rag import (
 from app.rag.validation import build_quote_from_validation
 from app.rls import set_tenant_in_session
 from app.routers.invoices import _get_invoice, generate_invoice_number
+from app.routers.public_docs import issue_document_token, public_document_url
 from app.schemas import (
     InvoiceRead,
     JobConvertRequest,
@@ -320,15 +321,24 @@ async def send_quote(
     # has no contact email instead of dropping the send silently.
     contact = await db.get(Contact, quote.contact_id)
     tenant_row = await db.get(Tenant, tenant.id)
-    app_origin = settings.app_public_url.rstrip("/") if settings.app_public_url else ""
-    view_url = f"{app_origin}/customer/quote/{quote.id}" if app_origin else None
+    contact_email = contact.email if contact is not None else None
+    # Mint the secure web-link token so customers without the app can open
+    # the quote on the landing site. Re-sending revokes earlier tokens.
+    raw_token = await issue_document_token(
+        db,
+        kind="quote",
+        document_id=quote.id,
+        tenant_id=tenant.id,
+        contact_email=contact_email,
+    )
+    view_url = public_document_url("quote", raw_token)
     business_name = tenant_row.name if tenant_row is not None else "Your electrician"
     subject, html, text = quote_ready_template(
         customer_name=contact.name.split()[0] if contact is not None and contact.name else "there",
         business_name=business_name,
         quote_title=quote.title,
         quote_total=f"£{quote.total}",
-        view_url=view_url or f"/customer/quote/{quote.id}",
+        view_url=view_url,
     )
     await send_event_email(
         to_email=contact.email if contact is not None else None,

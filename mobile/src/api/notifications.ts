@@ -166,9 +166,13 @@ export function routeForNotificationLink(
     if (leadId) return { pathname: `/(trade)/lead/${leadId}` };
     return null;
   }
-  // Customer quotes are reviewed inline on the requests screen. The customer
-  // app has no invoice screen, so invoice links intentionally resolve to null
-  // (the row marks read but navigates nowhere).
+  // Customer invoice links open the new invoice screens: `/customer/invoice/{id}`
+  // (invoice_sent rows) or `/invoices/{id}` (rebuilt push-payload links). An
+  // invoice type without a parseable id falls back to the list.
+  const invoiceId = idFromLink(link, /\/invoices?\/([0-9a-f-]+)/i);
+  if (invoiceId) return { pathname: `/(customer)/invoice/${invoiceId}` };
+  if (type?.startsWith("invoice")) return { pathname: "/(customer)/invoices" };
+  // Customer quotes are reviewed inline on the requests screen.
   if (quoteId || type?.startsWith("quote")) {
     return { pathname: "/(customer)/requests" };
   }

@@ -7,11 +7,13 @@ against the staff API.
 """
 
 from datetime import UTC, datetime
+from decimal import Decimal
 from typing import Annotated
 from uuid import UUID
 
 import structlog
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, UploadFile, status
+from pydantic import BaseModel, ConfigDict
 from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -28,11 +30,13 @@ from app.models import (
     BillOfQuantities,
     Contact,
     Customer,
+    Invoice,
     MediaAsset,
     Quote,
     QuoteRequest,
     Tenant,
 )
+from app.paddle_client import create_checkout
 from app.push import notify_staff
 from app.rls import bypass_rls_for_transaction, set_tenant_in_session
 from app.routers.contacts import BLOCKED_CUSTOMER_DETAIL, contact_is_blocked
@@ -45,6 +49,7 @@ from app.schemas import (
     CustomerRegister,
     CustomerTenantAssociation,
     CustomerTokenResponse,
+    PaddleCheckoutRead,
     QuoteRead,
     QuoteRequestMediaCreate,
     QuoteRequestRead,
@@ -59,6 +64,65 @@ logger = structlog.get_logger("api.customer_portal")
 # "anything except draft") so future pre-send states (e.g. an explicit
 # "in_review" status) can never leak unreviewed line items to the homeowner.
 CUSTOMER_VISIBLE_QUOTE_STATUSES = frozenset({"sent", "approved", "rejected", "expired", "invoiced"})
+
+# Invoice statuses a customer may see. Same allow-list reasoning as quotes:
+# drafts are electrician-only working documents and must never leak.
+CUSTOMER_VISIBLE_INVOICE_STATUSES = frozenset({"sent", "paid", "overdue"})
+
+
+class CustomerInvoiceLineItemRead(BaseModel):
+    """A line item on a customer-facing invoice."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    description: str
+    quantity: Decimal
+    unit_price: Decimal
+    total: Decimal
+
+
+class CustomerInvoiceRead(BaseModel):
+    """Customer-facing invoice: money, status and the business branding needed
+    to render it — no staff internals (paddle ids, tenant/contact ids)."""
+
+    id: UUID
+    invoice_number: str
+    status: str
+    issue_date: datetime
+    due_date: datetime | None
+    subtotal: Decimal
+    vat_rate: Decimal
+    vat_amount: Decimal
+    total: Decimal
+    paid_at: datetime | None
+    notes: str | None
+    line_items: list[CustomerInvoiceLineItemRead]
+    business_name: str
+    business_logo_url: str | None
+    business_primary_color: str
+
+
+def _customer_invoice_read(invoice: Invoice, tenant: Tenant | None) -> CustomerInvoiceRead:
+    return CustomerInvoiceRead(
+        id=invoice.id,
+        invoice_number=invoice.invoice_number,
+        status=invoice.status,
+        issue_date=invoice.issue_date,
+        due_date=invoice.due_date,
+        subtotal=invoice.subtotal,
+        vat_rate=invoice.vat_rate,
+        vat_amount=invoice.vat_amount,
+        total=invoice.total,
+        paid_at=invoice.paid_at,
+        notes=invoice.notes,
+        line_items=[
+            CustomerInvoiceLineItemRead.model_validate(item) for item in invoice.line_items
+        ],
+        business_name=tenant.name if tenant is not None else "Your electrician",
+        business_logo_url=tenant.logo_url if tenant is not None else None,
+        business_primary_color=tenant.primary_color if tenant is not None else "#D4650A",
+    )
 
 
 def _phone_digits(value: str | None) -> str:
@@ -666,3 +730,86 @@ async def create_customer_appointment(
     await db.commit()
     await db.refresh(appointment)
     return appointment
+
+
+async def _get_customer_invoice(db: AsyncSession, customer: Customer, invoice_id: UUID) -> Invoice:
+    """Fetch an invoice the customer may see, or 404.
+
+    Scoped to the customer's tenant and CRM contact and gated on the visible
+    status allow-list, so drafts and other tenants'/customers' invoices are
+    indistinguishable from missing ones.
+    """
+    invoice = await db.scalar(
+        select(Invoice)
+        .options(selectinload(Invoice.line_items))
+        .where(
+            Invoice.tenant_id == customer.tenant_id,
+            Invoice.id == invoice_id,
+            Invoice.contact_id == customer.contact_id,
+            Invoice.status.in_(CUSTOMER_VISIBLE_INVOICE_STATUSES),
+        )
+    )
+    if invoice is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Invoice not found")
+    return invoice
+
+
+@router.get("/invoices", response_model=list[CustomerInvoiceRead])
+async def list_my_invoices(
+    customer: CurrentCustomerDep,
+    db: DbDep,
+) -> list[CustomerInvoiceRead]:
+    """List invoices sent to the authenticated customer (never drafts)."""
+    result = await db.execute(
+        select(Invoice)
+        .options(selectinload(Invoice.line_items))
+        .where(
+            Invoice.tenant_id == customer.tenant_id,
+            Invoice.contact_id == customer.contact_id,
+            Invoice.status.in_(CUSTOMER_VISIBLE_INVOICE_STATUSES),
+        )
+        .order_by(Invoice.issue_date.desc())
+    )
+    invoices = list(result.scalars().all())
+    tenant = await db.get(Tenant, customer.tenant_id)
+    return [_customer_invoice_read(invoice, tenant) for invoice in invoices]
+
+
+@router.get("/invoices/{invoice_id}", response_model=CustomerInvoiceRead)
+async def get_my_invoice(
+    invoice_id: UUID,
+    customer: CurrentCustomerDep,
+    db: DbDep,
+) -> CustomerInvoiceRead:
+    """Invoice detail with line items and business branding for rendering."""
+    invoice = await _get_customer_invoice(db, customer, invoice_id)
+    tenant = await db.get(Tenant, customer.tenant_id)
+    return _customer_invoice_read(invoice, tenant)
+
+
+@router.post("/invoices/{invoice_id}/pay", response_model=PaddleCheckoutRead)
+async def pay_my_invoice(
+    invoice_id: UUID,
+    customer: CurrentCustomerDep,
+    db: DbDep,
+) -> PaddleCheckoutRead:
+    """Create a Paddle checkout URL so the customer can pay an invoice online."""
+    invoice = await _get_customer_invoice(db, customer, invoice_id)
+    if invoice.status == "paid":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invoice is already paid",
+        )
+
+    try:
+        checkout = await create_checkout(invoice, customer_email=customer.email)
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"Paddle checkout creation failed: {exc!s}",
+        ) from exc
+
+    invoice.paddle_checkout_id = checkout["checkout_id"]
+    await db.commit()
+
+    return PaddleCheckoutRead(**checkout)

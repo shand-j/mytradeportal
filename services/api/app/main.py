@@ -43,6 +43,7 @@ from app.routers import (
     onboarding,
     payments,
     pricing,
+    public_docs,
     quote_requests,
     quotes,
     reviews,
@@ -184,6 +185,7 @@ app.include_router(appointments.router)
 app.include_router(calendar.router)
 app.include_router(invoices.router)
 app.include_router(payments.router)
+app.include_router(public_docs.router)
 app.include_router(billing.router)
 app.include_router(webhooks.router)
 app.include_router(analytics.router)

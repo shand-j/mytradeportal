@@ -3,6 +3,7 @@
 from datetime import datetime
 from decimal import ROUND_CEILING, Decimal
 from typing import Any
+from uuid import UUID
 
 from app.models import Invoice, InvoiceLineItem, Quote, Tenant
 
@@ -103,15 +104,41 @@ def calculate_invoice_totals(invoice: Invoice) -> None:
     invoice.vat_amount = invoice.total - invoice.subtotal
 
 
+def apply_invoice_rounding(invoice: Invoice, settings: dict[str, Any] | None) -> None:
+    """Apply the tenant's rounding setting to a SCRATCH invoice (no source quote).
+
+    Must be called AFTER :func:`calculate_invoice_totals`, same idempotency
+    contract as :func:`apply_quote_rounding`. Invoices created FROM a quote
+    never call this — they mirror the quote's stored totals via
+    :func:`build_invoice_from_quote`, so a quote created before the setting
+    existed invoices unrounded and a rounded quote is never re-rounded.
+    """
+    increment = quote_rounding_increment(settings)
+    if increment is None:
+        invoice.rounding_adjustment = Decimal("0.00")
+        return
+    rounded = round_up_to_increment(invoice.total, increment)
+    invoice.rounding_adjustment = (rounded - invoice.total).quantize(TOTAL_PRECISION)
+    invoice.total = rounded
+
+
 def build_invoice_from_quote(
     quote: Quote,
     invoice_number: str,
     due_date: datetime | None = None,
+    job_id: UUID | None = None,
 ) -> Invoice:
-    """Create a draft invoice that clones a quote's line items and totals."""
+    """Create a draft invoice that clones a quote's line items and totals.
+
+    The invoice mirrors the quote exactly — line items, subtotal, VAT, total
+    and rounding uplift — and is never re-rounded, so the customer pays the
+    total they accepted. ``job_id`` links the invoice back to the job the
+    electrician raised it from (quote → job → invoice).
+    """
     invoice = Invoice(
         tenant_id=quote.tenant_id,
         contact_id=quote.contact_id,
+        job_id=job_id,
         quote_id=quote.id,
         invoice_number=invoice_number,
         due_date=due_date,
@@ -128,8 +155,8 @@ def build_invoice_from_quote(
         )
     calculate_invoice_totals(invoice)
     # Inherit the quote's rounding uplift so the invoice total matches the
-    # total the customer accepted (rounding applies to quotes only; invoices
-    # created from scratch are never rounded).
+    # total the customer accepted. Zero for quotes created before the setting
+    # existed, so those invoices stay unrounded too.
     adjustment = quote.rounding_adjustment or Decimal("0.00")
     invoice.rounding_adjustment = adjustment
     if adjustment:

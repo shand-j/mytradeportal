@@ -23,6 +23,8 @@ export type ApiInvoice = {
   subtotal: string;
   vatAmount: string;
   total: string;
+  /** Rounding uplift inherited from the source quote or applied at creation. */
+  roundingAdjustment?: string;
   paidAt: string | null;
   lineItems: ApiInvoiceLineItem[];
   customer: ApiContact;

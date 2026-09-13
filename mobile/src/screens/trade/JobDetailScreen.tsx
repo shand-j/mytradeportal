@@ -1,10 +1,13 @@
 import { useEffect, useMemo, useState } from "react";
 import { Alert, Image, Linking, Platform, Pressable, ScrollView, TextInput, View } from "react-native";
+import { useQuery } from "@tanstack/react-query";
 import { Button } from "../../components/ui/Button";
 import { Header } from "../../components/ui/Header";
 import { Text } from "../../components/ui/Text";
 import { Screen } from "../../components/ui/Screen";
+import { fetchQuote } from "../../api/quotes";
 import { ApiError } from "../../lib/apiClient";
+import { formatMoneyGBP } from "../../lib/format";
 import { Job, JobStatus } from "../../types";
 
 function errorMessage(err: unknown, fallback: string): string {
@@ -39,9 +42,9 @@ type JobDetailScreenProps = {
     lineItems: { description: string; amount: number }[],
     total: number
   ) => void | Promise<void>;
-  /** Quote-less jobs: open the AI create-invoice page. */
-  onCreateInvoiceAi?: () => void;
-  /** Persist status transitions on the backend. */
+  /** Open the create-invoice page (prefilled from the job's quote when it has
+   * one; AI-assisted draft for quote-less jobs). */
+  onCreateInvoiceAi?: () => void;  /** Persist status transitions on the backend. */
   onStart?: () => Promise<void>;
   onComplete?: () => Promise<void>;
   /** Id of the invoice already created for this job's quote, when one exists. */
@@ -109,6 +112,15 @@ export function JobDetailScreen({
   // invoice on the AI create-invoice page (or by hand below).
   const hasQuote = job.quoteId !== "";
 
+  // The attributed quote's lines/totals seed the invoice summary; the backend
+  // mirrors them exactly onto the invoice (rounding uplift included).
+  const sourceQuoteQuery = useQuery({
+    queryKey: ["quote", job.quoteId],
+    queryFn: () => fetchQuote(job.quoteId),
+    enabled: hasQuote,
+  });
+  const sourceQuote = sourceQuoteQuery.data;
+
   const totals = useMemo(() => {
     const subtotal = items.reduce((sum, i) => sum + i.amount, 0);
     const vat = subtotal * (vatRate ?? 0.2);
@@ -168,6 +180,13 @@ export function JobDetailScreen({
   };
 
   const handleSubmitInvoice = async () => {
+    if (hasQuote && onCreateInvoiceAi) {
+      // Jobs with an attributed quote build the invoice on the create-invoice
+      // page, prefilled with the quote's lines/total (editable before send) —
+      // never a blind £0.00 create-and-send from here.
+      onCreateInvoiceAi();
+      return;
+    }
     if (!hasQuote && items.length === 0) {
       // N19: quote-less jobs build their invoice on the AI create-invoice page.
       if (onCreateInvoiceAi) {
@@ -440,12 +459,59 @@ export function JobDetailScreen({
                   {hasQuote ? "from approved quote" : "no quote attached"}
                 </Text>
               </View>
-              {!hasQuote && (
-                <Text variant="caption" color="secondary">
-                  This job has no quote attached — add the job's line items below, or build the
-                  invoice with AI.
-                </Text>
-              )}
+              {hasQuote ? (
+                <>
+                  <Text variant="caption" color="secondary">
+                    The quote's lines prefill the invoice — you can review and edit them on the
+                    next screen before sending.
+                  </Text>
+                  {(sourceQuote?.lineItems ?? []).map((li, index) => (
+                    <View key={li.id ?? index} className="flex-row justify-between gap-2">
+                      <Text variant="caption" className="flex-1">
+                        {li.description}
+                      </Text>
+                      <Text variant="caption" color="secondary">
+                        {parseFloat(li.quantity) || 0} ×{" "}
+                        {formatMoneyGBP(parseFloat(li.unitPrice) || 0)}
+                      </Text>
+                    </View>
+                  ))}
+                  {sourceQuote && (
+                    <>
+                      <View className="my-1 h-px bg-slate-200" />
+                      <View className="flex-row justify-between">
+                        <Text variant="caption" color="secondary">
+                          Subtotal
+                        </Text>
+                        <Text variant="caption" color="secondary">
+                          {formatMoneyGBP(parseFloat(sourceQuote.subtotal) || 0)}
+                        </Text>
+                      </View>
+                      <View className="flex-row justify-between">
+                        <Text variant="caption" color="secondary">
+                          VAT
+                        </Text>
+                        <Text variant="caption" color="secondary">
+                          {formatMoneyGBP(parseFloat(sourceQuote.vatAmount) || 0)}
+                        </Text>
+                      </View>
+                      <View className="flex-row justify-between">
+                        <Text variant="body" weight="bold">
+                          Total
+                        </Text>
+                        <Text variant="title" weight="bold" color="primary">
+                          {formatMoneyGBP(parseFloat(sourceQuote.total) || 0)}
+                        </Text>
+                      </View>
+                    </>
+                  )}
+                </>
+              ) : (
+                <>
+              <Text variant="caption" color="secondary">
+                This job has no quote attached — add the job's line items below, or build the
+                invoice with AI.
+              </Text>
               {items.map((item) => (
                 <View key={item.id} className="gap-2">
                   <TextInput
@@ -499,6 +565,8 @@ export function JobDetailScreen({
                   £{totals.total.toFixed(2)}
                 </Text>
               </View>
+                </>
+              )}
             </View>
             )}
           </>
@@ -543,9 +611,11 @@ export function JobDetailScreen({
                 <Button
                   testID="job-create-invoice"
                   title={
-                    submitting
-                      ? "Creating invoice…"
-                      : `Create & send invoice · £${totals.total.toFixed(2)}`
+                    hasQuote
+                      ? "Create invoice"
+                      : submitting
+                        ? "Creating invoice…"
+                        : `Create & send invoice · £${totals.total.toFixed(2)}`
                   }
                   variant={!hasQuote && onCreateInvoiceAi ? "outline" : "primary"}
                   disabled={submitting}

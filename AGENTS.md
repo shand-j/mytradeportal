@@ -75,6 +75,15 @@ from the mobile Follow-ups settings screen. Related tenant settings:
 `quote_rounding` (0/5/10 — round quote totals up; `rounding_adjustment` column
 on quotes/invoices carries the uplift) and `working_day_start` /
 `working_day_end` / `working_days` (drive `/appointments/availability`).
+Rounding flows through the quote → job → invoice chain by these rules: an
+invoice created FROM a quote mirrors the quote's totals exactly (subtotal, VAT,
+total, `rounding_adjustment` — never re-rounded, so a quote created before the
+setting existed invoices unrounded); a scratch invoice (no quote) is rounded
+once at creation; and editing a quote after invoice creation never
+retro-changes the invoice. `POST /invoices` resolves the quote from
+`job.quote_id` when only `job_id` is sent, so the invoice-from-job flow always
+prefills the accepted quote lines (editable before send from the mobile
+create-invoice page).
 Electrician quote edits are captured as `quote_lines_edited` / `quote_refined`
 rows in `events` (before/after snapshots) for AI fine-tuning; export via
 `GET /quotes/training-events` or the SQL in that endpoint's docstring.

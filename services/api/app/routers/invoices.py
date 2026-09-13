@@ -13,7 +13,14 @@ from sqlalchemy.orm import selectinload
 
 from app.ai_telemetry import record_quote_outcome
 from app.audit import Actions, write_audit_log
-from app.calculations import build_invoice_from_quote, calculate_invoice_totals, tenant_vat_rate
+from app.calculations import (
+    LINE_PRECISION,
+    TOTAL_PRECISION,
+    apply_invoice_rounding,
+    build_invoice_from_quote,
+    calculate_invoice_totals,
+    tenant_vat_rate,
+)
 from app.database import get_db
 from app.dependencies import CurrentUserDep, TenantDep
 from app.email import send_email
@@ -21,6 +28,7 @@ from app.email_templates import invoice_sent as invoice_sent_template
 from app.models import Contact, Invoice, InvoiceLineItem, Job, Quote, QuoteRequest, Tenant
 from app.push import notify_customer, notify_staff
 from app.rls import set_tenant_in_session
+from app.routers.public_docs import issue_document_token, public_document_url
 from app.schemas import InvoiceCreate, InvoiceRead, InvoiceUpdate
 
 router = APIRouter(prefix="/invoices", tags=["Invoices"])
@@ -98,6 +106,27 @@ async def list_invoices(tenant: TenantDep, db: DbDep) -> list[InvoiceRead]:
     return [InvoiceRead.model_validate(i) for i in result.scalars().all()]
 
 
+def _lines_match_quote(quote: Quote, items: list[Any]) -> bool:
+    """True when caller-supplied lines are exactly the quote's lines, in order.
+
+    The app prefills the create-invoice page with the quote's lines for review;
+    when they come back unchanged the invoice must mirror the quote's stored
+    totals (including the rounding uplift) instead of being recomputed, so the
+    customer pays the total they accepted. Numeric comparison is quantised so
+    a JSON float round-trip (19.99 vs 19.9900) cannot false-negative.
+    """
+    if len(items) != len(quote.line_items):
+        return False
+    for item, line in zip(items, quote.line_items, strict=True):
+        if item.description.strip() != (line.description or "").strip():
+            return False
+        if item.quantity.quantize(LINE_PRECISION) != line.quantity.quantize(LINE_PRECISION):
+            return False
+        if item.unit_price.quantize(TOTAL_PRECISION) != line.unit_price.quantize(TOTAL_PRECISION):
+            return False
+    return True
+
+
 @router.post("", status_code=status.HTTP_201_CREATED)
 async def create_invoice(
     data: InvoiceCreate,
@@ -105,7 +134,16 @@ async def create_invoice(
     current_user: CurrentUserDep,
     db: DbDep,
 ) -> InvoiceRead:
-    """Create an invoice with line items."""
+    """Create an invoice with line items.
+
+    Rounding rules (tenant ``quote_rounding`` setting):
+    - FROM a quote (explicit ``quote_id`` or the job's attributed quote): the
+      invoice mirrors the quote's totals exactly — subtotal, VAT, total and
+      rounding uplift are copied, never re-rounded. A quote created before
+      the setting existed therefore invoices unrounded.
+    - Scratch (no quote): rounding is applied once at creation.
+    - Editing a quote after invoice creation never retro-changes the invoice.
+    """
     await set_tenant_in_session(db, tenant.id)
 
     contact = await db.get(Contact, data.contact_id)
@@ -118,12 +156,15 @@ async def create_invoice(
         if job is None or job.tenant_id != tenant.id:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid job")
 
+    # The quote is taken explicitly, or resolved from the job's attributed
+    # quote so the invoice-from-job flow always inherits the accepted lines.
     quote: Quote | None = None
-    if data.quote_id:
+    quote_id = data.quote_id or (job.quote_id if job is not None else None)
+    if quote_id is not None:
         quote_result = await db.execute(
             select(Quote)
             .options(selectinload(Quote.line_items))
-            .where(Quote.id == data.quote_id, Quote.tenant_id == tenant.id)
+            .where(Quote.id == quote_id, Quote.tenant_id == tenant.id)
         )
         quote = quote_result.scalar_one_or_none()
         if quote is None:
@@ -132,8 +173,26 @@ async def create_invoice(
     invoice_number = data.invoice_number or await generate_invoice_number(db, tenant.id)
     due_date = data.due_date or (datetime.utcnow() + timedelta(days=14))
 
-    if quote is not None and not data.line_items:
-        invoice = build_invoice_from_quote(quote, invoice_number, due_date)
+    if quote is not None and (not data.line_items or _lines_match_quote(quote, data.line_items)):
+        invoice = build_invoice_from_quote(quote, invoice_number, due_date, job_id=data.job_id)
+    elif quote is not None:
+        # The electrician edited the quote-prefilled lines before creating:
+        # totals are recomputed from the edited lines. The rounding uplift is
+        # dropped — quote-linked invoices are never re-rounded server-side —
+        # and the VAT rate falls back to the quote's when not sent.
+        invoice = Invoice(
+            tenant_id=tenant.id,
+            contact_id=data.contact_id,
+            job_id=data.job_id,
+            quote_id=quote.id,
+            invoice_number=invoice_number,
+            due_date=due_date,
+            vat_rate=(data.vat_rate if "vat_rate" in data.model_fields_set else quote.vat_rate),
+        )
+        invoice.line_items = [
+            InvoiceLineItem(tenant_id=tenant.id, **item.model_dump()) for item in data.line_items
+        ]
+        calculate_invoice_totals(invoice)
     else:
         invoice = Invoice(
             tenant_id=tenant.id,
@@ -151,8 +210,8 @@ async def create_invoice(
         )
         # When the caller did not supply line items, derive a sensible default from
         # the source record so the invoice is not empty. This happens when the
-        # electrician taps "Create invoice" from a completed job without adding
-        # manual line items in the app.
+        # electrician taps "Create invoice" from a completed quote-less job
+        # without adding manual line items in the app.
         if not data.line_items and job is not None:
             invoice.line_items = [
                 InvoiceLineItem(
@@ -168,6 +227,8 @@ async def create_invoice(
                 for item in data.line_items
             ]
         calculate_invoice_totals(invoice)
+        # Scratch invoices are rounded once, at creation, per the tenant setting.
+        apply_invoice_rounding(invoice, tenant.settings)
 
     db.add(invoice)
     await db.flush()
@@ -214,6 +275,13 @@ async def update_invoice(
             await db.delete(item)
         invoice.line_items = [InvoiceLineItem(tenant_id=tenant.id, **item) for item in new_items]
         calculate_invoice_totals(invoice)
+        # The rounding uplift is a fixed amount set at creation (inherited
+        # from the quote, or applied to scratch invoices). Line edits keep it
+        # so subtotal + VAT + adjustment stays consistent with the total; the
+        # invoice is never re-rounded after creation.
+        adjustment = invoice.rounding_adjustment or Decimal("0.00")
+        if adjustment:
+            invoice.total = invoice.total + adjustment
 
     for key, value in changed.items():
         setattr(invoice, key, value)
@@ -300,12 +368,24 @@ async def send_invoice(
             tenant_row.settings if tenant_row is not None else None,
             reference=invoice.invoice_number,
         )
+        # Mint the secure web-link token so customers without the app can
+        # open (and pay) the invoice on the landing site. Re-sending revokes
+        # earlier tokens.
+        raw_token = await issue_document_token(
+            db,
+            kind="invoice",
+            document_id=invoice.id,
+            tenant_id=tenant.id,
+            contact_email=contact.email,
+        )
+        view_url = public_document_url("invoice", raw_token)
         subject, html, text = invoice_sent_template(
             customer_name=contact.name.split()[0] if contact.name else "there",
             business_name=business_name,
             invoice_number=invoice.invoice_number,
             invoice_total=f"£{invoice.total}",
             payment_details=payment_details,
+            view_url=view_url,
         )
         try:
             await send_email(

@@ -112,7 +112,8 @@ async def test_invoice_inherits_rounded_quote_total(admin_client: AsyncClient) -
     assert Decimal(adjustment) == Decimal("7.00")
 
 
-async def test_invoice_from_scratch_is_not_rounded(admin_client: AsyncClient) -> None:
+async def test_invoice_from_scratch_is_rounded_per_setting(admin_client: AsyncClient) -> None:
+    """Scratch invoices (no source quote) are rounded once, at creation."""
     await _set_rounding(admin_client, 10)
     contact_id = await _create_contact(admin_client)
     response = await admin_client.post(
@@ -124,6 +125,28 @@ async def test_invoice_from_scratch_is_not_rounded(admin_client: AsyncClient) ->
             ],
         },
     )
+    assert response.status_code == 201
+    invoice = response.json()
+    adjustment = invoice.get("roundingAdjustment", invoice.get("rounding_adjustment"))
+    assert Decimal(invoice["total"]) == Decimal("870.00")
+    assert Decimal(adjustment) == Decimal("7.00")
+
+
+async def test_unrounded_legacy_quote_is_mirrored_not_rerounded(
+    admin_client: AsyncClient,
+) -> None:
+    """A quote created before the setting existed keeps its exact total on the
+    invoice: enabling rounding later must NOT inflate the invoice past the
+    total the customer accepted."""
+    contact_id = await _create_contact(admin_client)
+    created = await admin_client.post("/quotes", json=_quote_payload(contact_id))
+    quote_id = created.json()["id"]
+    assert Decimal(created.json()["total"]) == Decimal("863.00")
+
+    # The tenant switches rounding on after the quote was issued.
+    await _set_rounding(admin_client, 10)
+
+    response = await admin_client.post(f"/quotes/{quote_id}/convert-to-invoice", json={})
     assert response.status_code == 201
     invoice = response.json()
     adjustment = invoice.get("roundingAdjustment", invoice.get("rounding_adjustment"))

@@ -1444,3 +1444,35 @@ class AiDraftFeedback(TenantScopedBase):
     # Fuzzy-matched (difflib ratio ≥ 0.85) but not exact-description pairs.
     description_rewrites: Mapped[int | None] = mapped_column(Integer, nullable=True)
     computed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+
+class DocumentAccessToken(Base, TimestampMixin):
+    """A bearer token that opens a public, read-only quote/invoice web page.
+
+    Issued when a quote or invoice is emailed to the customer; the raw token
+    only ever appears in the emailed link (``/{kind}/{token}`` on the landing
+    site). Only the SHA-256 hash is stored so a leaked DB dump cannot be used
+    to open documents. Unlike ``PasswordResetToken`` these are NOT single-use
+    — a customer re-opens their quote/invoice link many times — but they
+    expire (30 days) and can be revoked; re-sending a document revokes its
+    earlier tokens so only the newest emailed link stays valid.
+
+    Deliberately a plain ``Base`` (like ``DemoQuoteEvent``): the public,
+    no-auth render endpoint looks the token up before any tenant context
+    exists, so the table must stay out of ``app.rls.TENANT_SCOPED_TABLES``.
+    ``tenant_id``/``document_id`` are plain columns (no FK) so token rows
+    survive document deletion — the endpoint then 404s like any invalid token.
+    """
+
+    __tablename__ = "document_access_tokens"
+
+    id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
+    tenant_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), nullable=False, index=True)
+    kind: Mapped[str] = mapped_column(String(20), nullable=False)  # quote | invoice
+    document_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), nullable=False, index=True)
+    token_hash: Mapped[str] = mapped_column(String(255), unique=True, nullable=False)
+    # Email the link was sent to, snapshotted for audit/prefill only — never
+    # returned by the public endpoint.
+    contact_email: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    expires_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)

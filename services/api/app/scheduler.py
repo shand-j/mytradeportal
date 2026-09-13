@@ -50,7 +50,6 @@ from app.config import (
     ROLLUP_RUN_MINUTE_UTC,
     ROLLUP_TICK_SECONDS,
 )
-from app.config import settings as app_settings
 from app.database import AsyncSessionLocal
 from app.email import send_event_email
 from app.email_templates import invoice_reminder as invoice_reminder_template
@@ -130,9 +129,25 @@ async def _reminder_state(
     return count or 0, last_sent
 
 
-def _quote_view_url(quote: Quote) -> str:
-    origin = app_settings.app_public_url.rstrip("/") if app_settings.app_public_url else ""
-    return f"{origin}/customer/quote/{quote.id}" if origin else f"/customer/quote/{quote.id}"
+async def _document_view_url(
+    db: AsyncSession, kind: str, document_id: UUID, tenant_id: UUID, contact_email: str | None
+) -> str:
+    """Secure web link for a customer-facing document (mytradeportal.co.uk).
+
+    Mints a fresh DocumentAccessToken per send — tokens are hashed at rest so
+    an earlier link can't be recovered; minting revokes prior links for the
+    document ("newest link wins", same as the send_quote/send_invoice flow).
+    """
+    from app.routers.public_docs import issue_document_token, public_document_url
+
+    raw = await issue_document_token(
+        db,
+        kind=kind,  # type: ignore[arg-type]
+        document_id=document_id,
+        tenant_id=tenant_id,
+        contact_email=contact_email,
+    )
+    return public_document_url(kind, raw)  # type: ignore[arg-type]
 
 
 async def _process_quote_reminders(
@@ -175,7 +190,9 @@ async def _process_quote_reminders(
             business_name=tenant.name,
             quote_title=quote.title,
             quote_total=f"£{quote.total}",
-            view_url=_quote_view_url(quote),
+            view_url=await _document_view_url(
+                db, "quote", quote.id, tenant.id, contact.email if contact else None
+            ),
         )
         delivered = await send_event_email(
             to_email=contact.email if contact is not None else None,
@@ -267,6 +284,9 @@ async def _process_invoice_reminders(
             invoice_total=f"£{invoice.total}",
             payment_details=_tenant_payment_details(
                 tenant.settings, reference=invoice.invoice_number
+            ),
+            view_url=await _document_view_url(
+                db, "invoice", invoice.id, tenant.id, contact.email if contact else None
             ),
         )
         delivered = await send_event_email(

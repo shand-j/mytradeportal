@@ -1,15 +1,16 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { KeyboardAvoidingView, Platform, ScrollView, TextInput, View } from "react-native";
 import { useRouter } from "expo-router";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button } from "../../components/ui/Button";
 import { Header } from "../../components/ui/Header";
 import { Icon } from "../../components/ui/Icon";
 import { IconButton } from "../../components/ui/IconButton";
 import { Screen } from "../../components/ui/Screen";
 import { Text } from "../../components/ui/Text";
-import { generateQuoteForContact } from "../../api/quotes";
+import { fetchQuote, generateQuoteForContact } from "../../api/quotes";
 import { createInvoice } from "../../api/invoices";
+import { useJobDetail } from "../../api/jobs";
 import { ApiError } from "../../lib/apiClient";
 import { formatMoneyGBP } from "../../lib/format";
 
@@ -35,9 +36,11 @@ export type InvoiceCreateScreenProps = {
 };
 
 /**
- * AI create-invoice page for jobs without a quote. Reuses the quote-generation
- * pipeline (AI lines, editable) but the CTA creates an invoice directly, then
- * hands off to the invoice page for review + sending.
+ * Create-invoice page. For jobs with an attributed quote the quote's lines
+ * and totals prefill the editor (editable before send); quote-less jobs start
+ * empty and can build lines with the AI quote-generation pipeline. The CTA
+ * creates a draft invoice, then hands off to the invoice page for review +
+ * sending.
  */
 export function InvoiceCreateScreen({
   jobId,
@@ -49,13 +52,52 @@ export function InvoiceCreateScreen({
   const router = useRouter();
   const queryClient = useQueryClient();
 
+  // A job raised from a quote carries quote_id; its lines/total prefill the
+  // editor so the invoice starts from what the customer accepted (£0.00
+  // empty-invoice fix). Quote-less jobs skip this entirely.
+  const { raw: jobRaw } = useJobDetail(jobId);
+  const jobQuoteId = jobRaw?.quoteId ?? null;
+  const sourceQuoteQuery = useQuery({
+    queryKey: ["quote", jobQuoteId],
+    queryFn: () => fetchQuote(jobQuoteId as string),
+    enabled: !!jobQuoteId,
+  });
+
   const [description, setDescription] = useState(jobTitle ?? "");
   const [lines, setLines] = useState<EditableLine[]>([blankLine()]);
+  const [sourceQuoteId, setSourceQuoteId] = useState<string | null>(null);
   const [generatedQuoteId, setGeneratedQuoteId] = useState<string | null>(null);
   const [vatRate, setVatRate] = useState<number | null>(null);
+  // Total of the quote the current (unedited) lines came from, incl. any
+  // rounding uplift — shown instead of a locally recomputed total so the
+  // footer matches what the backend will mirror onto the invoice.
+  const [matchedQuoteTotal, setMatchedQuoteTotal] = useState<number | null>(null);
   const [generating, setGenerating] = useState(false);
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const seededQuoteRef = useRef<string | null>(null);
+  // Set on any manual edit / AI generation so a late-arriving quote fetch
+  // never clobbers lines the electrician already touched.
+  const userTouchedRef = useRef(false);
+  useEffect(() => {
+    const quote = sourceQuoteQuery.data;
+    if (!quote || seededQuoteRef.current === quote.id || userTouchedRef.current) return;
+    seededQuoteRef.current = quote.id;
+    setSourceQuoteId(quote.id);
+    const parsedVat = parseFloat(quote.vatRate);
+    setVatRate(Number.isFinite(parsedVat) ? parsedVat : null);
+    const parsedTotal = parseFloat(quote.total);
+    setMatchedQuoteTotal(Number.isFinite(parsedTotal) ? parsedTotal : null);
+    setLines(
+      (quote.lineItems ?? []).map((li) => ({
+        id: li.id,
+        description: li.description,
+        qty: String(li.quantity),
+        unitPrice: String(li.unitPrice),
+      }))
+    );
+  }, [sourceQuoteQuery.data]);
 
   const subtotal = useMemo(
     () =>
@@ -68,10 +110,14 @@ export function InvoiceCreateScreen({
   );
 
   const updateLine = (id: string, field: keyof EditableLine, value: string) => {
+    userTouchedRef.current = true;
+    setMatchedQuoteTotal(null);
     setLines((prev) => prev.map((line) => (line.id === id ? { ...line, [field]: value } : line)));
   };
 
   const removeLine = (id: string) => {
+    userTouchedRef.current = true;
+    setMatchedQuoteTotal(null);
     setLines((prev) => prev.filter((line) => line.id !== id));
   };
 
@@ -82,6 +128,7 @@ export function InvoiceCreateScreen({
     }
     setError(null);
     setGenerating(true);
+    userTouchedRef.current = true;
     try {
       const quote = await generateQuoteForContact({
         contactId,
@@ -90,6 +137,8 @@ export function InvoiceCreateScreen({
       setGeneratedQuoteId(quote.id);
       const parsedVat = parseFloat(quote.vatRate);
       setVatRate(Number.isFinite(parsedVat) ? parsedVat : null);
+      const parsedTotal = parseFloat(quote.total);
+      setMatchedQuoteTotal(Number.isFinite(parsedTotal) ? parsedTotal : null);
       setLines(
         (quote.lineItems ?? []).map((li) => ({
           id: li.id,
@@ -112,7 +161,8 @@ export function InvoiceCreateScreen({
   const handleCreate = async () => {
     setError(null);
     const validLines = lines.filter((line) => line.description.trim() !== "");
-    if (!generatedQuoteId && validLines.length === 0) {
+    const quoteId = generatedQuoteId ?? sourceQuoteId;
+    if (!quoteId && validLines.length === 0) {
       setError("Generate lines with AI or add at least one line item.");
       return;
     }
@@ -121,7 +171,7 @@ export function InvoiceCreateScreen({
       const invoice = await createInvoice({
         contactId,
         jobId,
-        quoteId: generatedQuoteId ?? undefined,
+        quoteId: quoteId ?? undefined,
         lineItems: validLines.map((line) => ({
           description: line.description.trim(),
           quantity: parseFloat(line.qty) || 1,
@@ -197,7 +247,9 @@ export function InvoiceCreateScreen({
                   <Text variant="caption" color="secondary">
                     Line {index + 1}
                   </Text>
-                  {generatedQuoteId && <Icon name="sparkles" size={12} color="#D97706" />}
+                  {generatedQuoteId || sourceQuoteId ? (
+                    <Icon name="sparkles" size={12} color="#D97706" />
+                  ) : null}
                 </View>
                 <IconButton
                   icon="close"
@@ -248,7 +300,11 @@ export function InvoiceCreateScreen({
             testID="invoice-add-line"
             title="+ Add line item"
             variant="outline"
-            onPress={() => setLines((prev) => [...prev, blankLine()])}
+            onPress={() => {
+              userTouchedRef.current = true;
+              setMatchedQuoteTotal(null);
+              setLines((prev) => [...prev, blankLine()]);
+            }}
           />
 
           {error && (
@@ -272,12 +328,18 @@ export function InvoiceCreateScreen({
             </View>
             <View className="items-end">
               <Text variant="caption" color="secondary">
-                {vatRate !== null
-                  ? `Total incl. VAT (${(vatRate * 100).toFixed(0)}%)`
-                  : "VAT is applied per your registration"}
+                {matchedQuoteTotal !== null
+                  ? "Total as quoted"
+                  : vatRate !== null
+                    ? `Total incl. VAT (${(vatRate * 100).toFixed(0)}%)`
+                    : "VAT is applied per your registration"}
               </Text>
               <Text variant="title" weight="bold">
-                {vatRate !== null ? formatMoneyGBP(subtotal * (1 + vatRate)) : formatMoneyGBP(subtotal)}
+                {matchedQuoteTotal !== null
+                  ? formatMoneyGBP(matchedQuoteTotal)
+                  : vatRate !== null
+                    ? formatMoneyGBP(subtotal * (1 + vatRate))
+                    : formatMoneyGBP(subtotal)}
               </Text>
             </View>
           </View>

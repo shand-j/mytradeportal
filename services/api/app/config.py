@@ -12,6 +12,13 @@ settings = get_settings()
 # which points at the back office, where the feed path does not exist.
 CALENDAR_FEED_BASE_URL: str = os.environ.get("CALENDAR_FEED_BASE_URL", "")
 
+# Public base URL for the customer-facing quote/invoice web pages hosted on
+# the landing site (``/{kind}/{token}``). Used when minting
+# ``DocumentAccessToken`` links in quote/invoice emails.
+PUBLIC_DOCS_BASE_URL: str = os.environ.get(
+    "PUBLIC_DOCS_BASE_URL", "https://www.mytradeportal.co.uk"
+).rstrip("/")
+
 # In-process reminder scheduler (quote/invoice follow-up emails). Runs as an
 # asyncio task started from the app lifespan; no extra infra. Disable per
 # environment (e.g. PR previews) with REMINDER_SCHEDULER_ENABLED=false.
