@@ -10,11 +10,13 @@ import {
   useNoIndex,
   usePublicDocument,
 } from './ViewQuote'
+import { isPortalMode } from '../portal/host'
 
 export default function ViewInvoice() {
   usePageMeta('Your invoice — My Trade Portal', 'View and pay the invoice your electrician sent you.')
   useNoIndex()
   const { status, error, doc } = usePublicDocument('invoice')
+  const portal = isPortalMode()
   const [searchParams] = useSearchParams()
   const paymentReturning = searchParams.get('paid') === '1'
 
@@ -23,7 +25,7 @@ export default function ViewInvoice() {
 
   return (
     <main className="relative flex min-h-screen flex-col">
-      <Nav />
+      {!portal && <Nav />}
       <div className="flex flex-1 items-start justify-center px-5 py-[var(--space-2xl)]">
         {status === 'loading' && (
           <section className="w-full max-w-[720px] border-2 border-[var(--ink)] bg-[var(--paper)] p-6 md:p-10">
@@ -76,7 +78,7 @@ export default function ViewInvoice() {
           </DocumentShell>
         )}
       </div>
-      <Footer />
+      {!portal && <Footer />}
     </main>
   )
 }

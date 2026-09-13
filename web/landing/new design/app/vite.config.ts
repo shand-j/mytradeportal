@@ -14,6 +14,23 @@ export default defineConfig({
         target: "http://localhost:8000",
         changeOrigin: true,
       },
+      // Tenant-portal API — same-origin in dev when VITE_API_URL is unset.
+      "/businesses": {
+        target: "http://localhost:8000",
+        changeOrigin: true,
+      },
+      "/customer": {
+        target: "http://localhost:8000",
+        changeOrigin: true,
+      },
+      "/communications": {
+        target: "http://localhost:8000",
+        changeOrigin: true,
+      },
+      "/public": {
+        target: "http://localhost:8000",
+        changeOrigin: true,
+      },
     },
   },
   resolve: {

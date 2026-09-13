@@ -2,6 +2,7 @@ import { Link } from 'react-router'
 import Nav from '../sections/Nav'
 import Footer from '../sections/Footer'
 import { usePageMeta } from '../hooks/usePageMeta'
+import { isPortalMode } from '../portal/host'
 
 /**
  * Fair-use policy — AI is included on every plan with no counting. A generous
@@ -14,9 +15,11 @@ export default function FairUse() {
     'AI is included on every My Trade Portal plan with no credits and no counting — our fair-use policy exists only to stop abuse.',
   )
 
+  const portal = isPortalMode()
+
   return (
     <main className="relative flex min-h-screen flex-col">
-      <Nav />
+      {!portal && <Nav />}
       <div className="flex flex-1 items-start justify-center px-5 py-[var(--space-2xl)] md:py-[var(--space-3xl)]">
         <section className="w-full max-w-[720px] border-2 border-[var(--ink)] bg-[var(--paper)] p-6 md:p-10">
           <p className="spec-label text-[var(--muted)]">Policy</p>
@@ -85,7 +88,7 @@ export default function FairUse() {
           </p>
         </section>
       </div>
-      <Footer />
+      {!portal && <Footer />}
     </main>
   )
 }
