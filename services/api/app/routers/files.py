@@ -12,7 +12,9 @@ from typing import Annotated
 from uuid import UUID
 
 import boto3
+import structlog
 from botocore.config import Config as BotoConfig
+from botocore.exceptions import ClientError
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, status
 from fastapi.responses import Response, StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -21,6 +23,7 @@ from app.config import settings
 from app.database import get_db
 from app.dependencies import ActiveUserDep, CurrentUserDep
 
+logger = structlog.get_logger("api.files")
 router = APIRouter(prefix="/files", tags=["Files"])
 DbDep = Annotated[AsyncSession, Depends(get_db)]
 
@@ -62,11 +65,32 @@ def s3_client() -> boto3.client:
     )
 
 
+def _ensure_bucket(client: boto3.client) -> None:
+    """Create the upload bucket when missing.
+
+    The bucket is data, not schema: nothing provisions it when the MinIO
+    volume is recreated, and a missing bucket surfaces as a 503 on every
+    upload. Self-heal instead — MinIO bucket creation is idempotent-ish and
+    cheap.
+    """
+    try:
+        client.head_bucket(Bucket=settings.minio_bucket)
+    except ClientError as exc:
+        code = str(exc.response.get("Error", {}).get("Code", ""))
+        if code in ("404", "NoSuchBucket"):
+            logger.warning("minio_bucket_missing_recreating", bucket=settings.minio_bucket)
+            client.create_bucket(Bucket=settings.minio_bucket)
+        else:
+            raise
+
+
 def store_upload(tenant_id: UUID, file: UploadFile, content: bytes) -> dict[str, str]:
     """Store an uploaded object for the tenant and return key + proxy URL."""
     safe_name = (file.filename or "upload").split("/")[-1][:120]
     key = f"tenants/{tenant_id}/{uuid.uuid4()}/{safe_name}"
-    s3_client().put_object(
+    client = s3_client()
+    _ensure_bucket(client)
+    client.put_object(
         Bucket=settings.minio_bucket,
         Key=key,
         Body=content,

@@ -53,6 +53,25 @@ async def test_upload_and_download_roundtrip(admin_client: AsyncClient) -> None:
 
 
 @pytest.mark.asyncio
+async def test_upload_recreates_missing_bucket(admin_client: AsyncClient) -> None:
+    """NoSuchBucket (e.g. recreated MinIO volume) must self-heal, not 503."""
+    from botocore.exceptions import ClientError
+
+    store: dict[str, bytes] = {}
+    client = _fake_s3(store)
+    client.head_bucket.side_effect = ClientError(
+        {"Error": {"Code": "404", "Message": "Not Found"}}, "HeadBucket"
+    )
+
+    with patch("app.routers.files.s3_client", return_value=client):
+        upload = await admin_client.post(
+            "/files/upload", files={"file": ("quote.txt", b"hello world", "text/plain")}
+        )
+    assert upload.status_code == 200, upload.text
+    client.create_bucket.assert_called_once()
+
+
+@pytest.mark.asyncio
 async def test_download_rejects_other_tenant_keys(admin_client: AsyncClient) -> None:
     store: dict[str, bytes] = {}
     with patch("app.routers.files.s3_client", return_value=_fake_s3(store)):
