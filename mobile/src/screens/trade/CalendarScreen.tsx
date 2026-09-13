@@ -315,6 +315,17 @@ export function CalendarScreen(_props: CalendarScreenProps) {
                               <Text variant="caption" color="secondary" numberOfLines={2} style={{ fontSize: 11 }}>
                                 {job.title}
                               </Text>
+                              {job.address || job.postcode ? (
+                                <Text
+                                  testID={`booking-address-${job.id}`}
+                                  variant="caption"
+                                  color="secondary"
+                                  numberOfLines={1}
+                                  style={{ fontSize: 10 }}
+                                >
+                                  {job.address || job.postcode}
+                                </Text>
+                              ) : null}
                             </View>
                           </Pressable>
                         );

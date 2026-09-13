@@ -63,6 +63,38 @@ async def test_create_job_links_notification_to_job(client: AsyncClient, db: Asy
     assert notification.link == f"/job/{job['id']}"
 
 
+async def test_job_read_includes_customer_address(client: AsyncClient) -> None:
+    """JobRead embeds the contact's address/postcode (calendar week view)."""
+    tenant = await _create_tenant(client, f"job-{uuid4().hex[:8]}")
+    response = await client.post(
+        "/contacts",
+        headers={"X-Tenant-ID": tenant["id"]},
+        json={
+            "name": "Job Address",
+            "email": "job.address@example.com",
+            "address": "10 Downing Street",
+            "postcode": "SW1A 2AA",
+        },
+    )
+    assert response.status_code == 201
+    contact: dict[str, Any] = response.json()
+    job = await _create_job(client, tenant["id"], contact["id"])
+
+    list_response = await client.get("/jobs", headers={"X-Tenant-ID": tenant["id"]})
+    assert list_response.status_code == 200
+    listed = next(j for j in list_response.json() if j["id"] == job["id"])
+    assert listed["customer"]["address"] == "10 Downing Street"
+    assert listed["customer"]["postcode"] == "SW1A 2AA"
+
+    get_response = await client.get(
+        f"/jobs/{job['id']}",
+        headers={"X-Tenant-ID": tenant["id"]},
+    )
+    assert get_response.status_code == 200
+    assert get_response.json()["customer"]["address"] == "10 Downing Street"
+    assert get_response.json()["customer"]["postcode"] == "SW1A 2AA"
+
+
 async def test_update_job_schedule(client: AsyncClient) -> None:
     tenant = await _create_tenant(client, f"job-{uuid4().hex[:8]}")
     contact = await _create_contact(client, tenant["id"], "Job Scheduler")

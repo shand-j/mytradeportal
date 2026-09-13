@@ -156,7 +156,8 @@ test.describe.serial("J — Job create, convert & detail editing", () => {
     await page.goto("/(trade)/job/new", { waitUntil: "networkidle" });
     await waitText(page, "New job");
 
-    await tap(page, `job-create-quote-${hourQuote.id}`);
+    await fill(page, "job-create-quote-search", "E2E Hourly");
+    await tap(page, `job-create-quote-option-${hourQuote.id}`);
     await waitText(page, "from the selected quote");
     await expect(page.locator('[data-testid="job-create-duration"]')).toHaveValue("6", {
       timeout: 30000,

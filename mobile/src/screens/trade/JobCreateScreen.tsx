@@ -5,6 +5,7 @@ import {
   Platform,
   Pressable,
   ScrollView,
+  TextInput,
   View,
 } from "react-native";
 import DateTimePicker from "@react-native-community/datetimepicker";
@@ -64,6 +65,11 @@ async function suggestFirstSlot(): Promise<{ date: string; time: string } | null
   return null;
 }
 
+/** "address · postcode" display line for a contact/quote customer. */
+function contactAddressLine(contact: { address: string | null; postcode: string | null }): string {
+  return [contact.address, contact.postcode].filter(Boolean).join(" · ");
+}
+
 export type JobCreateScreenProps = {
   onClose: () => void;
   /** Preselect this quote (e.g. from the quote screen's "Convert to…" sheet). */
@@ -91,7 +97,9 @@ export function JobCreateScreen({ onClose, initialQuoteId }: JobCreateScreenProp
 
   const [title, setTitle] = useState("");
   const [selectedQuoteId, setSelectedQuoteId] = useState<string | null>(initialQuoteId ?? null);
-  const [customerMode, setCustomerMode] = useState<"existing" | "new">("existing");
+  const [quoteSearch, setQuoteSearch] = useState("");
+  const [customerMode, setCustomerMode] = useState<"search" | "new">("search");
+  const [customerSearch, setCustomerSearch] = useState("");
   const [contactId, setContactId] = useState<string | null>(null);
   const [newCustomerName, setNewCustomerName] = useState("");
   const [newCustomerPhone, setNewCustomerPhone] = useState("");
@@ -114,6 +122,31 @@ export function JobCreateScreen({ onClose, initialQuoteId }: JobCreateScreenProp
     [convertibleQuotes, selectedQuoteId]
   );
 
+  // A quoteId in the route (Convert-to flow) locks the quote attribution —
+  // no quote search and no deselect in that mode.
+  const quoteLocked = initialQuoteId != null;
+
+  const quoteMatches = useMemo(() => {
+    const needle = quoteSearch.trim().toLowerCase();
+    if (!needle) return convertibleQuotes;
+    return convertibleQuotes.filter((q) =>
+      [q.title, q.customer.name].join(" ").toLowerCase().includes(needle)
+    );
+  }, [convertibleQuotes, quoteSearch]);
+
+  const selectedContact = useMemo(
+    () => contacts.find((c) => c.id === contactId) ?? null,
+    [contacts, contactId]
+  );
+
+  const customerMatches = useMemo(() => {
+    const needle = customerSearch.trim().toLowerCase();
+    if (!needle) return contacts;
+    return contacts.filter((c) =>
+      [c.name, c.phone ?? "", c.email ?? ""].join(" ").toLowerCase().includes(needle)
+    );
+  }, [contacts, customerSearch]);
+
   // N18: selecting a quote prefills title, customer, duration (from quoted
   // labour hours) and proposes the earliest available start slot.
   const prefilledQuoteRef = useRef<string | null>(null);
@@ -122,7 +155,7 @@ export function JobCreateScreen({ onClose, initialQuoteId }: JobCreateScreenProp
     prefilledQuoteRef.current = selectedQuote.id;
     setTitle(selectedQuote.title);
     setContactId(selectedQuote.customer.id);
-    setCustomerMode("existing");
+    setCustomerMode("search");
     const hours = quotedLabourHours(selectedQuote);
     setDurationHours(hours > 0 ? String(hours) : "");
     void suggestFirstSlot().then((slot) => {
@@ -282,43 +315,112 @@ export function JobCreateScreen({ onClose, initialQuoteId }: JobCreateScreenProp
           contentContainerClassName="gap-3 pb-4"
           keyboardShouldPersistTaps="handled"
         >
-          {convertibleQuotes.length > 0 && (
-            <View className="gap-2">
-              <Text variant="body" weight="semibold">
-                From a quote
-              </Text>
-              <Text variant="caption" color="secondary">
-                Optional — prefills the customer, duration and a suggested start slot.
-              </Text>
-              {convertibleQuotes.map((quote) => {
-                const selected = quote.id === selectedQuoteId;
-                return (
-                  <Pressable
-                    key={quote.id}
-                    testID={`job-create-quote-${quote.id}`}
-                    onPress={() => setSelectedQuoteId(selected ? null : quote.id)}
-                  >
-                    <View
-                      className={`rounded-xl border p-3 ${
-                        selected ? "border-primary bg-primary-50" : "border-slate-200 bg-white"
-                      }`}
-                    >
-                      <Text variant="body" weight={selected ? "semibold" : "normal"}>
-                        {quote.title}
-                      </Text>
-                      <Text variant="caption" color="secondary">
-                        {quote.customer.name} · {quote.status === "approved" ? "Accepted" : "Sent"}
-                      </Text>
-                      {selected && quote.status !== "approved" && (
-                        <Text testID="job-create-quote-mark-accepted" variant="caption" color="secondary">
-                          Will be marked as accepted when the job is created.
-                        </Text>
-                      )}
-                    </View>
-                  </Pressable>
-                );
-              })}
+          {quoteLocked ? (
+            <View
+              testID="job-create-quote-locked"
+              className="gap-1 rounded-xl border border-primary bg-primary-50 p-3"
+            >
+              {selectedQuote ? (
+                <>
+                  <Text variant="body" weight="semibold">
+                    From quote: {selectedQuote.title}
+                  </Text>
+                  <Text variant="caption" color="secondary">
+                    {selectedQuote.status === "approved" ? "Accepted" : "Sent"} · this job stays
+                    linked to the quote it was converted from.
+                  </Text>
+                  {selectedQuote.status !== "approved" && (
+                    <Text testID="job-create-quote-mark-accepted" variant="caption" color="secondary">
+                      Will be marked as accepted when the job is created.
+                    </Text>
+                  )}
+                </>
+              ) : (
+                <Text variant="caption" color="secondary">
+                  Loading the quote…
+                </Text>
+              )}
             </View>
+          ) : (
+            convertibleQuotes.length > 0 && (
+              <View className="gap-2">
+                <Text variant="body" weight="semibold">
+                  From a quote
+                </Text>
+                <Text variant="caption" color="secondary">
+                  Optional — prefills the customer, duration and a suggested start slot.
+                </Text>
+                {selectedQuote ? (
+                  <View
+                    testID="job-create-quote-selected"
+                    className="gap-1 rounded-xl border border-primary bg-primary-50 p-3"
+                  >
+                    <View className="flex-row items-start justify-between gap-2">
+                      <View className="flex-1">
+                        <Text variant="body" weight="semibold">
+                          {selectedQuote.title}
+                        </Text>
+                        <Text variant="caption" color="secondary">
+                          {selectedQuote.customer.name} ·{" "}
+                          {selectedQuote.status === "approved" ? "Accepted" : "Sent"}
+                        </Text>
+                      </View>
+                      <Pressable
+                        testID="job-create-quote-clear"
+                        accessibilityLabel="Clear quote"
+                        onPress={() => setSelectedQuoteId(null)}
+                      >
+                        <Text variant="body" weight="semibold" color="primary">
+                          ✕
+                        </Text>
+                      </Pressable>
+                    </View>
+                    {selectedQuote.status !== "approved" && (
+                      <Text testID="job-create-quote-mark-accepted" variant="caption" color="secondary">
+                        Will be marked as accepted when the job is created.
+                      </Text>
+                    )}
+                  </View>
+                ) : (
+                  <>
+                    <TextInput
+                      testID="job-create-quote-search"
+                      className="h-12 rounded-xl border border-slate-200 bg-white px-4 text-base text-slate-900"
+                      value={quoteSearch}
+                      onChangeText={setQuoteSearch}
+                      placeholder="Search quotes by customer or title"
+                      placeholderTextColor="#94A3B8"
+                      autoCapitalize="none"
+                      autoCorrect={false}
+                    />
+                    {quoteMatches.length === 0 ? (
+                      <Text testID="job-create-no-quote-matches" variant="caption" color="secondary">
+                        No quotes match your search.
+                      </Text>
+                    ) : (
+                      quoteMatches.map((quote) => (
+                        <Pressable
+                          key={quote.id}
+                          testID={`job-create-quote-option-${quote.id}`}
+                          onPress={() => {
+                            setSelectedQuoteId(quote.id);
+                            setQuoteSearch("");
+                          }}
+                        >
+                          <View className="rounded-xl border border-slate-200 bg-white p-3">
+                            <Text variant="body">{quote.title}</Text>
+                            <Text variant="caption" color="secondary">
+                              {quote.customer.name} ·{" "}
+                              {quote.status === "approved" ? "Accepted" : "Sent"}
+                            </Text>
+                          </View>
+                        </Pressable>
+                      ))
+                    )}
+                  </>
+                )}
+              </View>
+            )
           )}
 
           <FormField
@@ -334,102 +436,143 @@ export function JobCreateScreen({ onClose, initialQuoteId }: JobCreateScreenProp
               Customer
             </Text>
             {selectedQuote ? (
-              <Text testID="job-create-quote-customer" variant="caption" color="secondary">
-                {selectedQuote.customer.name} — from the selected quote.
-              </Text>
-            ) : (
-              <>
-                <View className="flex-row gap-2">
-                  <Button
-                    testID="job-create-customer-existing"
-                    title="Existing"
-                    size="sm"
-                    variant={customerMode === "existing" ? "primary" : "outline"}
-                    onPress={() => setCustomerMode("existing")}
+              <View className="gap-0.5">
+                <Text testID="job-create-quote-customer" variant="caption" color="secondary">
+                  {selectedQuote.customer.name} — from the selected quote.
+                </Text>
+                {contactAddressLine(selectedQuote.customer) !== "" && (
+                  <Text testID="job-create-quote-address" variant="caption" color="secondary">
+                    {contactAddressLine(selectedQuote.customer)}
+                  </Text>
+                )}
+              </View>
+            ) : customerMode === "new" ? (
+              <View className="gap-2">
+                <Pressable
+                  testID="job-create-customer-existing"
+                  onPress={() => setCustomerMode("search")}
+                >
+                  <Text variant="caption" weight="semibold" color="primary">
+                    ‹ Search existing customers
+                  </Text>
+                </Pressable>
+                <View className="gap-2 rounded-xl border border-slate-200 bg-white p-3">
+                  <FormField
+                    testID="job-create-new-customer-name"
+                    label="Name"
+                    value={newCustomerName}
+                    onChangeText={setNewCustomerName}
+                    placeholder="e.g. Jane Smith"
                   />
-                  <Button
-                    testID="job-create-customer-new"
-                    title="New customer"
-                    size="sm"
-                    variant={customerMode === "new" ? "primary" : "outline"}
-                    onPress={() => setCustomerMode("new")}
+                  <FormField
+                    testID="job-create-new-customer-phone"
+                    label="Phone"
+                    value={newCustomerPhone}
+                    onChangeText={setNewCustomerPhone}
+                    placeholder="Optional"
+                    keyboardType="phone-pad"
+                  />
+                  <FormField
+                    testID="job-create-new-customer-email"
+                    label="Email"
+                    value={newCustomerEmail}
+                    onChangeText={setNewCustomerEmail}
+                    placeholder="Optional"
+                    autoCapitalize="none"
+                    keyboardType="email-address"
+                  />
+                  <FormField
+                    testID="job-create-new-customer-postcode"
+                    label="Postcode"
+                    value={newCustomerPostcode}
+                    onChangeText={setNewCustomerPostcode}
+                    placeholder="Optional"
+                    autoCapitalize="characters"
                   />
                 </View>
-                {customerMode === "new" ? (
-                  <View className="gap-2 rounded-xl border border-slate-200 bg-white p-3">
-                    <FormField
-                      testID="job-create-new-customer-name"
-                      label="Name"
-                      value={newCustomerName}
-                      onChangeText={setNewCustomerName}
-                      placeholder="e.g. Jane Smith"
-                    />
-                    <FormField
-                      testID="job-create-new-customer-phone"
-                      label="Phone"
-                      value={newCustomerPhone}
-                      onChangeText={setNewCustomerPhone}
-                      placeholder="Optional"
-                      keyboardType="phone-pad"
-                    />
-                    <FormField
-                      testID="job-create-new-customer-email"
-                      label="Email"
-                      value={newCustomerEmail}
-                      onChangeText={setNewCustomerEmail}
-                      placeholder="Optional"
-                      autoCapitalize="none"
-                      keyboardType="email-address"
-                    />
-                    <FormField
-                      testID="job-create-new-customer-postcode"
-                      label="Postcode"
-                      value={newCustomerPostcode}
-                      onChangeText={setNewCustomerPostcode}
-                      placeholder="Optional"
-                      autoCapitalize="characters"
-                    />
-                  </View>
-                ) : contactsLoading ? (
+              </View>
+            ) : contactId && selectedContact ? (
+              <View
+                testID="job-create-contact-selected"
+                className="flex-row items-center justify-between gap-2 rounded-xl border border-primary bg-primary-50 p-3"
+              >
+                <View className="flex-1">
+                  <Text variant="body" weight="semibold">
+                    {selectedContact.name}
+                  </Text>
+                  {selectedContact.postcode ? (
+                    <Text variant="caption" color="secondary">
+                      {selectedContact.postcode}
+                    </Text>
+                  ) : null}
+                </View>
+                <Pressable
+                  testID="job-create-contact-clear"
+                  accessibilityLabel="Clear customer"
+                  onPress={() => setContactId(null)}
+                >
+                  <Text variant="body" weight="semibold" color="primary">
+                    ✕
+                  </Text>
+                </Pressable>
+              </View>
+            ) : (
+              <View className="gap-2">
+                <TextInput
+                  testID="job-create-customer-search"
+                  className="h-12 rounded-xl border border-slate-200 bg-white px-4 text-base text-slate-900"
+                  value={customerSearch}
+                  onChangeText={setCustomerSearch}
+                  placeholder="Search customers by name, phone or email"
+                  placeholderTextColor="#94A3B8"
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                />
+                {contactsLoading ? (
                   <Text variant="caption" color="secondary">
                     Loading customers…
                   </Text>
-                ) : contacts.length === 0 ? (
-                  <Text testID="job-create-no-contacts" variant="caption" color="secondary">
-                    No customers yet — switch to "New customer" above.
-                  </Text>
                 ) : (
-                  <View className="gap-2">
-                    {contacts.map((contact) => {
-                      const selected = contact.id === contactId;
-                      return (
-                        <Pressable
-                          key={contact.id}
-                          testID={`job-create-contact-${contact.id}`}
-                          onPress={() => setContactId(contact.id)}
-                        >
-                          <View
-                            className={`rounded-xl border p-3 ${
-                              selected
-                                ? "border-primary bg-primary-50"
-                                : "border-slate-200 bg-white"
-                            }`}
-                          >
-                            <Text variant="body" weight={selected ? "semibold" : "normal"}>
-                              {contact.name}
+                  <>
+                    {customerMatches.length === 0 && (
+                      <Text testID="job-create-no-contacts" variant="caption" color="secondary">
+                        {contacts.length === 0
+                          ? "No customers yet — add one below."
+                          : "No customers match your search."}
+                      </Text>
+                    )}
+                    {customerMatches.map((contact) => (
+                      <Pressable
+                        key={contact.id}
+                        testID={`job-create-contact-option-${contact.id}`}
+                        onPress={() => {
+                          setContactId(contact.id);
+                          setCustomerSearch("");
+                        }}
+                      >
+                        <View className="rounded-xl border border-slate-200 bg-white p-3">
+                          <Text variant="body">{contact.name}</Text>
+                          {contact.postcode ? (
+                            <Text variant="caption" color="secondary">
+                              {contact.postcode}
                             </Text>
-                            {contact.postcode ? (
-                              <Text variant="caption" color="secondary">
-                                {contact.postcode}
-                              </Text>
-                            ) : null}
-                          </View>
-                        </Pressable>
-                      );
-                    })}
-                  </View>
+                          ) : null}
+                        </View>
+                      </Pressable>
+                    ))}
+                    <Pressable
+                      testID="job-create-customer-new"
+                      onPress={() => setCustomerMode("new")}
+                    >
+                      <View className="rounded-xl border border-dashed border-slate-300 bg-white p-3">
+                        <Text variant="body" weight="semibold" color="primary">
+                          + Add new customer
+                        </Text>
+                      </View>
+                    </Pressable>
+                  </>
                 )}
-              </>
+              </View>
             )}
           </View>
 
