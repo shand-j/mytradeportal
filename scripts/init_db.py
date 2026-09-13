@@ -52,6 +52,7 @@ APP_ROLE_PASSWORD = _shared_settings.app_role_password
 # ``observability``). The default password is dev-only; production deployments
 # must set METABASE_DB_PASSWORD.
 METABASE_ROLE = os.environ.get("METABASE_DB_USER", "mtp_metabase")
+METABASE_DATABASE = os.environ.get("METABASE_DB_NAME", "metabase")
 METABASE_ROLE_PASSWORD = os.environ.get("METABASE_DB_PASSWORD", "mtp_metabase")
 
 DATABASE_URL = os.environ["DATABASE_URL"]
@@ -117,7 +118,6 @@ def _create_metabase_role(conn: Connection) -> None:
             f"NOSUPERUSER BYPASSRLS NOCREATEDB NOCREATEROLE"
         )
     conn.exec_driver_sql(f"GRANT USAGE ON SCHEMA public TO {METABASE_ROLE}")
-    conn.exec_driver_sql(f"GRANT CREATE ON SCHEMA public TO {METABASE_ROLE}")
     conn.exec_driver_sql(f"GRANT SELECT ON ALL TABLES IN SCHEMA public TO {METABASE_ROLE}")
     conn.exec_driver_sql(
         f"ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT ON TABLES TO {METABASE_ROLE}"
@@ -240,10 +240,29 @@ def sync_missing_columns(conn: Connection, metadata: MetaData) -> list[str]:
     return added
 
 
+def _create_metabase_database(engine) -> None:
+    """Create Metabase's own metadata database, owned by the BI role.
+
+    Metabase refuses to boot unless it can migrate its metadata store, but its
+    Liquibase migrations ALTER tables by name and clash with the application
+    schema (e.g. ``tenants``) — so it gets a dedicated database, never the
+    application one. Runs in AUTOCOMMIT: CREATE DATABASE cannot run inside a
+    transaction block.
+    """
+    with engine.connect().execution_options(isolation_level="AUTOCOMMIT") as conn:
+        exists = conn.execute(
+            text("SELECT 1 FROM pg_database WHERE datname = :db"),
+            {"db": METABASE_DATABASE},
+        ).first()
+        if exists is None:
+            conn.exec_driver_sql(f"CREATE DATABASE {METABASE_DATABASE} OWNER {METABASE_ROLE}")
+
+
 def init_api_schema() -> None:
     """Create the API schema from the current SQLAlchemy models."""
     print("[init_db] Creating SQLAlchemy tables from models")
     engine = create_engine(DATABASE_URL.replace("+asyncpg", ""))
+    _create_metabase_database(engine)
     with engine.begin() as conn:
         Base.metadata.create_all(conn)
         # ``create_all`` never issues ``ALTER TABLE`` for new columns on

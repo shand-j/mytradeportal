@@ -146,12 +146,14 @@ bloating the default stack — `docker compose up` stays lean; start it with
 `docker compose --profile observability up -d`:
 
 - **Metabase** (`metabase/metabase:latest`, http://localhost:3001) — BI
-  dashboards over the operational database. It connects as the dedicated
-  read-only **`mtp_metabase`** role created by `scripts/init_db.py`
+  dashboards over the operational database. Its metadata store is a dedicated
+  `metabase` database (`MB_DB_DBNAME`, owned by the BI role — its Liquibase
+  migrations ALTER tables by name and clash with the app schema, so it must
+  never point at the application database). App data is queried via the
+  dedicated read-only **`mtp_metabase`** role created by `scripts/init_db.py`
   (`BYPASSRLS` + `SELECT`-only, because RLS is `FORCE`d on every tenant table;
-  password from `METABASE_DB_PASSWORD`, dev-only default). The role also has
-  `CREATE ON SCHEMA public` so Metabase can maintain its own metadata tables
-  in the same database — it still cannot write to any application table.
+  password from `METABASE_DB_PASSWORD`, dev-only default) — add the app
+  database as a data source in the Metabase UI with that role.
 - **Langfuse** (`langfuse/langfuse:2`, http://localhost:3002) with its own
   `langfuse-postgres` (host port 5440) and `clickhouse` (host ports 8124/9003
   — 8123/9000 clash with MinIO). Named volumes `langfuse_postgres_data` and

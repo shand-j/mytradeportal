@@ -1,0 +1,5 @@
+<clickhouse>
+    <!-- Docker Desktop on macOS cannot bind [::] in this network — listen on
+         IPv4 only, per ClickHouse's own startup warning. -->
+    <listen_host>0.0.0.0</listen_host>
+</clickhouse>
