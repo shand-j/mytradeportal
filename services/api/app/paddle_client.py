@@ -91,28 +91,26 @@ async def create_subscription_transaction(
     success_url: str | None = None,
     discount_id: str | None = None,
     customer_id: str | None = None,
-    quantity: int = 1,
 ) -> dict[str, str]:
     """Create a Paddle Billing transaction for a subscription checkout.
 
-    Returns the hosted checkout URL the client opens. Trials configured on
-    the price are applied by Paddle automatically. ``customer_id`` binds the
-    checkout to a Paddle customer so the email is prefilled and non-editable;
-    when omitted, Paddle collects the email at checkout. ``discount_id``
-    auto-applies a Paddle discount at checkout (used by the beta cohort to
-    make plans free). ``quantity`` is the seat count for per-seat prices
-    (Team); it must respect the quantity limits set on the price.
+    Returns the hosted checkout URL the client opens. One flat subscription
+    per business: there is no seat or quantity logic — the Paddle price is the
+    whole tier, so every checkout is a single unit of one price. Trials
+    configured on the price are applied by Paddle automatically.
+    ``customer_id`` binds the checkout to a Paddle customer so the email is
+    prefilled and non-editable; when omitted, Paddle collects the email at
+    checkout. ``discount_id`` auto-applies a Paddle discount at checkout (used
+    by the beta cohort to make plans free).
     """
     if not settings.paddle_api_key:
         raise RuntimeError("Paddle API key is not configured")
     if not price_id:
         raise RuntimeError("Paddle price id is not configured for this plan")
-    if quantity < 1:
-        raise ValueError("quantity must be >= 1")
     _ = customer_email  # contact email lives on the bound customer record
 
     payload: dict[str, Any] = {
-        "items": [{"price_id": price_id, "quantity": quantity}],
+        "items": [{"price_id": price_id, "quantity": 1}],
         "collection_mode": "automatic",
         "custom_data": {
             "tenant_id": str(tenant_id),

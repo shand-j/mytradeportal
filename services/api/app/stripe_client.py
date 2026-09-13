@@ -173,4 +173,10 @@ def construct_event(body: bytes, signature_header: str) -> dict[str, Any]:
         )
     except stripe.SignatureVerificationError as exc:
         raise ValueError("invalid stripe webhook signature") from exc
+    # stripe-python >= 15 no longer subclasses dict (``dict(event)`` raises
+    # TypeError); ``to_dict()`` exists across the pinned ``stripe>=10`` range,
+    # with ``dict()`` kept as the fallback for any older release lacking it.
+    to_dict = getattr(event, "to_dict", None)
+    if callable(to_dict):
+        return dict(to_dict())
     return dict(event)

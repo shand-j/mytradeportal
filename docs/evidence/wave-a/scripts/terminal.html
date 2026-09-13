@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<!--
+  Terminal-in-browser page for video evidence: polls the lifecycle runner's
+  live log (served alongside this page by capture.mjs) and renders it as a
+  terminal. The text is the runner's ACTUAL output, captured while the run
+  executes — not a re-enactment.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Wave A — quote-to-cash lifecycle runner</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #0b0f14; }
+  body { display: flex; flex-direction: column; font-family: "SF Mono", Menlo, Consolas, monospace; }
+  header {
+    flex: 0 0 auto; padding: 10px 16px; color: #7ee787; background: #11161d;
+    border-bottom: 1px solid #1f2630; font-size: 13px; letter-spacing: .04em;
+  }
+  header b { color: #e6edf3; }
+  #term {
+    flex: 1 1 auto; margin: 0; padding: 14px 16px; overflow-y: auto;
+    color: #c9d4e0; font-size: 15px; line-height: 1.5; white-space: pre-wrap;
+    word-break: break-word;
+  }
+</style>
+</head>
+<body>
+<header><b>mytradeportal — quote-to-cash lifecycle</b> · live runner output · API :8100 (Stripe stubbed) · Mailpit :8025</header>
+<pre id="term">connecting…</pre>
+<script>
+  const term = document.getElementById('term')
+  let rendered = ''
+  async function poll() {
+    try {
+      const res = await fetch('/run.log?r=' + Date.now(), { cache: 'no-store' })
+      const text = (await res.text()).replace(/\x1b\[[0-9;]*m/g, '')
+      if (text !== rendered) {
+        rendered = text
+        // Keep the tail so long runs don't grow the DOM without bound.
+        term.textContent = text.length > 24000 ? '…\n' + text.slice(-24000) : text
+        term.scrollTop = term.scrollHeight
+      }
+    } catch { /* server not up yet */ }
+    setTimeout(poll, 400)
+  }
+  poll()
+</script>
+</body>
+</html>

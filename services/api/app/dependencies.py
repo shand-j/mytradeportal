@@ -290,7 +290,7 @@ async def _fire_fair_use_alert_once(db: AsyncSession, tenant: Tenant, monthly_co
             db.add(
                 AiAlertState(
                     period=period,
-                    threshold=f"fair_use_{tenant.id}",
+                    threshold=f"fair_use:{tenant.id}",
                     payload={"tenant_id": str(tenant.id), "monthly_ai_actions": monthly_count},
                 )
             )

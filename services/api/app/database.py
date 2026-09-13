@@ -46,22 +46,26 @@ def _set_tenant_on_checkout(dbapi_conn: Any, connection_record: Any, connection_
     tenant_id = get_current_tenant_id()
     if tenant_id is None:
         return
+    # The tenant id is a UUID, so inlining it is safe and sidesteps paramstyle
+    # differences between the proxy (driver SQL) and raw-cursor paths.
+    statement = f"SELECT set_config('app.current_tenant', '{tenant_id}', false)"
     try:
-        # Prefer executing through the SQLAlchemy connection proxy when it is
-        # available. Some asyncpg wrapper states do not support a raw DBAPI
-        # cursor during checkout, which can abort the transaction.
-        if connection_proxy is not None:
-            connection_proxy.exec_driver_sql(
-                "SELECT set_config('app.current_tenant', %s, false)",
-                (str(tenant_id),),
-            )
-        else:
+        # Prefer executing through the SQLAlchemy connection proxy. During
+        # async checkout this is an AsyncAdapt_asyncpg_connection, which does
+        # NOT implement exec_driver_sql — that raises AttributeError, handled
+        # below with the raw-cursor fallback.
+        connection_proxy.exec_driver_sql(statement)
+    except AttributeError:
+        # Raw-cursor fallback, kept deliberately narrow: opening a DBAPI
+        # cursor mid-checkout can abort the transaction in some asyncpg
+        # wrapper states, so it only runs for the known missing-method case
+        # and still fails safe on any other error.
+        try:
             cursor = dbapi_conn.cursor()
-            cursor.execute(
-                "SELECT set_config('app.current_tenant', %s, false)",
-                (str(tenant_id),),
-            )
+            cursor.execute(statement)
             cursor.close()
+        except Exception:
+            pass
     except Exception:
         # Fail safe: if we cannot set the tenant the connection will still
         # work, but RLS may hide rows. Let the application handle the error.

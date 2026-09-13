@@ -80,6 +80,11 @@ async def _handle_payment_intent_succeeded(event_data: dict[str, Any]) -> None:
             # Replay (or a staff mark-paid raced us): nothing to re-apply.
             logger.info("stripe_invoice_already_paid", invoice_id=str(invoice.id))
             return
+        if invoice.status == "refunded":
+            # Out-of-order delivery: the refund already won; a late succeeded
+            # event must never resurrect the invoice to paid.
+            logger.info("stripe_invoice_already_refunded", invoice_id=str(invoice.id))
+            return
 
         intent_id = str(event_data.get("id") or "")
         amount_pence = event_data.get("amount_received") or event_data.get("amount") or 0

@@ -403,6 +403,9 @@ async def test_demo_event_has_null_tenant_and_real_model_label(
     assert event.raw_payload.get("ip_hash")
     assert event.raw_payload.get("kind") == "generate"
     assert event.trace_id
+    # Anonymous demo traffic is machine-initiated: actor system, no channel.
+    assert event.actor_type == "system"
+    assert event.entry_channel is None
     await _clean_demo_used_flags()
 
 

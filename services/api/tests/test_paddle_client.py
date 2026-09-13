@@ -112,10 +112,11 @@ async def test_raises_when_create_fails_and_no_customer_appears(
         await paddle_client.get_or_create_customer("a@b.co")
 
 
-async def test_subscription_transaction_defaults_to_single_seat(
+async def test_subscription_transaction_sends_single_flat_unit(
     fake_client: _FakeAsyncClient,
 ) -> None:
-    """create_subscription_transaction keeps quantity=1 for fixed-seat plans."""
+    """create_subscription_transaction always sends one unit of the tier price
+    (flat subscription — no per-seat quantity)."""
     fake_client.queue.append(
         _FakeResponse(200, {"data": {"id": "txn_1", "checkout": {"url": "https://pay.x/1"}}})
     )
@@ -125,26 +126,3 @@ async def test_subscription_transaction_defaults_to_single_seat(
     assert result == {"transaction_id": "txn_1", "checkout_url": "https://pay.x/1"}
     _, payload = fake_client.requests[0]
     assert payload["items"] == [{"price_id": "pri_x", "quantity": 1}]
-
-
-async def test_subscription_transaction_passes_seat_quantity(
-    fake_client: _FakeAsyncClient,
-) -> None:
-    """Team checkouts send the seat count as the item quantity."""
-    fake_client.queue.append(
-        _FakeResponse(200, {"data": {"id": "txn_2", "checkout": {"url": "https://pay.x/2"}}})
-    )
-
-    await paddle_client.create_subscription_transaction(
-        "pri_team_month", "tenant", "team", quantity=5
-    )
-
-    _, payload = fake_client.requests[0]
-    assert payload["items"] == [{"price_id": "pri_team_month", "quantity": 5}]
-
-
-async def test_subscription_transaction_rejects_zero_quantity(
-    fake_client: _FakeAsyncClient,
-) -> None:
-    with pytest.raises(ValueError, match="quantity"):
-        await paddle_client.create_subscription_transaction("pri_x", "tenant", "pro", quantity=0)

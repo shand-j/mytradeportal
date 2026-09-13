@@ -9,6 +9,7 @@ import {
   type PublicDocPayload,
 } from '../lib/public-docs-api'
 import { TESTFLIGHT_URL, testflightConfigured } from '@/lib/site'
+import { isPortalMode } from '../portal/host'
 
 type Status = 'loading' | 'invalid' | 'error' | 'loaded'
 
@@ -74,14 +75,16 @@ export function formatDate(iso: string): string {
 const STATUS_LABELS: Record<string, string> = {
   draft: 'Draft',
   sent: 'Awaiting response',
-  accepted: 'Accepted',
+  approved: 'Accepted',
   rejected: 'Declined',
+  invoiced: 'Invoiced',
+  expired: 'Expired',
   paid: 'Paid',
   cancelled: 'Cancelled',
 }
 
 export function StatusBadge({ status }: { status: string }) {
-  const positive = status === 'accepted' || status === 'paid'
+  const positive = status === 'approved' || status === 'accepted' || status === 'paid'
   const negative = status === 'rejected' || status === 'cancelled'
   return (
     <span
@@ -179,8 +182,13 @@ export function DocumentShell({
         )}
         <p className="mt-[var(--space-sm)] text-[13px] text-[var(--muted)]">
           {doc.kind === 'quote' && doc.valid_until && <>Valid until {formatDate(doc.valid_until)}</>}
-          {doc.kind === 'invoice' && doc.due_date && <>Due by {formatDate(doc.due_date)}</>}
-          {doc.kind === 'invoice' && doc.paid_at && <>Paid on {formatDate(doc.paid_at)}</>}
+          {doc.kind === 'invoice' && (doc.due_date || doc.paid_at) && (
+            <>
+              {doc.due_date && <>Due by {formatDate(doc.due_date)}</>}
+              {doc.due_date && doc.paid_at && <> · </>}
+              {doc.paid_at && <>Paid on {formatDate(doc.paid_at)}</>}
+            </>
+          )}
         </p>
 
         <table className="mt-[var(--space-lg)] w-full border-collapse text-[14px]">
@@ -254,6 +262,7 @@ export default function ViewQuote() {
   usePageMeta('Your quote — My Trade Portal', 'View the quote your electrician sent you.')
   useNoIndex()
   const { status, error, doc } = usePublicDocument('quote')
+  const portal = isPortalMode()
 
   const replyHref =
     doc?.tenant.reply_email != null
@@ -264,7 +273,7 @@ export default function ViewQuote() {
 
   return (
     <main className="relative flex min-h-screen flex-col">
-      <Nav />
+      {!portal && <Nav />}
       <div className="flex flex-1 items-start justify-center px-5 py-[var(--space-2xl)]">
         {status === 'loading' && (
           <section className="w-full max-w-[720px] border-2 border-[var(--ink)] bg-[var(--paper)] p-6 md:p-10">
@@ -295,7 +304,7 @@ export default function ViewQuote() {
                 </a>
               </div>
             )}
-            {doc.status === 'accepted' && (
+            {doc.status === 'approved' && (
               <p className="mt-[var(--space-xl)] border-2 border-[var(--ink)] bg-[var(--accent)] p-4 text-[14px] font-semibold leading-relaxed text-[var(--ink-deep)]">
                 You've accepted this quote — {doc.tenant.name} will be in touch to schedule the
                 work.
@@ -304,7 +313,7 @@ export default function ViewQuote() {
           </DocumentShell>
         )}
       </div>
-      <Footer />
+      {!portal && <Footer />}
     </main>
   )
 }

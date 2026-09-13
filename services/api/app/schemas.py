@@ -870,8 +870,8 @@ class BillingCheckoutCreate(BaseModel):
     plan_key: str  # sole_trader | pro | team (legacy: starter | pro | business)
     success_url: str | None = None
     interval: Literal["month", "year"] = "month"
-    # Seat count for per-seat plans (team, min 3). Ignored for fixed-seat
-    # plans; defaults to the plan's minimum seats.
+    # Deprecated and ignored: flat pricing has no per-seat tiers (one
+    # subscription per business). Kept because stale clients still send it.
     seats: int | None = Field(default=None, ge=1, le=100)
 
 

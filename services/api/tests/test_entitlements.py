@@ -253,7 +253,7 @@ async def test_fair_use_threshold_sets_cheap_route_and_alerts_once(
             await db.execute(
                 select(AiAlertState).where(
                     AiAlertState.period == current_period(),
-                    AiAlertState.threshold == f"fair_use_{tenant.id}",
+                    AiAlertState.threshold == f"fair_use:{tenant.id}",
                 )
             )
         )

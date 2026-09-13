@@ -1,11 +1,16 @@
-"""Tests for invoice creation and quote-to-invoice conversion."""
+"""Tests for invoice creation, quote-to-invoice conversion, and refund guards."""
 
 from decimal import Decimal
 from typing import Any
-from uuid import uuid4
+from unittest.mock import AsyncMock
+from uuid import UUID, uuid4
 
 import pytest
+from app.models import AuditLog, Invoice, Notification
+from app.rls import set_tenant_in_session
 from httpx import AsyncClient
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 pytestmark = pytest.mark.asyncio
 
@@ -235,3 +240,106 @@ async def test_invoice_accept_card_payments_toggle_round_trip(client: AsyncClien
     detail = await client.get(f"/invoices/{invoice['id']}", headers=headers)
     assert detail.status_code == 200
     assert detail.json()["accept_card_payments"] is None
+
+
+# ---------------------------------------------------------------------------
+# Refund guards (POST /invoices/{id}/refund) — Stripe-paid invoices only
+# ---------------------------------------------------------------------------
+
+
+async def _create_scratch_invoice(admin_client: AsyncClient) -> dict[str, Any]:
+    contact = await admin_client.post("/contacts", json={"name": "Refund Homeowner"})
+    assert contact.status_code == 201
+    response = await admin_client.post(
+        "/invoices",
+        json={
+            "contact_id": contact.json()["id"],
+            "invoice_number": f"INV-{uuid4().hex[:6]}",
+            "line_items": [
+                {"description": "Fuse board works", "quantity": "1", "unit_price": "600.00"},
+            ],
+        },
+    )
+    assert response.status_code == 201
+    return response.json()  # type: ignore[no-any-return]
+
+
+async def _make_stripe_paid(db: AsyncSession, tenant_id: UUID, invoice_id: str) -> None:
+    await set_tenant_in_session(db, tenant_id)
+    row = await db.get(Invoice, UUID(invoice_id))
+    assert row is not None
+    row.status = "paid"
+    row.paid_via = "stripe"
+    row.stripe_payment_intent_id = "pi_guard_1"
+    await db.commit()
+
+
+async def test_refund_unpaid_invoice_409(
+    admin_client: AsyncClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr("app.config.STRIPE_SECRET_KEY", "sk_test_x")
+    create_refund = AsyncMock()
+    monkeypatch.setattr("app.stripe_client.create_refund", create_refund)
+
+    invoice = await _create_scratch_invoice(admin_client)
+    response = await admin_client.post(f"/invoices/{invoice['id']}/refund")
+    assert response.status_code == 409
+    create_refund.assert_not_called()
+
+
+async def test_refund_503_when_stripe_unconfigured(
+    admin_client: AsyncClient, db: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Refunding a Stripe-paid invoice after the key was removed: clean 503,
+    never a 500, and the invoice stays paid. The real ``create_refund``
+    raises ``PaymentsNotConfiguredError`` before any network call."""
+    monkeypatch.setattr("app.config.STRIPE_SECRET_KEY", "")
+    tenant_id = UUID(admin_client.headers["X-Tenant-ID"])
+    invoice = await _create_scratch_invoice(admin_client)
+    await _make_stripe_paid(db, tenant_id, invoice["id"])
+
+    response = await admin_client.post(f"/invoices/{invoice['id']}/refund")
+    assert response.status_code == 503
+    assert response.json()["detail"] == "payments_not_configured"
+
+    row = await db.get(Invoice, UUID(invoice["id"]))
+    assert row is not None
+    assert row.status == "paid"
+
+
+async def test_refund_sets_status_writes_audit_log_and_notifies_staff(
+    admin_client: AsyncClient, db: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr("app.config.STRIPE_SECRET_KEY", "sk_test_x")
+    create_refund = AsyncMock(return_value={"id": "re_guard_1", "status": "succeeded"})
+    monkeypatch.setattr("app.stripe_client.create_refund", create_refund)
+
+    tenant_id = UUID(admin_client.headers["X-Tenant-ID"])
+    invoice = await _create_scratch_invoice(admin_client)
+    await _make_stripe_paid(db, tenant_id, invoice["id"])
+
+    response = await admin_client.post(f"/invoices/{invoice['id']}/refund")
+    assert response.status_code == 200
+    assert response.json()["status"] == "refunded"
+    create_refund.assert_awaited_once_with("pi_guard_1")
+
+    await set_tenant_in_session(db, tenant_id)
+    audit = await db.scalar(
+        select(AuditLog).where(
+            AuditLog.tenant_id == tenant_id,
+            AuditLog.action == "invoice.refunded",
+            AuditLog.entity_id == UUID(invoice["id"]),
+        )
+    )
+    assert audit is not None
+    assert audit.payload["stripe_refund_id"] == "re_guard_1"
+    assert audit.payload["stripe_payment_intent_id"] == "pi_guard_1"
+
+    notification = await db.scalar(
+        select(Notification).where(
+            Notification.tenant_id == tenant_id,
+            Notification.type == "invoice_refunded",
+        )
+    )
+    assert notification is not None
+    assert invoice["invoice_number"] in notification.body

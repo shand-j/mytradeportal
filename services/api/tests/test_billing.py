@@ -348,6 +348,86 @@ async def test_checkout_annual_interval_uses_year_price(
     assert "quantity" not in kwargs
 
 
+@pytest.mark.parametrize("plan_key", ["sole_trader", "pro", "team"])
+@pytest.mark.parametrize("interval", ["month", "year"])
+async def test_checkout_never_sends_quantity_for_any_tier_or_interval(
+    admin_client: AsyncClient,
+    db: AsyncSession,
+    clean_price_env: pytest.MonkeyPatch,
+    paddle_customer: AsyncMock,
+    plan_key: str,
+    interval: str,
+) -> None:
+    """Regression: flat pricing means one subscription per business — the
+    Paddle client must never receive a ``quantity`` kwarg, and a stale
+    ``seats`` field in the request body is accepted and ignored."""
+    clean_price_env.setenv("PADDLE_PRICE_ID_TEAM_YEAR", "pri_matrix_team_y")
+    clean_price_env.setenv("PADDLE_PRICE_ID_TEAM_MONTH", "pri_matrix_team_m")
+    clean_price_env.setenv("PADDLE_PRICE_ID_PRO_YEAR", "pri_matrix_pro_y")
+    clean_price_env.setenv("PADDLE_PRICE_ID_PRO_MONTH", "pri_matrix_pro_m")
+    clean_price_env.setenv("PADDLE_PRICE_ID_SOLE_TRADER_YEAR", "pri_matrix_st_y")
+    clean_price_env.setenv("PADDLE_PRICE_ID_SOLE_TRADER_MONTH", "pri_matrix_st_m")
+    clean_price_env.setattr("app.routers.billing.settings.paddle_beta_discount_id", "")
+
+    fake = AsyncMock(
+        return_value={"transaction_id": f"txn_{plan_key}_{interval}", "checkout_url": "https://x"}
+    )
+    with patch("app.routers.billing.create_subscription_transaction", new=fake):
+        response = await admin_client.post(
+            "/billing/checkout",
+            json={"plan_key": plan_key, "interval": interval, "seats": 5},
+        )
+
+    assert response.status_code == 200, response.text
+    _, kwargs = fake.call_args
+    assert "quantity" not in kwargs
+    assert "seats" not in kwargs
+
+
+_BANNED_PLAN_VOCABULARY = ("allowance", "overage", "seat", "quota", "credit", "usage", "meter")
+
+
+def _walk_strings(node: Any) -> "list[str]":
+    """Every key and string value in a nested JSON structure, flattened."""
+    found: list[str] = []
+    if isinstance(node, dict):
+        for key, value in node.items():
+            found.append(str(key))
+            found.extend(_walk_strings(value))
+    elif isinstance(node, list):
+        for item in node:
+            found.extend(_walk_strings(item))
+    elif isinstance(node, str):
+        found.append(node)
+    return found
+
+
+async def test_plans_payload_contains_no_quota_vocabulary_anywhere(
+    client: AsyncClient,
+) -> None:
+    """Deep scan: no allowance/overage/seat/quota/credit/usage/meter token in
+    any key or string value of GET /billing/plans, at any nesting depth, for
+    every tier."""
+    response = await client.get("/billing/plans")
+    assert response.status_code == 200, response.text
+    plans = response.json()
+    assert [p["key"] for p in plans] == ["sole_trader", "pro", "team"]
+
+    for plan in plans:
+        for token in _walk_strings(plan):
+            lowered = token.lower()
+            for banned in _BANNED_PLAN_VOCABULARY:
+                assert banned not in lowered, f"{banned!r} leaked into plans payload: {token!r}"
+
+    by_key = {p["key"]: p for p in plans}
+    assert by_key["sole_trader"]["monthly_price_gbp"] == 25
+    assert by_key["sole_trader"]["annual_price_gbp"] == 250
+    assert by_key["pro"]["monthly_price_gbp"] == 39
+    assert by_key["pro"]["annual_price_gbp"] == 390
+    assert by_key["team"]["monthly_price_gbp"] == 69
+    assert by_key["team"]["annual_price_gbp"] == 690
+
+
 async def test_portal_session_returns_paddle_portal_url(
     admin_client: AsyncClient, db: AsyncSession
 ) -> None:

@@ -12,7 +12,6 @@ Covers:
   with an expired trialing row).
 """
 
-import contextlib
 from datetime import datetime, timedelta
 from typing import Any
 from unittest.mock import AsyncMock, patch
@@ -31,7 +30,6 @@ from app.routers.webhooks import _upsert_subscription
 from app.trial import TRIAL_EXTENDED_SETTINGS_KEY
 from httpx import AsyncClient
 from sqlalchemy import delete, select
-from sqlalchemy.exc import MissingGreenlet
 from sqlalchemy.ext.asyncio import AsyncSession
 
 pytestmark = pytest.mark.asyncio
@@ -183,25 +181,20 @@ async def test_webhook_subscription_created_updates_trial_row_in_place() -> None
         tenant_id, trial_sub_id = tenant.id, trial_sub.id
 
     try:
-        # Pre-existing quirk in _upsert_subscription (owned by the W2-B agent):
-        # its post-commit logger.info lazy-loads sub.tenant_id on an expired
-        # ORM object. The upsert has already COMMITTED by then, which is what
-        # this test verifies below — so tolerate the MissingGreenlet.
-        with contextlib.suppress(MissingGreenlet):
-            await _upsert_subscription(
-                "subscription.created",
-                {
-                    "id": "sub_paddle_trial_1",
-                    "status": "active",
-                    "customer_id": "ctm_paddle_1",
-                    "custom_data": {"tenant_id": str(tenant_id)},
-                    "items": [{"price": {"id": "pri_test_pro", "product_id": "pro_test"}}],
-                    "current_billing_period": {
-                        "starts_at": "2026-09-12T00:00:00Z",
-                        "ends_at": "2026-10-12T00:00:00Z",
-                    },
+        await _upsert_subscription(
+            "subscription.created",
+            {
+                "id": "sub_paddle_trial_1",
+                "status": "active",
+                "customer_id": "ctm_paddle_1",
+                "custom_data": {"tenant_id": str(tenant_id)},
+                "items": [{"price": {"id": "pri_test_pro", "product_id": "pro_test"}}],
+                "current_billing_period": {
+                    "starts_at": "2026-09-12T00:00:00Z",
+                    "ends_at": "2026-10-12T00:00:00Z",
                 },
-            )
+            },
+        )
 
         async with AsyncSessionLocal() as session:
             rows = (
@@ -326,3 +319,104 @@ async def test_beta_comped_override_survives_trial_rows(
     assert body["beta_comped"] is True
     assert body["access"] == "active"
     assert body["subscription_status"] == "trialing"
+
+
+# --- Trial hardening: constants, marker shape, non-trialing guard ---------------
+
+
+def test_trial_constants_intact() -> None:
+    """The commercial numbers the whole funnel agrees on: 14-day trial,
+    +30 days from extension, triggered at exactly 3 sent AI quotes."""
+    assert TRIAL_DAYS == 14
+    assert TRIAL_EXTENSION_DAYS == 30
+    assert TRIAL_EXTENSION_SENT_AI_QUOTES == 3
+
+
+async def test_trial_extension_marker_is_an_iso_timestamp(
+    client: AsyncClient, db: AsyncSession
+) -> None:
+    """trial_extended_at must be a parseable ISO timestamp, not just truthy."""
+    tenant_id = await _signup_and_login(client, f"trial-{uuid4().hex[:8]}")
+    contact_id = await _create_contact(client, tenant_id)
+
+    for _ in range(TRIAL_EXTENSION_SENT_AI_QUOTES):
+        await _create_and_send_quote(client, tenant_id, contact_id, ai=True)
+
+    tenant = await db.get(Tenant, UUID(tenant_id))
+    assert tenant is not None
+    await db.refresh(tenant)
+    marker = tenant.settings[TRIAL_EXTENDED_SETTINGS_KEY]
+    parsed = datetime.fromisoformat(marker)  # raises if not ISO
+    assert abs((datetime.utcnow() - parsed).total_seconds()) < 60
+
+
+async def test_trial_extension_does_not_fire_for_active_subscription(
+    client: AsyncClient, db: AsyncSession
+) -> None:
+    """A paying (active) tenant sending AI quotes never gets an extension —
+    the trigger is strictly for trialing subscriptions."""
+    tenant_id = await _signup_and_login(client, f"trial-{uuid4().hex[:8]}")
+    contact_id = await _create_contact(client, tenant_id)
+
+    sub = await _get_subscription(db, tenant_id)
+    sub.status = "active"
+    original_trial_end = sub.trial_ends_at
+    await db.commit()
+
+    for _ in range(TRIAL_EXTENSION_SENT_AI_QUOTES + 1):
+        await _create_and_send_quote(client, tenant_id, contact_id, ai=True)
+
+    sub = await _get_subscription(db, tenant_id)
+    assert sub.trial_ends_at == original_trial_end
+    tenant = await db.get(Tenant, UUID(tenant_id))
+    assert tenant is not None
+    await db.refresh(tenant)
+    assert TRIAL_EXTENDED_SETTINGS_KEY not in tenant.settings
+
+
+async def test_trial_extension_counts_only_sent_statuses(
+    client: AsyncClient, db: AsyncSession
+) -> None:
+    """Draft (never-sent) AI quotes don't count: 3 drafts + 2 sends = 2, no
+    extension. The 3rd actual send tips it over."""
+    tenant_id = await _signup_and_login(client, f"trial-{uuid4().hex[:8]}")
+    contact_id = await _create_contact(client, tenant_id)
+
+    # Three AI drafts, never sent.
+    for _ in range(TRIAL_EXTENSION_SENT_AI_QUOTES):
+        response = await client.post(
+            "/quotes",
+            json={
+                "contact_id": contact_id,
+                "title": "AI draft",
+                "line_items": [
+                    {
+                        "description": "Consumer unit upgrade",
+                        "quantity": "1",
+                        "unit_price": "450.00",
+                        "ai_generated": True,
+                    }
+                ],
+            },
+        )
+        assert response.status_code == 201, response.text
+
+    sub = await _get_subscription(db, tenant_id)
+    original_trial_end = sub.trial_ends_at
+    assert original_trial_end is not None
+
+    for _ in range(TRIAL_EXTENSION_SENT_AI_QUOTES - 1):
+        await _create_and_send_quote(client, tenant_id, contact_id, ai=True)
+
+    sub = await _get_subscription(db, tenant_id)
+    assert sub.trial_ends_at == original_trial_end
+
+    await _create_and_send_quote(client, tenant_id, contact_id, ai=True)
+
+    sub = await _get_subscription(db, tenant_id)
+    assert sub.trial_ends_at is not None
+    assert sub.trial_ends_at > original_trial_end
+    tenant = await db.get(Tenant, UUID(tenant_id))
+    assert tenant is not None
+    await db.refresh(tenant)
+    assert tenant.settings[TRIAL_EXTENDED_SETTINGS_KEY]

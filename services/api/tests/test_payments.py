@@ -7,12 +7,14 @@ functions are mocked throughout.
 """
 
 import re
+from datetime import datetime
+from decimal import Decimal
 from typing import Any
 from unittest.mock import AsyncMock
 from uuid import UUID, uuid4
 
 import pytest
-from app.models import Invoice, StripeAccount, Tenant
+from app.models import Invoice, Payment, StripeAccount, Tenant
 from app.rls import set_tenant_in_session
 from httpx import AsyncClient
 from sqlalchemy import select
@@ -388,3 +390,93 @@ async def test_public_invoice_no_payment_url_when_stripe_unconfigured(
     response = await client.get(f"/public/invoice/{raw}")
     assert response.status_code == 200
     assert response.json()["payment_url"] is None
+
+
+# ---------------------------------------------------------------------------
+# Unconfigured Stripe: every remaining surface degrades cleanly (503, not 500)
+# ---------------------------------------------------------------------------
+
+
+async def test_onboarding_return_503_when_stripe_unconfigured(
+    admin_client: AsyncClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr("app.config.STRIPE_SECRET_KEY", "")
+    response = await admin_client.get("/payments/onboarding-return")
+    assert response.status_code == 503
+    assert response.json()["detail"] == "payments_not_configured"
+
+
+# ---------------------------------------------------------------------------
+# Onboarding return resilience
+# ---------------------------------------------------------------------------
+
+
+async def test_onboarding_return_tolerates_stripe_sync_failure(
+    admin_client: AsyncClient, db: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """If Stripe is unreachable when the tradie's browser returns, the page
+    still renders (flags simply stay stale) instead of erroring."""
+    monkeypatch.setattr("app.config.STRIPE_SECRET_KEY", "sk_test_x")
+    retrieve = AsyncMock(side_effect=RuntimeError("stripe api down"))
+    monkeypatch.setattr("app.stripe_client.retrieve_account", retrieve)
+
+    tenant_id = _tenant_id(admin_client)
+    await set_tenant_in_session(db, tenant_id)
+    db.add(StripeAccount(tenant_id=tenant_id, stripe_account_id="acct_sync_fail"))
+    await db.commit()
+
+    response = await admin_client.get("/payments/onboarding-return")
+    assert response.status_code == 200
+    assert "Almost there" in response.text
+
+    account = await db.scalar(select(StripeAccount).where(StripeAccount.tenant_id == tenant_id))
+    assert account is not None
+    assert account.charges_enabled is False
+    assert account.onboarding_complete is False
+
+
+# ---------------------------------------------------------------------------
+# GET /payments/invoice/{invoice_id}
+# ---------------------------------------------------------------------------
+
+
+async def test_list_invoice_payments(admin_client: AsyncClient, db: AsyncSession) -> None:
+    tenant_id = _tenant_id(admin_client)
+    invoice = await _create_invoice(admin_client, tenant_id)
+
+    response = await admin_client.get(f"/payments/invoice/{invoice['id']}")
+    assert response.status_code == 200
+    assert response.json() == []
+
+    await set_tenant_in_session(db, tenant_id)
+    db.add(
+        Payment(
+            tenant_id=tenant_id,
+            invoice_id=UUID(invoice["id"]),
+            amount=Decimal("600.00"),
+            currency_code="GBP",
+            status="completed",
+            provider="stripe",
+            provider_transaction_id="pi_list_1",
+            provider_payload={"id": "pi_list_1"},
+            paid_at=datetime.utcnow(),
+        )
+    )
+    await db.commit()
+    # The first GET cached the invoice's empty payments collection in the
+    # shared session's identity map; expire so the endpoint re-queries.
+    db.expire_all()
+
+    response = await admin_client.get(f"/payments/invoice/{invoice['id']}")
+    assert response.status_code == 200
+    payments = response.json()
+    assert len(payments) == 1
+    assert payments[0]["provider"] == "stripe"
+    assert payments[0]["provider_transaction_id"] == "pi_list_1"
+    assert payments[0]["amount"] == "600.00"
+
+    # Payments are not leaked across invoices.
+    other = await _create_invoice(admin_client, tenant_id)
+    response = await admin_client.get(f"/payments/invoice/{other['id']}")
+    assert response.status_code == 200
+    assert response.json() == []
