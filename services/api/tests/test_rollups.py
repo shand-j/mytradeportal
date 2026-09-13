@@ -1,5 +1,6 @@
 """Tests for the nightly AI rollup fold, budget alerts, and anomaly alerts."""
 
+import asyncio
 from datetime import date, datetime, timedelta
 from decimal import Decimal
 from uuid import uuid4
@@ -10,6 +11,7 @@ from app.models import AiAlertState, AiCallEvent, AiRollupFeatureDay, AiRollupUs
 from app.scheduler import (
     _check_anomaly_alerts,
     _check_budget_alerts,
+    _check_fair_use_alerts,
     fold_events,
     run_rollup_for_day,
 )
@@ -280,3 +282,115 @@ async def test_latency_p95_spike_anomaly(db: AsyncSession, monkeypatch: pytest.M
     fired = await _check_anomaly_alerts(db, DAY)
     assert fired == ["latency_p95_spike"]
     assert len(sent) == 1
+
+
+@pytest.mark.asyncio
+async def test_fair_use_alert_fires_once_per_org_per_month(
+    db: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(scheduler, "AI_FAIR_USE_MONTHLY_THRESHOLD", 3)
+    sent = _capture_alerts(monkeypatch)
+    tenant_id, other_tenant = uuid4(), uuid4()
+    for _ in range(3):
+        db.add(_event(tenant_id=tenant_id))
+    # Outcome rows carry no AI spend and must not count toward fair use.
+    db.add(
+        _event(
+            tenant_id=tenant_id,
+            feature="outcome",
+            raw_payload={"outcome": "quote_sent"},
+        )
+    )
+    # A different tenant below the threshold stays quiet.
+    db.add(_event(tenant_id=other_tenant))
+    await db.flush()
+
+    fired = await _check_fair_use_alerts(db, DAY)
+    assert fired == [str(tenant_id)]
+    assert len(sent) == 1
+    assert str(tenant_id) in sent[0][1]
+
+    # Same month: no second alert for the same org.
+    assert await _check_fair_use_alerts(db, DAY) == []
+    assert len(sent) == 1
+
+    states = (
+        (await db.execute(select(AiAlertState).where(AiAlertState.period == "2026-09")))
+        .scalars()
+        .all()
+    )
+    assert {s.threshold for s in states} == {f"fair_use:{tenant_id}"}
+
+
+@pytest.mark.asyncio
+async def test_fair_use_below_threshold_no_alert(
+    db: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(scheduler, "AI_FAIR_USE_MONTHLY_THRESHOLD", 5)
+    sent = _capture_alerts(monkeypatch)
+    db.add(_event(tenant_id=uuid4()))
+    db.add(_event(tenant_id=uuid4()))
+    await db.flush()
+    assert await _check_fair_use_alerts(db, DAY) == []
+    assert sent == []
+
+
+@pytest.mark.asyncio
+async def test_rollup_failure_alert_fires_once_per_day(
+    db: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    sent = _capture_alerts(monkeypatch)
+    await scheduler._alert_rollup_failure(RuntimeError("fold exploded"), db=db)
+    await scheduler._alert_rollup_failure(RuntimeError("fold exploded"), db=db)
+    assert len(sent) == 1
+    subject, body = sent[0]
+    assert "rollup" in subject.lower()
+    assert "RuntimeError" in body
+
+    today = datetime.utcnow().date().isoformat()
+    state = await db.scalar(
+        select(AiAlertState).where(
+            AiAlertState.period == today, AiAlertState.threshold == "rollup_failed"
+        )
+    )
+    assert state is not None
+
+
+@pytest.mark.asyncio
+async def test_rollup_loop_alerts_and_keeps_ticking_after_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """An unhandled tick exception alerts (via the helper) and the loop
+    continues on schedule instead of dying."""
+    alerts: list[Exception] = []
+
+    async def recording_alert(exc: Exception, db: AsyncSession | None = None) -> None:
+        alerts.append(exc)
+
+    monkeypatch.setattr(scheduler, "_alert_rollup_failure", recording_alert)
+    monkeypatch.setattr(scheduler, "ROLLUP_TICK_SECONDS", 0.05)
+    monkeypatch.setattr(scheduler, "ROLLUP_RUN_HOUR_UTC", 0)
+    monkeypatch.setattr(scheduler, "ROLLUP_RUN_MINUTE_UTC", 0)
+
+    ticks = 0
+
+    async def failing_tick() -> None:
+        nonlocal ticks
+        ticks += 1
+        raise RuntimeError("fold exploded")
+
+    monkeypatch.setattr(scheduler, "run_rollup_tick", failing_tick)
+
+    stop = asyncio.Event()
+    task = asyncio.create_task(scheduler.rollup_loop(stop))
+    try:
+        for _ in range(100):
+            if ticks >= 2:
+                break
+            await asyncio.sleep(0.05)
+        assert ticks >= 2, "loop stopped ticking after the first failure"
+        assert alerts, "loop failure never triggered the alert"
+        assert all(isinstance(exc, RuntimeError) for exc in alerts)
+    finally:
+        stop.set()
+        await asyncio.wait_for(task, timeout=5)

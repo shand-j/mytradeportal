@@ -1,16 +1,17 @@
-"""Async Paddle Billing client for checkout creation and webhook verification."""
+"""Async Paddle Billing client for subscription checkout and webhook verification.
+
+Paddle bills OUR SaaS subscription only. Tradie receivables (customer invoice
+card payments) run through Stripe Connect (ADR-003, ``app.stripe_client``) and
+never touch Paddle.
+"""
 
 import hashlib
 import hmac
 import json
-from decimal import Decimal
 from typing import Any
 
 import httpx
 from mtp_shared import get_settings
-
-from app.models import Invoice
-from app.plans import OVERAGE_PRICE_PENCE
 
 settings = get_settings()
 
@@ -27,83 +28,6 @@ def _headers() -> dict[str, str]:
         "Authorization": f"Bearer {settings.paddle_api_key}",
         "Content-Type": "application/json",
     }
-
-
-def _money_amount(amount: Decimal) -> str:
-    """Convert Decimal to Paddle's integer minor-unit string."""
-    return str(int((amount * 100).quantize(Decimal("1"))))
-
-
-async def create_checkout(
-    invoice: Invoice,
-    success_url: str | None = None,
-    customer_email: str | None = None,
-) -> dict[str, str]:
-    """Create a Paddle checkout for an invoice.
-
-    Uses a non-catalog price so no Paddle product setup is required.
-    """
-    if not settings.paddle_api_key:
-        raise RuntimeError("Paddle API key is not configured")
-
-    items: list[dict[str, Any]] = []
-    for line in invoice.line_items:
-        items.append(
-            {
-                "price": {
-                    "description": line.description[:255],
-                    "unit_price": {
-                        "amount": _money_amount(line.unit_price),
-                        "currency_code": settings.paddle_default_currency_code,
-                    },
-                    "product": {
-                        "name": invoice.invoice_number,
-                        "tax_category": "standard",
-                    },
-                },
-                "quantity": int(line.quantity),
-            }
-        )
-
-    # Fallback item if no line items exist.
-    if not items:
-        items.append(
-            {
-                "price": {
-                    "description": f"Invoice {invoice.invoice_number}",
-                    "unit_price": {
-                        "amount": _money_amount(invoice.total),
-                        "currency_code": settings.paddle_default_currency_code,
-                    },
-                    "product": {
-                        "name": "Electrical services",
-                        "tax_category": "standard",
-                    },
-                },
-                "quantity": 1,
-            }
-        )
-
-    payload: dict[str, Any] = {
-        "items": items,
-        "custom_data": {
-            "invoice_id": str(invoice.id),
-            "tenant_id": str(invoice.tenant_id),
-        },
-    }
-    if customer_email:
-        payload["customer"] = {"email": customer_email}
-    if success_url:
-        payload["success_url"] = success_url
-
-    async with httpx.AsyncClient(base_url=_paddle_base_url(), headers=_headers()) as client:
-        response = await client.post("/checkouts", json=payload)
-        response.raise_for_status()
-        data = response.json()["data"]
-        return {
-            "checkout_id": data["id"],
-            "checkout_url": data["url"],
-        }
 
 
 async def get_or_create_customer(email: str, name: str | None = None) -> str:
@@ -214,79 +138,6 @@ async def create_subscription_transaction(
     return {
         "transaction_id": data["id"],
         "checkout_url": checkout_url,
-    }
-
-
-_METERED_EFFECTIVE_FROM = frozenset({"immediately", "next_billing_period"})
-
-
-async def report_metered_usage(
-    subscription_id: str,
-    quantity: int,
-    *,
-    unit_price_pence: int | None = None,
-    description: str | None = None,
-    effective_from: str = "next_billing_period",
-) -> dict[str, Any]:
-    """Report metered AI-overage usage against a subscription.
-
-    Paddle Billing has no native metered/usage-based price type (verified
-    against the sandbox API 2026-09-12: price ``type`` only accepts
-    ``standard``/``custom``, and native usage-based billing is waitlist-only).
-    The supported overage pattern is a one-time charge on the subscription:
-    ``POST /subscriptions/{id}/charge`` with a non-catalog price, billed with
-    the next renewal by default (``effective_from="next_billing_period"``) or
-    collected right away with ``"immediately"``. The catalog price
-    ``PADDLE_PRICE_ID_AI_OVERAGE`` (£0.06/unit, recurring) documents the unit
-    rate in the Paddle dashboard; the actual charge carries the same rate
-    inline.
-
-    ``quantity`` is the number of overage AI actions for the period;
-    ``unit_price_pence`` defaults to the catalog overage rate
-    (``plans.OVERAGE_PRICE_PENCE``). Returns the created transaction's id and
-    status.
-    """
-    if not settings.paddle_api_key:
-        raise RuntimeError("Paddle API key is not configured")
-    if quantity < 1:
-        raise ValueError("quantity must be >= 1")
-    if effective_from not in _METERED_EFFECTIVE_FROM:
-        raise ValueError(f"effective_from must be one of {sorted(_METERED_EFFECTIVE_FROM)}")
-
-    pence = unit_price_pence if unit_price_pence is not None else OVERAGE_PRICE_PENCE
-    if pence < 1:
-        raise ValueError("unit_price_pence must be >= 1")
-
-    payload: dict[str, Any] = {
-        "effective_from": effective_from,
-        "items": [
-            {
-                "price": {
-                    "description": (
-                        description or f"AI overage — {quantity} actions @ £{pence / 100:.2f}"
-                    )[:500],
-                    "unit_price": {
-                        "amount": str(pence),
-                        "currency_code": settings.paddle_default_currency_code,
-                    },
-                    "product": {
-                        "name": "My Trade Portal — AI Overage",
-                        "tax_category": "saas",
-                    },
-                },
-                "quantity": quantity,
-            }
-        ],
-    }
-
-    async with httpx.AsyncClient(base_url=_paddle_base_url(), headers=_headers()) as client:
-        response = await client.post(f"/subscriptions/{subscription_id}/charge", json=payload)
-        response.raise_for_status()
-        data = response.json()["data"]
-
-    return {
-        "transaction_id": data["id"],
-        "status": data.get("status"),
     }
 
 

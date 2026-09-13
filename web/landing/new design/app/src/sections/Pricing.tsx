@@ -1,19 +1,25 @@
 import { type Environments, initializePaddle, type Paddle } from '@paddle/paddle-js'
 import { useEffect, useState } from 'react'
+import { Link } from 'react-router'
 import { usePaddlePrices } from '@/hooks/usePaddlePrices'
 import { PricingTiers } from '@/constants/pricing-tiers'
 import { TESTFLIGHT_URL } from '@/lib/site'
 
 /**
- * Pricing — prices are pulled live from Paddle (PricePreview), localised to
- * the visitor's country with tax handled by Paddle, falling back to static
- * GBP launch prices when Paddle isn't configured. During beta every plan is
+ * Pricing — flat per business, unlimited users, AI unmetered on every plan.
+ * Prices are pulled live from Paddle (PricePreview), localised to the
+ * visitor's country with tax handled by Paddle, falling back to static GBP
+ * launch prices when Paddle isn't configured. During beta every plan is
  * free; shown prices are the launch prices.
  */
 export default function Pricing() {
   const [frequency, setFrequency] = useState<'month' | 'year'>('month')
   const [paddle, setPaddle] = useState<Paddle | undefined>()
-  const paddleConfigured = Boolean(import.meta.env.VITE_PADDLE_CLIENT_TOKEN)
+  // Live Paddle preview stays off until the catalog is rebuilt with the flat
+  // per-business prices — the sandbox still returns the old hybrid prices.
+  // Set VITE_PADDLE_LIVE_PRICING=true once the new catalog exists.
+  const livePricing = import.meta.env.VITE_PADDLE_LIVE_PRICING === 'true'
+  const paddleConfigured = livePricing && Boolean(import.meta.env.VITE_PADDLE_CLIENT_TOKEN)
 
   const { prices, loading } = usePaddlePrices(
     paddleConfigured ? paddle : undefined,
@@ -37,9 +43,10 @@ export default function Pricing() {
               Every price on the page.
             </h2>
             <p className="reveal mt-[var(--space-md)] max-w-[44ch] text-[15.5px] leading-[1.75] text-[var(--muted)]" style={{ ['--i' as string]: 1 }}>
-              Free while we&apos;re in beta — these are the launch prices,
-              localised to your currency. Join TestFlight and every plan is
-              unlocked.
+              Free while we&apos;re in beta — join TestFlight and every plan is
+              unlocked. At launch: one price for your whole business —
+              unlimited users, and AI included on every plan. No credits, no
+              counting.
             </p>
           </div>
 
@@ -115,8 +122,7 @@ export default function Pricing() {
                         {shown}
                       </span>
                       <span className={`pb-1.5 text-[13px] font-medium ${tier.featured ? 'text-[var(--paper-on-dark-muted)]' : 'text-[var(--muted)]'}`}>
-                        per user /{frequency === 'year' ? 'yr' : 'mo'}
-                        {tier.minSeats ? ` · min ${tier.minSeats} seats` : ''}
+                        per business /{frequency === 'year' ? 'yr' : 'mo'}
                       </span>
                     </>
                   )}
@@ -129,7 +135,7 @@ export default function Pricing() {
                     ? 'border-[var(--rule-on-dark)] text-[var(--paper-on-dark)]'
                     : 'border-[var(--rule)] text-[var(--ink)]'
                 }`}>
-                  {tier.aiAllowance}
+                  {tier.highlight}
                 </p>
                 <ul className={`mt-[var(--space-lg)] flex-1 space-y-[var(--space-sm)] border-t pt-[var(--space-lg)] text-[14px] ${
                   tier.featured ? 'border-[var(--rule-on-dark)]' : 'border-[var(--rule)]'
@@ -176,8 +182,11 @@ export default function Pricing() {
         </div>
 
         <p className="reveal mt-[var(--space-md)] text-[12.5px] leading-[1.7] text-[var(--muted)]" style={{ ['--i' as string]: 4 }}>
-          On Pro and Team, overage is metered at 6p per AI action with a monthly
-          spend cap and usage alerts. Prices shown with local tax where
+          AI is unmetered on every plan, subject to a generous{' '}
+          <Link to="/fair-use" className="link-arrow">
+            fair-use policy
+          </Link>{' '}
+          that only exists to stop abuse. Prices shown with local tax where
           applicable, via Paddle.
         </p>
       </div>

@@ -1,13 +1,13 @@
 """Tests for the customer (homeowner) invoice endpoints.
 
 The customer sees only their own sent/paid/overdue invoices — never drafts,
-never other customers' or tenants' invoices — and can request a Paddle
-checkout URL to pay one.
+never other customers' or tenants' invoices. The old Paddle pay endpoint now
+answers 410: card payment moved to the Stripe /pay link in the invoice email
+(ADR-003).
 """
 
 from decimal import Decimal
 from typing import Any
-from unittest.mock import AsyncMock, patch
 from uuid import uuid4
 
 import pytest
@@ -199,53 +199,26 @@ async def test_invoices_require_customer_token(client: AsyncClient) -> None:
     assert resp.status_code == 401
 
 
-async def test_pay_returns_checkout_url(client: AsyncClient, db: AsyncSession) -> None:
+async def test_pay_returns_410_gone(client: AsyncClient, db: AsyncSession) -> None:
     tenant, customer, auth = await _setup(client, db)
     invoice = await _create_invoice(db, tenant, customer, status="sent")
 
-    fake = AsyncMock(
-        return_value={"checkout_id": "chkt_test_1", "checkout_url": "https://pay.paddle.com/x"}
-    )
-    with patch("app.routers.customer_portal.create_checkout", new=fake):
-        resp = await client.post(f"/customer/invoices/{invoice.id}/pay", headers=auth)
-    assert resp.status_code == 200, resp.text
-    body = resp.json()
-    assert body["checkout_url"] == "https://pay.paddle.com/x"
-    assert body["checkout_id"] == "chkt_test_1"
-
-    # The checkout was created for this invoice with the customer's email.
-    args, kwargs = fake.call_args
-    assert args[0].id == invoice.id
-    assert kwargs["customer_email"] == customer.email
+    resp = await client.post(f"/customer/invoices/{invoice.id}/pay", headers=auth)
+    assert resp.status_code == 410, resp.text
+    assert "pay link in the invoice email" in resp.json()["detail"]
 
 
 async def test_pay_rejects_paid_and_foreign_invoices(client: AsyncClient, db: AsyncSession) -> None:
     tenant, customer, auth = await _setup(client, db)
     paid = await _create_invoice(db, tenant, customer, status="paid")
 
-    fake = AsyncMock(
-        return_value={"checkout_id": "chkt_test_1", "checkout_url": "https://pay.paddle.com/x"}
+    resp = await client.post(f"/customer/invoices/{paid.id}/pay", headers=auth)
+    assert resp.status_code == 400
+
+    other_tenant = await _create_tenant(db, f"other-{uuid4().hex[:8]}")
+    other_customer = await _create_customer(
+        db, other_tenant, f"stranger-{uuid4().hex[:6]}@example.com"
     )
-    with patch("app.routers.customer_portal.create_checkout", new=fake):
-        resp = await client.post(f"/customer/invoices/{paid.id}/pay", headers=auth)
-        assert resp.status_code == 400
-
-        other_tenant = await _create_tenant(db, f"other-{uuid4().hex[:8]}")
-        other_customer = await _create_customer(
-            db, other_tenant, f"stranger-{uuid4().hex[:6]}@example.com"
-        )
-        foreign = await _create_invoice(db, other_tenant, other_customer, status="sent")
-        resp = await client.post(f"/customer/invoices/{foreign.id}/pay", headers=auth)
-        assert resp.status_code == 404
-
-    fake.assert_not_called()
-
-
-async def test_pay_bubbles_paddle_failure_as_502(client: AsyncClient, db: AsyncSession) -> None:
-    tenant, customer, auth = await _setup(client, db)
-    invoice = await _create_invoice(db, tenant, customer, status="sent")
-
-    fake = AsyncMock(side_effect=RuntimeError("paddle 500"))
-    with patch("app.routers.customer_portal.create_checkout", new=fake):
-        resp = await client.post(f"/customer/invoices/{invoice.id}/pay", headers=auth)
-    assert resp.status_code == 502
+    foreign = await _create_invoice(db, other_tenant, other_customer, status="sent")
+    resp = await client.post(f"/customer/invoices/{foreign.id}/pay", headers=auth)
+    assert resp.status_code == 404

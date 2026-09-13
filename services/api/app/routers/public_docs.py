@@ -25,6 +25,7 @@ import secrets
 from datetime import datetime, timedelta
 from decimal import Decimal
 from typing import TYPE_CHECKING, Annotated, Any, Literal
+from urllib.parse import urlencode
 
 import structlog
 from fastapi import APIRouter, Depends, HTTPException, Request, status
@@ -32,11 +33,11 @@ from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from app import stripe_client
 from app.config import PUBLIC_DOCS_BASE_URL
 from app.database import get_db
 from app.limiter import limiter
-from app.models import Contact, DocumentAccessToken, Invoice, Quote, Tenant
-from app.paddle_client import create_checkout
+from app.models import Contact, DocumentAccessToken, Invoice, Quote, StripeAccount, Tenant
 from app.rls import bypass_rls_for_transaction
 
 if TYPE_CHECKING:
@@ -134,27 +135,74 @@ async def _load_token(db: AsyncSession, kind: str, raw_token: str) -> DocumentAc
     return record
 
 
-async def _invoice_payment_url(
-    invoice: Invoice, raw_token: str, contact_email: str | None
-) -> str | None:
-    """Hosted Paddle checkout URL for an unpaid invoice, or None.
+_OPEN_INTENT_STATUSES = frozenset(
+    {"requires_payment_method", "requires_confirmation", "requires_action"}
+)
 
-    Checkout creation is best-effort: a Paddle outage or missing API key must
-    never break document viewing, so any failure degrades to ``null`` (the
-    page then just omits the Pay button).
+
+def _invoice_accepts_card(invoice: Invoice, tenant: Tenant) -> bool:
+    """Resolve the per-invoice override against the tenant settings default.
+
+    Mirrors ``app.routers.payments.invoice_accepts_card`` (re-implemented here
+    to keep this module free of router→router import cycles).
     """
-    if invoice.status in {"paid", "cancelled"}:
+    if invoice.accept_card_payments is not None:
+        return invoice.accept_card_payments
+    payments = (tenant.settings or {}).get("payments") or {}
+    return bool(payments.get("accept_card_default", False))
+
+
+async def _invoice_payment_url(
+    db: AsyncSession, invoice: Invoice, tenant: Tenant, raw_token: str
+) -> str | None:
+    """Stripe /pay URL for an unpaid invoice, or None.
+
+    Card payment is offered only when Stripe is configured, the tenant has a
+    charges-enabled Connect account, and the invoice (or tenant default) opts
+    in. An open PaymentIntent for the current total is reused; otherwise a new
+    destination charge is created and persisted on the invoice. Everything is
+    best-effort: a Stripe outage or misconfiguration must never break document
+    viewing, so any failure degrades to ``null`` (the page omits the Pay
+    button).
+
+    URL contract for the landing /pay page (ships separately):
+    ``{PUBLIC_DOCS_BASE_URL}/pay/{doc_token}?pi={payment_intent_id}
+    &cs={payment_intent_client_secret}`` — the page confirms the intent with
+    Stripe.js using the client secret; no card data touches our servers.
+    """
+    if invoice.status in {"paid", "cancelled", "refunded"}:
+        return None
+    if not stripe_client.is_configured():
+        return None
+    if not _invoice_accepts_card(invoice, tenant):
         return None
     try:
-        checkout = await create_checkout(
-            invoice,
-            success_url=public_document_url("invoice", raw_token),
-            customer_email=contact_email,
-        )
+        account = await db.scalar(select(StripeAccount).where(StripeAccount.tenant_id == tenant.id))
+        if account is None or not account.charges_enabled:
+            return None
+
+        amount_pence = int((invoice.total * 100).quantize(Decimal("1")))
+        intent: dict[str, Any] | None = None
+        if invoice.stripe_payment_intent_id:
+            existing = await stripe_client.retrieve_payment_intent(invoice.stripe_payment_intent_id)
+            if existing["status"] in _OPEN_INTENT_STATUSES and existing["amount"] == amount_pence:
+                intent = existing
+        if intent is None:
+            intent = await stripe_client.create_payment_intent(
+                amount_pence=amount_pence,
+                currency="gbp",
+                connected_account_id=account.stripe_account_id,
+                invoice_id=str(invoice.id),
+                tenant_id=str(tenant.id),
+            )
+            invoice.stripe_payment_intent_id = str(intent["id"])
+            await db.commit()
+
+        query = urlencode({"pi": str(intent["id"]), "cs": str(intent["client_secret"])})
+        return f"{PUBLIC_DOCS_BASE_URL}/pay/{raw_token}?{query}"
     except Exception:
-        logger.warning("public_doc_checkout_failed", invoice_id=str(invoice.id))
+        logger.warning("public_doc_payment_url_failed", invoice_id=str(invoice.id))
         return None
-    return checkout["checkout_url"]
 
 
 @router.get("/{kind}/{token}")
@@ -253,7 +301,7 @@ async def get_public_document(
             "valid_until": None,
             "due_date": invoice.due_date.isoformat() if invoice.due_date else None,
             "paid_at": invoice.paid_at.isoformat() if invoice.paid_at else None,
-            "payment_url": await _invoice_payment_url(invoice, token, record.contact_email),
+            "payment_url": await _invoice_payment_url(db, invoice, tenant, token),
         }
     )
     return payload

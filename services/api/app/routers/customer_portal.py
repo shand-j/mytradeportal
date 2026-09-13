@@ -36,7 +36,6 @@ from app.models import (
     QuoteRequest,
     Tenant,
 )
-from app.paddle_client import create_checkout
 from app.push import notify_staff
 from app.rls import bypass_rls_for_transaction, set_tenant_in_session
 from app.routers.contacts import BLOCKED_CUSTOMER_DETAIL, contact_is_blocked
@@ -49,7 +48,6 @@ from app.schemas import (
     CustomerRegister,
     CustomerTenantAssociation,
     CustomerTokenResponse,
-    PaddleCheckoutRead,
     QuoteRead,
     QuoteRequestMediaCreate,
     QuoteRequestRead,
@@ -787,29 +785,25 @@ async def get_my_invoice(
     return _customer_invoice_read(invoice, tenant)
 
 
-@router.post("/invoices/{invoice_id}/pay", response_model=PaddleCheckoutRead)
+@router.post("/invoices/{invoice_id}/pay")
 async def pay_my_invoice(
     invoice_id: UUID,
     customer: CurrentCustomerDep,
     db: DbDep,
-) -> PaddleCheckoutRead:
-    """Create a Paddle checkout URL so the customer can pay an invoice online."""
+) -> None:
+    """Online invoice payment moved to Stripe Connect (ADR-003).
+
+    Tradie receivables never touch Paddle anymore; the customer pays by card
+    on the landing-site /pay page linked from the invoice email. This endpoint
+    remains only to give older app builds a clear signal instead of a 404.
+    """
     invoice = await _get_customer_invoice(db, customer, invoice_id)
     if invoice.status == "paid":
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Invoice is already paid",
         )
-
-    try:
-        checkout = await create_checkout(invoice, customer_email=customer.email)
-    except Exception as exc:
-        raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY,
-            detail=f"Paddle checkout creation failed: {exc!s}",
-        ) from exc
-
-    invoice.paddle_checkout_id = checkout["checkout_id"]
-    await db.commit()
-
-    return PaddleCheckoutRead(**checkout)
+    raise HTTPException(
+        status_code=status.HTTP_410_GONE,
+        detail="Online card payment has moved — use the pay link in the invoice email.",
+    )

@@ -1,52 +1,236 @@
-"""Payment / Paddle checkout endpoints."""
+"""Stripe Connect payment endpoints (customer → tradie card payments, ADR-003).
 
-from typing import Annotated
+Staff-only, tenant-scoped. Covers Express onboarding (connect/status/return),
+the tenant-level accept-card default, and listing recorded payments for an
+invoice. Online card checkout itself is created from the public document
+endpoint (``app.routers.public_docs``) and settled via
+``app.routers.stripe_webhooks``.
+
+Paddle is NOT involved anywhere here — it remains for the platform's own SaaS
+subscription only. Unconfigured Stripe (empty ``STRIPE_SECRET_KEY``) yields a
+clean 503 ``payments_not_configured``, never a 500.
+"""
+
+from typing import Annotated, Any, cast
 from uuid import UUID
 
+import structlog
 from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi.responses import HTMLResponse
+from pydantic import BaseModel
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app import stripe_client
+from app.config import settings
 from app.database import get_db
-from app.dependencies import TenantDep
-from app.paddle_client import create_checkout
+from app.dependencies import CurrentUserDep, TenantDep
+from app.models import StripeAccount, Tenant
+from app.rls import set_tenant_in_session
 from app.routers.invoices import _get_invoice
-from app.schemas import PaddleCheckoutCreate, PaddleCheckoutRead, PaymentRead
+from app.schemas import PaymentRead
 
 router = APIRouter(prefix="/payments", tags=["Payments"])
+logger = structlog.get_logger("api.payments")
 DbDep = Annotated[AsyncSession, Depends(get_db)]
 
 
-@router.post("/checkout")
-async def create_paddle_checkout(
-    data: PaddleCheckoutCreate,
-    tenant: TenantDep,
-    db: DbDep,
-) -> PaddleCheckoutRead:
-    """Create a Paddle checkout URL for an invoice."""
-    invoice = await _get_invoice(db, tenant.id, data.invoice_id)
+class PaymentStatusRead(BaseModel):
+    stripe_configured: bool
+    connected: bool
+    stripe_account_id: str | None
+    details_submitted: bool
+    charges_enabled: bool
+    payouts_enabled: bool
+    onboarding_complete: bool
+    accept_card_default: bool
 
-    if invoice.status in {"paid", "cancelled"}:
+
+class ConnectRequest(BaseModel):
+    return_url: str | None = None
+    refresh_url: str | None = None
+
+
+class ConnectRead(BaseModel):
+    onboarding_url: str
+
+
+class PaymentSettingsUpdate(BaseModel):
+    accept_card_default: bool
+
+
+def tenant_accept_card_default(tenant: Tenant) -> bool:
+    """Tenant-level default for offering card payment on new invoices.
+
+    Lives in the tenant settings JSON (``settings["payments"]
+    ["accept_card_default"]``) — deliberately not a tenants column. Defaults
+    to off until the tradie opts in.
+    """
+    payments = (tenant.settings or {}).get("payments") or {}
+    return bool(payments.get("accept_card_default", False))
+
+
+def invoice_accepts_card(invoice_accept_card_payments: bool | None, tenant: Tenant) -> bool:
+    """Resolve the per-invoice override against the tenant default."""
+    if invoice_accept_card_payments is not None:
+        return invoice_accept_card_payments
+    return tenant_accept_card_default(tenant)
+
+
+async def _get_stripe_account(db: AsyncSession, tenant_id: UUID) -> StripeAccount | None:
+    return cast(
+        "StripeAccount | None",
+        await db.scalar(select(StripeAccount).where(StripeAccount.tenant_id == tenant_id)),
+    )
+
+
+def _onboarding_urls(data: ConnectRequest) -> tuple[str, str]:
+    """Return/refresh URLs for the hosted Express onboarding flow.
+
+    Defaults point at the back-office payments settings page derived from
+    ``APP_PUBLIC_URL``; clients may pass explicit deep links instead.
+    """
+    base = settings.app_public_url.rstrip("/")
+    return_url = data.return_url or (f"{base}/settings/payments?stripe=return" if base else "")
+    refresh_url = data.refresh_url or (f"{base}/settings/payments?stripe=refresh" if base else "")
+    if not return_url or not refresh_url:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Invoice is not available for payment",
+            detail="return_url and refresh_url are required when APP_PUBLIC_URL is unset",
         )
+    return return_url, refresh_url
 
-    try:
-        checkout = await create_checkout(
-            invoice,
-            success_url=data.success_url,
-            customer_email=data.customer_email,
-        )
-    except Exception as exc:
+
+async def _sync_account_from_stripe(db: AsyncSession, account: StripeAccount) -> StripeAccount:
+    """Refresh the mirrored capability flags from Stripe (source of truth)."""
+    remote = await stripe_client.retrieve_account(account.stripe_account_id)
+    account.details_submitted = bool(remote["details_submitted"])
+    account.charges_enabled = bool(remote["charges_enabled"])
+    account.payouts_enabled = bool(remote["payouts_enabled"])
+    account.onboarding_complete = account.charges_enabled and account.payouts_enabled
+    await db.flush()
+    return account
+
+
+def _status_read(account: StripeAccount | None, tenant: Tenant) -> PaymentStatusRead:
+    return PaymentStatusRead(
+        stripe_configured=stripe_client.is_configured(),
+        connected=account is not None,
+        stripe_account_id=account.stripe_account_id if account else None,
+        details_submitted=account.details_submitted if account else False,
+        charges_enabled=account.charges_enabled if account else False,
+        payouts_enabled=account.payouts_enabled if account else False,
+        onboarding_complete=account.onboarding_complete if account else False,
+        accept_card_default=tenant_accept_card_default(tenant),
+    )
+
+
+@router.get("/status")
+async def get_payment_status(tenant: TenantDep, db: DbDep) -> PaymentStatusRead:
+    """Payment connection status for the current tenant (mirrored flags)."""
+    await set_tenant_in_session(db, tenant.id)
+    account = await _get_stripe_account(db, tenant.id)
+    return _status_read(account, tenant)
+
+
+@router.post("/connect")
+async def connect_stripe_account(
+    data: ConnectRequest,
+    tenant: TenantDep,
+    current_user: CurrentUserDep,
+    db: DbDep,
+) -> ConnectRead:
+    """Create (or reuse) the tenant's Express account and return its onboarding URL."""
+    if not stripe_client.is_configured():
         raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY,
-            detail=f"Paddle checkout creation failed: {exc!s}",
-        ) from exc
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="payments_not_configured",
+        )
+    await set_tenant_in_session(db, tenant.id)
+    return_url, refresh_url = _onboarding_urls(data)
 
-    invoice.paddle_checkout_id = checkout["checkout_id"]
+    account = await _get_stripe_account(db, tenant.id)
+    if account is None:
+        try:
+            created = await stripe_client.create_express_account(
+                email=current_user.email if current_user is not None else tenant.email or None,
+                tenant_id=str(tenant.id),
+            )
+        except stripe_client.PaymentsNotConfiguredError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="payments_not_configured",
+            ) from exc
+        account = StripeAccount(
+            tenant_id=tenant.id,
+            stripe_account_id=str(created["id"]),
+        )
+        db.add(account)
+        await db.flush()
+
+    onboarding_url = await stripe_client.create_account_link(
+        account.stripe_account_id,
+        return_url=return_url,
+        refresh_url=refresh_url,
+    )
     await db.commit()
+    return ConnectRead(onboarding_url=onboarding_url)
 
-    return PaddleCheckoutRead(**checkout)
+
+@router.get("/onboarding-return", response_class=HTMLResponse)
+async def onboarding_return(tenant: TenantDep, db: DbDep) -> HTMLResponse:
+    """Sync the account flags after hosted onboarding and confirm completion.
+
+    Stripe redirects the tradie's browser here once the hosted flow ends; the
+    return URL configured at connect time carries them back into the app. The
+    response is a minimal HTML interstitial so a stray browser tab still lands
+    somewhere sensible.
+    """
+    if not stripe_client.is_configured():
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="payments_not_configured",
+        )
+    await set_tenant_in_session(db, tenant.id)
+    account = await _get_stripe_account(db, tenant.id)
+    if account is not None:
+        try:
+            await _sync_account_from_stripe(db, account)
+        except Exception:
+            logger.warning("stripe_onboarding_sync_failed", tenant_id=str(tenant.id))
+        await db.commit()
+    complete = account is not None and account.onboarding_complete
+    heading = "Card payments are ready" if complete else "Almost there"
+    body = (
+        "You can take card payments on invoices now — you can close this window."
+        if complete
+        else "Stripe still needs a few details before you can take card payments."
+    )
+    return HTMLResponse(
+        f"<!doctype html><html><head><title>{heading}</title></head>"
+        f"<body><h1>{heading}</h1><p>{body}</p></body></html>"
+    )
+
+
+@router.patch("/settings")
+async def update_payment_settings(
+    data: PaymentSettingsUpdate,
+    tenant: TenantDep,
+    db: DbDep,
+) -> PaymentStatusRead:
+    """Set the tenant-level default for offering card payment on invoices."""
+    await set_tenant_in_session(db, tenant.id)
+    row = await db.get(Tenant, tenant.id)
+    if row is None:  # TenantDep guarantees the row exists; mypy can't know.
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Tenant not found")
+    merged: dict[str, Any] = dict(row.settings or {})
+    payments = dict(merged.get("payments") or {})
+    payments["accept_card_default"] = data.accept_card_default
+    merged["payments"] = payments
+    row.settings = merged
+    await db.commit()
+    account = await _get_stripe_account(db, tenant.id)
+    return _status_read(account, row)
 
 
 @router.get("/invoice/{invoice_id}")

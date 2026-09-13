@@ -32,6 +32,7 @@ from app.routers import (
     contacts,
     customer_portal,
     customers,
+    data_export,
     demo,
     diagnostics,
     feature_flags,
@@ -47,6 +48,7 @@ from app.routers import (
     quote_requests,
     quotes,
     reviews,
+    stripe_webhooks,
     tenants,
     users,
     webhooks,
@@ -188,8 +190,10 @@ app.include_router(payments.router)
 app.include_router(public_docs.router)
 app.include_router(billing.router)
 app.include_router(webhooks.router)
+app.include_router(stripe_webhooks.router)
 app.include_router(analytics.router)
 app.include_router(reviews.router)
 app.include_router(communications.router)
 app.include_router(files.router)
 app.include_router(notifications.router)
+app.include_router(data_export.router)

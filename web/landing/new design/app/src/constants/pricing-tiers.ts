@@ -3,12 +3,10 @@ export interface Tier {
   id: 'sole_trader' | 'pro' | 'team'
   tagline: string
   audience: string
-  /** Plain-English AI allowance line shown on the card. */
-  aiAllowance: string
+  /** Short differentiator line shown in the bordered box on the card. */
+  highlight: string
   features: string[]
   featured: boolean
-  /** Minimum seats (Team only). */
-  minSeats?: number
   /** Static launch prices used when Paddle isn't configured or preview fails. */
   fallbackPrice: { month: string; year: string }
   /** Monthly/yearly Paddle price IDs — empty string when not configured. */
@@ -16,9 +14,9 @@ export interface Tier {
 }
 
 /**
- * Confirmed launch pricing. Sole Trader overage is a hard block (upgrade
- * prompt); Pro and Team overage is metered at 6p per AI action with a monthly
- * spend cap and usage alerts.
+ * Launch pricing: flat per business, unlimited users, AI unmetered on every
+ * plan (subject to the fair-use policy at /fair-use). Provisional until the
+ * beta evidence review.
  */
 export const PricingTiers: Tier[] = [
   {
@@ -26,13 +24,15 @@ export const PricingTiers: Tier[] = [
     id: 'sole_trader',
     tagline: 'One-person bands getting quotes out faster.',
     audience: 'For self-employed tradespeople',
-    aiAllowance:
-      '30 AI quotes a month included — hit the limit and we\u2019ll nudge you to upgrade, never cut you off mid-job.',
+    highlight: 'Everything you need to quote, win the job, and get paid.',
     features: [
+      'Customer portal',
       'AI quote drafting',
-      'Unlimited quotes & customers',
-      'Invoicing & calendar',
-      'Customer chat',
+      'AI intake briefs',
+      'Quote & payment chase sequences',
+      'Online card payments',
+      'Xero & QuickBooks sync',
+      'Data export',
     ],
     featured: false,
     fallbackPrice: { month: '£25', year: '£250' },
@@ -46,13 +46,15 @@ export const PricingTiers: Tier[] = [
     id: 'pro',
     tagline: 'Busy sparks who want the whole pipeline.',
     audience: 'Most popular for working electricians',
-    aiAllowance:
-      '100 AI quotes a month included, then 6p per extra quote, capped — we\u2019ll warn you first.',
+    highlight: 'Adds the AI that does the looking — photos, drawings, and customer chat.',
     features: [
       'Everything in Sole Trader',
-      'AI follow-up chat for customers',
-      'Branded quotes & invoices',
-      'Priority support',
+      'Photo & drawing analysis',
+      'Customer-facing AI chat assistant',
+      'Certificates',
+      'Deposits & optional quote lines',
+      'Offline mode',
+      'Priority AI models',
     ],
     featured: true,
     fallbackPrice: { month: '£39', year: '£390' },
@@ -65,18 +67,17 @@ export const PricingTiers: Tier[] = [
     name: 'Team',
     id: 'team',
     tagline: 'Firms with multiple jobs on the go.',
-    audience: 'For growing firms, 3 seats and up',
-    aiAllowance:
-      '100 AI quotes a month per seat, pooled across the team — then 6p per extra quote, capped — we\u2019ll warn you first.',
+    audience: 'For growing firms with people to coordinate',
+    highlight: 'Runs the whole firm — every user included at no extra cost.',
     features: [
       'Everything in Pro',
-      'Multi-user access',
-      'Advanced reporting',
-      'Onboarding help',
+      'Multi-user scheduling',
+      'Roles & permissions',
+      'Shared customer portal',
+      'Team reporting',
     ],
     featured: false,
-    minSeats: 3,
-    fallbackPrice: { month: '£29', year: '£290' },
+    fallbackPrice: { month: '£69', year: '£690' },
     priceId: {
       month: import.meta.env.VITE_PADDLE_PRICE_TEAM_MONTH ?? '',
       year: import.meta.env.VITE_PADDLE_PRICE_TEAM_YEAR ?? '',

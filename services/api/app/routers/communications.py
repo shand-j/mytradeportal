@@ -9,7 +9,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.ai_telemetry import AiCallContext
+from app.ai_telemetry import ACTOR_CUSTOMER, ACTOR_STAFF, AiCallContext
 from app.config import settings as settings
 from app.database import get_db
 from app.dependencies import TenantDep, _extract_token
@@ -381,6 +381,10 @@ async def ai_followup(
                 db=db,
                 tenant_id=tenant.id,
                 user_id=actor.id if isinstance(actor, User) else None,
+                # Intake chat: customer-token calls are the customer; staff
+                # opening the thread keep the staff default. The endpoint
+                # receives no entry channel, so entry_channel stays None.
+                actor_type=ACTOR_STAFF if isinstance(actor, User) else ACTOR_CUSTOMER,
                 quote_request_id=quote_request_id,
             ),
         )

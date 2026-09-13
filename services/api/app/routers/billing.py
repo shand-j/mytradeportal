@@ -1,7 +1,9 @@
 """Subscription / billing endpoints for the tenant paywall.
 
-Beta scope: one active subscription per tenant, three plans, 14-day trial
-handled by Paddle. This module owns the checkout-URL creation and the
+Flat pricing model: one subscription per business, three flat tiers, unlimited
+users, AI unmetered on every tier. There is no seat, quantity or overage
+logic anywhere in this module. The 14-day trial is handled by Paddle /
+``app.trial``. This module owns the checkout-URL creation and the
 subscription read model; state mutations happen exclusively via webhooks
 (:mod:`app.routers.webhooks`).
 """
@@ -26,7 +28,7 @@ from app.paddle_client import (
     create_subscription_transaction,
     get_or_create_customer,
 )
-from app.plans import PLANS, get_plan, plan_to_public_dict
+from app.plans import PLAN_CATALOG, get_plan, plan_to_public_dict
 from app.rls import set_tenant_in_session
 from app.schemas import BillingCheckoutCreate, BillingCheckoutRead, SubscriptionRead
 
@@ -151,18 +153,6 @@ def _price_id_for_plan(plan_key: str, interval: str = "month") -> str:
     return price_id
 
 
-def _checkout_quantity(plan_key: str, seats: int | None) -> int:
-    """Seat count for the checkout item, enforcing the plan's seat minimum."""
-    plan = get_plan(plan_key)  # key already validated by _price_id_for_plan
-    quantity = seats if seats is not None else plan.min_seats
-    if quantity < plan.min_seats:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Plan {plan.key} requires at least {plan.min_seats} seats",
-        )
-    return quantity
-
-
 async def _get_or_create_subscription(
     db: AsyncSession, tenant_id: UUID, plan_key: str
 ) -> Subscription:
@@ -182,13 +172,14 @@ async def list_plans() -> list[dict[str, Any]]:
 
     Public by design — the onboarding plan step renders before checkout and
     must never be blocked by auth/tenant state. Each tier carries its key,
-    display name, monthly/annual GBP list prices, the env var NAMES that hold
-    the Paddle price IDs (the IDs themselves stay server-side), the monthly AI
-    allowance, overage behavior/price, featured flag, seat rules, and trial
-    terms. Mobile renders from this and falls back to a static copy of the
-    same numbers if the fetch fails.
+    display name, flat monthly/annual GBP list prices (per business —
+    unlimited users on every tier), the env var NAMES that hold the Paddle
+    price IDs (the IDs themselves stay server-side), the capability list, the
+    featured flag, and trial terms. There are deliberately no AI-usage
+    numbers: AI is unmetered on every tier. Mobile renders from this and
+    falls back to a static copy of the same numbers if the fetch fails.
     """
-    return [plan_to_public_dict(plan) for plan in PLANS]
+    return [plan_to_public_dict(plan) for plan in PLAN_CATALOG]
 
 
 @router.post("/checkout")
@@ -200,12 +191,13 @@ async def create_checkout(
 ) -> BillingCheckoutRead:
     """Create a Paddle checkout URL for the requested plan.
 
-    The URL is Paddle-hosted; the mobile app opens it in the system browser
-    and Paddle bounces back to ``success_url`` (or the app default) on
-    completion. Subscription state is written by the webhook, not here.
+    One flat subscription per business: there is no seat or quantity logic —
+    the Paddle price itself is the whole tier. The URL is Paddle-hosted; the
+    mobile app opens it in the system browser and Paddle bounces back to
+    ``success_url`` (or the app default) on completion. Subscription state is
+    written by the webhook, not here.
     """
     price_id = _price_id_for_plan(data.plan_key, data.interval)
-    quantity = _checkout_quantity(data.plan_key, data.seats)
     if current_user is None:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -232,7 +224,6 @@ async def create_checkout(
             success_url=data.success_url,
             discount_id=settings.paddle_beta_discount_id or None,
             customer_id=customer_id,
-            quantity=quantity,
         )
     except Exception as exc:
         logger.error(

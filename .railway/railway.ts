@@ -251,6 +251,12 @@ export default defineRailway(() => {
       // Auto-applies a 100% recurring discount to every checkout while set;
       // unset to charge full price once the beta closes.
       PADDLE_BETA_DISCOUNT_ID: preserve(),
+      // Stripe Connect (ADR-003): customer → tradie invoice card payments via
+      // Express destination charges. Paddle stays subscription-only. Blank
+      // defaults; set once in the Railway dashboard, preserved across applies.
+      STRIPE_SECRET_KEY: preserve(),
+      STRIPE_WEBHOOK_SECRET: preserve(),
+      STRIPE_CONNECT_CLIENT_ID: preserve(),
       // New Relic observability (free tier). Set NEW_RELIC_LICENSE_KEY to enable APM.
       NEW_RELIC_LICENSE_KEY: preserve(),
       NEW_RELIC_APP_NAME: "mytradeportal-api",

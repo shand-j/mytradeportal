@@ -11,6 +11,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from app import stripe_client
 from app.ai_telemetry import record_quote_outcome
 from app.audit import Actions, write_audit_log
 from app.calculations import (
@@ -414,6 +415,7 @@ async def mark_invoice_paid(
     invoice = await _get_invoice(db, tenant.id, invoice_id)
     invoice.status = "paid"
     invoice.paid_at = datetime.utcnow()
+    invoice.paid_via = "manual"
     await db.flush()
     await write_audit_log(
         db,
@@ -444,6 +446,64 @@ async def mark_invoice_paid(
                 user_id=current_user.id if current_user is not None else None,
                 extra_payload={"invoice_id": str(invoice.id), "actor": "staff"},
             )
+    await db.commit()
+    return InvoiceRead.model_validate(await _get_invoice(db, tenant.id, invoice.id))
+
+
+@router.post("/{invoice_id}/refund")
+async def refund_invoice(
+    invoice_id: UUID,
+    tenant: TenantDep,
+    current_user: CurrentUserDep,
+    db: DbDep,
+) -> InvoiceRead:
+    """Refund a Stripe-paid invoice in full.
+
+    Only invoices settled online by card (``paid_via == "stripe"``) can be
+    refunded through the API — manually settled invoices are refunded outside
+    the platform. Deposits/partial refunds are out of scope (ADR-003).
+    """
+    invoice = await _get_invoice(db, tenant.id, invoice_id)
+    if invoice.status == "refunded":
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Invoice has already been refunded",
+        )
+    if invoice.paid_via != "stripe" or not invoice.stripe_payment_intent_id:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Only invoices paid online by card can be refunded here",
+        )
+    try:
+        refund = await stripe_client.create_refund(invoice.stripe_payment_intent_id)
+    except stripe_client.PaymentsNotConfiguredError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="payments_not_configured",
+        ) from exc
+    invoice.status = "refunded"
+    await db.flush()
+    await write_audit_log(
+        db,
+        tenant_id=tenant.id,
+        actor=current_user,
+        action="invoice.refunded",
+        entity_type="invoice",
+        entity_id=invoice.id,
+        payload={
+            "total": str(invoice.total),
+            "stripe_payment_intent_id": invoice.stripe_payment_intent_id,
+            "stripe_refund_id": refund.get("id"),
+        },
+    )
+    await notify_staff(
+        db,
+        tenant.id,
+        kind="invoice_refunded",
+        title="Invoice refunded",
+        body=f"Invoice {invoice.invoice_number} for £{invoice.total} has been refunded.",
+        link=f"/invoices/{invoice.id}",
+    )
     await db.commit()
     return InvoiceRead.model_validate(await _get_invoice(db, tenant.id, invoice.id))
 

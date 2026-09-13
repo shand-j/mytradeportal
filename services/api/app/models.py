@@ -523,7 +523,7 @@ class Appointment(TenantScopedBase):
 
 
 class Invoice(TenantScopedBase):
-    """An invoice for completed work, payable via Paddle."""
+    """An invoice for completed work, payable by card (Stripe Connect) or manually."""
 
     __tablename__ = "invoices"
 
@@ -564,6 +564,16 @@ class Invoice(TenantScopedBase):
     paddle_transaction_id: Mapped[str | None] = mapped_column(
         String(255), nullable=True, index=True
     )
+    # Stripe Connect card payment (ADR-003): the open/succeeded PaymentIntent
+    # backing the /pay page for this invoice.
+    stripe_payment_intent_id: Mapped[str | None] = mapped_column(
+        String(255), nullable=True, index=True
+    )
+    # Per-invoice override for offering card payment online. NULL falls back
+    # to the tenant default (settings["payments"]["accept_card_default"]).
+    accept_card_payments: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    # How the invoice was settled: "stripe" | "manual" | "paddle-legacy".
+    paid_via: Mapped[str | None] = mapped_column(String(50), nullable=True)
 
     contact: Mapped[Contact] = relationship("Contact", back_populates="invoices")
     line_items: Mapped[list[InvoiceLineItem]] = relationship(
@@ -1158,13 +1168,10 @@ class DemoQuoteEvent(Base):
 
 
 class AIUsageCounter(TenantScopedBase):
-    """Per-tenant monthly counter of billable AI actions.
-
-    One row per (tenant, period) where ``period`` is ``YYYY-MM`` (UTC). Only
-    billable features increment it (see ``app.plans.BILLABLE_AI_FEATURES``);
-    embeddings and demo quotes never touch this table. Read by the
-    ``require_ai_allowance`` dependency to enforce each plan's monthly AI
-    allowance. Tenant-scoped: registered in ``app.rls.TENANT_SCOPED_TABLES``.
+    """Legacy per-tenant monthly AI-action counter from the retired hybrid
+    pricing model. Unreferenced since the move to flat unmetered pricing
+    (ADR-001); retained only because the table may hold historical rows.
+    Tenant-scoped: registered in ``app.rls.TENANT_SCOPED_TABLES``.
     """
 
     __tablename__ = "ai_usage_counters"
@@ -1212,6 +1219,12 @@ class AiCallEvent(Base):
     # NULL for system/background/demo calls.
     user_id: Mapped[UUID | None] = mapped_column(PGUUID(as_uuid=True), nullable=True)
     feature: Mapped[str] = mapped_column(String(50), nullable=False, index=True)
+    # Who/what initiated the call: staff (default) | customer | system. Indexed
+    # so per-actor fair-use and funnel queries stay cheap.
+    actor_type: Mapped[str] = mapped_column(String(20), default="staff", nullable=False, index=True)
+    # How the end user arrived at the AI surface (customer entry points):
+    # qr_van | qr_card | code | widget | direct | app. NULL for staff/system calls.
+    entry_channel: Mapped[str | None] = mapped_column(String(50), nullable=True)
     gen_ai_provider_name: Mapped[str | None] = mapped_column(String(100), nullable=True)
     gen_ai_request_model: Mapped[str | None] = mapped_column(String(255), nullable=True, index=True)
     gen_ai_usage_input_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
@@ -1370,9 +1383,10 @@ class AiAlertState(Base):
 
     ``period`` scopes the dedupe: ``YYYY-MM`` for monthly budget thresholds
     (``threshold`` = ``budget_50`` / ``budget_80`` / ``budget_100``) and
+    per-org monthly fair-use crossings (``threshold`` = ``fair_use:<tenant_id>``),
     ``YYYY-MM-DD`` for daily anomalies (``threshold`` = ``cost_spike`` /
-    ``latency_p95_spike``). The nightly job inserts a row before dispatching,
-    so a crashed/restarted job never double-fires the same alert.
+    ``latency_p95_spike`` / ``rollup_failed``). The nightly job inserts a row
+    before dispatching, so a crashed/restarted job never double-fires the same alert.
     """
 
     __tablename__ = "ai_alert_state"
@@ -1476,3 +1490,32 @@ class DocumentAccessToken(Base, TimestampMixin):
     contact_email: Mapped[str | None] = mapped_column(String(255), nullable=True)
     expires_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
     revoked_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+
+class StripeAccount(Base, TimestampMixin):
+    """A tenant's Stripe Connect Express account for card payments (ADR-003).
+
+    One row per tenant (``tenant_id`` unique). Customers pay invoices by card
+    via destination charges on this account — funds settle directly to the
+    tradie with no platform application fee. The capability flags are mirrored
+    from Stripe (onboarding return + ``account.updated`` webhooks) so the app
+    can render the payments status without a live API round-trip.
+    ``onboarding_complete`` flips true once Stripe reports both charges and
+    payouts enabled.
+    """
+
+    __tablename__ = "stripe_accounts"
+
+    id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
+    tenant_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("tenants.id", ondelete="CASCADE"),
+        nullable=False,
+        unique=True,
+        index=True,
+    )
+    stripe_account_id: Mapped[str] = mapped_column(String(255), unique=True, nullable=False)
+    details_submitted: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    charges_enabled: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    payouts_enabled: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    onboarding_complete: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)

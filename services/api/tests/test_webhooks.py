@@ -201,7 +201,7 @@ async def test_paddle_webhook_routes_subscription_created_to_upsert(
     assert seen["event_data"]["id"] == "sub_test_created"
 
 
-# --- W2-B: price→plan re-derivation + metered overage billing ----------------
+# --- Flat pricing: price→plan re-derivation (no overage billing) -------------
 
 _NEW_PRICE_ENV_VARS = (
     "PADDLE_PRICE_ID_SOLE_TRADER_MONTH",
@@ -367,99 +367,11 @@ async def test_upsert_subscription_keeps_plan_key_for_unknown_price(
     assert row["plan_key"] == "pro"
 
 
-def _overage_event(paddle_sub_id: str, transaction_id: str = "txn_ovg_test") -> dict[str, Any]:
-    return {
-        "id": transaction_id,
-        "subscription_id": paddle_sub_id,
-        "currency_code": "GBP",
-        "billed_at": "2026-10-01T00:00:00Z",
-        "billing_period": {
-            "starts_at": "2026-09-01T00:00:00Z",
-            "ends_at": "2026-10-01T00:00:00Z",
-        },
-        "items": [
-            {
-                "quantity": 42,
-                "price": {
-                    "id": "pri_w2b_ovg",
-                    "product_id": "pro_w2b_ovg",
-                    "unit_price": {"amount": "6", "currency_code": "GBP"},
-                    "description": "Per AI action",
-                },
-            },
-            {
-                "quantity": 1,
-                "price": {
-                    "id": "pri_w2b_pro_m",
-                    "product_id": "pro_w2b_pro",
-                    "unit_price": {"amount": "3900", "currency_code": "GBP"},
-                },
-            },
-        ],
-    }
-
-
-async def test_record_overage_billing_records_usage_and_is_idempotent(
+async def test_paddle_webhook_accepts_transaction_billed_without_handler(
     clean_price_env: pytest.MonkeyPatch,
 ) -> None:
-    """transaction.billed with an overage line folds usage/cost into the
-    subscription's provider_payload, keyed on the transaction id."""
-    from app.routers.webhooks import _record_overage_billing
-
-    clean_price_env.setenv("PADDLE_PRICE_ID_AI_OVERAGE", "pri_w2b_ovg")
-    paddle_sub_id = await _make_subscription(plan_key="pro")
-
-    await _record_overage_billing(_overage_event(paddle_sub_id))
-
-    row = await _fetch_subscription(paddle_sub_id)
-    ledger = row["provider_payload"]["ai_overage_billing"]
-    assert set(ledger) == {"txn_ovg_test"}
-    entry = ledger["txn_ovg_test"]
-    assert entry["actions"] == 42  # only the overage line, not the plan line
-    assert entry["amount_pence"] == 252
-    assert entry["currency_code"] == "GBP"
-    assert entry["period_start"] == "2026-09-01T00:00:00Z"
-
-    # At-least-once redelivery: same transaction id, still exactly one entry.
-    await _record_overage_billing(_overage_event(paddle_sub_id))
-    row = await _fetch_subscription(paddle_sub_id)
-    assert set(row["provider_payload"]["ai_overage_billing"]) == {"txn_ovg_test"}
-
-
-async def test_record_overage_billing_ignores_plain_renewals(
-    clean_price_env: pytest.MonkeyPatch,
-) -> None:
-    from app.routers.webhooks import _record_overage_billing
-
-    paddle_sub_id = await _make_subscription(plan_key="pro")
-    event = _overage_event(paddle_sub_id)
-    event["items"] = [item for item in event["items"] if item["price"]["id"] != "pri_w2b_ovg"]
-
-    await _record_overage_billing(event)
-
-    row = await _fetch_subscription(paddle_sub_id)
-    assert "ai_overage_billing" not in (row["provider_payload"] or {})
-
-
-async def test_is_overage_item_matches_description_for_custom_prices(
-    clean_price_env: pytest.MonkeyPatch,
-) -> None:
-    """Non-catalog overage lines (from report_metered_usage) match on the
-    description prefix when no catalog ids are configured."""
-    from app.routers.webhooks import _is_overage_item
-
-    clean_price_env.delenv("PADDLE_PRICE_ID_AI_OVERAGE", raising=False)
-    clean_price_env.delenv("PADDLE_PRODUCT_ID_AI_OVERAGE", raising=False)
-
-    assert _is_overage_item(
-        {"price": {"id": "pri_custom", "description": "AI overage — 42 actions @ £0.06"}}
-    )
-    assert not _is_overage_item({"price": {"id": "pri_custom", "description": "Pro monthly"}})
-
-
-async def test_paddle_webhook_routes_transaction_billed_to_overage_handler(
-    clean_price_env: pytest.MonkeyPatch,
-) -> None:
+    """Flat pricing has no overage ledger: transaction.billed renewals are
+    verified, deduped and acknowledged without touching subscription state."""
     secret = "whsec_billed_secret"
     payload = {
         "event_id": f"evt_{uuid4().hex}",
@@ -471,13 +383,6 @@ async def test_paddle_webhook_routes_transaction_billed_to_overage_handler(
 
     clean_price_env.setattr("app.paddle_client.settings.paddle_webhook_secret", secret)
 
-    seen: dict[str, Any] = {}
-
-    async def fake_overage(event_data: dict[str, Any]) -> None:
-        seen["event_data"] = event_data
-
-    clean_price_env.setattr("app.routers.webhooks._record_overage_billing", fake_overage)
-
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         response = await client.post(
             "/webhooks/paddle",
@@ -486,4 +391,4 @@ async def test_paddle_webhook_routes_transaction_billed_to_overage_handler(
         )
 
     assert response.status_code == 200
-    assert seen["event_data"]["id"] == "txn_billed_1"
+    assert response.json()["status"] == "ok"

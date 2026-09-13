@@ -29,16 +29,15 @@ REMINDER_SCHEDULER_ENABLED: bool = os.environ.get(
 # after startup so a fresh deploy never immediately blasts customers.
 REMINDER_TICK_SECONDS: int = int(os.environ.get("REMINDER_TICK_SECONDS", "3600"))
 
-# Global kill-switch for AI-usage entitlement enforcement (W2-A). When false
-# (the default until the Paddle price mapping is proven in sandbox), the
-# ``require_ai_allowance`` dependency is a no-op pass-through and no tenant is
-# ever blocked or warned. Set ENTITLEMENTS_ENABLED=true to enforce.
-ENTITLEMENTS_ENABLED: bool = os.environ.get("ENTITLEMENTS_ENABLED", "false").strip().lower() in {
-    "1",
-    "true",
-    "yes",
-    "on",
-}
+# Fair-use AI guardrails (flat pricing: AI is unmetered for customers, so
+# these protect cost without ever surfacing a usage meter). Per-org burst
+# limit: ai_call_events counted for the current UTC hour; HTTP 429 +
+# Retry-After when exceeded. Monthly soft threshold: when a tenant's
+# current-month AI action count (ai_call_events excluding outcome rows)
+# reaches it, the tenant is switched to the cheap model route and staff get
+# ONE internal ops alert per org per month — never customer-visible.
+AI_BURST_LIMIT_PER_HOUR: int = int(os.environ.get("AI_BURST_LIMIT_PER_HOUR", "60"))
+AI_FAIR_USE_MONTHLY_THRESHOLD: int = int(os.environ.get("AI_FAIR_USE_MONTHLY_THRESHOLD", "500"))
 
 # LLM/embedding list prices moved to ``app.ai_pricing`` (date-versioned price
 # lists; ``estimate_llm_cost_usd`` in ``app.rag.generation`` delegates there).
@@ -66,3 +65,19 @@ FX_REFRESH_MAX_AGE_DAYS: int = int(os.environ.get("FX_REFRESH_MAX_AGE_DAYS", "7"
 AI_MONTHLY_BUDGET_GBP: str = os.environ.get("AI_MONTHLY_BUDGET_GBP", "").strip()
 ALERT_EMAIL_TO: str = os.environ.get("ALERT_EMAIL_TO", "").strip()
 SLACK_ALERT_WEBHOOK_URL: str = os.environ.get("SLACK_ALERT_WEBHOOK_URL", "").strip()
+
+# --- Stripe Connect (customer → tradie invoice card payments) --------------
+# Destination charges on Express connected accounts, no platform application
+# fee. Paddle remains for OUR SaaS subscription only — tradie receivables
+# never touch Paddle (ADR-003). Empty STRIPE_SECRET_KEY disables the whole
+# feature: staff endpoints answer 503 ``payments_not_configured`` and public
+# invoice pages simply omit the Pay button.
+STRIPE_SECRET_KEY: str = os.environ.get("STRIPE_SECRET_KEY", "").strip()
+STRIPE_WEBHOOK_SECRET: str = os.environ.get("STRIPE_WEBHOOK_SECRET", "").strip()
+# Connect client id (ca_...) — reserved for future OAuth-style onboarding
+# links; Express account links work without it.
+STRIPE_CONNECT_CLIENT_ID: str = os.environ.get("STRIPE_CONNECT_CLIENT_ID", "").strip()
+# Publishable key (pk_...) for the future Stripe.js /pay landing page. The API
+# only ever hands out PaymentIntent client secrets; the publishable key is
+# documented here so the landing site build can pick it up. Public by design.
+STRIPE_PUBLISHABLE_KEY: str = os.environ.get("STRIPE_PUBLISHABLE_KEY", "").strip()

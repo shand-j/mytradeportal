@@ -1,10 +1,15 @@
-"""Plan catalog — the single source of truth for tiers, prices and AI allowances.
+"""Plan catalog — the single source of truth for tiers, prices and capabilities.
+
+Flat pricing model (locked decision): one subscription per business, unlimited
+users, AI unmetered on every tier. There are NO credits, quotas, allowances,
+overage charges or seats anywhere in this catalog — tiers differ by
+capability only. Fair-use guardrails (burst limit, cheap-route threshold) live
+in ``app.dependencies.fair_use_guard`` and are invisible to customers.
 
 Both the API (``GET /billing/plans``) and the mobile onboarding flow read this
 catalog. Actual Paddle price IDs live in environment variables and are never
 invented or exposed here — each tier only references the env var NAMES
-(``monthly_price_env`` / ``annual_price_env``) that ops must set when the W2-B
-Paddle catalog work lands.
+(``monthly_price_env`` / ``annual_price_env``) that ops must set.
 
 Legacy keys: subscriptions created during beta carry ``plan_key`` values
 ``starter | pro | business``. ``resolve_plan_key`` maps them onto the current
@@ -21,56 +26,71 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime
-from typing import TYPE_CHECKING, Any, Literal
-
-from sqlalchemy import func, select
-from sqlalchemy.dialects.postgresql import insert as pg_insert
-
-from app.models import AIUsageCounter
-
-if TYPE_CHECKING:
-    from uuid import UUID
-
-    from sqlalchemy.ext.asyncio import AsyncSession
-
-OverageBehavior = Literal["block", "metered"]
+from typing import Any
 
 TRIAL_DAYS = 14
 TRIAL_EXTENSION_DAYS = 30
 TRIAL_EXTENSION_SENT_AI_QUOTES = 3
-OVERAGE_PRICE_PENCE = 6
 
 DEFAULT_PLAN_KEY = "sole_trader"
 
-# Features that count against the monthly AI allowance. Embeddings and the
-# public marketing demo are deliberately excluded (infrastructure cost, not
-# per-customer value).
-BILLABLE_AI_FEATURES: frozenset[str] = frozenset({"quote_draft", "quote_refine", "triage_followup"})
+# Capability vocabulary. A feature name is a stable string a router can gate
+# on via ``app.dependencies.require_tier_feature``. Tiers are cumulative:
+# pro = sole_trader + extras, team = pro + extras.
+SOLE_TRADER_FEATURES: frozenset[str] = frozenset(
+    {
+        "portal",
+        "ai_quote_draft",
+        "chase_sequences",
+        "online_payments",
+        "accounting_sync",
+        "data_export",
+        "customer_portal",
+        "intake_brief",
+    }
+)
+
+PRO_EXTRA_FEATURES: frozenset[str] = frozenset(
+    {
+        "drawing_analysis",
+        "customer_chat_assistant",
+        "certificates",
+        "deposits",
+        "optional_line_items",
+        "offline_mode",
+        "priority_models",
+    }
+)
+
+TEAM_EXTRA_FEATURES: frozenset[str] = frozenset(
+    {
+        "multi_user_scheduling",
+        "roles_permissions",
+        "shared_portal",
+        "team_reporting",
+    }
+)
 
 
 @dataclass(frozen=True)
 class Plan:
-    """A subscription tier."""
+    """A flat subscription tier: one price per business, unlimited users."""
 
     key: str  # sole_trader | pro | team
     name: str  # display name
     # Env var NAMES holding the Paddle price IDs (values stay server-side).
     monthly_price_env: str
     annual_price_env: str
-    # Public list prices in GBP, per user/seat. Display only — Paddle is the
-    # billing source of truth.
+    # Public list prices in GBP per business (flat — not per seat). Display
+    # only; Paddle is the billing source of truth.
     monthly_price_gbp: int
     annual_price_gbp: int
-    # Included AI actions per month. For team plans this is per seat and the
-    # allowance pools across seats (pooled_allowance).
-    ai_allowance_monthly: int
-    overage_behavior: OverageBehavior  # block = hard stop at 100%, metered = billed
-    min_seats: int
-    pooled_allowance: bool
+    # Capability set — the ONLY thing that differs between tiers.
+    features: frozenset[str]
     featured: bool  # rendered as "Most popular" by clients
 
 
-PLANS: tuple[Plan, ...] = (
+PLAN_CATALOG: tuple[Plan, ...] = (
     Plan(
         key="sole_trader",
         name="Sole Trader",
@@ -78,10 +98,7 @@ PLANS: tuple[Plan, ...] = (
         annual_price_env="PADDLE_PRICE_ID_SOLE_TRADER_YEAR",
         monthly_price_gbp=25,
         annual_price_gbp=250,
-        ai_allowance_monthly=30,
-        overage_behavior="block",
-        min_seats=1,
-        pooled_allowance=False,
+        features=SOLE_TRADER_FEATURES,
         featured=False,
     ),
     Plan(
@@ -91,10 +108,7 @@ PLANS: tuple[Plan, ...] = (
         annual_price_env="PADDLE_PRICE_ID_PRO_YEAR",
         monthly_price_gbp=39,
         annual_price_gbp=390,
-        ai_allowance_monthly=100,
-        overage_behavior="metered",
-        min_seats=1,
-        pooled_allowance=False,
+        features=SOLE_TRADER_FEATURES | PRO_EXTRA_FEATURES,
         featured=True,
     ),
     Plan(
@@ -102,24 +116,21 @@ PLANS: tuple[Plan, ...] = (
         name="Team",
         monthly_price_env="PADDLE_PRICE_ID_TEAM_MONTH",
         annual_price_env="PADDLE_PRICE_ID_TEAM_YEAR",
-        monthly_price_gbp=29,
-        annual_price_gbp=290,
-        ai_allowance_monthly=100,
-        overage_behavior="metered",
-        min_seats=3,
-        pooled_allowance=True,
+        monthly_price_gbp=69,
+        annual_price_gbp=690,
+        features=SOLE_TRADER_FEATURES | PRO_EXTRA_FEATURES | TEAM_EXTRA_FEATURES,
         featured=False,
     ),
 )
 
-# Existing subscriptions carry these plan_key values; map them onto PLANS.
+# Existing subscriptions carry these plan_key values; map them onto the catalog.
 LEGACY_PLAN_KEY_MAP: dict[str, str] = {
     "starter": "sole_trader",
     "pro": "pro",
     "business": "team",
 }
 
-_PLANS_BY_KEY: dict[str, Plan] = {plan.key: plan for plan in PLANS}
+_PLANS_BY_KEY: dict[str, Plan] = {plan.key: plan for plan in PLAN_CATALOG}
 
 
 def resolve_plan_key(key: str) -> str:
@@ -135,13 +146,22 @@ def get_plan(key: str) -> Plan:
     return plan
 
 
+def lowest_plan_with_feature(feature: str) -> Plan | None:
+    """Return the cheapest tier that includes a capability (for upgrade hints)."""
+    for plan in PLAN_CATALOG:  # catalog is ordered cheapest → most expensive
+        if feature in plan.features:
+            return plan
+    return None
+
+
 def plan_to_public_dict(plan: Plan) -> dict[str, Any]:
     """Serialise a tier for ``GET /billing/plans``.
 
     Price env var NAMES are included so ops and clients can tell which
     variable configures which tier; the Paddle IDs themselves never leave the
     server. GBP list prices are public marketing copy, so they are safe to
-    expose.
+    expose. There are deliberately no AI-usage numbers anywhere in this
+    payload — AI is unmetered on every tier.
     """
     return {
         "key": plan.key,
@@ -150,11 +170,8 @@ def plan_to_public_dict(plan: Plan) -> dict[str, Any]:
         "annual_price_env": plan.annual_price_env,
         "monthly_price_gbp": plan.monthly_price_gbp,
         "annual_price_gbp": plan.annual_price_gbp,
-        "ai_allowance_monthly": plan.ai_allowance_monthly,
-        "overage_behavior": plan.overage_behavior,
-        "overage_price_pence": OVERAGE_PRICE_PENCE,
-        "min_seats": plan.min_seats,
-        "pooled_allowance": plan.pooled_allowance,
+        "features": sorted(plan.features),
+        "unlimited_users": True,
         "featured": plan.featured,
         "trial_days": TRIAL_DAYS,
         "trial_extension_days": TRIAL_EXTENSION_DAYS,
@@ -162,71 +179,9 @@ def plan_to_public_dict(plan: Plan) -> dict[str, Any]:
     }
 
 
-@dataclass(frozen=True)
-class AllowanceInfo:
-    """Result of the ``require_ai_allowance`` entitlement check.
-
-    ``over_limit`` is True on metered plans once the included allowance is
-    exhausted — the telemetry writer uses it to flag overage rows for billing.
-    """
-
-    plan: Plan
-    used: int
-    allowance: int
-    allowed: bool
-    warning: str | None
-    over_limit: bool
-
-
 def current_period(at: datetime | None = None) -> str:
-    """Return the billing period key (``YYYY-MM``, UTC) for a moment in time."""
-    return (at or datetime.utcnow()).strftime("%Y-%m")
+    """Return the monthly period key (``YYYY-MM``, UTC) for a moment in time.
 
-
-async def get_ai_usage(db: AsyncSession, tenant_id: UUID, period: str | None = None) -> int:
-    """Return the tenant's billable AI action count for a period (default: current)."""
-    result = await db.execute(
-        select(func.coalesce(AIUsageCounter.ai_actions, 0)).where(
-            AIUsageCounter.tenant_id == tenant_id,
-            AIUsageCounter.period == (period or current_period()),
-        )
-    )
-    value = result.scalar_one_or_none()
-    return int(value) if value is not None else 0
-
-
-async def increment_ai_usage(
-    db: AsyncSession,
-    tenant_id: UUID,
-    feature: str,
-    *,
-    at: datetime | None = None,
-) -> int | None:
-    """Increment the tenant's monthly AI usage counter for a billable feature.
-
-    Returns the new count, or ``None`` when the feature is not billable
-    (embeddings, demo quotes) and the call is a no-op. Atomic via
-    INSERT ... ON CONFLICT so concurrent increments never lose counts; a new
-    calendar month simply starts a fresh ``period`` row.
+    Used by the fair-use guardrail to scope its per-month alert dedupe.
     """
-    if feature not in BILLABLE_AI_FEATURES:
-        return None
-    period = current_period(at)
-    stmt = (
-        pg_insert(AIUsageCounter)
-        .values(
-            tenant_id=tenant_id,
-            period=period,
-            ai_actions=1,
-        )
-        .on_conflict_do_update(
-            constraint="uq_ai_usage_counters_tenant_period",
-            set_={
-                "ai_actions": AIUsageCounter.ai_actions + 1,
-                "updated_at": datetime.utcnow(),
-            },
-        )
-        .returning(AIUsageCounter.ai_actions)
-    )
-    result = await db.execute(stmt)
-    return int(result.scalar_one())
+    return (at or datetime.utcnow()).strftime("%Y-%m")

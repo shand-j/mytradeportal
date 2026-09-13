@@ -43,6 +43,7 @@ from sqlalchemy import delete, func, select, text
 from app.alerting import fetch_usd_gbp_rate, send_alert
 from app.audit import Actions, write_audit_log
 from app.config import (
+    AI_FAIR_USE_MONTHLY_THRESHOLD,
     AI_MONTHLY_BUDGET_GBP,
     FX_REFRESH_MAX_AGE_DAYS,
     REMINDER_TICK_SECONDS,
@@ -451,9 +452,13 @@ async def reminder_loop(stop: asyncio.Event) -> None:
 #    than ``FX_REFRESH_MAX_AGE_DAYS`` (weekly cadence; failures keep the
 #    last-known rate).
 # 3. Fires budget alerts (50/80/100% of ``AI_MONTHLY_BUDGET_GBP``, each once
-#    per month) and anomaly alerts (daily cost > 3x trailing-7-day mean;
-#    daily latency p95 > 2x trailing-7-day p95, each once per day), deduped
-#    via the ``ai_alert_state`` table.
+#    per month), anomaly alerts (daily cost > 3x trailing-7-day mean;
+#    daily latency p95 > 2x trailing-7-day p95, each once per day), and
+#    fair-use alerts (an org's current-month AI action count reaches
+#    ``AI_FAIR_USE_MONTHLY_THRESHOLD``, once per org per month — internal ops
+#    only, never customer-visible), all deduped via the ``ai_alert_state``
+#    table. An unhandled exception in the pass itself fires a once-per-day
+#    ``rollup_failed`` alert and the loop keeps its schedule.
 #
 # The loop never raises; per-step failures are logged and the next step still
 # runs (alerts must not be lost because the FX endpoint is down).
@@ -866,6 +871,47 @@ async def _check_anomaly_alerts(db: AsyncSession, day: date) -> list[str]:
     return fired
 
 
+async def _check_fair_use_alerts(db: AsyncSession, day: date) -> list[str]:
+    """Fire one internal ops alert per org per month at the fair-use cap.
+
+    Counts each tenant's current-month ``ai_call_events`` (outcome rows
+    excluded — they carry no AI spend) and alerts ops when the count reaches
+    ``AI_FAIR_USE_MONTHLY_THRESHOLD``. Internal only: this must never surface
+    to the customer. Deduped per (tenant, month) via ``ai_alert_state``; the
+    tenant id rides in the ``threshold`` column (``fair_use:<uuid>``) so the
+    ``period`` stays the shared ``YYYY-MM`` shape.
+    """
+    if AI_FAIR_USE_MONTHLY_THRESHOLD <= 0:
+        return []
+    month_start = datetime(day.year, day.month, 1)
+    month_end = datetime(day.year + (day.month == 12), day.month % 12 + 1, 1)
+    rows = (
+        await db.execute(
+            select(AiCallEvent.tenant_id, func.count(AiCallEvent.id))
+            .where(
+                AiCallEvent.tenant_id.isnot(None),
+                AiCallEvent.feature != _OUTCOME_FEATURE,
+                AiCallEvent.created_at >= month_start,
+                AiCallEvent.created_at < month_end,
+            )
+            .group_by(AiCallEvent.tenant_id)
+            .having(func.count(AiCallEvent.id) >= AI_FAIR_USE_MONTHLY_THRESHOLD)
+        )
+    ).all()
+    period = f"{day.year:04d}-{day.month:02d}"
+    fired: list[str] = []
+    for tenant_id, action_count in rows:
+        subject = f"AI fair-use threshold reached by tenant ({period})"
+        body = (
+            f"Tenant {tenant_id} has used {action_count} AI actions in {period}, "
+            f"reaching the fair-use threshold of {AI_FAIR_USE_MONTHLY_THRESHOLD}. "
+            "Internal ops alert — review the tenant's usage; nothing is customer-visible."
+        )
+        if await _fire_alert_once(db, period, f"fair_use:{tenant_id}", subject, body):
+            fired.append(str(tenant_id))
+    return fired
+
+
 async def _run_rollup_tick(db: AsyncSession, now: datetime) -> dict[str, Any]:
     """One nightly pass: fold yesterday, refresh FX, evaluate alerts."""
     yesterday = (now - timedelta(days=1)).date()
@@ -875,6 +921,7 @@ async def _run_rollup_tick(db: AsyncSession, now: datetime) -> dict[str, Any]:
     try:
         summary["budget_alerts"] = await _check_budget_alerts(db, yesterday)
         summary["anomaly_alerts"] = await _check_anomaly_alerts(db, yesterday)
+        summary["fair_use_alerts"] = await _check_fair_use_alerts(db, yesterday)
     except Exception as exc:
         # Alert evaluation must not be lost with the fold — the rollup rows
         # are already committed; log and continue.
@@ -897,6 +944,44 @@ async def run_rollup_tick(
         return await _run_rollup_tick(db, now)
     async with AsyncSessionLocal() as session:
         return await _run_rollup_tick(session, now)
+
+
+# In-process fallback dedupe for the rollup-failure alert, used only when the
+# database itself is the failure (the ai_alert_state write cannot land).
+_rollup_failure_alerted_in_process: set[str] = set()
+
+
+async def _alert_rollup_failure(exc: Exception, db: AsyncSession | None = None) -> None:
+    """Fire a once-per-day ops alert when the nightly pass itself crashes.
+
+    Deduped through ``ai_alert_state`` (``threshold="rollup_failed"``, period
+    = today's date). When the database itself is the failure the dedupe write
+    cannot land, so an in-process set bounds the blast radius to one send per
+    day per replica. Never raises — the caller is the scheduler's last line
+    of defence.
+    """
+    period = datetime.utcnow().date().isoformat()
+    subject = f"AI rollup job failed ({period})"
+    body = (
+        f"The nightly AI rollup pass raised {type(exc).__name__}: {str(exc)[:300]}. "
+        "The scheduler loop is still running and will retry on the next tick."
+    )
+    try:
+        if db is not None:
+            await _fire_alert_once(db, period, "rollup_failed", subject, body)
+            return
+        async with AsyncSessionLocal() as session:
+            await _fire_alert_once(session, period, "rollup_failed", subject, body)
+    except Exception as fallback_exc:
+        if period in _rollup_failure_alerted_in_process:
+            return
+        _rollup_failure_alerted_in_process.add(period)
+        logger.warning(
+            "rollup_failure_alert_dedupe_unavailable",
+            error_type=type(fallback_exc).__name__,
+            error=str(fallback_exc)[:300],
+        )
+        await send_alert(subject, body)
 
 
 async def rollup_loop(stop: asyncio.Event) -> None:
@@ -939,4 +1024,7 @@ async def rollup_loop(stop: asyncio.Event) -> None:
                 error_type=type(exc).__name__,
                 error=str(exc)[:300],
             )
+            # The pass crashed before its own per-step guards (e.g. the fold
+            # itself raised): alert ops once per day and keep the schedule.
+            await _alert_rollup_failure(exc)
     logger.info("rollup_scheduler_stopped")

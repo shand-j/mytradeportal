@@ -207,7 +207,7 @@ async def test_paywall_allows_tenant_without_subscription_row(admin_client: Asyn
     assert response.status_code == 200
 
 
-# --- W2-B plan mapping: per-interval env vars, legacy fallback, seats --------
+# --- Flat pricing: per-interval env vars, legacy fallback, no seats ----------
 
 _NEW_PRICE_ENV_VARS = (
     "PADDLE_PRICE_ID_SOLE_TRADER_MONTH",
@@ -300,29 +300,14 @@ async def test_price_id_rejects_unknown_plan(clean_price_env: pytest.MonkeyPatch
     assert excinfo.value.status_code == 400
 
 
-async def test_checkout_quantity_enforces_team_seat_minimum(
-    clean_price_env: pytest.MonkeyPatch,
-) -> None:
-    from app.routers.billing import _checkout_quantity
-    from fastapi import HTTPException
-
-    assert _checkout_quantity("team", None) == 3
-    assert _checkout_quantity("team", 5) == 5
-    with pytest.raises(HTTPException) as excinfo:
-        _checkout_quantity("team", 2)
-    assert excinfo.value.status_code == 400
-    # Legacy "business" resolves to team and inherits its seat rules.
-    assert _checkout_quantity("business", None) == 3
-    # Fixed-seat plans default to one.
-    assert _checkout_quantity("sole_trader", None) == 1
-
-
-async def test_checkout_team_sends_seat_quantity_and_new_price(
+async def test_checkout_ignores_seats_and_sends_flat_subscription(
     admin_client: AsyncClient,
     clean_price_env: pytest.MonkeyPatch,
     paddle_customer: AsyncMock,
 ) -> None:
-    """POST /billing/checkout for team maps env price + seat count to Paddle."""
+    """Flat pricing: one subscription per business, unlimited users. A stale
+    client may still POST ``seats`` (the schema field lingers) — it must be
+    accepted and ignored, with no quantity reaching the Paddle client."""
     clean_price_env.setenv("PADDLE_PRICE_ID_TEAM_MONTH", "pri_new_team_m")
     clean_price_env.setattr("app.routers.billing.settings.paddle_beta_discount_id", "")
 
@@ -331,25 +316,13 @@ async def test_checkout_team_sends_seat_quantity_and_new_price(
     )
     with patch("app.routers.billing.create_subscription_transaction", new=fake):
         response = await admin_client.post(
-            "/billing/checkout", json={"plan_key": "team", "seats": 5}
+            "/billing/checkout", json={"plan_key": "team", "seats": 1}
         )
 
     assert response.status_code == 200, response.text
     _, kwargs = fake.call_args
     assert kwargs["price_id"] == "pri_new_team_m"
-    assert kwargs["quantity"] == 5
-
-
-async def test_checkout_team_below_min_seats_rejected(
-    admin_client: AsyncClient,
-    clean_price_env: pytest.MonkeyPatch,
-    paddle_customer: AsyncMock,
-) -> None:
-    clean_price_env.setenv("PADDLE_PRICE_ID_TEAM_MONTH", "pri_new_team_m")
-
-    response = await admin_client.post("/billing/checkout", json={"plan_key": "team", "seats": 1})
-
-    assert response.status_code == 400
+    assert "quantity" not in kwargs
 
 
 async def test_checkout_annual_interval_uses_year_price(
@@ -372,7 +345,7 @@ async def test_checkout_annual_interval_uses_year_price(
     assert response.status_code == 200, response.text
     _, kwargs = fake.call_args
     assert kwargs["price_id"] == "pri_new_pro_y"
-    assert kwargs["quantity"] == 1
+    assert "quantity" not in kwargs
 
 
 async def test_portal_session_returns_paddle_portal_url(

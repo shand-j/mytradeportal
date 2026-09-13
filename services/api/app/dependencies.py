@@ -1,24 +1,32 @@
 """FastAPI dependencies."""
 
+from collections.abc import Awaitable, Callable
+from datetime import datetime, timedelta
 from typing import Annotated
 from uuid import UUID
 
+import structlog
 from fastapi import Depends, Header, HTTPException, Request, status
 from mtp_shared import get_settings
-from sqlalchemy import select
+from sqlalchemy import func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app import config as app_config
+from app.alerting import send_alert
 from app.database import get_db
-from app.models import Customer, Subscription, Tenant, User
+from app.models import AiAlertState, AiCallEvent, Customer, Subscription, Tenant, User
 from app.plans import (
     DEFAULT_PLAN_KEY,
-    AllowanceInfo,
-    get_ai_usage,
+    Plan,
+    current_period,
     get_plan,
+    lowest_plan_with_feature,
 )
 from app.rls import set_tenant_in_session
 from app.security import AUTH_COOKIE_NAME, decode_access_token
+
+logger = structlog.get_logger("api.dependencies")
 
 settings = get_settings()
 
@@ -225,72 +233,148 @@ RequireAdminDep = Annotated[User, Depends(RoleChecker({"admin"}))]
 RequireManagerDep = Annotated[User, Depends(RoleChecker({"admin", "manager"}))]
 
 
-async def require_ai_allowance(tenant: TenantDep, db: DbDep) -> AllowanceInfo:
-    """Enforce the tenant's monthly AI allowance (W2-A entitlements).
-
-    Wire into the staff AI endpoints (generate / generate-async / refine) as::
-
-        allowance: AiAllowanceDep  # +2 lines in the handler to surface the warning
-
-    Behaviour:
-    - Kill switch: while ``ENTITLEMENTS_ENABLED`` is false (the default) this
-      is a no-op pass-through — no DB reads, always allowed.
-    - Plan resolution: the tenant's Subscription.plan_key via the plan catalog
-      (legacy starter|pro|business keys map onto the current tiers); tenants
-      with no subscription default to ``sole_trader`` (beta tenants are
-      beta_comped anyway, so this is inert during beta).
-    - 80%+ of the allowance used → returned with ``warning`` set; handlers
-      surface it (e.g. an ``X-AI-Allowance-Warning`` header or the quote's
-      ``ai_warnings``).
-    - 100%+ on a ``block`` plan (Sole Trader) → HTTP 402 with a structured
-      detail payload ``{"detail": "ai_allowance_exceeded", "allowance": N,
-      "used": M}`` (FastAPI wraps it under the top-level ``detail`` key).
-    - 100%+ on a ``metered`` plan (Pro / Team) → allowed, with
-      ``over_limit=True`` so the telemetry writer can flag overage rows for
-      billing.
-
-    The counter itself is incremented on success by the telemetry writer via
-    ``app.plans.increment_ai_usage`` — never here, so failed/abandoned calls
-    do not consume allowance.
-    """
-    if not app_config.ENTITLEMENTS_ENABLED:
-        plan = get_plan(DEFAULT_PLAN_KEY)
-        return AllowanceInfo(
-            plan=plan,
-            used=0,
-            allowance=plan.ai_allowance_monthly,
-            allowed=True,
-            warning=None,
-            over_limit=False,
-        )
-
+async def _tenant_plan(tenant: Tenant, db: AsyncSession) -> Plan:
+    """Resolve the tenant's subscription plan; no subscription → sole_trader."""
     sub = await db.scalar(select(Subscription).where(Subscription.tenant_id == tenant.id))
-    plan = get_plan(sub.plan_key) if sub is not None else get_plan(DEFAULT_PLAN_KEY)
-    allowance = plan.ai_allowance_monthly
-    used = await get_ai_usage(db, tenant.id)
+    return get_plan(sub.plan_key) if sub is not None else get_plan(DEFAULT_PLAN_KEY)
 
-    warning: str | None = None
-    if allowance > 0 and used >= 0.8 * allowance:
-        warning = f"AI allowance nearly exhausted: {used}/{allowance} actions used this month"
 
-    if used >= allowance and plan.overage_behavior == "block":
-        raise HTTPException(
-            status_code=status.HTTP_402_PAYMENT_REQUIRED,
-            detail={
-                "detail": "ai_allowance_exceeded",
-                "allowance": allowance,
-                "used": used,
-            },
-        )
+def require_tier_feature(feature: str) -> Callable[[Tenant, AsyncSession], Awaitable[Tenant]]:
+    """Dependency factory gating an endpoint on a plan capability.
 
-    return AllowanceInfo(
-        plan=plan,
-        used=used,
-        allowance=allowance,
-        allowed=True,
-        warning=warning,
-        over_limit=used >= allowance,
+    Tiers differ by capability only (flat pricing, unlimited users, unmetered
+    AI), so this is the only enforcement dependency. A tenant without a
+    subscription row defaults to ``sole_trader``. Missing capability → HTTP
+    403 with a structured ``feature_not_in_plan`` payload and an upgrade hint
+    naming the cheapest tier that unlocks the feature. Wire in as::
+
+        Depends(require_tier_feature("drawing_analysis"))
+    """
+
+    async def _enforce(tenant: TenantDep, db: DbDep) -> Tenant:
+        plan = await _tenant_plan(tenant, db)
+        if feature not in plan.features:
+            upgrade = lowest_plan_with_feature(feature)
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail={
+                    "detail": "feature_not_in_plan",
+                    "feature": feature,
+                    "current_plan": plan.key,
+                    "upgrade_hint": (
+                        f"Upgrade to {upgrade.name} to unlock this feature."
+                        if upgrade is not None
+                        else "This feature is not available on any current plan."
+                    ),
+                },
+            )
+        return tenant
+
+    return _enforce
+
+
+async def _fire_fair_use_alert_once(db: AsyncSession, tenant: Tenant, monthly_count: int) -> None:
+    """Dispatch exactly one fair-use staff alert per org per month.
+
+    Deduped by an ``ai_alert_state`` row inserted (in a savepoint, so a
+    duplicate rolls back nothing else) BEFORE dispatch — a crashed or
+    concurrent request can never double-fire. The unique constraint is on
+    (period, threshold), so the tenant id is folded into the threshold key.
+    """
+    period = current_period()
+    try:
+        # Add inside the savepoint so a duplicate rollback expunges the
+        # pending row — otherwise the request's later commit would re-attempt
+        # the INSERT and fail the whole endpoint on the unique constraint.
+        async with db.begin_nested():
+            db.add(
+                AiAlertState(
+                    period=period,
+                    threshold=f"fair_use_{tenant.id}",
+                    payload={"tenant_id": str(tenant.id), "monthly_ai_actions": monthly_count},
+                )
+            )
+            await db.flush()
+    except IntegrityError:
+        return  # already fired this month
+    await send_alert(
+        subject=f"AI fair-use threshold crossed ({tenant.slug})",
+        text=(
+            f"Tenant {tenant.slug} ({tenant.id}) has made {monthly_count} AI calls this "
+            f"month, crossing the fair-use threshold of "
+            f"{app_config.AI_FAIR_USE_MONTHLY_THRESHOLD}. The tenant has been switched to "
+            "the cheap model route for the rest of the month. No customer action needed."
+        ),
     )
 
 
-AiAllowanceDep = Annotated[AllowanceInfo, Depends(require_ai_allowance)]
+async def fair_use_guard(tenant: TenantDep, db: DbDep) -> None:
+    """Invisible fair-use guardrail for AI endpoints. Fail-open.
+
+    Flat pricing means AI is unmetered for customers; this dependency protects
+    cost without ever exposing a usage meter:
+
+    - Burst limit: when the tenant's ``ai_call_events`` count for the current
+      UTC hour reaches ``AI_BURST_LIMIT_PER_HOUR`` → HTTP 429 with a
+      ``Retry-After`` header (seconds until the hour rolls over). This is
+      plain rate protection for the API caller — never surface it as a quota.
+    - Monthly threshold: once the tenant's current-month AI action count
+      reaches ``AI_FAIR_USE_MONTHLY_THRESHOLD``, set
+      ``tenant.settings["ai_cheap_route"] = True`` (generation reads it to
+      pick cheaper models) and fire ONE staff alert per org per month.
+
+    Any internal error (DB blip, alert failure) is logged and swallowed: the
+    guardrail must never take down an AI endpoint.
+    """
+    try:
+        now = datetime.utcnow()
+        hour_start = now.replace(minute=0, second=0, microsecond=0)
+        burst_count = await db.scalar(
+            select(func.count(AiCallEvent.id)).where(
+                AiCallEvent.tenant_id == tenant.id,
+                AiCallEvent.created_at >= hour_start,
+            )
+        )
+        if (burst_count or 0) >= app_config.AI_BURST_LIMIT_PER_HOUR:
+            retry_after = max(1, int((hour_start + timedelta(hours=1) - now).total_seconds()))
+            raise HTTPException(
+                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                detail="rate_limited",
+                headers={"Retry-After": str(retry_after)},
+            )
+
+        month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+        monthly_count = await db.scalar(
+            select(func.count(AiCallEvent.id)).where(
+                AiCallEvent.tenant_id == tenant.id,
+                AiCallEvent.created_at >= month_start,
+            )
+        )
+        if (monthly_count or 0) >= app_config.AI_FAIR_USE_MONTHLY_THRESHOLD:
+            if not tenant.settings.get("ai_cheap_route"):
+                tenant.settings = {**tenant.settings, "ai_cheap_route": True}
+            await _fire_fair_use_alert_once(db, tenant, monthly_count or 0)
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.warning(
+            "fair_use_guard_failed_open",
+            tenant_id=str(tenant.id),
+            error_type=type(exc).__name__,
+            error=str(exc)[:300],
+        )
+
+
+async def require_ai_allowance(tenant: TenantDep, db: DbDep) -> None:
+    """Back-compat shim for routers still declaring ``allowance: AiAllowanceDep``.
+
+    The hybrid quota/allowance model (HTTP 402 on block plans, 80% warnings,
+    metered overage) was replaced by flat tiers with unmetered AI. Kept so
+    ``app.routers.quotes`` works unmodified: it now applies only the invisible
+    fair-use guardrail and returns None — handlers never consumed the old
+    ``AllowanceInfo`` payload.
+    """
+    await fair_use_guard(tenant, db)
+
+
+AiAllowanceDep = Annotated[None, Depends(require_ai_allowance)]

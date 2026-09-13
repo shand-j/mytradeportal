@@ -60,6 +60,11 @@ STATUS_TIMEOUT = "timeout"
 STATUS_ERROR = "error"
 STATUS_ABANDONED = "abandoned"
 
+# Actor vocabulary (AiCallEvent.actor_type): who/what initiated the call.
+ACTOR_STAFF = "staff"
+ACTOR_CUSTOMER = "customer"
+ACTOR_SYSTEM = "system"
+
 _GBP_QUANTUM = Decimal("0.0001")
 
 
@@ -77,6 +82,8 @@ class AiCallContext:
     db: AsyncSession | None = None
     tenant_id: UUID | None = None
     user_id: UUID | None = None
+    actor_type: str = ACTOR_STAFF
+    entry_channel: str | None = None
     trace_id: str | None = None
     parent_event_id: UUID | None = None
     attempt_no: int = 1
@@ -200,8 +207,12 @@ def _emit_langfuse(event: AiCallEvent, prompt_text: str | None) -> None:
     if client is None:
         return
     try:
+        tags = [f"actor_type:{event.actor_type}"]
+        if event.entry_channel:
+            tags.append(f"entry_channel:{event.entry_channel}")
         trace = client.trace(
             name=event.feature,
+            tags=tags,
             metadata={
                 "trace_id": event.trace_id,
                 "tenant_id": str(event.tenant_id) if event.tenant_id else None,
@@ -237,6 +248,8 @@ async def record_ai_event(
     status: str = STATUS_SUCCESS,
     tenant_id: UUID | None = None,
     user_id: UUID | None = None,
+    actor_type: str = ACTOR_STAFF,
+    entry_channel: str | None = None,
     model: str | None = None,
     input_tokens: int | None = None,
     output_tokens: int | None = None,
@@ -283,6 +296,8 @@ async def record_ai_event(
             tenant_id=tenant_id,
             user_id=user_id,
             feature=feature,
+            actor_type=actor_type,
+            entry_channel=entry_channel,
             gen_ai_provider_name=_provider_for_model(model),
             gen_ai_request_model=model,
             gen_ai_usage_input_tokens=input_tokens,
@@ -441,6 +456,8 @@ class AiCallTracker:
                 status=status,
                 tenant_id=self.ctx.tenant_id,
                 user_id=self.ctx.user_id,
+                actor_type=self.ctx.actor_type,
+                entry_channel=self.ctx.entry_channel,
                 model=self.model,
                 input_tokens=self.input_tokens,
                 output_tokens=self.output_tokens,
@@ -459,6 +476,9 @@ class AiCallTracker:
 
 
 __all__ = [
+    "ACTOR_CUSTOMER",
+    "ACTOR_STAFF",
+    "ACTOR_SYSTEM",
     "FEATURE_DEMO_QUOTE",
     "FEATURE_EMBEDDING",
     "FEATURE_OUTCOME",

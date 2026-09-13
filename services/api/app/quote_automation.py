@@ -30,6 +30,7 @@ from sqlalchemy.orm import selectinload
 
 from app.ai_quality import capture_draft_feedback
 from app.ai_telemetry import (
+    ACTOR_SYSTEM,
     FEATURE_QUOTE_REFINE,
     FEATURE_TRIAGE_FOLLOWUP,
     AiCallContext,
@@ -266,6 +267,7 @@ async def start_ai_triage(
         feature=FEATURE_TRIAGE_FOLLOWUP,
         db=db,
         tenant_id=tenant.id,
+        actor_type=ACTOR_SYSTEM,
         trace_id=triage_trace_id,
         quote_id=quote_request.quote_id,
         quote_request_id=quote_request_id,
@@ -571,6 +573,7 @@ async def requote_after_triage_close(tenant_id: UUID, quote_request_id: UUID) ->
                 feature=FEATURE_QUOTE_REFINE,
                 db=db,
                 tenant_id=tenant_id,
+                actor_type=ACTOR_SYSTEM,
                 trace_id=get_or_create_trace_id(quote),
                 parent_event_id=get_last_event_id(quote),
                 attempt_no=next_attempt_no(quote),

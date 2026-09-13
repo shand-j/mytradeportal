@@ -16,6 +16,7 @@ from uuid import uuid4
 
 import pytest
 from app.ai_telemetry import (
+    ACTOR_CUSTOMER,
     AiCallContext,
     AiCallTracker,
     get_or_create_trace_id,
@@ -162,6 +163,30 @@ async def test_record_ai_event_schema_round_trip(db: AsyncSession) -> None:
     assert event.raw_payload == {"k": "v"}
     # Prompt text must never reach Postgres.
     assert "prompt" not in {k.lower() for k in event.raw_payload}
+
+
+@pytest.mark.asyncio
+async def test_record_ai_event_actor_type_and_entry_channel_round_trip(db: AsyncSession) -> None:
+    """actor_type/entry_channel persist on the row; defaults are staff/None."""
+    event_id = await record_ai_event(
+        db,
+        feature="triage_followup",
+        tenant_id=uuid4(),
+        actor_type=ACTOR_CUSTOMER,
+        entry_channel="qr_van",
+    )
+    assert event_id is not None
+    event = await db.get(AiCallEvent, event_id)
+    assert event is not None
+    assert event.actor_type == "customer"
+    assert event.entry_channel == "qr_van"
+
+    default_id = await record_ai_event(db, feature="quote_draft", tenant_id=uuid4())
+    assert default_id is not None
+    default_event = await db.get(AiCallEvent, default_id)
+    assert default_event is not None
+    assert default_event.actor_type == "staff"
+    assert default_event.entry_channel is None
 
 
 @pytest.mark.asyncio

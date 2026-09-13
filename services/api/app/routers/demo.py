@@ -31,7 +31,7 @@ from pydantic import BaseModel, Field
 from slowapi.util import get_remote_address
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.ai_telemetry import FEATURE_DEMO_QUOTE, AiCallContext, new_trace_id
+from app.ai_telemetry import ACTOR_SYSTEM, FEATURE_DEMO_QUOTE, AiCallContext, new_trace_id
 from app.config import settings
 from app.database import get_db
 from app.limiter import limiter
@@ -385,6 +385,7 @@ async def demo_generate_quote(
     # generate_quote_from_prompt records the ACTUAL (override-resolved) model.
     telemetry = AiCallContext(
         feature=FEATURE_DEMO_QUOTE,
+        actor_type=ACTOR_SYSTEM,
         trace_id=new_trace_id(),
         extra_payload={"ip_hash": _client_ip_hash(request), "kind": "generate"},
     )
@@ -487,6 +488,7 @@ async def demo_refine_quote(
     llm_overrides = _demo_llm_overrides()
     telemetry = AiCallContext(
         feature=FEATURE_DEMO_QUOTE,
+        actor_type=ACTOR_SYSTEM,
         trace_id=new_trace_id(),
         extra_payload={"ip_hash": _client_ip_hash(request), "kind": "refine"},
     )

@@ -1,18 +1,31 @@
-"""Tests for W2-A entitlements: plan catalog, AI usage counters, allowance enforcement."""
+"""Tests for flat-plan tiers: catalog, capability gates and fair-use guardrails.
 
-from datetime import datetime
+The hybrid quota/allowance model (block/metered, overage billing, usage
+counters) was replaced by flat tiers with unlimited users and unmetered AI.
+What remains to test:
+
+- The flat catalog itself (prices, capabilities, legacy key mapping).
+- ``require_tier_feature`` — the only customer-visible enforcement (403 with
+  an upgrade hint when a capability is not in the tenant's tier).
+- ``fair_use_guard`` — the invisible cost guardrails: per-hour burst 429 and
+  the monthly threshold that flips ``ai_cheap_route`` and fires exactly one
+  staff alert per org per month.
+- ``GET /billing/plans`` — no AI-usage numbers anywhere in the payload.
+"""
+
+from datetime import datetime, timedelta
 from uuid import uuid4
 
 import pytest
 import pytest_asyncio
-from app.dependencies import require_ai_allowance
-from app.models import AIUsageCounter, Subscription, Tenant
+from app import config as app_config
+from app.dependencies import fair_use_guard, require_tier_feature
+from app.models import AiAlertState, AiCallEvent, Subscription, Tenant
 from app.plans import (
-    BILLABLE_AI_FEATURES,
-    PLANS,
+    PLAN_CATALOG,
     current_period,
     get_plan,
-    increment_ai_usage,
+    lowest_plan_with_feature,
     resolve_plan_key,
 )
 from app.rls import set_tenant_in_session
@@ -34,53 +47,74 @@ async def tenant(db: AsyncSession) -> Tenant:
     return tenant
 
 
-async def _seed_usage(
-    db: AsyncSession, tenant: Tenant, count: int, period: str | None = None
+async def _seed_ai_events(
+    db: AsyncSession, tenant: Tenant, count: int, *, at: datetime | None = None
 ) -> None:
-    db.add(
-        AIUsageCounter(
-            tenant_id=tenant.id,
-            period=period or current_period(),
-            ai_actions=count,
-        )
-    )
+    created = at or datetime.utcnow()
+    for _ in range(count):
+        db.add(AiCallEvent(tenant_id=tenant.id, feature="quote_draft", created_at=created))
     await db.flush()
-
-
-def _enable_entitlements(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr("app.config.ENTITLEMENTS_ENABLED", True)
 
 
 # --- Plan catalog ---------------------------------------------------------
 
 
-def test_plan_catalog_matches_confirmed_pricing() -> None:
-    by_key = {plan.key: plan for plan in PLANS}
+def test_plan_catalog_matches_flat_pricing() -> None:
+    by_key = {plan.key: plan for plan in PLAN_CATALOG}
     assert set(by_key) == {"sole_trader", "pro", "team"}
 
-    sole = by_key["sole_trader"]
-    assert (sole.monthly_price_gbp, sole.annual_price_gbp) == (25, 250)
-    assert sole.ai_allowance_monthly == 30
-    assert sole.overage_behavior == "block"
-
-    pro = by_key["pro"]
-    assert (pro.monthly_price_gbp, pro.annual_price_gbp) == (39, 390)
-    assert pro.ai_allowance_monthly == 100
-    assert pro.overage_behavior == "metered"
-    assert pro.featured is True
-
-    team = by_key["team"]
-    assert (team.monthly_price_gbp, team.annual_price_gbp) == (29, 290)
-    assert team.ai_allowance_monthly == 100
-    assert team.overage_behavior == "metered"
-    assert team.min_seats == 3
-    assert team.pooled_allowance is True
+    assert (by_key["sole_trader"].monthly_price_gbp, by_key["sole_trader"].annual_price_gbp) == (
+        25,
+        250,
+    )
+    assert (by_key["pro"].monthly_price_gbp, by_key["pro"].annual_price_gbp) == (39, 390)
+    assert (by_key["team"].monthly_price_gbp, by_key["team"].annual_price_gbp) == (69, 690)
+    assert by_key["pro"].featured is True
 
     # Env var NAMES are referenced, never actual Paddle IDs.
-    for plan in PLANS:
+    for plan in PLAN_CATALOG:
         assert plan.monthly_price_env.startswith("PADDLE_PRICE_ID_")
         assert plan.annual_price_env.startswith("PADDLE_PRICE_ID_")
         assert "pri_" not in plan.monthly_price_env
+
+
+def test_plan_catalog_tiers_differ_by_capability_only() -> None:
+    sole, pro, team = (get_plan(key) for key in ("sole_trader", "pro", "team"))
+
+    base = {
+        "portal",
+        "ai_quote_draft",
+        "chase_sequences",
+        "online_payments",
+        "accounting_sync",
+        "data_export",
+        "customer_portal",
+        "intake_brief",
+    }
+    assert sole.features == frozenset(base)
+    assert pro.features == frozenset(
+        base
+        | {
+            "drawing_analysis",
+            "customer_chat_assistant",
+            "certificates",
+            "deposits",
+            "optional_line_items",
+            "offline_mode",
+            "priority_models",
+        }
+    )
+    assert team.features == frozenset(
+        pro.features
+        | {"multi_user_scheduling", "roles_permissions", "shared_portal", "team_reporting"}
+    )
+
+    # No quota artifacts anywhere on the dataclass.
+    for plan in PLAN_CATALOG:
+        assert not hasattr(plan, "ai_allowance_monthly")
+        assert not hasattr(plan, "overage_behavior")
+        assert not hasattr(plan, "min_seats")
+        assert not hasattr(plan, "pooled_allowance")
 
 
 def test_legacy_plan_key_mapping() -> None:
@@ -93,149 +127,167 @@ def test_legacy_plan_key_mapping() -> None:
         get_plan("enterprise")
 
 
-# --- Usage counter ----------------------------------------------------------
+def test_lowest_plan_with_feature_powers_upgrade_hints() -> None:
+    assert lowest_plan_with_feature("portal").key == "sole_trader"  # type: ignore[union-attr]
+    assert lowest_plan_with_feature("drawing_analysis").key == "pro"  # type: ignore[union-attr]
+    assert lowest_plan_with_feature("roles_permissions").key == "team"  # type: ignore[union-attr]
+    assert lowest_plan_with_feature("not_a_feature") is None
 
 
-async def test_increment_ai_usage_counts_only_billable_features(
+# --- Tier feature gate ------------------------------------------------------
+
+
+async def test_tier_feature_gate_allows_pro_capability_on_pro(
     db: AsyncSession, tenant: Tenant
 ) -> None:
-    assert frozenset({"quote_draft", "quote_refine", "triage_followup"}) == BILLABLE_AI_FEATURES
-
-    assert await increment_ai_usage(db, tenant.id, "quote_draft") == 1
-    assert await increment_ai_usage(db, tenant.id, "quote_refine") == 2
-    assert await increment_ai_usage(db, tenant.id, "triage_followup") == 3
-
-    # Embeddings and demo quotes are infrastructure, not billable actions.
-    assert await increment_ai_usage(db, tenant.id, "embedding") is None
-    assert await increment_ai_usage(db, tenant.id, "demo_quote") is None
-
+    db.add(Subscription(tenant_id=tenant.id, plan_key="pro", status="active"))
     await db.flush()
-    counter = (
-        await db.execute(select(AIUsageCounter).where(AIUsageCounter.tenant_id == tenant.id))
-    ).scalar_one()
-    assert counter.ai_actions == 3
-    assert counter.period == current_period()
+
+    gate = require_tier_feature("drawing_analysis")
+    assert await gate(tenant, db) is tenant
 
 
-async def test_increment_ai_usage_period_rollover(db: AsyncSession, tenant: Tenant) -> None:
-    old = await increment_ai_usage(db, tenant.id, "quote_draft", at=datetime(2020, 1, 15))
-    assert old == 1
-    new = await increment_ai_usage(db, tenant.id, "quote_draft")
-    assert new == 1  # a new month starts a fresh counter row
+async def test_tier_feature_gate_403_for_sole_trader_on_pro_capability(
+    db: AsyncSession, tenant: Tenant
+) -> None:
+    db.add(Subscription(tenant_id=tenant.id, plan_key="sole_trader", status="active"))
+    await db.flush()
 
+    gate = require_tier_feature("drawing_analysis")
+    with pytest.raises(HTTPException) as exc_info:
+        await gate(tenant, db)
+    assert exc_info.value.status_code == 403
+    detail = exc_info.value.detail
+    assert isinstance(detail, dict)
+    assert detail["detail"] == "feature_not_in_plan"
+    assert detail["feature"] == "drawing_analysis"
+    assert detail["current_plan"] == "sole_trader"
+    assert "Pro" in detail["upgrade_hint"]
+
+
+async def test_tier_feature_gate_defaults_to_sole_trader_without_subscription(
+    db: AsyncSession, tenant: Tenant
+) -> None:
+    gate = require_tier_feature("multi_user_scheduling")
+    with pytest.raises(HTTPException) as exc_info:
+        await gate(tenant, db)
+    assert exc_info.value.status_code == 403
+    detail = exc_info.value.detail
+    assert isinstance(detail, dict)
+    assert "Team" in detail["upgrade_hint"]
+
+    # Base capabilities pass without any subscription row.
+    base_gate = require_tier_feature("ai_quote_draft")
+    assert await base_gate(tenant, db) is tenant
+
+
+async def test_tier_feature_gate_resolves_legacy_plan_keys(
+    db: AsyncSession, tenant: Tenant
+) -> None:
+    """A legacy ``business`` subscription inherits the team capability set."""
+    db.add(Subscription(tenant_id=tenant.id, plan_key="business", status="active"))
+    await db.flush()
+
+    gate = require_tier_feature("team_reporting")
+    assert await gate(tenant, db) is tenant
+
+
+# --- Fair-use guardrail -----------------------------------------------------
+
+
+async def test_fair_use_burst_limit_returns_429_with_retry_after(
+    db: AsyncSession, tenant: Tenant, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(app_config, "AI_BURST_LIMIT_PER_HOUR", 3)
+    await _seed_ai_events(db, tenant, 3)
+
+    with pytest.raises(HTTPException) as exc_info:
+        await fair_use_guard(tenant, db)
+    assert exc_info.value.status_code == 429
+    headers = exc_info.value.headers
+    assert headers is not None
+    retry_after = int(headers["Retry-After"])
+    assert 0 < retry_after <= 3600
+
+    # Under the limit: passes.
+    other = Tenant(slug=f"ent-{uuid4().hex[:8]}", name="Other")
+    db.add(other)
+    await db.flush()
+    await _seed_ai_events(db, other, 2)
+    await fair_use_guard(other, db)  # passes: no exception raised
+
+
+async def test_fair_use_burst_limit_ignores_last_hours_events(
+    db: AsyncSession, tenant: Tenant, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(app_config, "AI_BURST_LIMIT_PER_HOUR", 2)
+    await _seed_ai_events(db, tenant, 5, at=datetime.utcnow() - timedelta(hours=2))
+
+    await fair_use_guard(tenant, db)  # passes: no exception raised
+
+
+async def test_fair_use_threshold_sets_cheap_route_and_alerts_once(
+    db: AsyncSession, tenant: Tenant, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(app_config, "AI_FAIR_USE_MONTHLY_THRESHOLD", 5)
+    # Keep the burst limit out of the way — this test is about the monthly path.
+    monkeypatch.setattr(app_config, "AI_BURST_LIMIT_PER_HOUR", 10_000)
+    await _seed_ai_events(db, tenant, 5)
+
+    alerts: list[tuple[str, str]] = []
+
+    async def fake_send_alert(subject: str, text: str) -> dict[str, bool]:
+        alerts.append((subject, text))
+        return {"email": True}
+
+    monkeypatch.setattr("app.dependencies.send_alert", fake_send_alert)
+
+    await fair_use_guard(tenant, db)
+    assert tenant.settings["ai_cheap_route"] is True
+    assert len(alerts) == 1
+    assert tenant.slug in alerts[0][0]
+
+    # The dedupe row landed, keyed per org per month.
     rows = (
         (
             await db.execute(
-                select(AIUsageCounter)
-                .where(AIUsageCounter.tenant_id == tenant.id)
-                .order_by(AIUsageCounter.period)
+                select(AiAlertState).where(
+                    AiAlertState.period == current_period(),
+                    AiAlertState.threshold == f"fair_use_{tenant.id}",
+                )
             )
         )
         .scalars()
         .all()
     )
-    assert [(row.period, row.ai_actions) for row in rows] == [
-        ("2020-01", 1),
-        (current_period(), 1),
-    ]
+    assert len(rows) == 1
+
+    # Second crossing in the same month: flag stays set, no second alert.
+    await _seed_ai_events(db, tenant, 5)
+    await fair_use_guard(tenant, db)
+    assert len(alerts) == 1
 
 
-# --- Enforcement dependency -------------------------------------------------
-
-
-async def test_allowance_warning_at_80_percent(
+async def test_fair_use_below_threshold_is_quiet(
     db: AsyncSession, tenant: Tenant, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    _enable_entitlements(monkeypatch)
-    db.add(Subscription(tenant_id=tenant.id, plan_key="pro", status="active"))
-    await _seed_usage(db, tenant, 80)  # 80/100 = exactly 80%
-    await db.flush()
+    monkeypatch.setattr(app_config, "AI_FAIR_USE_MONTHLY_THRESHOLD", 100)
+    monkeypatch.setattr(app_config, "AI_BURST_LIMIT_PER_HOUR", 10_000)
+    await _seed_ai_events(db, tenant, 3)
 
-    info = await require_ai_allowance(tenant, db)
-    assert info.allowed is True
-    assert info.warning is not None
-    assert info.used == 80
-    assert info.allowance == 100
-    assert info.over_limit is False
+    async def fail_alert(subject: str, text: str) -> dict[str, bool]:
+        raise AssertionError("alert must not fire below the threshold")
 
+    monkeypatch.setattr("app.dependencies.send_alert", fail_alert)
 
-async def test_block_plan_raises_402_at_100_percent(
-    db: AsyncSession, tenant: Tenant, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    _enable_entitlements(monkeypatch)
-    db.add(Subscription(tenant_id=tenant.id, plan_key="sole_trader", status="active"))
-    await _seed_usage(db, tenant, 30)
-    await db.flush()
-
-    with pytest.raises(HTTPException) as exc_info:
-        await require_ai_allowance(tenant, db)
-    assert exc_info.value.status_code == 402
-    detail = exc_info.value.detail
-    assert isinstance(detail, dict)
-    assert detail == {
-        "detail": "ai_allowance_exceeded",
-        "allowance": 30,
-        "used": 30,
-    }
-
-
-async def test_metered_plan_allows_overage_and_flags_it(
-    db: AsyncSession, tenant: Tenant, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    _enable_entitlements(monkeypatch)
-    db.add(Subscription(tenant_id=tenant.id, plan_key="pro", status="active"))
-    await _seed_usage(db, tenant, 100)
-    await db.flush()
-
-    info = await require_ai_allowance(tenant, db)
-    assert info.allowed is True
-    assert info.over_limit is True
-    assert info.warning is not None
-
-
-async def test_no_subscription_defaults_to_sole_trader(
-    db: AsyncSession, tenant: Tenant, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    _enable_entitlements(monkeypatch)
-    info = await require_ai_allowance(tenant, db)
-    assert info.plan.key == "sole_trader"
-    assert info.allowance == 30
-    assert info.allowed is True
-
-
-async def test_legacy_subscription_plan_key_enforces_mapped_tier(
-    db: AsyncSession, tenant: Tenant, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """A legacy ``starter`` subscription inherits sole_trader's 30-action block."""
-    _enable_entitlements(monkeypatch)
-    db.add(Subscription(tenant_id=tenant.id, plan_key="starter", status="active"))
-    await _seed_usage(db, tenant, 30)
-    await db.flush()
-
-    with pytest.raises(HTTPException) as exc_info:
-        await require_ai_allowance(tenant, db)
-    assert exc_info.value.status_code == 402
-
-
-async def test_kill_switch_off_is_noop(
-    db: AsyncSession, tenant: Tenant, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """ENTITLEMENTS_ENABLED=false (the default) → pass-through, even over limit."""
-    monkeypatch.setattr("app.config.ENTITLEMENTS_ENABLED", False)
-    db.add(Subscription(tenant_id=tenant.id, plan_key="sole_trader", status="active"))
-    await _seed_usage(db, tenant, 500)
-    await db.flush()
-
-    info = await require_ai_allowance(tenant, db)
-    assert info.allowed is True
-    assert info.warning is None
-    assert info.over_limit is False
+    await fair_use_guard(tenant, db)
+    assert "ai_cheap_route" not in tenant.settings
 
 
 # --- Plans endpoint ---------------------------------------------------------
 
 
-async def test_plans_endpoint_returns_tier_catalog(client: AsyncClient) -> None:
+async def test_plans_endpoint_returns_flat_tier_catalog(client: AsyncClient) -> None:
     response = await client.get("/billing/plans")
     assert response.status_code == 200, response.text
     plans = response.json()
@@ -244,16 +296,25 @@ async def test_plans_endpoint_returns_tier_catalog(client: AsyncClient) -> None:
     for plan in plans:
         assert plan["monthly_price_env"].startswith("PADDLE_PRICE_ID_")
         assert plan["annual_price_env"].startswith("PADDLE_PRICE_ID_")
-        assert plan["overage_price_pence"] == 6
         assert plan["trial_days"] == 14
         assert plan["trial_extension_days"] == 30
         assert plan["trial_extension_sent_ai_quotes"] == 3
+        assert plan["unlimited_users"] is True
+        assert isinstance(plan["features"], list) and plan["features"]
+        # No AI-usage/quota numbers anywhere in the API response.
+        for key in plan:
+            assert "allowance" not in key
+            assert "overage" not in key
+            assert "seat" not in key
 
     by_key = {p["key"]: p for p in plans}
-    assert by_key["sole_trader"]["ai_allowance_monthly"] == 30
-    assert by_key["sole_trader"]["overage_behavior"] == "block"
-    assert by_key["pro"]["featured"] is True
+    assert by_key["sole_trader"]["monthly_price_gbp"] == 25
+    assert by_key["sole_trader"]["annual_price_gbp"] == 250
     assert by_key["pro"]["monthly_price_gbp"] == 39
-    assert by_key["team"]["min_seats"] == 3
-    assert by_key["team"]["pooled_allowance"] is True
-    assert by_key["team"]["monthly_price_gbp"] == 29
+    assert by_key["pro"]["annual_price_gbp"] == 390
+    assert by_key["team"]["monthly_price_gbp"] == 69
+    assert by_key["team"]["annual_price_gbp"] == 690
+    assert by_key["pro"]["featured"] is True
+    assert "drawing_analysis" in by_key["pro"]["features"]
+    assert "drawing_analysis" not in by_key["sole_trader"]["features"]
+    assert "multi_user_scheduling" in by_key["team"]["features"]
