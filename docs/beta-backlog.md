@@ -163,3 +163,30 @@ tests green · ruff + mypy clean · mobile tsc clean · CI green.
 - Status — AI moves to Done only with a commit ref + how it was validated.
 - Anything that grows beyond a fix into a feature (N6 scheduler, N26 badges) gets a design note appended under its row before scope expands.
 - After each wave, this doc is the report — nothing ships silently.
+
+---
+
+## Research-pack alignment (2026-09-13)
+
+Wave plan from the [research document pack](mytradeportal-research/README-Document-Pack.md),
+mapped to backlog rows using the pack's triage categories
+([Backlog-Management.md](mytradeportal-research/Backlog-Management.md)):
+P0 beta-critical / P1 plan item / P2 evidence-backed / P3 idea.
+
+| Item | Wave | Category | Evidence | Status — AI |
+|---|---|---|---|---|
+| A1 pricing reconciliation | A | P0 beta-critical | [Delivery Plan 0.6](mytradeportal-research/Delivery-Plan-Pre-Beta-to-Launch.md) · [Pricing PRD](mytradeportal-research/PRD-Pricing-and-Billing.md) | in progress |
+| A2 observability gaps | A | P0 beta-critical | [Delivery Plan 0.1–0.4](mytradeportal-research/Delivery-Plan-Pre-Beta-to-Launch.md) · [Observability PRD](mytradeportal-research/PRD-Observability-Layer.md) | in progress |
+| A3 landing pricing copy + fair-use page | A | P0 beta-critical | [Delivery Plan 0.7](mytradeportal-research/Delivery-Plan-Pre-Beta-to-Launch.md) · [Pricing PRD §3.1–3.2](mytradeportal-research/PRD-Pricing-and-Billing.md) | in progress |
+| P-wave Stripe payments (tradie onboarding, pay button, webhooks, `invoice_paid`) | P | P0 beta-critical | [Delivery Plan 0.11](mytradeportal-research/Delivery-Plan-Pre-Beta-to-Launch.md) · [PRD-Online-Payments.md](mytradeportal-research/PRD-Online-Payments.md) | in progress |
+| P2 pay page + mobile payments settings | P | P0 beta-critical | [Delivery Plan 0.11](mytradeportal-research/Delivery-Plan-Pre-Beta-to-Launch.md) · [PRD-Online-Payments.md](mytradeportal-research/PRD-Online-Payments.md) | in progress |
+| F3 data export | F | P0 beta-critical | [Tradify Parity Checklist](mytradeportal-research/Tradify-Parity-Checklist.md) | in progress |
+| F2 chase-sequence verification | F | P0 beta-critical | [Tradify Parity Checklist](mytradeportal-research/Tradify-Parity-Checklist.md) | in progress |
+| Wave B portal entry surfaces (vanity URL, QR + asset pack, 6-digit code) | B | P1 plan item | [Delivery Plan Phase 1](mytradeportal-research/Delivery-Plan-Pre-Beta-to-Launch.md) · [Portal PRD §4.1](mytradeportal-research/PRD-Customer-Portal.md) | planned |
+| Wave C portal home (timeline, quotes, invoices, chat) | C | P1 plan item | [Delivery Plan Phase 2](mytradeportal-research/Delivery-Plan-Pre-Beta-to-Launch.md) · [Portal PRD §4.2](mytradeportal-research/PRD-Customer-Portal.md) | planned |
+| Wave D pricing evidence + Paddle catalog update | D | P1 plan item | [Delivery Plan Phase 3](mytradeportal-research/Delivery-Plan-Pre-Beta-to-Launch.md) · [Pricing PRD §3.3](mytradeportal-research/PRD-Pricing-and-Billing.md) | planned |
+| Xero/QuickBooks sync on all tiers | — | P1 plan item | [Delivery Plan Phase 1](mytradeportal-research/Delivery-Plan-Pre-Beta-to-Launch.md) · [Pricing PRD §2 (Tradify parity)](mytradeportal-research/PRD-Pricing-and-Billing.md) | planned |
+| F6/F7 deposits + optional line items | F | P2 evidence-backed | [Pricing PRD §2 (Pro gate)](mytradeportal-research/PRD-Pricing-and-Billing.md) | planned |
+| F8 certificates MVP | F | P2 evidence-backed | [Pricing PRD §2](mytradeportal-research/PRD-Pricing-and-Billing.md) | planned |
+| F9 offline mode | F | P2 evidence-backed | [Pricing PRD §2](mytradeportal-research/PRD-Pricing-and-Billing.md) | planned |
+| 88s → <30s generation latency: streaming + timeout ladder | — | P1 plan item | [Delivery Plan launch gates (latency)](mytradeportal-research/Delivery-Plan-Pre-Beta-to-Launch.md) | planned |
