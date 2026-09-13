@@ -61,7 +61,14 @@ export type Lead = {
   requiresCallback?: boolean;
 };
 
-export type QuoteStatus = "draft" | "sent" | "accepted" | "rejected" | "expired";
+export type QuoteStatus =
+  | "draft"
+  | "sent"
+  | "accepted"
+  | "rejected"
+  | "expired"
+  | "invoiced"
+  | "cancelled";
 
 export type QuoteLineItem = {
   id: string;

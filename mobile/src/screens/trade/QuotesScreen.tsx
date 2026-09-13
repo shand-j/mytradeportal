@@ -38,6 +38,8 @@ const STATUS_COLORS: Record<QuoteStatus, string> = {
   accepted: "bg-success-100",
   rejected: "bg-danger-100",
   expired: "bg-gray-100",
+  invoiced: "bg-success-100",
+  cancelled: "bg-gray-100",
 };
 
 const STATUS_COPY: Record<QuoteStatus, string> = {
@@ -46,6 +48,8 @@ const STATUS_COPY: Record<QuoteStatus, string> = {
   accepted: "Accepted",
   rejected: "Rejected",
   expired: "Expired",
+  invoiced: "Invoiced",
+  cancelled: "Cancelled",
 };
 
 export type QuotesScreenProps = {
@@ -88,6 +92,8 @@ export function QuotesScreen(_props: QuotesScreenProps) {
           accepted: 2,
           rejected: 3,
           expired: 4,
+          invoiced: 5,
+          cancelled: 6,
         };
         return statusOrder[a.status] - statusOrder[b.status];
       }),

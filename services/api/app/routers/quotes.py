@@ -2,7 +2,7 @@
 
 import asyncio
 import time
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from decimal import Decimal
 from io import BytesIO
 from typing import Annotated, Any
@@ -1383,6 +1383,71 @@ async def regenerate_quote_boq(
     )
 
 
+# Server-side equivalent of the mobile HOUR_UNIT_RE: labour lines priced per hour.
+_HOUR_UNITS = frozenset({"h", "hr", "hrs", "hour", "hours"})
+# Fallback visit length when the quote has no per-hour labour lines.
+_DEFAULT_JOB_DURATION = timedelta(hours=2)
+# English month abbreviations, parsed manually so label parsing is locale-independent.
+_MONTH_ABBREVS = {
+    mon: num
+    for num, mon in enumerate(
+        ("jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"),
+        start=1,
+    )
+}
+
+
+def _quoted_labour_hours(quote: Quote) -> float:
+    """Sum per-hour labour line items (3 lines x 10h → 30 working hours)."""
+    total = 0.0
+    for item in quote.line_items:
+        if item.unit.strip().lower() in _HOUR_UNITS:
+            total += float(item.quantity)
+    return total
+
+
+def _parse_accepted_date(raw: Any, today: date) -> date | None:
+    """Parse one accepted_dates entry into a concrete date.
+
+    Entries are either ISO dates ("2026-09-15") or the en-GB short labels the
+    customer app offers ("Fri 12 Sep" — no year, so the current year is
+    assumed, rolling to next year when that day has already passed).
+    Unparseable entries are ignored.
+    """
+    if not isinstance(raw, str):
+        return None
+    text = raw.strip()
+    if not text:
+        return None
+    try:
+        return datetime.fromisoformat(text).date()
+    except ValueError:
+        pass
+    day: int | None = None
+    month: int | None = None
+    for token in text.replace(",", " ").split():
+        if token.isdigit() and day is None and 1 <= int(token) <= 31:
+            day = int(token)
+        elif month is None:
+            month = _MONTH_ABBREVS.get(token.lower()[:3])
+    if day is None or month is None:
+        return None
+    try:
+        candidate = date(today.year, month, day)
+        if candidate < today:
+            candidate = date(today.year + 1, month, day)
+    except ValueError:
+        return None
+    return candidate
+
+
+def _earliest_accepted_date(accepted_dates: list[str]) -> date | None:
+    """Earliest parseable entry of the customer's reconfirmed visit dates."""
+    today = datetime.utcnow().date()
+    parsed = [d for d in (_parse_accepted_date(raw, today) for raw in accepted_dates) if d]
+    return min(parsed) if parsed else None
+
+
 @router.post("/{quote_id}/convert-to-job", status_code=status.HTTP_201_CREATED)
 async def convert_quote_to_job(
     quote_id: UUID,
@@ -1394,7 +1459,13 @@ async def convert_quote_to_job(
     """Convert an approved quote into a scheduled job (quote → job → invoice).
 
     The customer's reconfirmed visit dates (accepted_dates) ride along into
-    the job notes so they survive onto the electrician's calendar.
+    the job notes so they survive onto the electrician's calendar. When no
+    explicit scheduled_start is given, the earliest accepted date also
+    prefills it (09:00 local, naive-UTC convention), with scheduled_end
+    derived from the quote's per-hour labour lines (two-hour default). An
+    explicitly provided scheduled_start always wins. The job's address and
+    postcode are denormalised from the contact at this point — a later
+    contact edit does not rewrite the job.
     """
     quote = await _get_quote(db, tenant.id, quote_id)
     if quote.status != "approved":
@@ -1434,15 +1505,31 @@ async def convert_quote_to_job(
         if ai_notes:
             notes_parts.append(f"AI notes: {ai_notes}")
 
+    scheduled_start = schedule.scheduled_start
+    scheduled_end = schedule.scheduled_end
+    if scheduled_start is None and quote.accepted_dates:
+        earliest = _earliest_accepted_date(quote.accepted_dates)
+        if earliest is not None:
+            # 09:00 local under the naive-UTC convention of the schedule columns.
+            scheduled_start = datetime(earliest.year, earliest.month, earliest.day, 9, 0)
+            if scheduled_end is None:
+                hours = _quoted_labour_hours(quote)
+                duration = timedelta(hours=hours) if hours > 0 else _DEFAULT_JOB_DURATION
+                scheduled_end = scheduled_start + duration
+
     job = Job(
         tenant_id=tenant.id,
         contact_id=quote.contact_id,
         quote_id=quote.id,
         title=quote.title,
         description=quote.description,
-        scheduled_start=schedule.scheduled_start,
-        scheduled_end=schedule.scheduled_end,
+        scheduled_start=scheduled_start,
+        scheduled_end=scheduled_end,
         assigned_user_id=schedule.assigned_user_id,
+        # Denormalise the contact's current address for display stability;
+        # lat/lng stay null (no geocoding yet).
+        address=quote.contact.address,
+        postcode=quote.contact.postcode,
         notes="\n\n".join(notes_parts) or None,
     )
     db.add(job)

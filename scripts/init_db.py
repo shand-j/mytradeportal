@@ -262,6 +262,9 @@ def init_api_schema() -> None:
     """Create the API schema from the current SQLAlchemy models."""
     print("[init_db] Creating SQLAlchemy tables from models")
     engine = create_engine(DATABASE_URL.replace("+asyncpg", ""))
+    with engine.begin() as conn:
+        # The BI role must exist before its database is created with it as owner.
+        _create_metabase_role(conn)
     _create_metabase_database(engine)
     with engine.begin() as conn:
         Base.metadata.create_all(conn)

@@ -85,6 +85,8 @@ export default function JobDetailRoute() {
       }}
       members={users.map((u) => ({ id: u.id, fullName: u.fullName }))}
       initialNotes={raw.notes}
+      scheduledStart={raw.scheduledStart}
+      scheduledEnd={raw.scheduledEnd}
       photos={raw.photos ?? []}
       contactEmail={contact?.email ?? raw.customer.email}
       preferredContactMethod={contact?.preferredContactMethod ?? null}

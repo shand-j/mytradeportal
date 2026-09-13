@@ -17,7 +17,7 @@ import { Screen } from "../../components/ui/Screen";
 import { Text } from "../../components/ui/Text";
 import { useContactsList, findOrCreateContact } from "../../api/contacts";
 import { useCreateJob, useConvertQuoteToJob } from "../../api/jobs";
-import { ApiQuote, fetchQuotes, setQuoteApproval } from "../../api/quotes";
+import { ApiQuote, fetchQuotes, setQuoteApproval, useApiQuote } from "../../api/quotes";
 import { fetchAvailability, useAvailability } from "../../api/appointments";
 import { useUsersList } from "../../api/users";
 import { ApiError } from "../../lib/apiClient";
@@ -117,18 +117,28 @@ export function JobCreateScreen({ onClose, initialQuoteId }: JobCreateScreenProp
   const [showTimePicker, setShowTimePicker] = useState(false);
   const [pendingDate, setPendingDate] = useState<Date>(new Date());
 
-  const selectedQuote = useMemo(
-    () => convertibleQuotes.find((q) => q.id === selectedQuoteId) ?? null,
-    [convertibleQuotes, selectedQuoteId]
-  );
-
   // A quoteId in the route (Convert-to flow) locks the quote attribution —
   // no quote search and no deselect in that mode.
   const quoteLocked = initialQuoteId != null;
 
+  // The locked quote is fetched directly by id — never resolved from the
+  // sent/approved-filtered list, which would hang the banner forever for
+  // drafts or after a slow/failed list fetch.
+  const lockedQuoteQuery = useApiQuote(quoteLocked ? initialQuoteId : undefined);
+  const lockedQuoteConvertible =
+    lockedQuoteQuery.quote != null &&
+    (lockedQuoteQuery.quote.status === "approved" || lockedQuoteQuery.quote.status === "sent");
+
+  const selectedQuote = useMemo(() => {
+    if (quoteLocked) {
+      return lockedQuoteConvertible ? lockedQuoteQuery.quote ?? null : null;
+    }
+    return convertibleQuotes.find((q) => q.id === selectedQuoteId) ?? null;
+  }, [quoteLocked, lockedQuoteConvertible, lockedQuoteQuery.quote, convertibleQuotes, selectedQuoteId]);
+
   const quoteMatches = useMemo(() => {
     const needle = quoteSearch.trim().toLowerCase();
-    if (!needle) return convertibleQuotes;
+    if (!needle) return [];
     return convertibleQuotes.filter((q) =>
       [q.title, q.customer.name].join(" ").toLowerCase().includes(needle)
     );
@@ -141,7 +151,7 @@ export function JobCreateScreen({ onClose, initialQuoteId }: JobCreateScreenProp
 
   const customerMatches = useMemo(() => {
     const needle = customerSearch.trim().toLowerCase();
-    if (!needle) return contacts;
+    if (!needle) return [];
     return contacts.filter((c) =>
       [c.name, c.phone ?? "", c.email ?? ""].join(" ").toLowerCase().includes(needle)
     );
@@ -300,6 +310,9 @@ export function JobCreateScreen({ onClose, initialQuoteId }: JobCreateScreenProp
   };
 
   const busy = submitting || createJob.isPending || convertToJob.isPending;
+  // A locked (route-pinned) quote that failed to load or isn't convertible
+  // blocks creation — the error panel above is the way out.
+  const createDisabled = busy || (quoteLocked && !selectedQuote);
 
   return (
     <Screen>
@@ -316,6 +329,39 @@ export function JobCreateScreen({ onClose, initialQuoteId }: JobCreateScreenProp
           keyboardShouldPersistTaps="handled"
         >
           {quoteLocked ? (
+            lockedQuoteQuery.isError ||
+            (lockedQuoteQuery.quote != null && !lockedQuoteConvertible) ? (
+              <View className="gap-2 rounded-xl border border-amber-200 bg-amber-50 p-3">
+                <Text testID="job-create-quote-error" variant="body" weight="semibold">
+                  {lockedQuoteQuery.isError
+                    ? "Couldn't load this quote."
+                    : `This quote can't be converted — it's ${lockedQuoteQuery.quote?.status}.`}
+                </Text>
+                <Text variant="caption" color="secondary">
+                  {lockedQuoteQuery.isError
+                    ? "Check your connection and try again, or go back and pick another quote."
+                    : "Only sent or accepted quotes can become jobs."}
+                </Text>
+                <View className="flex-row gap-2">
+                  {lockedQuoteQuery.isError && (
+                    <Button
+                      testID="job-create-quote-retry"
+                      title="Retry"
+                      size="sm"
+                      variant="outline"
+                      onPress={() => void lockedQuoteQuery.refetch()}
+                    />
+                  )}
+                  <Button
+                    testID="job-create-quote-error-back"
+                    title="Back"
+                    size="sm"
+                    variant="outline"
+                    onPress={onClose}
+                  />
+                </View>
+              </View>
+            ) : (
             <View
               testID="job-create-quote-locked"
               className="gap-1 rounded-xl border border-primary bg-primary-50 p-3"
@@ -341,6 +387,7 @@ export function JobCreateScreen({ onClose, initialQuoteId }: JobCreateScreenProp
                 </Text>
               )}
             </View>
+            )
           ) : (
             convertibleQuotes.length > 0 && (
               <View className="gap-2">
@@ -393,7 +440,15 @@ export function JobCreateScreen({ onClose, initialQuoteId }: JobCreateScreenProp
                       autoCapitalize="none"
                       autoCorrect={false}
                     />
-                    {quoteMatches.length === 0 ? (
+                    {quoteSearch.trim() === "" ? (
+                      <Text
+                        testID="job-create-quote-search-hint"
+                        variant="caption"
+                        color="secondary"
+                      >
+                        Search by customer or quote title.
+                      </Text>
+                    ) : quoteMatches.length === 0 ? (
                       <Text testID="job-create-no-quote-matches" variant="caption" color="secondary">
                         No quotes match your search.
                       </Text>
@@ -534,32 +589,41 @@ export function JobCreateScreen({ onClose, initialQuoteId }: JobCreateScreenProp
                   </Text>
                 ) : (
                   <>
-                    {customerMatches.length === 0 && (
+                    {customerSearch.trim() === "" ? (
+                      <Text
+                        testID="job-create-customer-search-hint"
+                        variant="caption"
+                        color="secondary"
+                      >
+                        Search by name, phone or email
+                      </Text>
+                    ) : customerMatches.length === 0 ? (
                       <Text testID="job-create-no-contacts" variant="caption" color="secondary">
                         {contacts.length === 0
                           ? "No customers yet — add one below."
                           : "No customers match your search."}
                       </Text>
+                    ) : (
+                      customerMatches.map((contact) => (
+                        <Pressable
+                          key={contact.id}
+                          testID={`job-create-contact-option-${contact.id}`}
+                          onPress={() => {
+                            setContactId(contact.id);
+                            setCustomerSearch("");
+                          }}
+                        >
+                          <View className="rounded-xl border border-slate-200 bg-white p-3">
+                            <Text variant="body">{contact.name}</Text>
+                            {contact.postcode ? (
+                              <Text variant="caption" color="secondary">
+                                {contact.postcode}
+                              </Text>
+                            ) : null}
+                          </View>
+                        </Pressable>
+                      ))
                     )}
-                    {customerMatches.map((contact) => (
-                      <Pressable
-                        key={contact.id}
-                        testID={`job-create-contact-option-${contact.id}`}
-                        onPress={() => {
-                          setContactId(contact.id);
-                          setCustomerSearch("");
-                        }}
-                      >
-                        <View className="rounded-xl border border-slate-200 bg-white p-3">
-                          <Text variant="body">{contact.name}</Text>
-                          {contact.postcode ? (
-                            <Text variant="caption" color="secondary">
-                              {contact.postcode}
-                            </Text>
-                          ) : null}
-                        </View>
-                      </Pressable>
-                    ))}
                     <Pressable
                       testID="job-create-customer-new"
                       onPress={() => setCustomerMode("new")}
@@ -716,7 +780,7 @@ export function JobCreateScreen({ onClose, initialQuoteId }: JobCreateScreenProp
           <Button
             testID="job-create-submit"
             title={busy ? "Creating…" : "Create job"}
-            disabled={busy}
+            disabled={createDisabled}
             onPress={() => void handleCreate()}
           />
         </View>

@@ -343,7 +343,12 @@ export function CalendarScreen(_props: CalendarScreenProps) {
                 Unscheduled
               </Text>
               {unscheduledJobs.map((job) => (
-                <Pressable key={job.id} onPress={() => router.push(`/(trade)/job/${job.id}`)}>
+                <Pressable
+                  key={job.id}
+                  testID={`unscheduled-job-${job.id}`}
+                  accessibilityLabel={`Open job ${job.title}`}
+                  onPress={() => router.push(`/(trade)/job/${job.id}`)}
+                >
                   <View className="flex-row items-center gap-3 rounded-2xl border border-gray-200 bg-white p-3">
                     <View className="h-8 w-1 rounded bg-gray-300" />
                     <View className="flex-1">

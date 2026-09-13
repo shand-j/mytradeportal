@@ -678,6 +678,10 @@ class JobRead(BaseModel):
     completed_at: datetime | None
     notes: str | None
     assigned_user_id: UUID | None
+    # Denormalised from the contact at job creation — display-only thereafter,
+    # so a later contact edit does not rewrite the job's history.
+    address: str | None
+    postcode: str | None
     # Display name of the assignee, derived from the ORM `assignee` relationship.
     assigned_to: str | None = None
     # Photo/file URLs carried over from the source quote's quote request.

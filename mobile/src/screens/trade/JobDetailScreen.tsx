@@ -1,7 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
-import { Alert, Image, Linking, Platform, Pressable, ScrollView, TextInput, View } from "react-native";
+import { Alert, Image, Linking, Modal, Platform, Pressable, ScrollView, TextInput, View } from "react-native";
+import DateTimePicker from "@react-native-community/datetimepicker";
 import { useQuery } from "@tanstack/react-query";
 import { Button } from "../../components/ui/Button";
+import { FormField } from "../../components/ui/FormField";
 import { Header } from "../../components/ui/Header";
 import { Text } from "../../components/ui/Text";
 import { Screen } from "../../components/ui/Screen";
@@ -9,6 +11,18 @@ import { fetchQuote } from "../../api/quotes";
 import { ApiError } from "../../lib/apiClient";
 import { formatMoneyGBP } from "../../lib/format";
 import { Job, JobStatus } from "../../types";
+
+function pad(n: number): string {
+  return String(n).padStart(2, "0");
+}
+
+function toLocalIsoDate(d: Date): string {
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+
+function toHHMM(d: Date): string {
+  return `${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
 
 function errorMessage(err: unknown, fallback: string): string {
   if (err instanceof ApiError) return err.detail;
@@ -32,7 +46,13 @@ const STATUS_COLORS: Record<JobStatus, string> = {
 
 type InvoiceItem = { id: string; description: string; amount: number };
 
-type JobUpdatePatch = { notes?: string; assignedUserId?: string | null };
+type JobUpdatePatch = {
+  notes?: string;
+  assignedUserId?: string | null;
+  /** ISO datetimes — scheduling/rescheduling the job. */
+  scheduledStart?: string;
+  scheduledEnd?: string;
+};
 
 type JobDetailScreenProps = {
   job: Job;
@@ -59,6 +79,9 @@ type JobDetailScreenProps = {
   members?: { id: string; fullName: string }[];
   /** Notes saved on the backend job record. */
   initialNotes?: string | null;
+  /** Raw scheduled window from the backend job record (null when unscheduled). */
+  scheduledStart?: string | null;
+  scheduledEnd?: string | null;
   /** Photos carried over from the source quote. */
   photos?: string[];
   busy?: boolean;
@@ -84,6 +107,8 @@ export function JobDetailScreen({
   onUpdateJob,
   members,
   initialNotes,
+  scheduledStart,
+  scheduledEnd,
   photos,
   busy,
   contactEmail,
@@ -100,6 +125,13 @@ export function JobDetailScreen({
   const [savingAssignee, setSavingAssignee] = useState(false);
   const [items, setItems] = useState<InvoiceItem[]>([]);
   const [submitting, setSubmitting] = useState(false);
+  const [showSchedDatePicker, setShowSchedDatePicker] = useState(false);
+  const [showSchedTimePicker, setShowSchedTimePicker] = useState(false);
+  const [showSchedModal, setShowSchedModal] = useState(false);
+  const [pendingSchedDate, setPendingSchedDate] = useState<Date>(new Date());
+  const [schedDate, setSchedDate] = useState("");
+  const [schedTime, setSchedTime] = useState("");
+  const [savingSchedule, setSavingSchedule] = useState(false);
 
   // The job record loads asynchronously — adopt server notes until the user
   // starts editing.
@@ -176,6 +208,54 @@ export function JobDetailScreen({
       Alert.alert("Couldn't update the assignee", errorMessage(err, "Please try again."));
     } finally {
       setSavingAssignee(false);
+    }
+  };
+
+  // Rescheduling keeps the job's current span; an unscheduled job gets 2h.
+  const scheduleDurationMs = useMemo(() => {
+    if (scheduledStart && scheduledEnd) {
+      const span = new Date(scheduledEnd).getTime() - new Date(scheduledStart).getTime();
+      if (span > 0) return span;
+    }
+    return 2 * 60 * 60 * 1000;
+  }, [scheduledStart, scheduledEnd]);
+
+  const openSchedulePicker = () => {
+    const base = scheduledStart ? new Date(scheduledStart) : new Date();
+    setPendingSchedDate(base);
+    setSchedDate(toLocalIsoDate(base));
+    setSchedTime(toHHMM(base));
+    if (Platform.OS === "web") setShowSchedModal(true);
+    else setShowSchedDatePicker(true);
+  };
+
+  const onSchedPickerValueChange = (_event: unknown, selected?: Date) => {
+    if (selected) setPendingSchedDate(selected);
+  };
+
+  const saveSchedule = async (dateStr: string, timeStr: string) => {
+    if (!onUpdateJob) return;
+    const start = new Date(`${dateStr}T${timeStr}:00`);
+    if (
+      !/^\d{4}-\d{2}-\d{2}$/.test(dateStr) ||
+      !/^\d{2}:\d{2}$/.test(timeStr) ||
+      Number.isNaN(start.getTime())
+    ) {
+      Alert.alert("That date/time isn't valid", "Use YYYY-MM-DD for the date and HH:MM for the time.");
+      return;
+    }
+    const end = new Date(start.getTime() + scheduleDurationMs);
+    setSavingSchedule(true);
+    try {
+      await onUpdateJob({
+        scheduledStart: start.toISOString(),
+        scheduledEnd: end.toISOString(),
+      });
+      setShowSchedModal(false);
+    } catch (err) {
+      Alert.alert("Couldn't schedule the job", errorMessage(err, "Please try again."));
+    } finally {
+      setSavingSchedule(false);
     }
   };
 
@@ -318,12 +398,44 @@ export function JobDetailScreen({
         </View>
 
         <View className="rounded-2xl bg-slate-100 p-4 gap-2">
-          <Text variant="body" weight="semibold">
-            {job.date}, {job.time}
-          </Text>
-          <Text variant="caption" color="secondary">
-            {status === "confirmed" ? "Confirmed with customer" : "Status updated in app"}
-          </Text>
+          {scheduledStart ? (
+            <>
+              <Text variant="body" weight="semibold">
+                {job.date}, {job.time}
+                {job.endTime ? ` – ${job.endTime}` : ""}
+              </Text>
+              <Text variant="caption" color="secondary">
+                {status === "confirmed" ? "Confirmed with customer" : "Status updated in app"}
+              </Text>
+              {onUpdateJob && status !== "cancelled" && status !== "completed" && (
+                <Button
+                  testID="job-reschedule-button"
+                  title="Reschedule"
+                  variant="outline"
+                  size="sm"
+                  onPress={openSchedulePicker}
+                />
+              )}
+            </>
+          ) : (
+            <>
+              <Text variant="body" weight="semibold">
+                Not scheduled yet
+              </Text>
+              <Text variant="caption" color="secondary">
+                Pick a date and time to put this job on the calendar.
+              </Text>
+              {onUpdateJob && status !== "cancelled" && status !== "completed" && (
+                <Button
+                  testID="job-schedule-button"
+                  title={savingSchedule ? "Scheduling…" : "Schedule job"}
+                  size="sm"
+                  disabled={savingSchedule}
+                  onPress={openSchedulePicker}
+                />
+              )}
+            </>
+          )}
         </View>
 
         <View className="rounded-2xl bg-slate-100 p-4 gap-2">
@@ -630,6 +742,126 @@ export function JobDetailScreen({
           <Button title="Re-open" variant="outline" onPress={() => setStatus("confirmed")} />
         )}
       </View>
+
+      {Platform.OS === "web" ? (
+        <Modal
+          visible={showSchedModal}
+          transparent
+          animationType="fade"
+          onRequestClose={() => setShowSchedModal(false)}
+        >
+          <Pressable
+            className="flex-1 justify-center bg-black/40 p-4"
+            onPress={() => setShowSchedModal(false)}
+          >
+            <Pressable className="gap-3 self-center rounded-3xl bg-white p-4" onPress={() => {}}>
+              <Text variant="body" weight="semibold">
+                {scheduledStart ? "Reschedule job" : "Schedule job"}
+              </Text>
+              <FormField
+                testID="job-schedule-date"
+                label="Date"
+                value={schedDate}
+                onChangeText={setSchedDate}
+                placeholder="YYYY-MM-DD"
+                autoCapitalize="none"
+                maxLength={10}
+              />
+              <FormField
+                testID="job-schedule-time"
+                label="Start time"
+                value={schedTime}
+                onChangeText={setSchedTime}
+                placeholder="HH:MM"
+                autoCapitalize="none"
+                maxLength={5}
+              />
+              <Button
+                testID="job-schedule-save"
+                title={savingSchedule ? "Saving…" : "Save"}
+                disabled={savingSchedule}
+                onPress={() => void saveSchedule(schedDate.trim(), schedTime.trim())}
+              />
+            </Pressable>
+          </Pressable>
+        </Modal>
+      ) : (
+        <>
+          <Modal
+            visible={showSchedDatePicker}
+            transparent
+            animationType="slide"
+            onRequestClose={() => setShowSchedDatePicker(false)}
+          >
+            <Pressable
+              className="flex-1 justify-end bg-black/40"
+              onPress={() => setShowSchedDatePicker(false)}
+            >
+              <Pressable className="rounded-t-3xl bg-white pb-8" onPress={() => {}}>
+                <View className="flex-row items-center justify-between px-4 py-3">
+                  <Text variant="body" weight="semibold">
+                    Job date
+                  </Text>
+                  <Pressable
+                    testID="job-schedule-date-done"
+                    onPress={() => {
+                      setShowSchedDatePicker(false);
+                      setShowSchedTimePicker(true);
+                    }}
+                  >
+                    <Text variant="body" weight="semibold" color="primary">
+                      Done
+                    </Text>
+                  </Pressable>
+                </View>
+                <DateTimePicker
+                  value={pendingSchedDate}
+                  mode="date"
+                  display="spinner"
+                  onChange={onSchedPickerValueChange}
+                />
+              </Pressable>
+            </Pressable>
+          </Modal>
+
+          <Modal
+            visible={showSchedTimePicker}
+            transparent
+            animationType="slide"
+            onRequestClose={() => setShowSchedTimePicker(false)}
+          >
+            <Pressable
+              className="flex-1 justify-end bg-black/40"
+              onPress={() => setShowSchedTimePicker(false)}
+            >
+              <Pressable className="rounded-t-3xl bg-white pb-8" onPress={() => {}}>
+                <View className="flex-row items-center justify-between px-4 py-3">
+                  <Text variant="body" weight="semibold">
+                    Start time
+                  </Text>
+                  <Pressable
+                    testID="job-schedule-time-done"
+                    onPress={() => {
+                      setShowSchedTimePicker(false);
+                      void saveSchedule(toLocalIsoDate(pendingSchedDate), toHHMM(pendingSchedDate));
+                    }}
+                  >
+                    <Text variant="body" weight="semibold" color="primary">
+                      Done
+                    </Text>
+                  </Pressable>
+                </View>
+                <DateTimePicker
+                  value={pendingSchedDate}
+                  mode="time"
+                  display="spinner"
+                  onChange={onSchedPickerValueChange}
+                />
+              </Pressable>
+            </Pressable>
+          </Modal>
+        </>
+      )}
     </Screen>
   );
 }

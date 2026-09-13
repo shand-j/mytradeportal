@@ -293,6 +293,8 @@ const STATUS_MAP: Record<string, QuoteStatus> = {
   accepted: "accepted",
   rejected: "rejected",
   expired: "expired",
+  invoiced: "invoiced",
+  cancelled: "cancelled",
 };
 
 /** Map a backend quote into the app's display `Quote` shape. */
@@ -382,6 +384,29 @@ export function useQuote(id: string | undefined) {
     quote: query.data ? mapQuote(query.data) : undefined,
     isConnected: query.isSuccess,
     isLoading: !!id && query.isLoading,
+  };
+}
+
+/**
+ * A single quote by id in its raw backend shape (`ApiQuote`). Shares the
+ * `["quote", id]` cache with `useQuote`. Used where the backend status and
+ * nested customer record are needed (e.g. quote→job conversion), where the
+ * mapped display shape would lose them.
+ */
+export function useApiQuote(id: string | undefined) {
+  const query = useQuery({
+    queryKey: ["quote", id],
+    queryFn: () => fetchQuote(id as string),
+    enabled: !!id,
+  });
+
+  return {
+    quote: query.data,
+    isConnected: query.isSuccess,
+    isLoading: !!id && query.isLoading,
+    isError: !!id && query.isError,
+    error: query.error,
+    refetch: query.refetch,
   };
 }
 

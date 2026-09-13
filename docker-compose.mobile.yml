@@ -76,7 +76,7 @@ services:
       - mobile_minio_data:/data
     ports:
       - "9002:9000"
-      - "9003:9001"
+      - "9013:9001"
     healthcheck:
       test: ["CMD-SHELL", "bash -c 'echo >/dev/tcp/localhost/9000'"]
       interval: 5s

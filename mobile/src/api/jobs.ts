@@ -191,6 +191,8 @@ export function useUpdateJob(id: string | undefined) {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["jobs"] });
       qc.invalidateQueries({ queryKey: ["job", id] });
+      // Schedule changes alter free-slot availability for that day.
+      qc.invalidateQueries({ queryKey: ["availability"] });
     },
   });
 }

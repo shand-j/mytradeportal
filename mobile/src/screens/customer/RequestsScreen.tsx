@@ -26,6 +26,10 @@ const STATUS_MAP: Record<QuoteStatus, CustomerQuoteStatus> = {
   accepted: "accepted",
   rejected: "rejected",
   expired: "expired",
+  // Invoiced quotes are done-and-paid from the customer's side; a cancelled
+  // quote is simply no longer available.
+  invoiced: "accepted",
+  cancelled: "expired",
 };
 
 const BADGE_COLORS: Record<

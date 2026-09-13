@@ -1,4 +1,19 @@
-"""Job endpoints."""
+"""Job endpoints.
+
+Address model: a job's address/postcode are denormalised from its contact at
+creation time (both POST /jobs and the quote convert-to-job path) so a later
+contact edit does not rewrite the job's history. They are display-only
+afterwards — this router never writes them again.
+
+Schedule sync: job schedules and appointments are kept as separate concepts,
+synced one way only — job → appointment. When a job's scheduled_start/
+scheduled_end is set or changed via PATCH /jobs/{id} and Appointment rows
+reference the job (appointment.job_id), those appointments' start_at/end_at
+move to match (an end-less job schedule keeps each appointment's existing
+duration; unscheduling a job leaves its appointments untouched). This router
+never creates appointments from job schedules, and appointment edits never
+propagate back onto the job.
+"""
 
 from datetime import datetime
 from typing import Annotated, Any
@@ -11,7 +26,7 @@ from sqlalchemy.orm import selectinload
 
 from app.database import get_db
 from app.dependencies import TenantDep
-from app.models import Contact, Job, Quote, User
+from app.models import Appointment, Contact, Job, Quote, User
 from app.push import notify_staff
 from app.rls import set_tenant_in_session
 from app.schemas import JobCreate, JobRead, JobUpdate
@@ -82,7 +97,14 @@ async def create_job(data: JobCreate, tenant: TenantDep, db: DbDep) -> JobRead:
 
     await _validate_assignee(db, tenant.id, data.assigned_user_id)
 
-    job = Job(tenant_id=tenant.id, **data.model_dump())
+    job = Job(
+        tenant_id=tenant.id,
+        # Denormalise the contact's current address for display stability;
+        # lat/lng stay null (no geocoding yet).
+        address=contact.address,
+        postcode=contact.postcode,
+        **data.model_dump(),
+    )
     db.add(job)
     await db.flush()
     if job.status == "scheduled":
@@ -101,6 +123,25 @@ async def create_job(data: JobCreate, tenant: TenantDep, db: DbDep) -> JobRead:
     return JobRead.model_validate(await _get_job(db, tenant.id, job.id))
 
 
+async def _sync_linked_appointments(db: AsyncSession, tenant_id: UUID, job: Job) -> None:
+    """One-way job → appointment schedule sync (see module docstring).
+
+    Moves every appointment linked to the job to the job's new slot. An
+    end-less job schedule keeps each appointment's existing duration; a job
+    being unscheduled (no start) leaves its appointments untouched, since
+    appointments cannot represent an unscheduled slot.
+    """
+    if job.scheduled_start is None:
+        return
+    result = await db.execute(
+        select(Appointment).where(Appointment.job_id == job.id, Appointment.tenant_id == tenant_id)
+    )
+    for appointment in result.scalars().all():
+        duration = appointment.end_at - appointment.start_at
+        appointment.start_at = job.scheduled_start
+        appointment.end_at = job.scheduled_end or (job.scheduled_start + duration)
+
+
 @router.patch("/{job_id}")
 async def update_job(
     job_id: UUID,
@@ -115,6 +156,8 @@ async def update_job(
         await _validate_assignee(db, tenant.id, changes["assigned_user_id"])
     for key, value in changes.items():
         setattr(job, key, value)
+    if "scheduled_start" in changes or "scheduled_end" in changes:
+        await _sync_linked_appointments(db, tenant.id, job)
     await db.commit()
     # The assignee/media relationships were loaded by the initial _get_job;
     # expire them so the re-read reflects the values just written.

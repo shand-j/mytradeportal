@@ -325,23 +325,29 @@ export function QuoteEditScreen({
 
   const isSent = seedQuote?.status === "sent";
   const isAccepted = seedQuote?.status === "accepted";
+  // Terminal statuses never offer convert actions — the quote's journey is over.
+  const isTerminal =
+    seedQuote?.status === "rejected" ||
+    seedQuote?.status === "invoiced" ||
+    seedQuote?.status === "cancelled";
   const acceptedDates = seedQuote?.acceptedDates ?? [];
   // Convert-to-invoice stays reachable for quotes that predate the
   // quote → job → invoice flow (sent quotes, or accepted quotes whose
   // convert-to-job hit a 409 without a resolvable job).
   const showConvertToInvoice =
     !!onConvertToInvoice &&
+    !isTerminal &&
     seedQuote?.status !== "draft" &&
     !existingJobId &&
     (!isAccepted || !!jobConvertFailed);
   const showConvertToJob =
-    !!onConvertToJob && isAccepted && !existingJobId && !jobConvertFailed;
+    !!onConvertToJob && !isTerminal && isAccepted && !existingJobId && !jobConvertFailed;
   // The iOS sheet's Job option routes to the prefilled job-create page, which
   // marks off-app-agreed sent quotes as accepted during conversion — so it can
   // be offered for sent quotes too. The web convert-to-job button converts in
   // place and stays approved-only.
   const canCreateJobFromQuote =
-    !!onConvertToJob && (isAccepted || isSent) && !existingJobId && !jobConvertFailed;
+    !!onConvertToJob && !isTerminal && (isAccepted || isSent) && !existingJobId && !jobConvertFailed;
 
   const quoteRequestId = seedQuote?.quoteRequestId ?? resolvedLead?.id;
   const isRefining = refineQuoteMutation.isPending;
