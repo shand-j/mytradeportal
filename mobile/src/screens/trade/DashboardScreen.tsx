@@ -260,11 +260,7 @@ export function DashboardScreen(_props: DashboardScreenProps) {
               </Text>
             </View>
           </Pressable>
-          <Pressable
-            testID="dashboard-time-saved-card"
-            className="flex-1"
-            onPress={() => router.push("/(trade)/analytics")}
-          >
+          <View testID="dashboard-time-saved-card" className="flex-1">
             <View className="flex-1 gap-1 rounded-2xl bg-primary-50 p-4">
               <View className="flex-row items-center justify-between">
                 <Text variant="caption" color="secondary">
@@ -283,7 +279,7 @@ export function DashboardScreen(_props: DashboardScreenProps) {
                 {aiGeneratedQuotes} AI draft{aiGeneratedQuotes === 1 ? "" : "s"} × ~25 min
               </Text>
             </View>
-          </Pressable>
+          </View>
         </View>
 
         <View className="gap-3">
@@ -299,36 +295,48 @@ export function DashboardScreen(_props: DashboardScreenProps) {
             />
           </View>
           <View className="flex-row gap-3">
-            <View className="flex-1 gap-1 rounded-2xl bg-accent-50 p-4">
-              <Text variant="caption" color="secondary">
-                Paid this month
-              </Text>
-              {kpiLoading ? (
-                <View className="mt-1 h-8 w-20 rounded bg-accent-100" />
-              ) : (
-                <Text variant="title" weight="bold">
-                  £{(kpi?.revenueThisMonth ?? 0).toFixed(0)}
-                </Text>
-              )}
-              {!!kpi && kpi.revenueChange !== 0 && (
+            <Pressable
+              testID="dashboard-paid-this-month-card"
+              className="flex-1"
+              onPress={() => router.push("/(trade)/analytics")}
+            >
+              <View className="flex-1 gap-1 rounded-2xl bg-accent-50 p-4">
                 <Text variant="caption" color="secondary">
-                  {kpi.revenueChange > 0 ? "▲" : "▼"} {Math.abs(kpi.revenueChange).toFixed(0)}% vs
-                  last month
+                  Paid this month
                 </Text>
-              )}
-            </View>
-            <View className="flex-1 gap-1 rounded-2xl bg-primary-50 p-4">
-              <Text variant="caption" color="secondary">
-                Outstanding invoices
-              </Text>
-              {invoicesLoading ? (
-                <View className="mt-1 h-8 w-20 rounded bg-primary-100" />
-              ) : (
-                <Text variant="title" weight="bold">
-                  £{outstandingInvoices.toFixed(0)}
+                {kpiLoading ? (
+                  <View className="mt-1 h-8 w-20 rounded bg-accent-100" />
+                ) : (
+                  <Text variant="title" weight="bold">
+                    £{(kpi?.revenueThisMonth ?? 0).toFixed(0)}
+                  </Text>
+                )}
+                {!!kpi && kpi.revenueChange !== 0 && (
+                  <Text variant="caption" color="secondary">
+                    {kpi.revenueChange > 0 ? "▲" : "▼"} {Math.abs(kpi.revenueChange).toFixed(0)}% vs
+                    last month
+                  </Text>
+                )}
+              </View>
+            </Pressable>
+            <Pressable
+              testID="dashboard-outstanding-invoices-card"
+              className="flex-1"
+              onPress={() => router.push("/(trade)/invoices")}
+            >
+              <View className="flex-1 gap-1 rounded-2xl bg-primary-50 p-4">
+                <Text variant="caption" color="secondary">
+                  Outstanding invoices
                 </Text>
-              )}
-            </View>
+                {invoicesLoading ? (
+                  <View className="mt-1 h-8 w-20 rounded bg-primary-100" />
+                ) : (
+                  <Text variant="title" weight="bold">
+                    £{outstandingInvoices.toFixed(0)}
+                  </Text>
+                )}
+              </View>
+            </Pressable>
           </View>
         </View>
 
