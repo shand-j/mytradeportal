@@ -26,6 +26,10 @@ export type ApiInvoice = {
   /** Rounding uplift inherited from the source quote or applied at creation. */
   roundingAdjustment?: string;
   paidAt: string | null;
+  /** How the invoice was settled: "manual" | "stripe" | null (unpaid). */
+  paidVia: string | null;
+  /** Per-invoice card-payment override; null inherits the tenant default. */
+  acceptCardPayments: boolean | null;
   lineItems: ApiInvoiceLineItem[];
   customer: ApiContact;
 };
@@ -35,6 +39,7 @@ const STATUS_MAP: Record<string, InvoiceStatus> = {
   sent: "sent",
   paid: "paid",
   overdue: "overdue",
+  refunded: "refunded",
   cancelled: "draft",
 };
 
@@ -107,11 +112,21 @@ export async function sendInvoice(id: string): Promise<ApiInvoice> {
   return api.post<ApiInvoice>(`/invoices/${id}/send`);
 }
 
+/**
+ * Refund a Stripe-paid invoice in full (POST /invoices/{id}/refund). The
+ * backend 409s unless the invoice was settled online by card.
+ */
+export async function refundInvoice(id: string): Promise<ApiInvoice> {
+  return api.post<ApiInvoice>(`/invoices/${id}/refund`);
+}
+
 export type UpdateInvoiceInput = {
   lineItems?: { description: string; quantity: number; unitPrice: number }[];
   dueDate?: string;
   notes?: string;
   status?: string;
+  /** Card-payment override; explicit null restores tenant-default inheritance. */
+  acceptCardPayments?: boolean | null;
 };
 
 /** Update an invoice; the backend replaces line items and recalculates totals. */
@@ -183,6 +198,19 @@ export function useUpdateInvoice() {
     mutationFn: ({ id, input }: { id: string; input: UpdateInvoiceInput }) =>
       updateInvoice(id, input),
     onSuccess: (_data, { id }) => {
+      qc.invalidateQueries({ queryKey: ["invoices"] });
+      qc.invalidateQueries({ queryKey: ["invoice", id] });
+      qc.invalidateQueries({ queryKey: ["dashboard"] });
+    },
+  });
+}
+
+/** Mutation: refund a Stripe-paid invoice and refresh the caches. */
+export function useRefundInvoice() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => refundInvoice(id),
+    onSuccess: (_data, id) => {
       qc.invalidateQueries({ queryKey: ["invoices"] });
       qc.invalidateQueries({ queryKey: ["invoice", id] });
       qc.invalidateQueries({ queryKey: ["dashboard"] });

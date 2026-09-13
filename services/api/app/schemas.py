@@ -785,6 +785,9 @@ class InvoiceUpdate(BaseModel):
     due_date: datetime | None = None
     notes: str | None = None
     status: str | None = None
+    # Per-invoice card-payment override; explicit null restores tenant-default
+    # inheritance (see app.routers.payments.invoice_accepts_card).
+    accept_card_payments: bool | None = None
     # Full replacement when provided (same semantics as QuoteUpdate).
     line_items: list[InvoiceLineItemCreate] | None = None
 
@@ -814,6 +817,10 @@ class InvoiceRead(BaseModel):
     # never re-rounded) or applied once at creation for scratch invoices.
     rounding_adjustment: Decimal = Decimal("0.00")
     paid_at: datetime | None
+    # "manual" / "stripe" / None — how the invoice was settled.
+    paid_via: str | None
+    # Per-invoice card-payment override; None = inherit the tenant default.
+    accept_card_payments: bool | None
     notes: str | None
     paddle_checkout_id: str | None
     paddle_transaction_id: str | None

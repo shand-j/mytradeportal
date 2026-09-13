@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { ScrollView, StyleSheet, TextInput, View } from "react-native";
+import { Alert, Platform, Pressable, ScrollView, StyleSheet, TextInput, View } from "react-native";
 import { ApiInvoice, ApiInvoiceLineItem, UpdateInvoiceInput } from "../../api/invoices";
 import { Button } from "../../components/ui/Button";
 import { Header } from "../../components/ui/Header";
@@ -52,6 +52,16 @@ export type InvoiceDetailScreenProps = {
     lineItems: NonNullable<UpdateInvoiceInput["lineItems"]>
   ) => Promise<ApiInvoice>;
   savingLineItems?: boolean;
+  /** How the invoice was settled ("manual" | "stripe"); null while unpaid. */
+  paidVia?: string | null;
+  /** Per-invoice card-payment override; null inherits the tenant default. */
+  acceptCardPayments?: boolean | null;
+  /** When provided (connected mode), PATCHes the card-payment override. */
+  onSetCardPayments?: (value: boolean | null) => Promise<void>;
+  savingCardPayments?: boolean;
+  /** When provided (connected mode), refunds a Stripe-paid invoice in full. */
+  onRefund?: () => Promise<void>;
+  refunding?: boolean;
 };
 
 export function InvoiceDetailScreen({
@@ -66,10 +76,18 @@ export function InvoiceDetailScreen({
   vatRate = 0.2,
   onSaveLineItems,
   savingLineItems,
+  paidVia = null,
+  acceptCardPayments = null,
+  onSetCardPayments,
+  savingCardPayments,
+  onRefund,
+  refunding,
 }: InvoiceDetailScreenProps) {
   const [status, setStatus] = useState<InvoiceStatus>(invoice.status);
   const [paidAt, setPaidAt] = useState<string | undefined>(invoice.paidAt);
   const [sendError, setSendError] = useState<string | null>(null);
+  const [cardError, setCardError] = useState<string | null>(null);
+  const [refundError, setRefundError] = useState<string | null>(null);
   const [editing, setEditing] = useState(false);
   const [editItems, setEditItems] = useState<EditableLineItem[]>([]);
   const [editError, setEditError] = useState<string | null>(null);
@@ -79,6 +97,7 @@ export function InvoiceDetailScreen({
   const isPaid = status === "paid";
   const isSent = status === "sent";
   const isOverdue = status === "overdue";
+  const paidByStripe = isPaid && paidVia === "stripe";
 
   const canEdit = !!onSaveLineItems && !!lineItems;
   const displayAmount = savedTotal ?? invoice.amount;
@@ -159,6 +178,44 @@ export function InvoiceDetailScreen({
     }
   };
 
+  const setCardPayments = async (value: boolean | null) => {
+    if (!onSetCardPayments) return;
+    setCardError(null);
+    try {
+      await onSetCardPayments(value);
+    } catch (err) {
+      setCardError(errorMessage(err, "Couldn't update card payments."));
+    }
+  };
+
+  const doRefund = async () => {
+    if (!onRefund) return;
+    setRefundError(null);
+    try {
+      await onRefund();
+      setStatus("refunded");
+    } catch (err) {
+      setRefundError(errorMessage(err, "Couldn't refund the payment. Please try again."));
+    }
+  };
+
+  const handleRefund = () => {
+    // Alert.alert is a native-only API; on web the explicit button tap is the
+    // confirmation (same convention as QuoteEditScreen's send flow).
+    if (Platform.OS === "web") {
+      void doRefund();
+      return;
+    }
+    Alert.alert(
+      "Refund payment?",
+      `Refund ${formatMoneyGBP(displayAmount)} to ${invoice.customerName} via Stripe? This can't be undone.`,
+      [
+        { text: "Cancel", style: "cancel" },
+        { text: "Refund", style: "destructive", onPress: () => void doRefund() },
+      ]
+    );
+  };
+
   return (
     <Screen>
       <Header title="Invoice" onBack={onClose} />
@@ -189,7 +246,7 @@ export function InvoiceDetailScreen({
             </View>
             <View style={{ flex: 1 }}>
               <Text variant="body" weight="semibold" style={{ color: "#065F46" }}>
-                Payment received
+                {paidByStripe ? "Paid online via Stripe" : "Payment received"}
               </Text>
               <Text variant="caption" color="secondary">
                 {formatMoneyGBP(displayAmount)} paid by {invoice.customerName}
@@ -337,12 +394,62 @@ export function InvoiceDetailScreen({
           )}
         </View>
 
+        {!isPaid && status !== "refunded" && onSetCardPayments && (
+          <View style={styles.card}>
+            <Text variant="body" weight="semibold">
+              Card payments
+            </Text>
+            <Text variant="caption" color="secondary">
+              Let the customer pay this invoice online by card (via Stripe).
+            </Text>
+            <Pressable
+              testID="invoice-card-toggle"
+              disabled={savingCardPayments}
+              onPress={() => void setCardPayments(!(acceptCardPayments ?? false))}
+            >
+              <View
+                className={`flex-row items-center justify-between py-1 ${savingCardPayments ? "opacity-50" : ""}`}
+              >
+                <Text variant="body">Accept card payments</Text>
+                <View
+                  className={`w-12 h-7 rounded-full px-0.5 justify-center ${(acceptCardPayments ?? false) ? "bg-primary" : "bg-slate-200"}`}
+                >
+                  <View
+                    className="w-6 h-6 rounded-full bg-white"
+                    style={{ transform: [{ translateX: (acceptCardPayments ?? false) ? 20 : 0 }] }}
+                  />
+                </View>
+              </View>
+            </Pressable>
+            {acceptCardPayments === null ? (
+              <Text testID="invoice-card-default-hint" variant="caption" color="secondary">
+                Using account default
+              </Text>
+            ) : (
+              <Pressable
+                testID="invoice-card-use-default"
+                disabled={savingCardPayments}
+                onPress={() => void setCardPayments(null)}
+              >
+                <Text variant="caption" color="secondary" style={{ textDecorationLine: "underline" }}>
+                  Use account default
+                </Text>
+              </Pressable>
+            )}
+            {cardError && (
+              <Text testID="invoice-card-error" variant="caption" color="warning">
+                {cardError}
+              </Text>
+            )}
+          </View>
+        )}
+
         <View style={styles.card}>
           <Text variant="body" weight="semibold">
             Payment method
           </Text>
           <Text variant="body" color="secondary">
-            Bank transfer · details from your invoice email
+            {paidByStripe ? "Card (Stripe)" : "Bank transfer · details from your invoice email"}
           </Text>
         </View>
       </ScrollView>
@@ -352,6 +459,13 @@ export function InvoiceDetailScreen({
           <View className="rounded-2xl bg-amber-50 p-3">
             <Text testID="invoice-send-error" variant="caption" color="warning">
               {sendError}
+            </Text>
+          </View>
+        )}
+        {refundError && (
+          <View className="rounded-2xl bg-amber-50 p-3">
+            <Text testID="invoice-refund-error" variant="caption" color="warning">
+              {refundError}
             </Text>
           </View>
         )}
@@ -380,6 +494,15 @@ export function InvoiceDetailScreen({
                   onPress={() => onViewRevenue?.()}
                 />
                 <Button title="Send receipt" variant="outline" onPress={onClose} />
+                {paidByStripe && onRefund && (
+                  <Button
+                    testID="invoice-refund-button"
+                    title={refunding ? "Refunding…" : "Refund payment"}
+                    variant="outline"
+                    disabled={refunding}
+                    onPress={handleRefund}
+                  />
+                )}
               </>
             )}
             {isSent && (
@@ -432,6 +555,8 @@ function statusColor(status: Invoice["status"]): string {
       return "#E2E8EB";
     case "overdue":
       return "#FEF2F2";
+    case "refunded":
+      return "#EDE9FE";
     default:
       return "#FFFBEB";
   }

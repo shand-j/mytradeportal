@@ -4,6 +4,7 @@ import {
   UpdateInvoiceInput,
   useInvoice,
   useMarkInvoicePaid,
+  useRefundInvoice,
   useSendInvoice,
   useUpdateInvoice,
 } from "../../../src/api/invoices";
@@ -16,6 +17,7 @@ export default function InvoiceDetailRoute() {
   const markPaid = useMarkInvoicePaid();
   const sendInvoice = useSendInvoice();
   const updateInvoice = useUpdateInvoice();
+  const refundInvoice = useRefundInvoice();
 
   if (!realInvoice) return null;
 
@@ -38,6 +40,16 @@ export default function InvoiceDetailRoute() {
         updateInvoice.mutateAsync({ id: realInvoice.id, input: { lineItems } })
       }
       savingLineItems={updateInvoice.isPending}
+      paidVia={apiInvoice?.paidVia ?? null}
+      acceptCardPayments={apiInvoice?.acceptCardPayments ?? null}
+      onSetCardPayments={(value: boolean | null) =>
+        updateInvoice
+          .mutateAsync({ id: realInvoice.id, input: { acceptCardPayments: value } })
+          .then(() => undefined)
+      }
+      savingCardPayments={updateInvoice.isPending}
+      onRefund={() => refundInvoice.mutateAsync(realInvoice.id).then(() => undefined)}
+      refunding={refundInvoice.isPending}
     />
   );
 }

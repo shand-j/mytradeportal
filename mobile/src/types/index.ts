@@ -110,7 +110,7 @@ export type Quote = {
   vatRate: number;
 };
 
-export type InvoiceStatus = "draft" | "sent" | "paid" | "overdue";
+export type InvoiceStatus = "draft" | "sent" | "paid" | "overdue" | "refunded";
 
 export type Invoice = {
   id: string;

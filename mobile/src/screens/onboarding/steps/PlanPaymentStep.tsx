@@ -72,12 +72,12 @@ const FALLBACK_PLANS: BillingPlan[] = [
     name: "Team",
     monthlyPriceEnv: "PADDLE_PRICE_ID_TEAM_MONTH",
     annualPriceEnv: "PADDLE_PRICE_ID_TEAM_YEAR",
-    monthlyPriceGbp: 29,
-    annualPriceGbp: 290,
+    monthlyPriceGbp: 69,
+    annualPriceGbp: 690,
     aiAllowanceMonthly: 100,
     overageBehavior: "metered",
     overagePricePence: 6,
-    minSeats: 3,
+    minSeats: 1,
     pooledAllowance: true,
     featured: false,
     trialDays: 14,
@@ -93,31 +93,23 @@ const TAGLINES: Record<BillingPlanKey, string> = {
 };
 
 function toDisplayPlan(plan: BillingPlan): Plan {
-  const allowanceLine = plan.pooledAllowance
-    ? `${plan.aiAllowanceMonthly} AI quotes/seat included/mo, pooled — extras ${plan.overagePricePence}p each`
-    : `${plan.aiAllowanceMonthly} AI quotes included/mo — extras ${plan.overagePricePence}p each`;
+  // Flat pricing: per business, unlimited users, AI included on every plan.
+  const aiLine = "AI included on every plan — no credits, no counting";
   const featuresByKey: Record<BillingPlanKey, string[]> = {
-    sole_trader: ["Unlimited quote requests", allowanceLine, "Calendar & jobs"],
+    sole_trader: ["Unlimited users", aiLine, "Unlimited quote requests", "Calendar & jobs"],
     pro: [
       "Everything in Sole Trader",
-      allowanceLine,
       "Invoicing & payments",
       "Team assignment",
       "Branded customer portal",
     ],
-    team: [
-      "Everything in Pro",
-      allowanceLine,
-      ...(plan.minSeats > 1 ? [`Minimum ${plan.minSeats} seats`] : []),
-      "Priority support",
-      "Accounting sync",
-    ],
+    team: ["Everything in Pro", "Priority support", "Accounting sync"],
   };
   return {
     key: plan.key,
     name: plan.name,
     price: `£${plan.monthlyPriceGbp}`,
-    cadence: plan.minSeats > 1 ? `/user/mo · min ${plan.minSeats} seats` : "/user/mo",
+    cadence: "/business/mo",
     tagline: TAGLINES[plan.key],
     features: featuresByKey[plan.key],
     highlighted: plan.featured,

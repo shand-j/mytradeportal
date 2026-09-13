@@ -191,6 +191,11 @@ export function SettingsScreen() {
       onPress: () => router.push("/(trade)/payment-details"),
     },
     {
+      title: "Payments",
+      subtitle: "Card payments via Stripe, payouts",
+      onPress: () => router.push("/(trade)/payments"),
+    },
+    {
       title: "Follow-up settings",
       subtitle: "Quote & invoice reminders, total rounding",
       onPress: () => router.push("/(trade)/follow-ups"),

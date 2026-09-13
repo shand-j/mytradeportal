@@ -194,3 +194,44 @@ async def test_create_invoice_rejects_unknown_job_with_400(client: AsyncClient) 
     )
     assert response.status_code == 400
     assert response.json()["detail"] == "Invalid job"
+
+
+async def test_invoice_accept_card_payments_toggle_round_trip(client: AsyncClient) -> None:
+    """Per-invoice card toggle: set → clear restores tenant-default inheritance."""
+    tenant = await _create_tenant(client, f"sparky-{uuid4().hex[:8]}")
+    contact = await _create_contact(client, tenant["id"], "Grace")
+    quote = await _create_quote(client, tenant["id"], contact["id"])
+    created = await client.post(
+        f"/quotes/{quote['id']}/convert-to-invoice",
+        headers={"X-Tenant-ID": tenant["id"]},
+        json={},
+    )
+    assert created.status_code == 201
+    invoice = created.json()
+    # New invoices inherit the tenant default: no per-invoice override yet.
+    assert invoice["accept_card_payments"] is None
+    assert invoice["paid_via"] is None
+
+    headers = {"X-Tenant-ID": tenant["id"]}
+    enabled = await client.patch(
+        f"/invoices/{invoice['id']}", headers=headers, json={"accept_card_payments": True}
+    )
+    assert enabled.status_code == 200
+    assert enabled.json()["accept_card_payments"] is True
+
+    disabled = await client.patch(
+        f"/invoices/{invoice['id']}", headers=headers, json={"accept_card_payments": False}
+    )
+    assert disabled.status_code == 200
+    assert disabled.json()["accept_card_payments"] is False
+
+    cleared = await client.patch(
+        f"/invoices/{invoice['id']}", headers=headers, json={"accept_card_payments": None}
+    )
+    assert cleared.status_code == 200
+    assert cleared.json()["accept_card_payments"] is None
+
+    # The override survives reads from the detail endpoint too.
+    detail = await client.get(f"/invoices/{invoice['id']}", headers=headers)
+    assert detail.status_code == 200
+    assert detail.json()["accept_card_payments"] is None

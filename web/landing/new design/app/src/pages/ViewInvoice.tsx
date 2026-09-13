@@ -1,3 +1,4 @@
+import { useSearchParams } from 'react-router'
 import Nav from '../sections/Nav'
 import Footer from '../sections/Footer'
 import { usePageMeta } from '../hooks/usePageMeta'
@@ -14,6 +15,8 @@ export default function ViewInvoice() {
   usePageMeta('Your invoice — My Trade Portal', 'View and pay the invoice your electrician sent you.')
   useNoIndex()
   const { status, error, doc } = usePublicDocument('invoice')
+  const [searchParams] = useSearchParams()
+  const paymentReturning = searchParams.get('paid') === '1'
 
   const heading = doc?.invoice_number ? `Invoice ${doc.invoice_number}` : 'Invoice'
   const canPay = doc != null && doc.status !== 'paid' && doc.status !== 'cancelled' && doc.payment_url
@@ -41,6 +44,15 @@ export default function ViewInvoice() {
         )}
         {status === 'loaded' && doc && (
           <DocumentShell doc={doc} heading={heading}>
+            {paymentReturning && doc.status !== 'paid' && (
+              <p
+                role="status"
+                className="mt-[var(--space-xl)] border-2 border-[var(--ink)] bg-[var(--accent)] p-4 text-[14px] font-semibold leading-relaxed text-[var(--ink-deep)]"
+              >
+                Thank you — your payment is being confirmed. This page will show the invoice as
+                paid shortly.
+              </p>
+            )}
             {canPay && (
               <div className="mt-[var(--space-xl)] border-2 border-[var(--rule)] bg-[var(--paper-2)] p-5">
                 <p className="text-[14px] leading-relaxed">

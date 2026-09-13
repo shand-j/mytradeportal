@@ -265,7 +265,7 @@ async def update_invoice(
     current_user: CurrentUserDep,
     db: DbDep,
 ) -> InvoiceRead:
-    """Update an invoice's due date, notes, status, or line items."""
+    """Update due date, notes, status, card-payment override, or line items."""
     invoice = await _get_invoice(db, tenant.id, invoice_id)
     changed = data.model_dump(exclude_unset=True)
 
