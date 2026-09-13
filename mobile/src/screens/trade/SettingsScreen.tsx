@@ -1,25 +1,40 @@
 import { useRouter } from "expo-router";
 import { useState } from "react";
-import { Pressable, ScrollView, Share, View } from "react-native";
+import { Linking, Pressable, ScrollView, Share, View } from "react-native";
 import { Button } from "../../components/ui/Button";
 import { Header } from "../../components/ui/Header";
 import { Screen } from "../../components/ui/Screen";
 import { Text } from "../../components/ui/Text";
 import { useAuth } from "../../contexts/AuthContext";
 import { useBusiness } from "../../theme/ThemeProvider";
-import { useSubscription } from "../../api/billing";
+import { createPortalSession, useSubscription } from "../../api/billing";
 import { api, ApiError } from "../../lib/apiClient";
 import { openCalendarSubscription } from "../../api/calendar";
 
 function SubscriptionCard() {
   const { data, isLoading } = useSubscription();
   const router = useRouter();
+  const [portalLoading, setPortalLoading] = useState(false);
+  const [portalError, setPortalError] = useState<string | null>(null);
 
   if (isLoading) {
     return null;
   }
 
   const openPlanPicker = () => router.push("/(trade)/billing");
+
+  const openCustomerPortal = async () => {
+    setPortalError(null);
+    setPortalLoading(true);
+    try {
+      const { portalUrl } = await createPortalSession();
+      await Linking.openURL(portalUrl);
+    } catch {
+      setPortalError("Couldn't open subscription management. Please try again.");
+    } finally {
+      setPortalLoading(false);
+    }
+  };
 
   if (!data) {
     return (
@@ -95,6 +110,22 @@ function SubscriptionCard() {
           title="Choose a plan"
           onPress={openPlanPicker}
         />
+      )}
+      {data.paddleCustomerId && (
+        <>
+          <Button
+            testID="settings-manage-subscription"
+            title={portalLoading ? "Opening…" : "Manage subscription"}
+            variant="outline"
+            disabled={portalLoading}
+            onPress={openCustomerPortal}
+          />
+          {portalError && (
+            <Text variant="caption" color="warning">
+              {portalError}
+            </Text>
+          )}
+        </>
       )}
     </View>
   );

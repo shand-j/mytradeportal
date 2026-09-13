@@ -7,9 +7,9 @@ from mtp_shared import get_settings
 settings = get_settings()
 
 # Branded public base URL for calendar subscription links (webcal/.ics).
-# Overrides ``settings.app_public_url`` for feed URLs only, so the link users
-# subscribe to presents a branded domain instead of the raw service origin.
-# Empty falls back to ``app_public_url``, then to the request origin.
+# Set this to the API's public origin in production. Empty falls back to the
+# request origin (the API's own host) and only then to ``app_public_url`` —
+# which points at the back office, where the feed path does not exist.
 CALENDAR_FEED_BASE_URL: str = os.environ.get("CALENDAR_FEED_BASE_URL", "")
 
 # In-process reminder scheduler (quote/invoice follow-up emails). Runs as an

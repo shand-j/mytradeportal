@@ -21,7 +21,11 @@ from app.config import settings
 from app.database import get_db
 from app.dependencies import CurrentUserDep, TenantDep
 from app.models import Subscription, Tenant
-from app.paddle_client import create_subscription_transaction, get_or_create_customer
+from app.paddle_client import (
+    create_customer_portal_session,
+    create_subscription_transaction,
+    get_or_create_customer,
+)
 from app.plans import PLANS, get_plan, plan_to_public_dict
 from app.rls import set_tenant_in_session
 from app.schemas import BillingCheckoutCreate, BillingCheckoutRead, SubscriptionRead
@@ -270,6 +274,47 @@ async def get_subscription(
     if sub is None:
         return None
     return SubscriptionRead.model_validate(sub)
+
+
+@router.post("/portal-session")
+async def create_portal_session(
+    tenant: TenantDep,
+    current_user: CurrentUserDep,
+    db: DbDep,
+) -> dict[str, str]:
+    """Mint a Paddle customer-portal URL for the tenant's subscription.
+
+    The mobile app opens the returned URL in the system browser so the user
+    can manage their payment method, download Paddle invoices, or cancel.
+    Only the short-lived overview URL crosses the wire.
+    """
+    if current_user is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authentication required",
+        )
+    await set_tenant_in_session(db, tenant.id)
+    sub = await db.scalar(select(Subscription).where(Subscription.tenant_id == tenant.id))
+    if sub is None or not sub.paddle_customer_id:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="No Paddle customer is linked to this subscription yet",
+        )
+    try:
+        portal_url = await create_customer_portal_session(sub.paddle_customer_id)
+    except Exception as exc:
+        logger.error(
+            "billing_portal_session_failed",
+            tenant_id=str(tenant.id),
+            error_type=type(exc).__name__,
+            error=str(exc)[:300],
+        )
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Payment provider is unavailable. Try again shortly.",
+        ) from exc
+    logger.info("billing_portal_session_created", tenant_id=str(tenant.id))
+    return {"portal_url": portal_url}
 
 
 # Re-exported for tests / other modules that want the same "still-good" gate.

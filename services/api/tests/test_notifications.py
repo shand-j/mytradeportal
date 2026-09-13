@@ -256,3 +256,63 @@ async def test_staff_user_cannot_read_customer_notifications(
     # admin_client carries a staff cookie and no customer bearer token.
     resp = await admin_client.get("/customer/notifications")
     assert resp.status_code == 401
+
+
+async def test_staff_mark_all_read(admin_client: AsyncClient, db: AsyncSession) -> None:
+    tenant_id = UUID(admin_client.headers["X-Tenant-ID"])
+    await _seed_notification(db, tenant_id, **_staff_notification_kwargs())
+    # Addressed to a different staff user → must stay unread.
+    other_user = await _seed_notification(
+        db, tenant_id, **_staff_notification_kwargs(recipient_id=uuid4())
+    )
+
+    resp = await admin_client.post("/notifications/read-all")
+    assert resp.status_code == 200, resp.text
+    assert resp.json() == {"marked_read": 1}
+
+    count = await admin_client.get("/notifications/unread-count")
+    assert count.json() == {"unread_count": 0}
+
+    await db.refresh(other_user)
+    assert other_user.read_at is None
+
+    # Idempotent: a second sweep marks nothing.
+    resp = await admin_client.post("/notifications/read-all")
+    assert resp.json() == {"marked_read": 0}
+
+
+async def test_customer_mark_all_read(admin_client: AsyncClient, db: AsyncSession) -> None:
+    tenant_id = UUID(admin_client.headers["X-Tenant-ID"])
+    auth, customer_id = await _register_customer(admin_client, db, tenant_id)
+    for _ in range(2):
+        await _seed_notification(
+            db,
+            tenant_id,
+            recipient_type="customer",
+            recipient_id=UUID(customer_id),
+            type="quote_ready",
+            title="Your quote is ready",
+            body="...",
+            link=None,
+        )
+    # Another customer's notification → must stay unread.
+    other = await _seed_notification(
+        db,
+        tenant_id,
+        recipient_type="customer",
+        recipient_id=uuid4(),
+        type="quote_ready",
+        title="Your quote is ready",
+        body="...",
+        link=None,
+    )
+
+    resp = await admin_client.post("/customer/notifications/read-all", headers=auth)
+    assert resp.status_code == 200, resp.text
+    assert resp.json() == {"marked_read": 2}
+
+    count = await admin_client.get("/customer/notifications/unread-count", headers=auth)
+    assert count.json() == {"unread_count": 0}
+
+    await db.refresh(other)
+    assert other.read_at is None

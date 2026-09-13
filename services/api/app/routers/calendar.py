@@ -6,9 +6,11 @@ minted on first request of the link endpoint. Appointments stream out as
 VEVENTs. This is one-way (app → calendar); true two-way sync is post-beta.
 """
 
+import logging
 import secrets
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Annotated
+from urllib.parse import urlparse
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.responses import PlainTextResponse
@@ -24,6 +26,8 @@ from app.rls import bypass_rls_for_transaction, set_tenant_in_session
 router = APIRouter(prefix="/calendar", tags=["Calendar"])
 DbDep = Annotated[AsyncSession, Depends(get_db)]
 
+logger = logging.getLogger(__name__)
+
 _FEED_TOKEN_KEY = "calendar_feed_token"
 
 
@@ -32,12 +36,41 @@ def _ics_escape(value: str) -> str:
 
 
 def _ics_dt(value: datetime) -> str:
-    return value.strftime("%Y%m%dT%H%M%S")
+    """Format as the iCalendar UTC DATE-TIME form (``YYYYMMDDTHHMMSSZ``).
+
+    The API stores appointment times as naive UTC datetimes; aware values are
+    converted. iOS cannot place naive floating times reliably and may reject
+    the whole feed, so every DATE-TIME is pinned to UTC.
+    """
+    if value.tzinfo is None:
+        value = value.replace(tzinfo=UTC)
+    return value.astimezone(UTC).strftime("%Y%m%dT%H%M%SZ")
+
+
+def _looks_like_admin_host(base_url: str) -> bool:
+    host = urlparse(base_url).hostname or ""
+    return host.split(".", 1)[0].startswith("admin")
 
 
 def _feed_base_url(request: Request) -> str:
-    base = CALENDAR_FEED_BASE_URL or settings.app_public_url
-    return base.rstrip("/") if base else str(request.base_url).rstrip("/")
+    """Base URL for feed links: override → request origin → ``app_public_url``.
+
+    The request origin (the API's own host, via ``--proxy-headers``) is the
+    correct default: the feed is served by this service. ``app_public_url``
+    points at the back office / admin domain, where the feed path does not
+    exist and returns HTML — iOS rejects that as a validation failure — so it
+    is only a last resort.
+    """
+    base = (
+        CALENDAR_FEED_BASE_URL or str(request.base_url).rstrip("/") or settings.app_public_url
+    ).rstrip("/")
+    if _looks_like_admin_host(base):
+        logger.warning(
+            "Calendar feed base URL %r resolves to the admin domain; "
+            "set CALENDAR_FEED_BASE_URL to the API origin",
+            base,
+        )
+    return base
 
 
 def _feed_url(request: Request, token: str) -> str:

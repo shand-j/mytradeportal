@@ -142,6 +142,23 @@ async def get_or_create_customer(email: str, name: str | None = None) -> str:
         return str(response.json()["data"]["id"])
 
 
+async def create_customer_portal_session(customer_id: str) -> str:
+    """Create a Paddle customer portal session and return its overview URL.
+
+    The overview URL is a one-time, short-lived link into Paddle's hosted
+    customer portal (manage payment method, download invoices, cancel). Only
+    the overview URL is returned — the raw session payload (customer id,
+    per-subscription deep links) never leaves the server.
+    """
+    if not settings.paddle_api_key:
+        raise RuntimeError("Paddle API key is not configured")
+    async with httpx.AsyncClient(base_url=_paddle_base_url(), headers=_headers()) as client:
+        response = await client.post(f"/customers/{customer_id}/portal-sessions")
+        response.raise_for_status()
+        data = response.json()["data"]
+    return str(data["urls"]["general"]["overview"])
+
+
 async def create_subscription_transaction(
     price_id: str,
     tenant_id: str,

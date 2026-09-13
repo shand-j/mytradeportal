@@ -243,7 +243,7 @@ export function QuoteEditScreen({
   const handleConvertSheet = () => {
     if (!seedQuote) return;
     const actions: { label: string; run: () => void }[] = [];
-    if (showConvertToJob) {
+    if (canCreateJobFromQuote) {
       actions.push({
         label: "Job",
         run: () => router.push({ pathname: "/(trade)/job/new", params: { quoteId: seedQuote.id } }),
@@ -336,6 +336,12 @@ export function QuoteEditScreen({
     (!isAccepted || !!jobConvertFailed);
   const showConvertToJob =
     !!onConvertToJob && isAccepted && !existingJobId && !jobConvertFailed;
+  // The iOS sheet's Job option routes to the prefilled job-create page, which
+  // marks off-app-agreed sent quotes as accepted during conversion — so it can
+  // be offered for sent quotes too. The web convert-to-job button converts in
+  // place and stays approved-only.
+  const canCreateJobFromQuote =
+    !!onConvertToJob && (isAccepted || isSent) && !existingJobId && !jobConvertFailed;
 
   const quoteRequestId = seedQuote?.quoteRequestId ?? resolvedLead?.id;
   const isRefining = refineQuoteMutation.isPending;
@@ -640,7 +646,7 @@ export function QuoteEditScreen({
             )}
           </>
         ) : (
-          (showConvertToJob || showConvertToInvoice) && (
+          (canCreateJobFromQuote || showConvertToInvoice) && (
             <Button
               testID="quote-convert"
               title={converting ? "Converting…" : "Convert to…"}

@@ -256,7 +256,7 @@ export function DashboardScreen(_props: DashboardScreenProps) {
                 </Text>
               )}
               <Text variant="caption" color="secondary">
-                New requests, FIFO
+                New requests, oldest first
               </Text>
             </View>
           </Pressable>

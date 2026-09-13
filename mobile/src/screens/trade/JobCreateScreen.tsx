@@ -16,11 +16,11 @@ import { Screen } from "../../components/ui/Screen";
 import { Text } from "../../components/ui/Text";
 import { useContactsList, findOrCreateContact } from "../../api/contacts";
 import { useCreateJob, useConvertQuoteToJob } from "../../api/jobs";
-import { ApiQuote, fetchQuotes } from "../../api/quotes";
+import { ApiQuote, fetchQuotes, setQuoteApproval } from "../../api/quotes";
 import { fetchAvailability, useAvailability } from "../../api/appointments";
 import { useUsersList } from "../../api/users";
 import { ApiError } from "../../lib/apiClient";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 const TIME_RE = /^\d{2}:\d{2}$/;
@@ -77,11 +77,15 @@ export function JobCreateScreen({ onClose, initialQuoteId }: JobCreateScreenProp
   const { users } = useUsersList();
   const createJob = useCreateJob();
   const convertToJob = useConvertQuoteToJob();
+  const queryClient = useQueryClient();
 
   const quotesQuery = useQuery({ queryKey: ["quotes"], queryFn: fetchQuotes });
-  // Only approved quotes can convert to a job (server enforces it too).
+  // Approved quotes convert directly; sent quotes are marked accepted during
+  // conversion (customer agreed off-app — the trade app has no other approve
+  // path). Draft/rejected/invoiced quotes stay excluded, as the server does.
   const convertibleQuotes = useMemo(
-    () => (quotesQuery.data ?? []).filter((q) => q.status === "approved"),
+    () =>
+      (quotesQuery.data ?? []).filter((q) => q.status === "approved" || q.status === "sent"),
     [quotesQuery.data]
   );
 
@@ -224,24 +228,34 @@ export function JobCreateScreen({ onClose, initialQuoteId }: JobCreateScreenProp
 
     setSubmitting(true);
     try {
-      const job = selectedQuote
-        ? await convertToJob.mutateAsync({
-            quoteId: selectedQuote.id,
-            schedule: {
-              scheduledStart: schedule.start,
-              scheduledEnd: schedule.end,
-              notes: notes.trim() !== "" ? notes.trim() : undefined,
-              assignedUserId: assignedUserId ?? undefined,
-            },
-          })
-        : await createJob.mutateAsync({
-            contactId: resolvedContactId,
-            title: title.trim(),
+      let job;
+      if (selectedQuote) {
+        if (selectedQuote.status !== "approved") {
+          // Customer agreed off-app: mark the quote accepted first so the
+          // server's approved-only conversion rule passes.
+          await setQuoteApproval(selectedQuote.id, true);
+          queryClient.invalidateQueries({ queryKey: ["quotes"] });
+          queryClient.invalidateQueries({ queryKey: ["quote", selectedQuote.id] });
+        }
+        job = await convertToJob.mutateAsync({
+          quoteId: selectedQuote.id,
+          schedule: {
             scheduledStart: schedule.start,
             scheduledEnd: schedule.end,
             notes: notes.trim() !== "" ? notes.trim() : undefined,
             assignedUserId: assignedUserId ?? undefined,
-          });
+          },
+        });
+      } else {
+        job = await createJob.mutateAsync({
+          contactId: resolvedContactId,
+          title: title.trim(),
+          scheduledStart: schedule.start,
+          scheduledEnd: schedule.end,
+          notes: notes.trim() !== "" ? notes.trim() : undefined,
+          assignedUserId: assignedUserId ?? undefined,
+        });
+      }
       router.replace(`/(trade)/job/${job.id}`);
     } catch (err) {
       setError(
@@ -271,7 +285,7 @@ export function JobCreateScreen({ onClose, initialQuoteId }: JobCreateScreenProp
           {convertibleQuotes.length > 0 && (
             <View className="gap-2">
               <Text variant="body" weight="semibold">
-                From an accepted quote
+                From a quote
               </Text>
               <Text variant="caption" color="secondary">
                 Optional — prefills the customer, duration and a suggested start slot.
@@ -293,8 +307,13 @@ export function JobCreateScreen({ onClose, initialQuoteId }: JobCreateScreenProp
                         {quote.title}
                       </Text>
                       <Text variant="caption" color="secondary">
-                        {quote.customer.name}
+                        {quote.customer.name} · {quote.status === "approved" ? "Accepted" : "Sent"}
                       </Text>
+                      {selected && quote.status !== "approved" && (
+                        <Text testID="job-create-quote-mark-accepted" variant="caption" color="secondary">
+                          Will be marked as accepted when the job is created.
+                        </Text>
+                      )}
                     </View>
                   </Pressable>
                 );

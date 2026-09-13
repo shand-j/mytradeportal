@@ -1,10 +1,11 @@
-import { useEffect, useState } from "react";
-import { KeyboardAvoidingView, Platform, Pressable, ScrollView, View } from "react-native";
+import { useEffect, useRef, useState } from "react";
+import { KeyboardAvoidingView, Platform, ScrollView, View } from "react-native";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button } from "../../components/ui/Button";
 import { FormField } from "../../components/ui/FormField";
 import { Header } from "../../components/ui/Header";
 import { Screen } from "../../components/ui/Screen";
+import { SelectableChip } from "../../components/ui/SelectableChip";
 import { Text } from "../../components/ui/Text";
 import { fetchWorkingHours, updateWorkingHours } from "../../api/businesses";
 import { ApiError, NetworkError } from "../../lib/apiClient";
@@ -34,10 +35,14 @@ export function WorkingHoursSettingsScreen({ onClose }: WorkingHoursSettingsScre
   const [end, setEnd] = useState("18:00");
   const [days, setDays] = useState<number[]>([0, 1, 2, 3, 4, 5, 6]);
   const [error, setError] = useState<string | null>(null);
+  // Hydrate local state from the server exactly once — a late-resolving query
+  // must not clobber selections the user has already made.
+  const hydrated = useRef(false);
 
   useEffect(() => {
     const hours = hoursQuery.data;
-    if (!hours) return;
+    if (!hours || hydrated.current) return;
+    hydrated.current = true;
     setStart(hours.workingDayStart);
     setEnd(hours.workingDayEnd);
     setDays(hours.workingDays);
@@ -143,26 +148,15 @@ export function WorkingHoursSettingsScreen({ onClose }: WorkingHoursSettingsScre
               Days outside your working week are never offered as slots.
             </Text>
             <View className="flex-row flex-wrap gap-2">
-              {DAY_LABELS.map(({ day, label }) => {
-                const selected = days.includes(day);
-                return (
-                  <Pressable
-                    key={day}
-                    testID={`working-hours-day-${day}`}
-                    onPress={() => toggleDay(day)}
-                  >
-                    <View
-                      className={`rounded-full px-4 py-2 border ${
-                        selected ? "bg-primary border-primary" : "bg-white border-slate-200"
-                      }`}
-                    >
-                      <Text variant="body" weight={selected ? "semibold" : "normal"}>
-                        {label}
-                      </Text>
-                    </View>
-                  </Pressable>
-                );
-              })}
+              {DAY_LABELS.map(({ day, label }) => (
+                <SelectableChip
+                  key={day}
+                  testID={`working-hours-day-${day}`}
+                  label={label}
+                  selected={days.includes(day)}
+                  onPress={() => toggleDay(day)}
+                />
+              ))}
             </View>
           </View>
 

@@ -82,6 +82,15 @@ export async function getSubscription(): Promise<SubscriptionRead | null> {
   return api.get<SubscriptionRead | null>("/billing/subscription");
 }
 
+export type BillingPortalSessionRead = {
+  portalUrl: string;
+};
+
+/** Mint a short-lived Paddle customer-portal URL (manage/cancel subscription). */
+export async function createPortalSession(): Promise<BillingPortalSessionRead> {
+  return api.post<BillingPortalSessionRead>("/billing/portal-session");
+}
+
 export function useSubscription() {
   return useQuery({
     queryKey: ["billing", "subscription"],

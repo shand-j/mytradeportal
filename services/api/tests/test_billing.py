@@ -373,3 +373,72 @@ async def test_checkout_annual_interval_uses_year_price(
     _, kwargs = fake.call_args
     assert kwargs["price_id"] == "pri_new_pro_y"
     assert kwargs["quantity"] == 1
+
+
+async def test_portal_session_returns_paddle_portal_url(
+    admin_client: AsyncClient, db: AsyncSession
+) -> None:
+    """POST /billing/portal-session mints a customer-portal URL for a
+    subscription that has a Paddle customer linked."""
+    from uuid import UUID
+
+    tenant_id = UUID(admin_client.headers["X-Tenant-ID"])
+    db.add(
+        Subscription(
+            tenant_id=tenant_id,
+            plan_key="pro",
+            status="active",
+            paddle_subscription_id="sub_test_1",
+            paddle_customer_id="ctm_test_1",
+        )
+    )
+    await db.commit()
+
+    fake = AsyncMock(return_value="https://customer-portal.paddle.com/session_test_1")
+    with patch("app.routers.billing.create_customer_portal_session", new=fake):
+        response = await admin_client.post("/billing/portal-session")
+
+    assert response.status_code == 200, response.text
+    assert response.json() == {"portal_url": "https://customer-portal.paddle.com/session_test_1"}
+    fake.assert_awaited_once_with("ctm_test_1")
+
+
+async def test_portal_session_404_without_paddle_customer(
+    admin_client: AsyncClient, db: AsyncSession
+) -> None:
+    """Signup-trial subscriptions have no Paddle customer yet → 404."""
+    from uuid import UUID
+
+    tenant_id = UUID(admin_client.headers["X-Tenant-ID"])
+    db.add(Subscription(tenant_id=tenant_id, plan_key="pro", status="trialing"))
+    await db.commit()
+
+    response = await admin_client.post("/billing/portal-session")
+    assert response.status_code == 404
+
+
+async def test_portal_session_404_without_subscription(admin_client: AsyncClient) -> None:
+    response = await admin_client.post("/billing/portal-session")
+    assert response.status_code == 404
+
+
+async def test_portal_session_bubbles_paddle_failure_as_502(
+    admin_client: AsyncClient, db: AsyncSession
+) -> None:
+    from uuid import UUID
+
+    tenant_id = UUID(admin_client.headers["X-Tenant-ID"])
+    db.add(
+        Subscription(
+            tenant_id=tenant_id,
+            plan_key="pro",
+            status="active",
+            paddle_customer_id="ctm_test_1",
+        )
+    )
+    await db.commit()
+
+    fake = AsyncMock(side_effect=RuntimeError("paddle 500"))
+    with patch("app.routers.billing.create_customer_portal_session", new=fake):
+        response = await admin_client.post("/billing/portal-session")
+    assert response.status_code == 502

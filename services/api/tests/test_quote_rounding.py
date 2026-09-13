@@ -129,3 +129,34 @@ async def test_invoice_from_scratch_is_not_rounded(admin_client: AsyncClient) ->
     adjustment = invoice.get("roundingAdjustment", invoice.get("rounding_adjustment"))
     assert Decimal(invoice["total"]) == Decimal("863.00")
     assert Decimal(adjustment) == Decimal("0.00")
+
+
+async def test_rounding_persists_via_mobile_follow_up_payload(admin_client: AsyncClient) -> None:
+    """Lock the exact contract the mobile Follow-ups screen puts on the wire.
+
+    The app PATCHes the full follow-up settings block (camelCase keys are
+    snakeized client-side, so this is the literal wire payload); the value
+    must persist through a fresh GET and apply to newly created quotes.
+    """
+    payload = {
+        "settings": {
+            "quote_reminders_enabled": True,
+            "quote_reminder_max": 3,
+            "quote_reminder_interval_days": 3,
+            "invoice_reminders_enabled": True,
+            "invoice_reminder_interval_days": 7,
+            "quote_rounding": 10,
+        }
+    }
+    response = await admin_client.patch("/tenants/me", json=payload)
+    assert response.status_code == 200
+    assert response.json()["settings"]["quote_rounding"] == 10
+
+    # Fresh read (what fetchFollowUpSettings does on screen load).
+    fetched = await admin_client.get("/tenants/me")
+    assert fetched.json()["settings"]["quote_rounding"] == 10
+
+    contact_id = await _create_contact(admin_client)
+    created = await admin_client.post("/quotes", json=_quote_payload(contact_id))
+    assert created.status_code == 201
+    assert Decimal(created.json()["total"]) == Decimal("870.00")

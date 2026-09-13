@@ -35,6 +35,12 @@ export async function markNotificationRead(role: NotificationRole, id: string): 
   await api.patch(`${basePath(role)}/${id}/read`);
 }
 
+/** Mark every visible notification as read; returns how many were marked. */
+export async function markAllNotificationsRead(role: NotificationRole): Promise<number> {
+  const data = await api.post<{ markedRead: number }>(`${basePath(role)}/read-all`);
+  return data.markedRead;
+}
+
 type UnreadCountResponse = { count?: number; unreadCount?: number };
 
 /** Unread notification count for the bell badge. */
@@ -105,6 +111,17 @@ export function useMarkNotificationRead(role: NotificationRole) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (id: string) => markNotificationRead(role, id),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["notifications", role] });
+    },
+  });
+}
+
+/** Mutation: mark all visible notifications read and refresh the caches. */
+export function useMarkAllNotificationsRead(role: NotificationRole) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => markAllNotificationsRead(role),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["notifications", role] });
     },

@@ -1,10 +1,11 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { KeyboardAvoidingView, Platform, Pressable, ScrollView, View } from "react-native";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button } from "../../components/ui/Button";
 import { FormField } from "../../components/ui/FormField";
 import { Header } from "../../components/ui/Header";
 import { Screen } from "../../components/ui/Screen";
+import { SelectableChip } from "../../components/ui/SelectableChip";
 import { Text } from "../../components/ui/Text";
 import { fetchFollowUpSettings, updateFollowUpSettings } from "../../api/businesses";
 import { ApiError, NetworkError } from "../../lib/apiClient";
@@ -30,10 +31,15 @@ export function FollowUpSettingsScreen({ onClose }: FollowUpSettingsScreenProps)
   const [invoiceInterval, setInvoiceInterval] = useState("7");
   const [rounding, setRounding] = useState(0);
   const [error, setError] = useState<string | null>(null);
+  // Hydrate local state from the server exactly once — a late-resolving query
+  // must not clobber a rounding choice the user has already tapped (the
+  // selected-chip state was unreadable at beta, so the revert was invisible).
+  const hydrated = useRef(false);
 
   useEffect(() => {
     const settings = settingsQuery.data;
-    if (!settings) return;
+    if (!settings || hydrated.current) return;
+    hydrated.current = true;
     setQuoteReminderEnabled(settings.quoteRemindersEnabled);
     setInvoiceReminderEnabled(settings.invoiceRemindersEnabled);
     setQuoteMax(String(settings.quoteReminderMax));
@@ -185,26 +191,15 @@ export function FollowUpSettingsScreen({ onClose }: FollowUpSettingsScreenProps)
               rounded amount is shown on the quote.
             </Text>
             <View className="flex-row gap-2">
-              {ROUNDING_OPTIONS.map((option) => {
-                const selected = rounding === option.value;
-                return (
-                  <Pressable
-                    key={option.value}
-                    testID={`follow-up-rounding-${option.value}`}
-                    onPress={() => setRounding(option.value)}
-                  >
-                    <View
-                      className={`rounded-full px-4 py-2 border ${
-                        selected ? "bg-primary border-primary" : "bg-white border-slate-200"
-                      }`}
-                    >
-                      <Text variant="body" weight={selected ? "semibold" : "normal"}>
-                        {option.label}
-                      </Text>
-                    </View>
-                  </Pressable>
-                );
-              })}
+              {ROUNDING_OPTIONS.map((option) => (
+                <SelectableChip
+                  key={option.value}
+                  testID={`follow-up-rounding-${option.value}`}
+                  label={option.label}
+                  selected={rounding === option.value}
+                  onPress={() => setRounding(option.value)}
+                />
+              ))}
             </View>
           </View>
 

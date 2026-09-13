@@ -8,6 +8,7 @@ import {
   AppNotification,
   NotificationRole,
   routeForNotificationLink,
+  useMarkAllNotificationsRead,
   useMarkNotificationRead,
   useNotifications,
 } from "../../api/notifications";
@@ -40,6 +41,8 @@ export function NotificationsScreen({ role, onBack }: NotificationsScreenProps) 
   const router = useRouter();
   const { data: notifications, isLoading } = useNotifications(role);
   const markRead = useMarkNotificationRead(role);
+  const markAllRead = useMarkAllNotificationsRead(role);
+  const hasUnread = (notifications ?? []).some((n) => !n.readAt);
 
   const openNotification = (notification: AppNotification) => {
     if (!notification.readAt) {
@@ -55,7 +58,25 @@ export function NotificationsScreen({ role, onBack }: NotificationsScreenProps) 
 
   return (
     <Screen>
-      <Header testID="notifications-back" title="Notifications" onBack={onBack} />
+      <Header
+        testID="notifications-back"
+        title="Notifications"
+        onBack={onBack}
+        rightAction={
+          hasUnread ? (
+            <Pressable
+              testID="notifications-mark-all-read"
+              disabled={markAllRead.isPending}
+              onPress={() => markAllRead.mutate()}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            >
+              <Text variant="caption" weight="semibold" color="secondary">
+                {markAllRead.isPending ? "Marking…" : "Mark all read"}
+              </Text>
+            </Pressable>
+          ) : null
+        }
+      />
 
       <ScrollView className="flex-1" contentContainerClassName="gap-3 pb-6">
         {isLoading && (

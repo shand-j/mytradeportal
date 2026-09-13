@@ -198,6 +198,10 @@ export default defineRailway(() => {
       // Public URL the reset-password + quote links resolve to. Update to
       // the App Store / landing page domain once available.
       APP_PUBLIC_URL: preserve(),
+      // Calendar feed (webcal/.ics) links must resolve to THIS service's
+      // public origin — APP_PUBLIC_URL points at the back office, where the
+      // feed path 404s as HTML and iOS rejects the subscription.
+      CALENDAR_FEED_BASE_URL: "https://api-production-65db.up.railway.app",
       // Where password-reset email links point: the landing site's
       // /reset-password page (NOT the back office).
       PASSWORD_RESET_BASE_URL: "https://www.mytradeportal.co.uk",

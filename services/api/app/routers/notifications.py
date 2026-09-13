@@ -7,17 +7,20 @@ is fire-and-forget via :mod:`app.push`).
 """
 
 from datetime import datetime
-from typing import Annotated
+from typing import TYPE_CHECKING, Annotated, Any, cast
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import ColumnElement, func, or_, select
+from sqlalchemy import ColumnElement, func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
 from app.dependencies import ActiveUserDep, CurrentCustomerDep, TenantDep
 from app.models import Customer, Notification, PushToken, Tenant, User
 from app.schemas import NotificationRead, PushTokenCreate, PushTokenRead, UnreadCountRead
+
+if TYPE_CHECKING:
+    from sqlalchemy.engine import CursorResult
 
 router = APIRouter(tags=["Notifications"])
 DbDep = Annotated[AsyncSession, Depends(get_db)]
@@ -145,6 +148,26 @@ async def mark_notification_read(
     return notification
 
 
+@router.post("/notifications/read-all")
+async def mark_all_notifications_read(
+    tenant: TenantDep,
+    current_user: ActiveUserDep,
+    db: DbDep,
+) -> dict[str, int]:
+    """Mark every notification visible to the current staff user as read."""
+    result = await db.execute(
+        update(Notification)
+        .where(
+            Notification.tenant_id == tenant.id,
+            Notification.read_at.is_(None),
+            *_staff_filter(current_user),
+        )
+        .values(read_at=datetime.utcnow())
+    )
+    await db.commit()
+    return {"marked_read": cast("CursorResult[Any]", result).rowcount}
+
+
 @router.post(
     "/notifications/push-token",
     status_code=status.HTTP_201_CREATED,
@@ -214,6 +237,26 @@ async def mark_customer_notification_read(
         await db.commit()
         await db.refresh(notification)
     return notification
+
+
+@router.post("/customer/notifications/read-all")
+async def mark_all_customer_notifications_read(
+    customer: CurrentCustomerDep,
+    db: DbDep,
+) -> dict[str, int]:
+    """Mark every notification for the authenticated customer as read."""
+    result = await db.execute(
+        update(Notification)
+        .where(
+            Notification.tenant_id == customer.tenant_id,
+            Notification.recipient_type == "customer",
+            Notification.recipient_id == customer.id,
+            Notification.read_at.is_(None),
+        )
+        .values(read_at=datetime.utcnow())
+    )
+    await db.commit()
+    return {"marked_read": cast("CursorResult[Any]", result).rowcount}
 
 
 @router.post(
