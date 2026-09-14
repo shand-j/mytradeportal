@@ -1,5 +1,14 @@
 # Wave A — Quote-to-cash lifecycle evidence (local stack)
 
+> **Post-capture follow-ups (2026-09-14):** the bugs listed under "App bugs
+> surfaced while capturing" below were fixed after capture — see commit
+> `90a4559` (`construct_event` now uses `to_dict()`; an out-of-order
+> `payment_intent.succeeded` can no longer resurrect a refunded invoice; the
+> landing `STATUS_LABELS` maps `approved` → "Accepted"). The landing app also
+> gained a host-aware tenant customer portal (`src/portal/`, ADR-004) with
+> in-browser quote accept. The videos and the notes below remain an accurate
+> record of the code as captured on 2026-09-13.
+
 Scripted, reviewable video evidence of the full quote-to-cash lifecycle against
 the **local** stack, with every external service mocked. Captured
 2026-09-13 on the repo's docker-compose infra (Postgres, Mailpit) plus a local
