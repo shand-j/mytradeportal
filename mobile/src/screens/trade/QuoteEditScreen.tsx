@@ -8,8 +8,10 @@ import { Icon } from "../../components/ui/Icon";
 import { IconButton } from "../../components/ui/IconButton";
 import { Screen } from "../../components/ui/Screen";
 import { Text } from "../../components/ui/Text";
+import { ContactCustomerCard } from "../../components/trade/ContactCustomerCard";
 import { Lead, Quote, QuoteLineItem } from "../../types";
 import { updateQuote, useRefineQuote, useSendQuote, useUpdateQuote } from "../../api/quotes";
+import { useLead } from "../../api/quoteRequests";
 import { startDirectThread } from "../../api/communications";
 import { ApiError } from "../../lib/apiClient";
 import { formatMoneyGBP } from "../../lib/format";
@@ -352,6 +354,13 @@ export function QuoteEditScreen({
   const quoteRequestId = seedQuote?.quoteRequestId ?? resolvedLead?.id;
   const isRefining = refineQuoteMutation.isPending;
 
+  // Reachability for the chat entry point below: the lead prop (quote-intake
+  // flow) or the source quote request (quote detail flow). Only an explicit
+  // `false` gates chat — older backends omit the field.
+  const { lead: fetchedLead } = useLead(resolvedLead ? undefined : quoteRequestId);
+  const chatLead = resolvedLead ?? fetchedLead;
+  const chatUnavailable = chatLead?.customerReachable === false;
+
   // C7: "Request more info" opens the chat with the customer. Quotes without a
   // linked thread (legacy/lead-less quotes) find-or-create one via the CRM
   // contact; only contacts with no app account stay disabled.
@@ -610,17 +619,30 @@ export function QuoteEditScreen({
             onPress={handleSend}
           />
         )}
-        <Button
-          testID="quote-request-info"
-          title={isSent ? "Send follow-up" : "Request more info"}
-          variant="outline"
-          disabled={!canMessageCustomer}
-          onPress={() => void openCustomerChat()}
-        />
-        {!canMessageCustomer && (
-          <Text testID="quote-request-info-empty" variant="caption" color="secondary" align="center">
-            No linked customer conversation
-          </Text>
+        {chatUnavailable && chatLead ? (
+          // No app account: chat never reaches this customer, so offer
+          // phone/email follow-up instead of the chat entry point.
+          <ContactCustomerCard
+            name={chatLead.customerName}
+            phone={chatLead.customerPhone}
+            email={chatLead.customerEmail}
+            preferredMethod={chatLead.contactPreferredMethod}
+          />
+        ) : (
+          <>
+            <Button
+              testID="quote-request-info"
+              title={isSent ? "Send follow-up" : "Request more info"}
+              variant="outline"
+              disabled={!canMessageCustomer}
+              onPress={() => void openCustomerChat()}
+            />
+            {!canMessageCustomer && (
+              <Text testID="quote-request-info-empty" variant="caption" color="secondary" align="center">
+                No linked customer conversation
+              </Text>
+            )}
+          </>
         )}
 
         {existingJobId && (

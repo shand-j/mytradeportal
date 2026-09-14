@@ -1218,6 +1218,7 @@ class PublicContactInput(BaseModel):
     phone: str | None = Field(default=None, max_length=50)
     address: str | None = Field(default=None, max_length=2000)
     postcode: str | None = Field(default=None, max_length=20)
+    preferred_contact_method: str | None = Field(default=None, max_length=20)
 
 
 class PublicQuoteRequestCreate(BaseModel):
@@ -1561,6 +1562,12 @@ class QuoteRequestRead(BaseModel):
     converted_at: datetime | None
     created_at: datetime
     updated_at: datetime
+    # Staff follow-up hints, computed on read: the contact's preferred channel
+    # (falling back to structured_data.preferredContact) and whether the linked
+    # customer can be reached via in-app chat (claimed password account or a
+    # registered push token). Unreachable leads need a phone/email follow-up.
+    contact_preferred_method: str | None = None
+    customer_reachable: bool = False
     customer: ContactRead | None = Field(
         default=None, validation_alias="contact", serialization_alias="customer"
     )

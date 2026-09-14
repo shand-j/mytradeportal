@@ -13,7 +13,15 @@ from app.audit import Actions, write_audit_log
 from app.database import get_db
 from app.dependencies import CurrentUserDep, TenantDep
 from app.limiter import limiter, tenant_key
-from app.models import BillOfQuantities, Customer, MediaAsset, Property, Quote, QuoteRequest
+from app.models import (
+    BillOfQuantities,
+    Customer,
+    MediaAsset,
+    Property,
+    PushToken,
+    Quote,
+    QuoteRequest,
+)
 from app.rls import set_tenant_in_session
 from app.routers.contacts import BLOCKED_CUSTOMER_DETAIL, contact_is_blocked
 from app.schemas import (
@@ -24,6 +32,7 @@ from app.schemas import (
     QuoteRequestRead,
     QuoteRequestUpdate,
 )
+from app.utils.contact_preference import normalise_preferred_contact
 
 router = APIRouter(prefix="/quote-requests", tags=["Quote Requests"])
 DbDep = Annotated[AsyncSession, Depends(get_db)]
@@ -36,31 +45,92 @@ async def _set_tenant(db: AsyncSession, tenant_id: UUID) -> None:
 async def _reads_with_account_flags(
     db: AsyncSession, tenant_id: UUID, quote_requests: list[QuoteRequest]
 ) -> list[QuoteRequestRead]:
-    """Serialise quote requests and flag contacts with no customer account.
+    """Serialise quote requests with staff follow-up flags per lead.
 
     Quotes sent to account-less contacts persist (contact + quote rows stand
     on their own), but the electrician must see that comms with that customer
     are email-only: ``customer.has_account`` is False until the homeowner
     registers, True once an active customer account points at the contact.
+
+    Two further flags drive how staff follow up a lead:
+
+    - ``contact_preferred_method`` — the contact's captured preference,
+      falling back to ``structured_data.preferredContact``.
+    - ``customer_reachable`` — True only when a customer account exists for
+      the contact AND it can receive in-app chat (a claimed password account
+      or at least one registered push token). Auto-provisioned passwordless
+      accounts are NOT reachable: staff must call or email instead.
+
+    The customer and push-token lookups are batched (one grouped query each)
+    so the list endpoint stays flat regardless of page size.
     """
     reads = [QuoteRequestRead.model_validate(qr) for qr in quote_requests]
     contact_ids = {read.customer.id for read in reads if read.customer is not None}
-    if not contact_ids:
-        return reads
-    result = await db.execute(
-        select(Customer.contact_id).where(
-            Customer.tenant_id == tenant_id,
-            Customer.contact_id.in_(contact_ids),
-            Customer.is_active.is_(True),
+    with_account: set[UUID] = set()
+    chat_reachable: set[UUID] = set()
+    if contact_ids:
+        result = await db.execute(
+            select(
+                Customer.contact_id, Customer.id, Customer.password_hash, Customer.is_active
+            ).where(
+                Customer.tenant_id == tenant_id,
+                Customer.contact_id.in_(contact_ids),
+            )
         )
-    )
-    with_account = set(result.scalars().all())
-    return [
-        read.model_copy(update={"customer": read.customer.model_copy(update={"has_account": True})})
-        if read.customer is not None and read.customer.id in with_account
-        else read
-        for read in reads
-    ]
+        customer_ids_by_contact: dict[UUID, list[UUID]] = {}
+        for contact_id, customer_id, password_hash, is_active in result.all():
+            if contact_id is None:
+                continue
+            if is_active:
+                with_account.add(contact_id)
+            customer_ids_by_contact.setdefault(contact_id, []).append(customer_id)
+            if password_hash is not None:
+                chat_reachable.add(contact_id)
+        # Passwordless customers are reachable only via a registered push token.
+        token_candidate_ids = [
+            customer_id
+            for contact_id in contact_ids - chat_reachable
+            for customer_id in customer_ids_by_contact.get(contact_id, [])
+        ]
+        if token_candidate_ids:
+            token_result = await db.execute(
+                select(PushToken.owner_id)
+                .distinct()
+                .where(
+                    PushToken.tenant_id == tenant_id,
+                    PushToken.owner_type == "customer",
+                    PushToken.owner_id.in_(token_candidate_ids),
+                )
+            )
+            with_push_token = set(token_result.scalars().all())
+            for contact_id in contact_ids - chat_reachable:
+                if any(
+                    cid in with_push_token for cid in customer_ids_by_contact.get(contact_id, [])
+                ):
+                    chat_reachable.add(contact_id)
+
+    updated: list[QuoteRequestRead] = []
+    for read in reads:
+        customer_read = read.customer
+        preferred: str | None = None
+        reachable = False
+        if customer_read is not None:
+            preferred = customer_read.preferred_contact_method
+            reachable = customer_read.id in chat_reachable
+            if customer_read.id in with_account:
+                customer_read = customer_read.model_copy(update={"has_account": True})
+        if preferred is None:
+            preferred = normalise_preferred_contact(read.structured_data.get("preferredContact"))
+        updated.append(
+            read.model_copy(
+                update={
+                    "customer": customer_read,
+                    "contact_preferred_method": preferred,
+                    "customer_reachable": reachable,
+                }
+            )
+        )
+    return updated
 
 
 @router.post("", status_code=status.HTTP_201_CREATED, response_model=QuoteRequestRead)

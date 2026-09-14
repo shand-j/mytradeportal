@@ -18,6 +18,14 @@ export type ApiQuoteRequest = {
   requiresCallback?: boolean;
   /** Linked customer (homeowner) account id, when the contact has one. */
   customerId?: string | null;
+  /**
+   * True only when the customer can actually receive in-app chat (claimed
+   * password or push token registered). Auto-provisioned web-form customers
+   * are false — follow up by phone/email instead of chat.
+   */
+  customerReachable?: boolean;
+  /** The customer's preferred follow-up channel, when captured. */
+  contactPreferredMethod?: "email" | "phone" | null;
   createdAt: string;
   /** Preferred visit dates as submitted (camelized list of `{ date }` dicts). */
   preferredDates?: Array<Record<string, unknown>>;
@@ -144,6 +152,8 @@ function mapLead(qr: ApiQuoteRequest): Lead {
     createdAt: qr.createdAt,
     structuredData: qr.structuredData,
     requiresCallback: qr.requiresCallback ?? false,
+    customerReachable: qr.customerReachable,
+    contactPreferredMethod: qr.contactPreferredMethod ?? null,
   };
 }
 

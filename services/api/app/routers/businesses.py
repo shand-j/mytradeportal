@@ -37,6 +37,7 @@ from app.schemas import (
     PublicQuoteRequestCreate,
 )
 from app.security import decode_access_token
+from app.utils.contact_preference import normalise_preferred_contact
 
 router = APIRouter(prefix="/businesses", tags=["Businesses"])
 DbDep = Annotated[AsyncSession, Depends(get_db)]
@@ -242,6 +243,17 @@ async def submit_public_quote_request(
             contact.postcode = data.contact.postcode
         if data.contact.name:
             contact.name = data.contact.name
+
+    # Persist the captured preferred contact method (staff follow-up channel).
+    # Mobile sends it as structured_data.preferredContact (string); the portal
+    # sends {"method": ...}; an explicit contact field wins either way.
+    preferred_method = normalise_preferred_contact(data.contact.preferred_contact_method)
+    if preferred_method is None:
+        preferred_method = normalise_preferred_contact(
+            (data.structured_data or {}).get("preferredContact")
+        )
+    if preferred_method is not None:
+        contact.preferred_contact_method = preferred_method
 
     # Logged-in customer: keep their account details current so repeat quote
     # requests pre-fill (postcode/phone + property profile).

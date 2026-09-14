@@ -6,6 +6,7 @@ import { Button } from "../../components/ui/Button";
 import { Header } from "../../components/ui/Header";
 import { Screen } from "../../components/ui/Screen";
 import { Text } from "../../components/ui/Text";
+import { ContactCustomerCard } from "../../components/trade/ContactCustomerCard";
 import { fetchCommunications } from "../../api/communications";
 import { getLeadSourceLabel } from "../../lib/leadSource";
 import { formatDateUK, formatUrgency } from "../../lib/format";
@@ -114,6 +115,9 @@ export function LeadDetailScreen({
   );
 
   const capturedData = lead.structuredData ?? {};
+  // Only an explicit `false` gates chat: older backends omit the field and
+  // those leads keep the existing chat behaviour.
+  const chatUnavailable = lead.customerReachable === false;
   const hasCapturedDetails = Object.values(capturedData).some(
     (value) =>
       value != null &&
@@ -267,13 +271,35 @@ export function LeadDetailScreen({
             />
           )}
           <Button testID="lead-generate-quote" title="Generate AI quote" onPress={() => onGenerateQuote(lead)} />
-          {onOpenChat && lead.customerId && (
-            <Button
-              testID="lead-open-chat"
-              title="Open chat"
-              variant="outline"
-              onPress={() => onOpenChat(lead)}
+          {chatUnavailable ? (
+            // No app account: in-app chat is never delivered to this customer,
+            // so offer phone/email follow-up instead of the chat actions.
+            <ContactCustomerCard
+              name={lead.customerName}
+              phone={lead.customerPhone}
+              email={lead.customerEmail}
+              preferredMethod={lead.contactPreferredMethod}
             />
+          ) : (
+            <>
+              {onOpenChat && lead.customerId && (
+                <Button
+                  testID="lead-open-chat"
+                  title="Open chat"
+                  variant="outline"
+                  onPress={() => onOpenChat(lead)}
+                />
+              )}
+              <Button
+                testID="lead-request-info"
+                title="Request more info"
+                variant="outline"
+                onPress={() =>
+                  // The lead id is the quote request id, so it opens the customer thread.
+                  router.push({ pathname: "/(trade)/messages", params: { quoteRequestId: lead.id } })
+                }
+              />
+            </>
           )}
           {!lead.customerId && (lead.customerEmail || lead.customerPhone) && (
             <Button
@@ -283,15 +309,6 @@ export function LeadDetailScreen({
               onPress={handleInvite}
             />
           )}
-          <Button
-            testID="lead-request-info"
-            title="Request more info"
-            variant="outline"
-            onPress={() =>
-              // The lead id is the quote request id, so it opens the customer thread.
-              router.push({ pathname: "/(trade)/messages", params: { quoteRequestId: lead.id } })
-            }
-          />
           <Button title="Mark as dead" variant="outline" onPress={handleMarkDead} />
         </View>
       </ScrollView>

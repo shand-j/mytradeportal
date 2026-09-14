@@ -10,6 +10,7 @@ import {
   submitQuoteRequest,
   uploadQuoteRequestImages,
   type EntryChannel,
+  type PreferredContactMethod,
   type QuoteRequestAck,
 } from '../api'
 
@@ -185,6 +186,8 @@ export default function PortalHome() {
   const [name, setName] = useState('')
   const [email, setEmail] = useState('')
   const [phone, setPhone] = useState('')
+  const [preferredContact, setPreferredContact] = useState<PreferredContactMethod | ''>('')
+  const [phoneWarn, setPhoneWarn] = useState(false)
   const [address, setAddress] = useState('')
   const [postcode, setPostcode] = useState('')
   const [category, setCategory] = useState('')
@@ -251,10 +254,14 @@ export default function PortalHome() {
       }
     }
     const property = buildPropertyProfile()
+    const structured: Record<string, unknown> = {}
+    if (Object.keys(property).length > 0) structured.property = property
+    if (preferredContact) structured.preferredContact = preferredContact
     return submitQuoteRequest(slug, {
       name: name.trim(),
       email: email.trim(),
       phone: phone.trim() || undefined,
+      preferred_contact_method: preferredContact || undefined,
       address: address.trim() || undefined,
       postcode: postcode.trim() || undefined,
       category: category || undefined,
@@ -263,13 +270,18 @@ export default function PortalHome() {
       preferred_dates: dates.map((date) => ({ date })),
       sync_check: true,
       entry_channel: entryChannel,
-      structured_data: Object.keys(property).length > 0 ? { property } : undefined,
+      structured_data: Object.keys(structured).length > 0 ? structured : undefined,
     })
   }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     if (!canSubmit || phase === 'submitting') return
+    if (preferredContact === 'phone' && !phone.trim()) {
+      setPhoneWarn(true)
+      return
+    }
+    setPhoneWarn(false)
     setSubmitError('')
     setPhase('submitting')
     try {
@@ -398,16 +410,29 @@ export default function PortalHome() {
             <div className="grid gap-[var(--space-md)] sm:grid-cols-2">
               <div>
                 <label htmlFor="qr-phone" className="spec-label text-[var(--muted)]">
-                  Phone
+                  {preferredContact === 'phone' ? 'Phone (required)' : 'Phone (optional)'}
                 </label>
                 <input
                   id="qr-phone"
                   type="tel"
                   autoComplete="tel"
+                  aria-required={preferredContact === 'phone'}
                   value={phone}
-                  onChange={(e) => setPhone(e.target.value)}
+                  onChange={(e) => {
+                    setPhone(e.target.value)
+                    if (e.target.value.trim()) setPhoneWarn(false)
+                  }}
                   className="mt-[var(--space-2xs)] w-full border-2 border-[var(--ink)] bg-[var(--paper)] px-3.5 py-2.5 text-[15px] focus:outline-none"
                 />
+                {preferredContact === 'phone' && (
+                  <p
+                    className={`mt-[var(--space-2xs)] text-[12px] ${
+                      phoneWarn ? 'text-[var(--accent-dark)]' : 'text-[var(--muted)]'
+                    }`}
+                  >
+                    We'll need your number to call you.
+                  </p>
+                )}
               </div>
               {config.service_categories.length > 0 && (
                 <div>
@@ -429,6 +454,23 @@ export default function PortalHome() {
                   </select>
                 </div>
               )}
+            </div>
+
+            <div>
+              <p className="spec-label text-[var(--muted)]">
+                How should {config.name} reach you?
+              </p>
+              <ChipGroup
+                options={[
+                  { key: 'email', label: 'Email' },
+                  { key: 'phone', label: 'Phone call' },
+                ]}
+                value={preferredContact}
+                onChange={(key) => {
+                  setPreferredContact(key as PreferredContactMethod | '')
+                  if (key !== 'phone') setPhoneWarn(false)
+                }}
+              />
             </div>
 
             <div className="grid gap-[var(--space-md)] sm:grid-cols-2">

@@ -126,10 +126,13 @@ export async function fetchPublicConfigByCode(code: string): Promise<PortalConfi
 
 export type EntryChannel = 'qr' | 'code' | 'widget' | 'direct'
 
+export type PreferredContactMethod = 'email' | 'phone'
+
 export interface QuoteRequestInput {
   name: string
   email: string
   phone?: string
+  preferred_contact_method?: PreferredContactMethod
   address?: string
   postcode?: string
   category?: string
@@ -169,6 +172,9 @@ export async function submitQuoteRequest(
         phone: input.phone || null,
         address: input.address || null,
         postcode: input.postcode || null,
+        ...(input.preferred_contact_method
+          ? { preferred_contact_method: input.preferred_contact_method }
+          : {}),
       },
       category: input.category || null,
       title: input.description.slice(0, 80),

@@ -8,6 +8,10 @@ import { Text } from "../../components/ui/Text";
 import { useBusiness } from "../../theme/ThemeProvider";
 import { ChatMessage, ChatSenderRole, useCommunications } from "../../api/communications";
 import { ApiError } from "../../lib/apiClient";
+import {
+  ContactCustomerCard,
+  ContactCustomerCardProps,
+} from "../../components/trade/ContactCustomerCard";
 
 const clock = () => new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 
@@ -38,6 +42,12 @@ export type ChatThreadProps = {
   initialComposerText?: string;
   /** Hide the assistant info banner (useful when embedded inside another screen). */
   hideBanner?: boolean;
+  /**
+   * Set (business side only) when the customer cannot receive in-app chat:
+   * the composer is replaced with a phone/email contact card. Existing thread
+   * history still renders above it.
+   */
+  unreachableCustomer?: ContactCustomerCardProps;
 };
 
 /** The chat thread UI without a surrounding Screen/Header. */
@@ -46,6 +56,7 @@ export function ChatThread({
   senderRole = "customer",
   initialComposerText,
   hideBanner = false,
+  unreachableCustomer,
 }: ChatThreadProps) {
   const { business } = useBusiness();
   const businessName = business?.name ?? "Your electrician";
@@ -193,7 +204,9 @@ export function ChatThread({
         {!isLoading && !threadError && displayMessages.length === 0 && !typing && (
           <View className="rounded-2xl bg-slate-100 p-4">
             <Text variant="caption" color="secondary" align="center">
-              No messages yet — start the conversation below.
+              {unreachableCustomer
+                ? "No messages yet — this customer can't receive in-app chat."
+                : "No messages yet — start the conversation below."}
             </Text>
           </View>
         )}
@@ -260,28 +273,34 @@ export function ChatThread({
         </View>
       )}
 
-      <View className="flex-row items-center gap-2 border-t border-slate-200 bg-white pt-3">
-        <TextInput
-          testID="chat-composer"
-          className="h-12 flex-1 rounded-xl border border-slate-200 bg-slate-50 px-4 text-base text-slate-900"
-          value={text}
-          onChangeText={setText}
-          placeholder="Type a message…"
-          placeholderTextColor="#94A3B8"
-          multiline
-          maxLength={500}
-          returnKeyType="send"
-          onSubmitEditing={handleSend}
-          blurOnSubmit={false}
-        />
-        <Button
-          testID="chat-send"
-          title="Send"
-          size="sm"
-          onPress={handleSend}
-          disabled={!text.trim() || isSending || isLoading || !isConnected}
-        />
-      </View>
+      {unreachableCustomer ? (
+        <View className="border-t border-slate-200 pt-3">
+          <ContactCustomerCard {...unreachableCustomer} />
+        </View>
+      ) : (
+        <View className="flex-row items-center gap-2 border-t border-slate-200 bg-white pt-3">
+          <TextInput
+            testID="chat-composer"
+            className="h-12 flex-1 rounded-xl border border-slate-200 bg-slate-50 px-4 text-base text-slate-900"
+            value={text}
+            onChangeText={setText}
+            placeholder="Type a message…"
+            placeholderTextColor="#94A3B8"
+            multiline
+            maxLength={500}
+            returnKeyType="send"
+            onSubmitEditing={handleSend}
+            blurOnSubmit={false}
+          />
+          <Button
+            testID="chat-send"
+            title="Send"
+            size="sm"
+            onPress={handleSend}
+            disabled={!text.trim() || isSending || isLoading || !isConnected}
+          />
+        </View>
+      )}
     </KeyboardAvoidingView>
   );
 }
@@ -290,7 +309,7 @@ export type MessagesScreenProps = ChatThreadProps & {
   onBack?: () => void;
 };
 
-export function MessagesScreen({ quoteRequestId, senderRole, initialComposerText, onBack }: MessagesScreenProps) {
+export function MessagesScreen({ quoteRequestId, senderRole, initialComposerText, unreachableCustomer, onBack }: MessagesScreenProps) {
   const { business } = useBusiness();
   const businessName = business?.name ?? "Your electrician";
 
@@ -313,6 +332,7 @@ export function MessagesScreen({ quoteRequestId, senderRole, initialComposerText
         quoteRequestId={quoteRequestId}
         senderRole={senderRole}
         initialComposerText={initialComposerText}
+        unreachableCustomer={unreachableCustomer}
       />
     </Screen>
   );

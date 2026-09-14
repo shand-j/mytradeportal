@@ -61,6 +61,15 @@ export type Lead = {
   structuredData?: Record<string, unknown>;
   /** True when the AI triage flagged this lead as needing a human call back. */
   requiresCallback?: boolean;
+  /**
+   * True only when the customer can receive in-app chat (claimed password or
+   * push token registered). Auto-provisioned web-form customers are false —
+   * chat must not be offered; follow up by phone/email. Undefined when the
+   * backend does not report reachability (treat as reachable).
+   */
+  customerReachable?: boolean;
+  /** The customer's preferred follow-up channel, when captured. */
+  contactPreferredMethod?: "email" | "phone" | null;
 };
 
 export type QuoteStatus =

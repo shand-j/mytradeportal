@@ -6,6 +6,7 @@ import { Header } from "../../components/ui/Header";
 import { Screen } from "../../components/ui/Screen";
 import { Text } from "../../components/ui/Text";
 import { ChatThread } from "../customer/MessagesScreen";
+import { ContactCustomerCard } from "../../components/trade/ContactCustomerCard";
 import { Lead, Quote } from "../../types";
 
 export type RequestInfoScreenProps = {
@@ -50,6 +51,9 @@ function ExternalContact({ lead }: { lead: Lead }) {
 
 export function RequestInfoScreen({ lead, quote, onClose }: RequestInfoScreenProps) {
   const isRegistered = lead.source === "app";
+  // Only an explicit `false` gates chat: older backends omit the field and
+  // those leads keep the existing source-based behaviour.
+  const chatUnavailable = lead.customerReachable === false;
   const title = useMemo(
     () => (quote ? `Request info: ${quote.title}` : `Request info: ${lead.title}`),
     [quote, lead]
@@ -57,9 +61,21 @@ export function RequestInfoScreen({ lead, quote, onClose }: RequestInfoScreenPro
 
   return (
     <Screen>
-      <Header title={isRegistered ? "In-app chat" : "Contact customer"} onBack={onClose} />
+      <Header
+        title={chatUnavailable || !isRegistered ? "Contact customer" : "In-app chat"}
+        onBack={onClose}
+      />
 
-      {isRegistered ? (
+      {chatUnavailable ? (
+        // No app account: in-app chat is never delivered to this customer, so
+        // offer phone/email follow-up instead of the chat thread.
+        <ContactCustomerCard
+          name={lead.customerName}
+          phone={lead.customerPhone}
+          email={lead.customerEmail}
+          preferredMethod={lead.contactPreferredMethod}
+        />
+      ) : isRegistered ? (
         <>
           <View className="mb-3 rounded-2xl bg-slate-100 p-4 gap-1">
             <Text variant="body" weight="semibold">
