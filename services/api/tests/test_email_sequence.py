@@ -23,6 +23,9 @@ from app.email_templates import (
     booking_confirmed as booking_confirmed_template,
 )
 from app.email_templates import (
+    chat_message as chat_message_template,
+)
+from app.email_templates import (
     invoice_sent as invoice_sent_template,
 )
 from app.email_templates import (
@@ -34,9 +37,10 @@ from app.email_templates import (
 from app.email_templates import (
     quote_ready as quote_ready_template,
 )
-from app.models import Contact, Customer, Invoice, Quote, Tenant
+from app.models import Contact, Customer, Invoice, PushToken, Quote, QuoteRequest, Tenant
 from app.rls import bypass_rls_in_session, set_tenant_in_session
 from app.scheduler import run_reminder_tick
+from app.security import get_password_hash
 from httpx import AsyncClient
 from pytest import MonkeyPatch
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -793,3 +797,279 @@ async def test_invoice_reminder_sends_doc_token_when_no_customer(
     html = recorder.calls[0]["html_body"]
     assert "/invoice/" in html
     assert "auth/magic" not in html
+
+
+# ---------------------------------------------------------------------------
+# chat_message template: staff chat email (push + email for app/email prefs)
+# ---------------------------------------------------------------------------
+
+
+async def test_chat_message_template_renders_preview_and_portal_cta() -> None:
+    subject, html, text = chat_message_template(
+        customer_name="Amy",
+        business_name="Acme Electrical",
+        message_preview="We can move the visit to Tuesday if that helps.",
+        reply_url=MAGIC_URL,
+    )
+    assert "Acme Electrical" in subject
+    assert "We can move the visit to Tuesday if that helps." in html
+    assert "Reply in the portal" in html
+    assert MAGIC_URL in html
+    assert MAGIC_URL in text
+
+
+async def _seed_chat_thread(
+    db: AsyncSession, tenant_id: UUID, preferred: str | None
+) -> dict[str, UUID]:
+    """Seed contact → customer (passwordless) → quote request thread + push token."""
+    await set_tenant_in_session(db, tenant_id)
+    contact = Contact(
+        tenant_id=tenant_id,
+        name="Amy Homeowner",
+        email="amy@example.com",
+        preferred_contact_method=preferred,
+    )
+    db.add(contact)
+    await db.flush()
+    customer = Customer(
+        tenant_id=tenant_id,
+        contact_id=contact.id,
+        email=contact.email or "amy@example.com",
+        full_name="Amy Homeowner",
+    )
+    db.add(customer)
+    await db.flush()
+    quote_request = QuoteRequest(
+        tenant_id=tenant_id,
+        contact_id=contact.id,
+        customer_id=customer.id,
+        source="web_form",
+    )
+    db.add(quote_request)
+    db.add(
+        PushToken(
+            tenant_id=tenant_id,
+            owner_type="customer",
+            owner_id=customer.id,
+            token=f"ExponentPushToken[{uuid4().hex}]",
+            platform="ios",
+        )
+    )
+    await db.commit()
+    return {
+        "contact_id": contact.id,
+        "customer_id": customer.id,
+        "quote_request_id": quote_request.id,
+    }
+
+
+async def _staff_chat_message(client: AsyncClient, tenant_id: UUID, quote_request_id: UUID) -> None:
+    response = await client.post(
+        "/communications",
+        headers={"X-Tenant-ID": str(tenant_id)},
+        json={
+            "quote_request_id": str(quote_request_id),
+            "channel": "in_app_chat",
+            "body": "We can move the visit to Tuesday if that helps.",
+        },
+    )
+    assert response.status_code == 201, response.text
+
+
+async def test_staff_chat_message_to_app_preference_sends_push_and_email(
+    admin_client: AsyncClient, db: AsyncSession, monkeypatch: MonkeyPatch
+) -> None:
+    tenant_id = UUID(admin_client.headers["X-Tenant-ID"])
+    ids = await _seed_chat_thread(db, tenant_id, preferred="app")
+
+    push = AsyncMock()
+    monkeypatch.setattr("app.push.send_expo_push", push)
+    magic_link_url = AsyncMock(return_value=MAGIC_URL)
+    monkeypatch.setattr("app.routers.communications.magic_link_url", magic_link_url)
+    recorder = _EmailRecorder()
+    monkeypatch.setattr("app.routers.communications.send_event_email", recorder)
+
+    await _staff_chat_message(admin_client, tenant_id, ids["quote_request_id"])
+
+    # Push still goes out to the registered customer device…
+    push.assert_awaited_once()
+    assert push.await_args is not None
+    assert push.await_args.args[0] != []
+    # …and the customer also gets the chat_message email with a magic link.
+    assert len(recorder.calls) == 1
+    call = recorder.calls[0]
+    assert call["event"] == "chat_message"
+    assert call["template"] == "chat_message"
+    assert call["to_email"] == "amy@example.com"
+    assert "Tuesday" in call["html_body"]
+    assert MAGIC_URL in call["html_body"]
+    assert "Reply in the portal" in call["html_body"]
+    magic_link_url.assert_awaited_once()
+    assert magic_link_url.await_args is not None
+    # No quote linked to the thread: the magic link lands on the quotes list.
+    assert magic_link_url.await_args.args[3] == "/quotes"
+
+
+async def test_staff_chat_message_email_links_quote_when_thread_has_one(
+    admin_client: AsyncClient, db: AsyncSession, monkeypatch: MonkeyPatch
+) -> None:
+    tenant_id = UUID(admin_client.headers["X-Tenant-ID"])
+    ids = await _seed_chat_thread(db, tenant_id, preferred="email")
+    await set_tenant_in_session(db, tenant_id)
+    quote_request = await db.get(QuoteRequest, ids["quote_request_id"])
+    assert quote_request is not None
+    quote = Quote(
+        tenant_id=tenant_id,
+        contact_id=ids["contact_id"],
+        title="Fuse board upgrade",
+        status="sent",
+        subtotal=Decimal("400.00"),
+        vat_amount=Decimal("80.00"),
+        total=Decimal("480.00"),
+    )
+    db.add(quote)
+    await db.flush()
+    quote_request.quote_id = quote.id
+    await db.commit()
+
+    monkeypatch.setattr("app.push.send_expo_push", AsyncMock())
+    magic_link_url = AsyncMock(return_value=MAGIC_URL)
+    monkeypatch.setattr("app.routers.communications.magic_link_url", magic_link_url)
+    recorder = _EmailRecorder()
+    monkeypatch.setattr("app.routers.communications.send_event_email", recorder)
+
+    await _staff_chat_message(admin_client, tenant_id, ids["quote_request_id"])
+
+    assert len(recorder.calls) == 1
+    magic_link_url.assert_awaited_once()
+    assert magic_link_url.await_args is not None
+    assert magic_link_url.await_args.args[3] == f"/quotes/{quote.id}"
+
+
+async def test_staff_chat_message_to_phone_preference_sends_push_but_no_email(
+    admin_client: AsyncClient, db: AsyncSession, monkeypatch: MonkeyPatch
+) -> None:
+    tenant_id = UUID(admin_client.headers["X-Tenant-ID"])
+    ids = await _seed_chat_thread(db, tenant_id, preferred="phone")
+
+    push = AsyncMock()
+    monkeypatch.setattr("app.push.send_expo_push", push)
+    recorder = _EmailRecorder()
+    monkeypatch.setattr("app.routers.communications.send_event_email", recorder)
+
+    await _staff_chat_message(admin_client, tenant_id, ids["quote_request_id"])
+
+    push.assert_awaited_once()
+    assert recorder.calls == []
+
+
+# ---------------------------------------------------------------------------
+# booking_confirmed claim_url: account-claim CTA for passwordless customers
+# ---------------------------------------------------------------------------
+
+
+CLAIM_URL = "https://acme.mytradeportal.co.uk/auth/magic?token=tok-claim&next=/claim"
+
+
+async def test_booking_confirmed_template_with_claim_block() -> None:
+    _, html, text = booking_confirmed_template(
+        customer_name="Amy",
+        business_name="Acme Electrical",
+        job_title="Fuse board replacement",
+        visit_date="Monday 21 September 2026",
+        time_window="09:00 - 11:00",
+        claim_url=CLAIM_URL,
+    )
+    assert "Create your account" in html
+    assert "Manage your quote, booking and invoices in one place" in html
+    assert CLAIM_URL in html
+    assert CLAIM_URL in text
+
+
+async def test_booking_confirmed_template_without_claim_url_has_no_claim_block() -> None:
+    _, html, text = booking_confirmed_template(
+        customer_name="Amy",
+        business_name="Acme Electrical",
+        job_title="Fuse board replacement",
+        visit_date="Monday 21 September 2026",
+        time_window="09:00 - 11:00",
+    )
+    assert "Create your account" not in html
+    assert "Manage your quote, booking and invoices" not in text
+
+
+async def _schedule_job_and_capture_email(
+    client: AsyncClient,
+    db: AsyncSession,
+    monkeypatch: MonkeyPatch,
+    *,
+    with_password: bool,
+) -> dict[str, Any]:
+    tenant = await _create_tenant_via_api(client, f"book-{uuid4().hex[:8]}")
+    tenant_id = UUID(tenant["id"])
+    await set_tenant_in_session(db, tenant_id)
+
+    contact_response = await client.post(
+        "/contacts",
+        headers={"X-Tenant-ID": tenant["id"]},
+        json={"name": "Amy Homeowner", "email": "amy@example.com"},
+    )
+    assert contact_response.status_code == 201, contact_response.text
+    contact = contact_response.json()
+
+    customer = Customer(
+        tenant_id=tenant_id,
+        contact_id=UUID(contact["id"]),
+        email="amy@example.com",
+        full_name="Amy Homeowner",
+        password_hash=get_password_hash("chosen-password-123") if with_password else None,
+    )
+    db.add(customer)
+    await db.commit()
+
+    job_response = await client.post(
+        "/jobs",
+        headers={"X-Tenant-ID": tenant["id"]},
+        json={"contact_id": contact["id"], "title": "Fuse board swap"},
+    )
+    assert job_response.status_code == 201, job_response.text
+    job = job_response.json()
+
+    magic_link_url = AsyncMock(return_value=CLAIM_URL)
+    monkeypatch.setattr("app.routers.jobs.magic_link_url", magic_link_url)
+    recorder = _EmailRecorder()
+    monkeypatch.setattr("app.routers.jobs.send_event_email", recorder)
+
+    patch = await client.patch(
+        f"/jobs/{job['id']}",
+        headers={"X-Tenant-ID": tenant["id"]},
+        json={"scheduled_start": datetime(2026, 9, 21, 9, 0).isoformat()},
+    )
+    assert patch.status_code == 200, patch.text
+    assert len(recorder.calls) == 1
+    return {"call": recorder.calls[0], "magic_link_url": magic_link_url}
+
+
+async def test_booking_confirmed_email_carries_claim_url_for_passwordless_customer(
+    client: AsyncClient, db: AsyncSession, monkeypatch: MonkeyPatch
+) -> None:
+    result = await _schedule_job_and_capture_email(client, db, monkeypatch, with_password=False)
+    call = result["call"]
+    assert call["event"] == "booking_confirmed"
+    assert CLAIM_URL in call["html_body"]
+    assert "Create your account" in call["html_body"]
+    magic_link_url = result["magic_link_url"]
+    magic_link_url.assert_awaited_once()
+    assert magic_link_url.await_args is not None
+    assert magic_link_url.await_args.args[3] == "/claim"
+
+
+async def test_booking_confirmed_email_has_no_claim_cta_for_passworded_customer(
+    client: AsyncClient, db: AsyncSession, monkeypatch: MonkeyPatch
+) -> None:
+    result = await _schedule_job_and_capture_email(client, db, monkeypatch, with_password=True)
+    call = result["call"]
+    assert call["event"] == "booking_confirmed"
+    assert "Create your account" not in call["html_body"]
+    assert CLAIM_URL not in call["html_body"]
+    result["magic_link_url"].assert_not_awaited()

@@ -3,6 +3,7 @@
 from typing import Annotated, Any
 from uuid import UUID
 
+import structlog
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Request, status
 from pydantic import BaseModel
 from sqlalchemy import func, select
@@ -13,7 +14,10 @@ from app.ai_telemetry import ACTOR_CUSTOMER, ACTOR_STAFF, AiCallContext
 from app.config import settings as settings
 from app.database import get_db
 from app.dependencies import TenantDep, _extract_token
-from app.models import Communication, Contact, Customer, QuoteRequest, User
+from app.email import send_event_email
+from app.email_templates import chat_message as chat_message_template
+from app.models import Communication, Contact, Customer, QuoteRequest, Tenant, User
+from app.portal_links import APP_CONTACT_PREFERENCE, magic_link_url
 from app.push import notify_customer, notify_staff
 from app.quote_automation import (
     build_triage_description,
@@ -28,6 +32,7 @@ from app.security import decode_access_token
 
 router = APIRouter(prefix="/communications", tags=["Communications"])
 DbDep = Annotated[AsyncSession, Depends(get_db)]
+logger = structlog.get_logger("api.communications")
 
 
 async def _get_current_actor(
@@ -135,6 +140,71 @@ async def _notify_staff_customer_reply(
     )
 
 
+async def _email_customer_staff_message(
+    db: AsyncSession,
+    tenant_id: UUID,
+    tenant_name: str,
+    quote_request: QuoteRequest,
+    body: str,
+) -> None:
+    """Email the customer a staff chat message (fail-open, never raises).
+
+    Only customers whose contact preference is "app" (app first, email too)
+    or "email" are emailed — phone-only customers are not. The email carries
+    a magic link landing on the portal page for the thread's quote (or the
+    quotes list when the thread has no quote) so "Reply in the portal" needs
+    no password.
+    """
+    try:
+        customer = (
+            await db.get(Customer, quote_request.customer_id)
+            if quote_request.customer_id is not None
+            else None
+        )
+        contact = quote_request.contact
+        preference = (
+            contact.preferred_contact_method
+            if contact is not None and contact.preferred_contact_method is not None
+            else (customer.preferred_contact_method if customer is not None else None)
+        )
+        if preference not in (APP_CONTACT_PREFERENCE, "email"):
+            return
+        tenant = await db.get(Tenant, tenant_id)
+        if customer is None or tenant is None or contact is None or not contact.email:
+            return
+        next_path = (
+            f"/quotes/{quote_request.quote_id}" if quote_request.quote_id is not None else "/quotes"
+        )
+        reply_url = await magic_link_url(db, tenant, customer, next_path)
+        preview = body[:200] + ("…" if len(body) > 200 else "")
+        subject, html, text = chat_message_template(
+            customer_name=contact.name.split()[0] if contact.name else "there",
+            business_name=tenant_name,
+            message_preview=preview or "You have a new message.",
+            reply_url=reply_url,
+        )
+        await send_event_email(
+            to_email=contact.email,
+            subject=subject,
+            html_body=html,
+            text_body=text,
+            event="chat_message",
+            template="chat_message",
+            context={
+                "quote_request_id": str(quote_request.id),
+                "customer_id": str(customer.id),
+                "tenant_id": str(tenant_id),
+            },
+        )
+    except Exception as exc:
+        logger.warning(
+            "chat_message_email_failed",
+            quote_request_id=str(quote_request.id),
+            error_type=type(exc).__name__,
+            error=str(exc)[:300],
+        )
+
+
 async def _notify_customer_staff_message(
     db: AsyncSession,
     tenant_id: UUID,
@@ -145,7 +215,9 @@ async def _notify_customer_staff_message(
     """Notify the customer that the business sent them a chat message.
 
     Without this a staff-started thread (the new-message flow) is invisible to
-    the customer until they happen to open the app.
+    the customer until they happen to open the app. Push is the primary path;
+    app/email-preference customers also get an email with a magic link back
+    into the portal conversation.
     """
     if quote_request.customer_id is None:
         return
@@ -159,6 +231,7 @@ async def _notify_customer_staff_message(
         body=snippet or "You have a new message.",
         link=f"/customer/chat/{quote_request.id}",
     )
+    await _email_customer_staff_message(db, tenant_id, tenant_name, quote_request, body)
 
 
 async def _notify_staff_triage_closed(

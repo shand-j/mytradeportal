@@ -492,13 +492,17 @@ def booking_confirmed(
     address: str | None = None,
     tradie_name: str | None = None,
     tradie_phone: str | None = None,
+    claim_url: str | None = None,
 ) -> tuple[str, str, str]:
     """Booking confirmation after the electrician schedules the job.
 
     ``visit_date``/``time_window`` are pre-formatted display strings (the
     caller owns locale formatting). ``tradie_name``/``tradie_phone`` identify
     who is coming; ``address`` is the visit location. Changes are handled by
-    replying — the sender's Reply-To is the tenant's own address.
+    replying — the sender's Reply-To is the tenant's own address. When the
+    customer has a passwordless (auto-provisioned) account, ``claim_url`` is
+    a magic link into the account-claim page and the email gains a "Create
+    your account" block; customers with a password get no such CTA.
     """
     subject = f"Booking confirmed — {business_name}"
     details_text = f"Date: {visit_date}\nTime: {time_window}\n"
@@ -523,11 +527,26 @@ def booking_confirmed(
             '<tr><td style="padding:4px 12px 4px 0;color:#64748b;">Your tradesperson</td>'
             f'<td style="padding:4px 0;font-weight:600;">{escape(tradie_line)}</td></tr>'
         )
+    if claim_url:
+        text_claim = (
+            "Manage your quote, booking and invoices in one place — "
+            f"create your account here:\n{claim_url}\n\n"
+        )
+        html_claim = f"""\
+    <div style="background:#f1f5f9;border-radius:8px;padding:16px;margin:16px 0;">
+      <p style="margin:0 0 8px;font-weight:600;">Create your account</p>
+      <p style="margin:0 0 12px;color:#475569;font-size:14px;">Manage your quote, booking and invoices in one place.</p>
+      <a href="{claim_url}" style="background:#4F46E5;color:#fff;padding:12px 20px;border-radius:8px;text-decoration:none;font-weight:600;">Create your account</a>
+    </div>
+"""
+    else:
+        text_claim, html_claim = "", ""
     text = (
         f"Hi {customer_name},\n\n"
         f"Good news — {business_name} has booked in your job '{job_title}'.\n\n"
         f"{details_text}\n"
         "Need to change it? Just reply to this email and we'll rearrange.\n\n"
+        f"{text_claim}"
         "— My Trade Portal"
     )
     html = f"""\
@@ -541,6 +560,7 @@ def booking_confirmed(
       <table style="border-collapse:collapse;font-size:14px;">{details_rows}</table>
     </div>
     <p>Need to change it? Just reply to this email and we'll rearrange.</p>
+{html_claim}\
     <p style="color:#64748b;font-size:13px;margin-top:32px;">— My Trade Portal</p>
   </body>
 </html>
@@ -604,6 +624,48 @@ def payment_received(
     </div>
     <p style="color:#475569;font-size:14px;">This email confirms your payment. Stripe will also email you a card receipt for your records.</p>
 {html_review}\
+    <p style="color:#64748b;font-size:13px;margin-top:32px;">— My Trade Portal</p>
+  </body>
+</html>
+"""
+    return subject, html, text
+
+
+def chat_message(
+    *,
+    customer_name: str,
+    business_name: str,
+    message_preview: str,
+    reply_url: str,
+) -> tuple[str, str, str]:
+    """New staff chat message notification. (subject, html, text).
+
+    Sent alongside the push notification for customers whose contact
+    preference is app-or-email (never for phone-only customers).
+    ``message_preview`` is pre-truncated by the caller (~200 chars) and
+    HTML-escaped here; ``reply_url`` is the magic sign-in link that lands on
+    the portal page for the conversation's quote.
+    """
+    subject = f"New message from {business_name}"
+    text = (
+        f"Hi {customer_name},\n\n"
+        f"{business_name} sent you a message:\n\n"
+        f'"{message_preview}"\n\n'
+        f"Reply in the portal:\n{reply_url}\n\n"
+        "— My Trade Portal"
+    )
+    html = f"""\
+<!doctype html>
+<html>
+  <body style="font-family:-apple-system,Segoe UI,Roboto,sans-serif;color:#0f172a;max-width:560px;margin:0 auto;padding:24px;">
+    <h1 style="font-size:22px;margin:0 0 12px;">New message</h1>
+    <p>Hi {customer_name},</p>
+    <p><strong>{business_name}</strong> sent you a message:</p>
+    <p style="background:#f1f5f9;border-radius:8px;padding:12px 16px;font-style:italic;">{escape(message_preview)}</p>
+    <p style="margin:24px 0;">
+      <a href="{reply_url}" style="background:#4F46E5;color:#fff;padding:12px 20px;border-radius:8px;text-decoration:none;font-weight:600;">Reply in the portal</a>
+    </p>
+    <p style="color:#64748b;font-size:13px;">This link signs you in — no password needed. If the button doesn't work, copy and paste it:<br><a href="{reply_url}" style="color:#4F46E5;">{reply_url}</a></p>
     <p style="color:#64748b;font-size:13px;margin-top:32px;">— My Trade Portal</p>
   </body>
 </html>

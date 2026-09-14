@@ -20,9 +20,30 @@ from sqlalchemy import update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import PORTAL_BASE_DOMAIN, PORTAL_MAGIC_TTL_DAYS
-from app.models import Customer, CustomerPortalToken, Tenant
+from app.models import Contact, Customer, CustomerPortalToken, Tenant
 
 _TOKEN_BYTES = 32
+
+# Contact-preference value meaning "the customer has the app — app first,
+# email too". Set when an account is claimed or a customer push token is
+# registered (the strongest 'has the app' signals).
+APP_CONTACT_PREFERENCE = "app"
+
+
+async def flip_preferred_contact_to_app(db: AsyncSession, customer: Customer) -> None:
+    """Flip a customer's contact preference to "app" (idempotent).
+
+    Writes both the CRM contact (staff-facing follow-up channel) and the
+    customer account mirror so either read path sees the app-first signal.
+    Only writes when the value is not already "app". The caller commits with
+    the rest of the surrounding transaction.
+    """
+    if customer.contact_id is not None:
+        contact = await db.get(Contact, customer.contact_id)
+        if contact is not None and contact.preferred_contact_method != APP_CONTACT_PREFERENCE:
+            contact.preferred_contact_method = APP_CONTACT_PREFERENCE
+    if customer.preferred_contact_method != APP_CONTACT_PREFERENCE:
+        customer.preferred_contact_method = APP_CONTACT_PREFERENCE
 
 
 def portal_url(tenant: Tenant, path: str) -> str:

@@ -275,6 +275,25 @@ export async function requestMagicLink(email: string): Promise<void> {
 }
 
 /* ------------------------------------------------------------------ */
+/* Account claim (public)                                              */
+/* ------------------------------------------------------------------ */
+
+/**
+ * POST /customer/auth/claim — one-shot claim token from the
+ * booking-confirmation email + a new password. On success the token is
+ * revoked and the response has the same shape as the magic-link session.
+ */
+export async function claimAccount(token: string, password: string): Promise<MagicAuthResponse> {
+  const res = await fetch(`${API_BASE}/customer/auth/claim`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ token, password }),
+  })
+  if (!res.ok) await parseError(res)
+  return (await res.json()) as MagicAuthResponse
+}
+
+/* ------------------------------------------------------------------ */
 /* Authenticated customer API                                          */
 /* ------------------------------------------------------------------ */
 

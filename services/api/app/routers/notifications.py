@@ -17,6 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.database import get_db
 from app.dependencies import ActiveUserDep, CurrentCustomerDep, TenantDep
 from app.models import Customer, Notification, PushToken, Tenant, User
+from app.portal_links import flip_preferred_contact_to_app
 from app.schemas import NotificationRead, PushTokenCreate, PushTokenRead, UnreadCountRead
 
 if TYPE_CHECKING:
@@ -269,5 +270,12 @@ async def register_customer_push_token(
     customer: CurrentCustomerDep,
     db: DbDep,
 ) -> PushToken:
-    """Upsert the customer's Expo push token for later push delivery."""
-    return await _upsert_push_token(db, customer.tenant_id, "customer", customer.id, data)
+    """Upsert the customer's Expo push token for later push delivery.
+
+    Registering a device token is the strongest "has the app" signal, so the
+    customer's contact preference flips to "app" (app first, email too).
+    """
+    push_token = await _upsert_push_token(db, customer.tenant_id, "customer", customer.id, data)
+    await flip_preferred_contact_to_app(db, customer)
+    await db.commit()
+    return push_token

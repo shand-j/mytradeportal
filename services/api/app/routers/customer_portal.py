@@ -45,7 +45,12 @@ from app.models import (
     QuoteRequest,
     Tenant,
 )
-from app.portal_links import hash_portal_token, magic_link_url, portal_url
+from app.portal_links import (
+    flip_preferred_contact_to_app,
+    hash_portal_token,
+    magic_link_url,
+    portal_url,
+)
 from app.push import notify_staff
 from app.rls import bypass_rls_for_transaction, set_tenant_in_session
 from app.routers.contacts import BLOCKED_CUSTOMER_DETAIL, contact_is_blocked
@@ -53,6 +58,7 @@ from app.routers.public_docs import _invoice_payment_url, hash_document_token
 from app.schemas import (
     AppointmentCreate,
     AppointmentRead,
+    CustomerAccountClaim,
     CustomerLogin,
     CustomerMagicLinkCustomer,
     CustomerMagicLinkExchange,
@@ -606,6 +612,69 @@ async def request_magic_link(
         )
 
     return _MAGIC_REQUEST_RESPONSE
+
+
+_CLAIM_401 = HTTPException(
+    status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or expired claim link"
+)
+
+
+@router.post("/auth/claim", response_model=CustomerMagicLinkTokenResponse)
+@limiter.limit("10/minute")
+async def claim_account(
+    data: CustomerAccountClaim,
+    request: Request,
+    db: DbDep,
+) -> CustomerMagicLinkTokenResponse:
+    """Claim an auto-provisioned customer account: set a password, get a JWT.
+
+    Validates the portal magic-link token under the same rules as the magic
+    exchange (SHA-256 lookup, not expired, not revoked, tenant-pinned to the
+    Host subdomain), then sets the customer's password, revokes the token so
+    each link claims exactly once, and flips the CRM contact's preferred
+    contact method to "app" — the customer now has an account. A customer who
+    already has a password can still claim: the token is proof of inbox
+    ownership, so the claim doubles as a verified password reset.
+    """
+    await bypass_rls_for_transaction(db)
+    record = await db.scalar(
+        select(CustomerPortalToken).where(
+            CustomerPortalToken.token_hash == hash_portal_token(data.token)
+        )
+    )
+    if record is None or record.revoked_at is not None or record.expires_at < datetime.now(UTC):
+        raise _CLAIM_401
+
+    slug = _extract_tenant_slug(request.headers.get("host"))
+    if slug is not None:
+        host_tenant = await db.scalar(
+            select(Tenant).where(Tenant.slug == slug, Tenant.is_active.is_(True))
+        )
+        if host_tenant is None or host_tenant.id != record.tenant_id:
+            raise _CLAIM_401
+
+    customer = await db.get(Customer, record.customer_id)
+    if customer is None or not customer.is_active or customer.tenant_id != record.tenant_id:
+        raise _CLAIM_401
+
+    customer.password_hash = get_password_hash(data.password)
+    record.revoked_at = datetime.now(UTC)
+    record.last_used_at = datetime.now(UTC)
+    await flip_preferred_contact_to_app(db, customer)
+    await db.commit()
+
+    from app.config import settings
+
+    session_expires_at = datetime.now(UTC) + timedelta(
+        minutes=settings.auth_access_token_expire_minutes
+    )
+    return CustomerMagicLinkTokenResponse(
+        access_token=_issue_token(customer),
+        customer=CustomerMagicLinkCustomer(
+            id=customer.id, full_name=customer.full_name, email=customer.email
+        ),
+        expires_at=session_expires_at,
+    )
 
 
 @router.get("/me", response_model=CustomerRead)

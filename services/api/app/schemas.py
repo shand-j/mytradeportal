@@ -1419,6 +1419,17 @@ class CustomerMagicLinkTokenResponse(BaseModel):
     expires_at: datetime
 
 
+class CustomerAccountClaim(BaseModel):
+    """Claim payload for POST /customer/auth/claim.
+
+    The magic-link token proves inbox ownership; the password turns the
+    auto-provisioned passwordless account into a full login account.
+    """
+
+    token: str = Field(..., min_length=1, max_length=255)
+    password: str = Field(..., min_length=8, max_length=128)
+
+
 class PropertyCreate(BaseModel):
     customer_id: UUID
     address: str = Field(..., min_length=1, max_length=2000)

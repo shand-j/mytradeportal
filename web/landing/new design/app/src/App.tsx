@@ -17,6 +17,7 @@ import PortalQuoteDetail from './portal/pages/PortalQuoteDetail'
 import PortalInvoices from './portal/pages/PortalInvoices'
 import PortalInvoiceDetail from './portal/pages/PortalInvoiceDetail'
 import PortalResetPassword from './portal/pages/PortalResetPassword'
+import PortalClaim from './portal/pages/PortalClaim'
 import CodeEntryPage from './portal/pages/CodeEntryPage'
 
 export default function App() {
@@ -30,6 +31,7 @@ export default function App() {
         <Routes>
           <Route path="/" element={<PortalHome />} />
           <Route path="/auth/magic" element={<PortalMagicAuth />} />
+          <Route path="/claim" element={<PortalClaim />} />
           <Route path="/quotes" element={<PortalQuotes />} />
           <Route path="/quotes/:id" element={<PortalQuoteDetail />} />
           <Route path="/invoices" element={<PortalInvoices />} />

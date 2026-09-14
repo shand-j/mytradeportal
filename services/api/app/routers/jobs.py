@@ -16,8 +16,10 @@ propagate back onto the job.
 
 Booking confirmation: the same PATCH that sets or moves a job's
 scheduled_start also emails the customer a ``booking_confirmed`` email
-(best-effort, tenant-branded, Reply-To the tenant). Unrelated PATCHes and
-unscheduling send nothing.
+(best-effort, tenant-branded, Reply-To the tenant). Passwordless
+(auto-provisioned) customers get an account-claim magic-link CTA in that
+email; customers with a password do not. Unrelated PATCHes and unscheduling
+send nothing.
 """
 
 from datetime import datetime
@@ -34,7 +36,8 @@ from app.database import get_db
 from app.dependencies import TenantDep
 from app.email import send_event_email
 from app.email_templates import booking_confirmed as booking_confirmed_template
-from app.models import Appointment, Contact, Job, Quote, Tenant, User
+from app.models import Appointment, Contact, Customer, Job, Quote, Tenant, User
+from app.portal_links import magic_link_url
 from app.push import notify_staff
 from app.rls import set_tenant_in_session
 from app.schemas import JobCreate, JobRead, JobUpdate
@@ -172,6 +175,20 @@ async def _email_booking_confirmed(db: AsyncSession, tenant_id: UUID, job: Job) 
         else:
             time_window = f"from {start_time}"
         address_parts = [part for part in (job.address, job.postcode) if part]
+        # Account-claim CTA only for passwordless (auto-provisioned) customers:
+        # the magic link lands on the portal claim page where they set a
+        # password. Customers who already chose a password get no CTA.
+        claim_url: str | None = None
+        if tenant_row is not None:
+            customer = await db.scalar(
+                select(Customer).where(
+                    Customer.tenant_id == tenant_id,
+                    Customer.contact_id == contact.id,
+                    Customer.is_active.is_(True),
+                )
+            )
+            if customer is not None and customer.password_hash is None:
+                claim_url = await magic_link_url(db, tenant_row, customer, "/claim")
         subject, html, text = booking_confirmed_template(
             customer_name=contact.name.split()[0] if contact.name else "there",
             business_name=business_name,
@@ -183,6 +200,7 @@ async def _email_booking_confirmed(db: AsyncSession, tenant_id: UUID, job: Job) 
             tradie_phone=(
                 tenant_row.phone if tenant_row is not None and tenant_row.phone else None
             ),
+            claim_url=claim_url,
         )
         await send_event_email(
             to_email=contact.email,
