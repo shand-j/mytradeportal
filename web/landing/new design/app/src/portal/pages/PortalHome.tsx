@@ -19,6 +19,153 @@ type Phase = 'form' | 'submitting' | 'chat' | 'done'
 const SUBMIT_TIMEOUT_MS = 15_000
 const MAX_PHOTOS = 5
 
+/** Loose UK postcode shape — soft hint only, never blocks submission. */
+const POSTCODE_RE = /^[A-Za-z]{1,2}\d[A-Za-z\d]?\s*\d[A-Za-z]{2}$/
+
+/* Property profile options — mirror the mobile app's intake option sets. */
+const PROPERTY_TYPES = [
+  { key: 'detached', label: 'Detached' },
+  { key: 'semi', label: 'Semi-detached' },
+  { key: 'terrace', label: 'Terrace' },
+  { key: 'bungalow', label: 'Bungalow' },
+  { key: 'flat', label: 'Flat' },
+]
+const PROPERTY_AGES = [
+  { key: 'pre_1930', label: 'Pre-1930' },
+  { key: '1930-1960', label: '1930–1960' },
+  { key: '1960-1980', label: '1960–1980' },
+  { key: '1980-2000', label: '1980–2000' },
+  { key: 'post_2000', label: 'Post-2000' },
+  { key: 'not_sure', label: 'Not sure' },
+]
+const TENURES = [
+  { key: 'owner', label: 'Owner' },
+  { key: 'tenant', label: 'Tenant' },
+  { key: 'landlord', label: 'Landlord' },
+  { key: 'housing_assoc', label: 'Housing association' },
+]
+const FUSE_STYLES = [
+  { key: 'modern_rcbo', label: 'Modern RCBO' },
+  { key: 'rcd_split', label: 'RCD split-load' },
+  { key: 'rewireable', label: 'Rewireable fuses' },
+  { key: 'not_sure', label: 'Not sure' },
+]
+const KNOWN_ISSUES = [
+  { key: 'tripping', label: 'Tripping' },
+  { key: 'flickering', label: 'Flickering lights' },
+  { key: 'smell', label: 'Burning smell' },
+  { key: 'buzzing', label: 'Buzzing' },
+  { key: 'dead_sockets', label: 'Dead sockets' },
+]
+
+function OptionChip({
+  label,
+  selected,
+  onToggle,
+}: {
+  label: string
+  selected: boolean
+  onToggle: () => void
+}) {
+  return (
+    <button
+      type="button"
+      aria-pressed={selected}
+      onClick={onToggle}
+      className={`min-h-[40px] border-2 px-3 py-1.5 text-[13px] font-semibold ${
+        selected
+          ? 'border-[var(--ink)] bg-[var(--accent)] text-[var(--ink-deep)]'
+          : 'border-[var(--rule)] bg-[var(--paper)] text-[var(--ink)]'
+      }`}
+    >
+      {label}
+    </button>
+  )
+}
+
+function ChipGroup({
+  options,
+  value,
+  onChange,
+}: {
+  options: { key: string; label: string }[]
+  value: string
+  onChange: (key: string) => void
+}) {
+  return (
+    <div className="mt-[var(--space-2xs)] flex flex-wrap gap-2">
+      {options.map((option) => (
+        <OptionChip
+          key={option.key}
+          label={option.label}
+          selected={value === option.key}
+          onToggle={() => onChange(value === option.key ? '' : option.key)}
+        />
+      ))}
+    </div>
+  )
+}
+
+function YesNoChips({
+  value,
+  onChange,
+}: {
+  value: boolean | null
+  onChange: (value: boolean | null) => void
+}) {
+  return (
+    <div className="mt-[var(--space-2xs)] flex flex-wrap gap-2">
+      <OptionChip
+        label="Yes"
+        selected={value === true}
+        onToggle={() => onChange(value === true ? null : true)}
+      />
+      <OptionChip
+        label="No"
+        selected={value === false}
+        onToggle={() => onChange(value === false ? null : false)}
+      />
+    </div>
+  )
+}
+
+function NumberSelect({
+  id,
+  label,
+  value,
+  max,
+  min = 0,
+  onChange,
+}: {
+  id: string
+  label: string
+  value: number | null
+  max: number
+  min?: number
+  onChange: (value: number | null) => void
+}) {
+  return (
+    <div>
+      <label htmlFor={id} className="spec-label text-[var(--muted)]">
+        {label}
+      </label>
+      <select
+        id={id}
+        value={value === null ? '' : String(value)}
+        onChange={(e) => onChange(e.target.value === '' ? null : Number(e.target.value))}
+        className="mt-[var(--space-2xs)] w-full border-2 border-[var(--ink)] bg-[var(--paper)] px-3.5 py-2.5 text-[15px] focus:outline-none"
+      >
+        <option value="">—</option>
+        {Array.from({ length: max - min + 1 }, (_, i) => min + i).map((n) => (
+          <option key={n} value={n}>
+            {n}
+          </option>
+        ))}
+      </select>
+    </div>
+  )
+}
+
 interface GuestThread {
   requestId: string
   threadToken: string
@@ -38,12 +185,26 @@ export default function PortalHome() {
   const [name, setName] = useState('')
   const [email, setEmail] = useState('')
   const [phone, setPhone] = useState('')
+  const [address, setAddress] = useState('')
+  const [postcode, setPostcode] = useState('')
   const [category, setCategory] = useState('')
   const [description, setDescription] = useState('')
   const [photos, setPhotos] = useState<File[]>([])
   const [dates, setDates] = useState<string[]>([])
   const [newDate, setNewDate] = useState('')
   const fileInputRef = useRef<HTMLInputElement>(null)
+
+  const [propertyOpen, setPropertyOpen] = useState(false)
+  const [propType, setPropType] = useState('')
+  const [propAge, setPropAge] = useState('')
+  const [bedrooms, setBedrooms] = useState<number | null>(null)
+  const [receptions, setReceptions] = useState<number | null>(null)
+  const [floors, setFloors] = useState<number | null>(null)
+  const [tenure, setTenure] = useState('')
+  const [flatAccess, setFlatAccess] = useState<boolean | null>(null)
+  const [parking, setParking] = useState<boolean | null>(null)
+  const [fuseBoardStyle, setFuseBoardStyle] = useState('')
+  const [knownIssues, setKnownIssues] = useState<string[]>([])
 
   const photoPreviews = useMemo(
     () => photos.map((file) => ({ file, url: URL.createObjectURL(file) })),
@@ -53,6 +214,24 @@ export default function PortalHome() {
   const entryChannel: EntryChannel = searchParams.get('ch') === 'qr' ? 'qr' : 'direct'
   const canSubmit =
     name.trim().length > 0 && email.trim().length > 0 && description.trim().length >= 5
+
+  const postcodeLooksOff = postcode.trim().length > 0 && !POSTCODE_RE.test(postcode.trim())
+
+  /** Only the property fields the customer actually answered. */
+  function buildPropertyProfile(): Record<string, unknown> {
+    const property: Record<string, unknown> = {}
+    if (propType) property.type = propType
+    if (propAge) property.age = propAge
+    if (bedrooms !== null) property.bedrooms = bedrooms
+    if (receptions !== null) property.receptions = receptions
+    if (floors !== null) property.floors = floors
+    if (tenure) property.tenure = tenure
+    if (propType === 'flat' && flatAccess !== null) property.flatAccess = flatAccess
+    if (parking !== null) property.parking = parking
+    if (fuseBoardStyle) property.fuseBoardStyle = fuseBoardStyle
+    if (knownIssues.length > 0) property.knownIssues = knownIssues
+    return property
+  }
 
   function addPhotos(files: FileList | null) {
     if (!files) return
@@ -71,16 +250,20 @@ export default function PortalHome() {
         if (status !== 404 && status !== 501 && status !== 405) throw err
       }
     }
+    const property = buildPropertyProfile()
     return submitQuoteRequest(slug, {
       name: name.trim(),
       email: email.trim(),
       phone: phone.trim() || undefined,
+      address: address.trim() || undefined,
+      postcode: postcode.trim() || undefined,
       category: category || undefined,
       description: description.trim(),
       media_urls: mediaUrls,
       preferred_dates: dates.map((date) => ({ date })),
       sync_check: true,
       entry_channel: entryChannel,
+      structured_data: Object.keys(property).length > 0 ? { property } : undefined,
     })
   }
 
@@ -248,6 +431,42 @@ export default function PortalHome() {
               )}
             </div>
 
+            <div className="grid gap-[var(--space-md)] sm:grid-cols-2">
+              <div>
+                <label htmlFor="qr-address" className="spec-label text-[var(--muted)]">
+                  Address
+                </label>
+                <input
+                  id="qr-address"
+                  type="text"
+                  autoComplete="address-line1"
+                  value={address}
+                  onChange={(e) => setAddress(e.target.value)}
+                  placeholder="House number and street"
+                  className="mt-[var(--space-2xs)] w-full border-2 border-[var(--ink)] bg-[var(--paper)] px-3.5 py-2.5 text-[15px] focus:outline-none"
+                />
+              </div>
+              <div>
+                <label htmlFor="qr-postcode" className="spec-label text-[var(--muted)]">
+                  Postcode
+                </label>
+                <input
+                  id="qr-postcode"
+                  type="text"
+                  autoComplete="postal-code"
+                  value={postcode}
+                  onChange={(e) => setPostcode(e.target.value)}
+                  placeholder="e.g. SW1A 1AA"
+                  className="mt-[var(--space-2xs)] w-full border-2 border-[var(--ink)] bg-[var(--paper)] px-3.5 py-2.5 text-[15px] uppercase focus:outline-none"
+                />
+                {postcodeLooksOff && (
+                  <p className="mt-[var(--space-2xs)] text-[12px] text-[var(--accent-dark)]">
+                    That doesn't look like a UK postcode — worth a double-check.
+                  </p>
+                )}
+              </div>
+            </div>
+
             <div>
               <label htmlFor="qr-description" className="spec-label text-[var(--muted)]">
                 What needs doing? *
@@ -261,6 +480,113 @@ export default function PortalHome() {
                 placeholder="e.g. Fuse box keeps tripping when the kettle and shower run at the same time…"
                 className="mt-[var(--space-2xs)] w-full border-2 border-[var(--ink)] bg-[var(--paper)] px-3.5 py-2.5 text-[15px] leading-relaxed focus:outline-none"
               />
+            </div>
+
+            <div className="border-2 border-[var(--rule)]">
+              <button
+                type="button"
+                aria-expanded={propertyOpen}
+                aria-controls="qr-property-panel"
+                onClick={() => setPropertyOpen((open) => !open)}
+                className="flex w-full items-center justify-between gap-3 px-4 py-3 text-left"
+              >
+                <span>
+                  <span className="spec-label block text-[var(--ink)]">About your property</span>
+                  <span className="mt-1 block text-[12px] normal-case tracking-normal text-[var(--muted)]">
+                    Optional — helps us quote faster and more accurately.
+                  </span>
+                </span>
+                <span aria-hidden className="text-[18px] font-bold text-[var(--muted)]">
+                  {propertyOpen ? '−' : '+'}
+                </span>
+              </button>
+              {propertyOpen && (
+                <div
+                  id="qr-property-panel"
+                  className="space-y-[var(--space-md)] border-t-2 border-[var(--rule)] px-4 py-[var(--space-md)]"
+                >
+                  <div>
+                    <p className="spec-label text-[var(--muted)]">Property type</p>
+                    <ChipGroup options={PROPERTY_TYPES} value={propType} onChange={setPropType} />
+                  </div>
+
+                  <div>
+                    <p className="spec-label text-[var(--muted)]">Property age</p>
+                    <ChipGroup options={PROPERTY_AGES} value={propAge} onChange={setPropAge} />
+                  </div>
+
+                  <div className="grid grid-cols-3 gap-[var(--space-sm)]">
+                    <NumberSelect
+                      id="qr-bedrooms"
+                      label="Bedrooms"
+                      value={bedrooms}
+                      max={10}
+                      onChange={setBedrooms}
+                    />
+                    <NumberSelect
+                      id="qr-receptions"
+                      label="Receptions"
+                      value={receptions}
+                      max={10}
+                      onChange={setReceptions}
+                    />
+                    <NumberSelect
+                      id="qr-floors"
+                      label="Floors"
+                      value={floors}
+                      min={1}
+                      max={5}
+                      onChange={setFloors}
+                    />
+                  </div>
+
+                  <div>
+                    <p className="spec-label text-[var(--muted)]">You are the…</p>
+                    <ChipGroup options={TENURES} value={tenure} onChange={setTenure} />
+                  </div>
+
+                  {propType === 'flat' && (
+                    <div>
+                      <p className="spec-label text-[var(--muted)]">Lift access?</p>
+                      <YesNoChips value={flatAccess} onChange={setFlatAccess} />
+                    </div>
+                  )}
+
+                  <div>
+                    <p className="spec-label text-[var(--muted)]">Van parking available?</p>
+                    <YesNoChips value={parking} onChange={setParking} />
+                  </div>
+
+                  <div>
+                    <p className="spec-label text-[var(--muted)]">Fuse board style</p>
+                    <ChipGroup
+                      options={FUSE_STYLES}
+                      value={fuseBoardStyle}
+                      onChange={setFuseBoardStyle}
+                    />
+                  </div>
+
+                  <div>
+                    <p className="spec-label text-[var(--muted)]">Anything odd? (select any)</p>
+                    <div className="mt-[var(--space-2xs)] flex flex-wrap gap-2">
+                      {KNOWN_ISSUES.map((issue) => (
+                        <OptionChip
+                          key={issue.key}
+                          label={issue.label}
+                          selected={knownIssues.includes(issue.key)}
+                          onToggle={() =>
+                            setKnownIssues((prev) =>
+                              prev.includes(issue.key)
+                                ? prev.filter((k) => k !== issue.key)
+                                : [...prev, issue.key],
+                            )
+                          }
+                        />
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
 
             <div>

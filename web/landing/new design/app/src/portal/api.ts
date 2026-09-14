@@ -130,12 +130,15 @@ export interface QuoteRequestInput {
   name: string
   email: string
   phone?: string
+  address?: string
+  postcode?: string
   category?: string
   description: string
   media_urls: string[]
   preferred_dates: { date: string }[]
   sync_check: boolean
   entry_channel: EntryChannel
+  structured_data?: Record<string, unknown>
 }
 
 export interface AiCheck {
@@ -160,7 +163,13 @@ export async function submitQuoteRequest(
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      contact: { name: input.name, email: input.email, phone: input.phone || null },
+      contact: {
+        name: input.name,
+        email: input.email,
+        phone: input.phone || null,
+        address: input.address || null,
+        postcode: input.postcode || null,
+      },
       category: input.category || null,
       title: input.description.slice(0, 80),
       raw_text: input.description,
@@ -168,6 +177,7 @@ export async function submitQuoteRequest(
       preferred_dates: input.preferred_dates,
       sync_check: input.sync_check,
       entry_channel: input.entry_channel,
+      structured_data: input.structured_data ?? {},
     }),
   })
   if (!res.ok) await parseError(res)
