@@ -79,6 +79,8 @@ class TenantUpdate(BaseModel):
     # Plan / integrations
     plan_tier: str | None = Field(default=None, alias="planTier")
     google_place_id: str | None = Field(default=None, alias="googlePlaceId")
+    # Public review link (Google Reviews etc.) surfaced on the customer portal.
+    review_url: str | None = Field(default=None, alias="reviewUrl")
 
     # Workload metrics captured during onboarding (feed the client-side
     # time-saved metric; persisted verbatim into tenant.settings).
@@ -1202,6 +1204,10 @@ class BusinessPublicConfig(BaseModel):
     )
     contact_phone: str | None = Field(default=None, serialization_alias="contactPhone")
     address: str | None = None
+    # Tenant contact email homeowners can reply to, and the public review link
+    # (from tenant settings) the portal surfaces after completed work.
+    reply_email: str | None = Field(default=None, serialization_alias="replyEmail")
+    review_url: str | None = Field(default=None, serialization_alias="reviewUrl")
 
 
 class PublicContactInput(BaseModel):
@@ -1231,6 +1237,26 @@ class PublicQuoteRequestCreate(BaseModel):
     preferred_dates: list[dict[str, Any]] = Field(default_factory=list)
     safety_review_required: bool = False
     marketing_consent: bool = False
+    # When true the ack awaits a single bounded quick AI check (hard timeout,
+    # fail-open) and may carry an inline follow-up question + guest thread
+    # token. The background draft runs regardless.
+    sync_check: bool = False
+    # How the customer arrived at the intake form; recorded on AI telemetry.
+    entry_channel: Literal["qr", "code", "widget", "direct", "app"] | None = None
+
+
+class PublicIntakeCheck(BaseModel):
+    """Result of the quick AI check embedded in the quote-request ack.
+
+    ``status`` is ``questions`` (a follow-up question + guest thread token are
+    included), ``ok`` (the AI needs nothing more) or ``unavailable`` (the
+    check timed out or errored — the background draft still runs).
+    """
+
+    status: str
+    question: str | None = None
+    thread_token: str | None = None
+    thread_expires_at: datetime | None = None
 
 
 class PublicQuoteRequestAck(BaseModel):
@@ -1239,6 +1265,7 @@ class PublicQuoteRequestAck(BaseModel):
     id: UUID
     status: str
     reference: str
+    ai_check: PublicIntakeCheck | None = None
 
 
 class CustomerCreate(BaseModel):
@@ -1305,10 +1332,27 @@ class CustomerRegister(BaseModel):
     )
 
 
-class CustomerQuoteAccept(BaseModel):
-    """Acceptance payload: the customer reconfirms preferred visit dates."""
+class PreferredDateInput(BaseModel):
+    """One preferred visit date in the portal client shape (``{"date": "YYYY-MM-DD"}``)."""
 
-    preferred_dates: list[str] | None = None
+    date: str = Field(..., min_length=1, max_length=40)
+
+
+class CustomerQuoteAccept(BaseModel):
+    """Acceptance payload: the customer reconfirms preferred visit dates.
+
+    Accepts both the app shape (``["Fri 12 Sep", ...]``) and the portal shape
+    (``[{"date": "YYYY-MM-DD"}, ...]``); both normalise to the same
+    ``accepted_dates`` string list stored on the quote.
+    """
+
+    preferred_dates: list[str | PreferredDateInput] | None = None
+
+    def preferred_date_strings(self) -> list[str] | None:
+        """Normalise both accepted shapes to the stored string list."""
+        if self.preferred_dates is None:
+            return None
+        return [d if isinstance(d, str) else d.date for d in self.preferred_dates]
 
 
 class CustomerLogin(BaseModel):
@@ -1343,6 +1387,35 @@ class CustomerTokenResponse(BaseModel):
     # responses. Post-auth tenant resolution, so this is never disclosed
     # before credentials check out.
     tenants: list[CustomerTenantAssociation] = Field(default_factory=list)
+
+
+class CustomerMagicLinkExchange(BaseModel):
+    """Token exchange payload for POST /customer/auth/magic."""
+
+    token: str = Field(..., min_length=1, max_length=255)
+
+
+class CustomerMagicLinkRequest(BaseModel):
+    """Magic-link request payload for POST /customer/auth/magic/request."""
+
+    email: EmailStr
+
+
+class CustomerMagicLinkCustomer(BaseModel):
+    """The customer identity returned by the magic-link exchange."""
+
+    id: UUID
+    full_name: str
+    email: str
+
+
+class CustomerMagicLinkTokenResponse(BaseModel):
+    """Session returned by the magic-link exchange (portal web client)."""
+
+    access_token: str
+    token_type: str = "bearer"
+    customer: CustomerMagicLinkCustomer
+    expires_at: datetime
 
 
 class PropertyCreate(BaseModel):

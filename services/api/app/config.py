@@ -81,3 +81,21 @@ STRIPE_CONNECT_CLIENT_ID: str = os.environ.get("STRIPE_CONNECT_CLIENT_ID", "").s
 # only ever hands out PaymentIntent client secrets; the publishable key is
 # documented here so the landing site build can pick it up. Public by design.
 STRIPE_PUBLISHABLE_KEY: str = os.environ.get("STRIPE_PUBLISHABLE_KEY", "").strip()
+
+# --- Public intake: inline AI check + guest chat threads --------------------
+# The sync intake check is a single cheap-model LLM call the public
+# quote-request endpoint optionally awaits (sync_check=true). It must never
+# block the submission: a hard asyncio timeout bounds it and every failure
+# fails open to status "unavailable".
+INTAKE_TRIAGE_MODEL: str = os.environ.get("INTAKE_TRIAGE_MODEL", "gpt-4o-mini").strip()
+INTAKE_TRIAGE_TIMEOUT_SECONDS: float = float(os.environ.get("INTAKE_TRIAGE_TIMEOUT_SECONDS", "12"))
+# Lifetime of the guest-scoped JWT that lets an unauthenticated homeowner
+# answer AI triage questions inline on their quote-request thread.
+GUEST_THREAD_TTL_MINUTES: int = int(os.environ.get("GUEST_THREAD_TTL_MINUTES", "120"))
+
+# --- Customer portal (magic-link auth on per-tenant subdomains) --------------
+# Base domain for tenant portal subdomains: ``https://{slug}.{PORTAL_BASE_DOMAIN}``.
+PORTAL_BASE_DOMAIN: str = os.environ.get("PORTAL_BASE_DOMAIN", "mytradeportal.co.uk").strip()
+# Days a customer portal magic-link token stays valid; re-issuing revokes the
+# customer's earlier tokens so only the newest emailed link works.
+PORTAL_MAGIC_TTL_DAYS: int = int(os.environ.get("PORTAL_MAGIC_TTL_DAYS", "30"))

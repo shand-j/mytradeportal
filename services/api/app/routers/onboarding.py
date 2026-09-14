@@ -118,6 +118,12 @@ async def update_onboarding_step(
     if metrics:
         tenant.settings = {**(tenant.settings or {}), **metrics}
 
+    # Public review link captured during onboarding (business identity step)
+    # lands in tenant.settings so the portal public config can surface it.
+    review_url = data.value.get("review_url")
+    if isinstance(review_url, str) and review_url:
+        tenant.settings = {**(tenant.settings or {}), "review_url": review_url}
+
     if step_name == "branding":
         # Branding captured in onboarding must land in tenant.settings — that
         # is what Tenant.primary_color and the white-label public config read.

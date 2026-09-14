@@ -52,7 +52,7 @@ from app.config import (
     ROLLUP_TICK_SECONDS,
 )
 from app.database import AsyncSessionLocal
-from app.email import send_event_email
+from app.email import resolve_customer_magic_link, send_event_email
 from app.email_templates import invoice_reminder as invoice_reminder_template
 from app.email_templates import quote_reminder as quote_reminder_template
 from app.fx import store_fx_rate
@@ -184,6 +184,17 @@ async def _process_quote_reminders(
             continue
 
         contact = await db.get(Contact, quote.contact_id)
+        # Magic portal link when the contact has a customer account. When one
+        # is sent we skip minting a fresh document token — minting revokes the
+        # view link emailed at send time for no benefit.
+        portal_url = await resolve_customer_magic_link(db, tenant, contact, f"/quotes/{quote.id}")
+        view_url = (
+            None
+            if portal_url is not None
+            else await _document_view_url(
+                db, "quote", quote.id, tenant.id, contact.email if contact else None
+            )
+        )
         subject, html, text = quote_reminder_template(
             customer_name=contact.name.split()[0]
             if contact is not None and contact.name
@@ -191,9 +202,8 @@ async def _process_quote_reminders(
             business_name=tenant.name,
             quote_title=quote.title,
             quote_total=f"£{quote.total}",
-            view_url=await _document_view_url(
-                db, "quote", quote.id, tenant.id, contact.email if contact else None
-            ),
+            view_url=view_url,
+            portal_url=portal_url,
         )
         delivered = await send_event_email(
             to_email=contact.email if contact is not None else None,
@@ -276,6 +286,18 @@ async def _process_invoice_reminders(
 
         contact = await db.get(Contact, invoice.contact_id)
         sequence = count + 1
+        # Same magic-link rule as quote reminders: a portal sign-in link
+        # replaces the document token so the emailed view link stays valid.
+        portal_url = await resolve_customer_magic_link(
+            db, tenant, contact, f"/invoices/{invoice.id}"
+        )
+        view_url = (
+            None
+            if portal_url is not None
+            else await _document_view_url(
+                db, "invoice", invoice.id, tenant.id, contact.email if contact else None
+            )
+        )
         subject, html, text = invoice_reminder_template(
             customer_name=contact.name.split()[0]
             if contact is not None and contact.name
@@ -286,9 +308,8 @@ async def _process_invoice_reminders(
             payment_details=_tenant_payment_details(
                 tenant.settings, reference=invoice.invoice_number
             ),
-            view_url=await _document_view_url(
-                db, "invoice", invoice.id, tenant.id, contact.email if contact else None
-            ),
+            view_url=view_url,
+            portal_url=portal_url,
         )
         delivered = await send_event_email(
             to_email=contact.email if contact is not None else None,

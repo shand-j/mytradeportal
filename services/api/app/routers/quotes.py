@@ -42,7 +42,7 @@ from app.calculations import (
 from app.config import settings
 from app.database import get_db
 from app.dependencies import AiAllowanceDep, CurrentUserDep, TenantDep
-from app.email import send_event_email
+from app.email import resolve_customer_magic_link, send_event_email
 from app.email_templates import quote_ready as quote_ready_template
 from app.limiter import limiter, tenant_key
 from app.models import (
@@ -332,6 +332,9 @@ async def send_quote(
         contact_email=contact_email,
     )
     view_url = public_document_url("quote", raw_token)
+    # Magic portal sign-in link when the contact has a customer account;
+    # otherwise the email carries the view-only document link alone.
+    portal_url = await resolve_customer_magic_link(db, tenant_row, contact, f"/quotes/{quote.id}")
     business_name = tenant_row.name if tenant_row is not None else "Your electrician"
     subject, html, text = quote_ready_template(
         customer_name=contact.name.split()[0] if contact is not None and contact.name else "there",
@@ -339,6 +342,7 @@ async def send_quote(
         quote_title=quote.title,
         quote_total=f"£{quote.total}",
         view_url=view_url,
+        portal_url=portal_url,
     )
     await send_event_email(
         to_email=contact.email if contact is not None else None,

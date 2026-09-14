@@ -13,12 +13,54 @@ from typing import Any
 import aiosmtplib as aiosmtplib
 import httpx as httpx
 import structlog
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings as settings
+from app.models import Contact, Customer, Tenant
+from app.portal_links import magic_link_url
 
 logger = structlog.get_logger("api.email")
 
 RESEND_ENDPOINT = "https://api.resend.com/emails"
+
+
+async def resolve_customer_magic_link(
+    db: AsyncSession,
+    tenant: Tenant | None,
+    contact: Contact | None,
+    next_path: str,
+) -> str | None:
+    """Magic portal sign-in link for a document's contact, or ``None``.
+
+    Returns ``None`` when the contact has no active linked ``Customer``
+    account — callers then fall back to the view-only document token — and
+    when token issuance fails: the email must still go out with the document
+    link rather than not at all. ``next_path`` is the portal path the link
+    lands on after sign-in (e.g. ``/quotes/{id}``).
+    """
+    if tenant is None or contact is None:
+        return None
+    customer = await db.scalar(select(Customer).where(Customer.contact_id == contact.id))
+    if customer is None and contact.email:
+        customer = await db.scalar(
+            select(Customer).where(
+                Customer.tenant_id == tenant.id,
+                Customer.email == contact.email,
+            )
+        )
+    if customer is None or not customer.is_active:
+        return None
+    try:
+        return await magic_link_url(db, tenant, customer, next_path)
+    except Exception as exc:
+        logger.warning(
+            "magic_link_unavailable",
+            tenant_id=str(tenant.id),
+            contact_id=str(contact.id),
+            error=str(exc)[:200],
+        )
+        return None
 
 
 def _resend_from(display_name: str | None = None) -> str:

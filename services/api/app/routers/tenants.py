@@ -25,6 +25,31 @@ router = APIRouter(prefix="/tenants", tags=["Tenants"])
 DbDep = Annotated[AsyncSession, Depends(get_db)]
 _settings = get_settings()
 
+# Slugs that can never be tenant subdomains on the portal base domain —
+# they are platform-owned surfaces (api, app, auth, ...) or would confuse
+# routing/branding.
+RESERVED_SLUGS = frozenset(
+    {
+        "www",
+        "api",
+        "admin",
+        "app",
+        "mail",
+        "email",
+        "support",
+        "help",
+        "portal",
+        "my",
+        "status",
+        "blog",
+        "demo",
+        "staging",
+        "auth",
+        "billing",
+        "pay",
+    }
+)
+
 
 def _require_setup_token(provided: str | None) -> None:
     """Reject tenant-creation requests that do not carry the setup token.
@@ -71,6 +96,11 @@ async def create_tenant(
     so a fresh tenant is immediately able to log in.
     """
     _require_setup_token(x_setup_token)
+    if data.slug.lower() in RESERVED_SLUGS:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"Slug '{data.slug}' is reserved and cannot be used for a business",
+        )
     existing = await db.execute(select(Tenant).where(Tenant.slug == data.slug))
     if existing.scalar_one_or_none() is not None:
         raise HTTPException(
@@ -231,6 +261,7 @@ async def update_current_tenant(
         "vat_rate",
         "plan_tier",
         "google_place_id",
+        "review_url",
         "quotes_per_week",
         "avg_minutes_per_quote",
     }

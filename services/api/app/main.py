@@ -45,6 +45,7 @@ from app.routers import (
     payments,
     pricing,
     public_docs,
+    public_threads,
     quote_requests,
     quotes,
     reviews,
@@ -142,11 +143,15 @@ app.add_middleware(SlowAPIMiddleware)
 # Railway preview pattern via a strict regex so preview smoke can authenticate
 # without depending on Railway variable re-templating.
 _RAILWAY_PREVIEW_ORIGIN_REGEX = r"^https://web-mytradeportal-pr-\d+\.up\.railway\.app$"
+# Customer portals live on per-tenant subdomains of the portal base domain.
+_PORTAL_ORIGIN_REGEX = r"https://.*\.mytradeportal\.co\.uk"
 _configured_regex = settings.allowed_origin_regex or None
 if _configured_regex:
-    _allow_origin_regex: str | None = f"({_configured_regex})|({_RAILWAY_PREVIEW_ORIGIN_REGEX})"
+    _allow_origin_regex: str | None = (
+        f"({_configured_regex})|({_RAILWAY_PREVIEW_ORIGIN_REGEX})|({_PORTAL_ORIGIN_REGEX})"
+    )
 else:
-    _allow_origin_regex = _RAILWAY_PREVIEW_ORIGIN_REGEX
+    _allow_origin_regex = f"({_RAILWAY_PREVIEW_ORIGIN_REGEX})|({_PORTAL_ORIGIN_REGEX})"
 
 app.add_middleware(
     CORSMiddleware,
@@ -188,6 +193,7 @@ app.include_router(calendar.router)
 app.include_router(invoices.router)
 app.include_router(payments.router)
 app.include_router(public_docs.router)
+app.include_router(public_threads.router)
 app.include_router(billing.router)
 app.include_router(webhooks.router)
 app.include_router(stripe_webhooks.router)

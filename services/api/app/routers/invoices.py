@@ -24,7 +24,7 @@ from app.calculations import (
 )
 from app.database import get_db
 from app.dependencies import CurrentUserDep, TenantDep
-from app.email import send_email
+from app.email import resolve_customer_magic_link, send_email
 from app.email_templates import invoice_sent as invoice_sent_template
 from app.models import Contact, Invoice, InvoiceLineItem, Job, Quote, QuoteRequest, Tenant
 from app.push import notify_customer, notify_staff
@@ -380,6 +380,11 @@ async def send_invoice(
             contact_email=contact.email,
         )
         view_url = public_document_url("invoice", raw_token)
+        # Magic portal sign-in link when the contact has a customer account;
+        # otherwise the email carries the view-only document/pay link alone.
+        portal_url = await resolve_customer_magic_link(
+            db, tenant_row, contact, f"/invoices/{invoice.id}"
+        )
         subject, html, text = invoice_sent_template(
             customer_name=contact.name.split()[0] if contact.name else "there",
             business_name=business_name,
@@ -387,6 +392,7 @@ async def send_invoice(
             invoice_total=f"£{invoice.total}",
             payment_details=payment_details,
             view_url=view_url,
+            portal_url=portal_url,
         )
         try:
             await send_email(

@@ -151,11 +151,13 @@ async def test_register_with_quote_request_id_links_request(
     assert submit.status_code == 201, submit.text
     quote_request_id = submit.json()["id"]
 
-    # The lead exists but is not yet linked to a customer account.
+    # Intake auto-provisions a passwordless customer account (invisible auth),
+    # so the lead is already linked — registration with a *different* email
+    # re-links it to the newly registered account below.
     staff_before = await client.get("/quote-requests", headers={"X-Tenant-ID": str(tenant.id)})
     assert staff_before.status_code == 200
     lead_before = next(lead for lead in staff_before.json() if lead["id"] == quote_request_id)
-    assert lead_before["customer_id"] is None
+    assert lead_before["customer_id"] is not None
 
     # Register with the quote request id.
     email = f"jane-{uuid4().hex[:6]}@example.com"
@@ -189,6 +191,53 @@ async def test_register_with_quote_request_id_links_request(
     linked = [lead for lead in leads if lead["id"] == quote_request_id]
     assert len(linked) == 1
     assert linked[0]["customer_id"] == reg.json()["customer"]["id"]
+
+
+async def test_register_claims_passwordless_intake_account(
+    client: AsyncClient, db: AsyncSession
+) -> None:
+    """Registering with the SAME email as an intake-provisioned passwordless
+    account claims it (sets password, keeps history) instead of 409ing."""
+    slug = f"cust-{uuid4().hex[:8]}"
+    tenant = await _create_tenant(db, slug)
+    email = f"jane-{uuid4().hex[:6]}@example.com"
+
+    submit = await client.post(
+        f"/businesses/{slug}/quote-requests",
+        json={
+            "contact": {"name": "Homeowner Jane", "email": email},
+            "category": "eicr",
+            "title": "EICR needed",
+        },
+    )
+    assert submit.status_code == 201, submit.text
+    quote_request_id = submit.json()["id"]
+
+    staff_before = await client.get("/quote-requests", headers={"X-Tenant-ID": str(tenant.id)})
+    lead_before = next(lead for lead in staff_before.json() if lead["id"] == quote_request_id)
+    provisioned_id = lead_before["customer_id"]
+    assert provisioned_id is not None
+
+    reg = await client.post("/customer/register", json=_register_payload(slug, email))
+    assert reg.status_code == 201, reg.text
+    assert reg.json()["customer"]["id"] == provisioned_id
+    token = reg.json()["accessToken"]
+
+    # The claimed account keeps the intake history and can log in with the password.
+    history = await client.get(
+        "/customer/quote-requests", headers={"Authorization": f"Bearer {token}"}
+    )
+    assert history.status_code == 200
+    assert [row["id"] for row in history.json()] == [quote_request_id]
+
+    login = await client.post(
+        "/customer/login", json={"email": email, "password": "homeowner-pass-123"}
+    )
+    assert login.status_code == 200, login.text
+
+    # A second registration now 409s — the account has a password.
+    dupe = await client.post("/customer/register", json=_register_payload(slug, email))
+    assert dupe.status_code == 409
 
 
 async def _seed_lead(

@@ -25,13 +25,69 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.ai_telemetry import record_quote_outcome
 from app.alerting import send_alert
 from app.database import engine
-from app.models import Invoice, Payment, ProcessedWebhook, Quote, StripeAccount
+from app.email import send_event_email
+from app.email_templates import payment_received as payment_received_template
+from app.models import Contact, Invoice, Payment, ProcessedWebhook, Quote, StripeAccount, Tenant
 from app.push import notify_staff
 from app.rls import bypass_rls_for_transaction, set_tenant_in_session
 from app.stripe_client import PaymentsNotConfiguredError, construct_event
 
 router = APIRouter(prefix="/webhooks", tags=["Webhooks"])
 logger = structlog.get_logger("api.stripe_webhooks")
+
+
+async def _email_customer_payment_received(session: AsyncSession, invoice: Invoice) -> None:
+    """Best-effort payment confirmation (+ review prompt) to the customer.
+
+    Reads everything it needs while the session's RLS context is still live,
+    then renders and dispatches through ``send_event_email`` (which never
+    raises). Any failure is logged and swallowed — the webhook's 200 must
+    never depend on customer email delivery. Stripe sends its own card
+    receipt; ours is the confirmation and thank-you.
+    """
+    try:
+        contact = await session.get(Contact, invoice.contact_id)
+        if contact is None or not contact.email:
+            logger.warning(
+                "payment_received_email_skipped",
+                invoice_id=str(invoice.id),
+                reason="no_contact_email",
+            )
+            return
+        tenant = await session.get(Tenant, invoice.tenant_id)
+        business_name = tenant.name if tenant is not None else "Your tradesperson"
+        review_url_raw = (tenant.settings or {}).get("review_url") if tenant is not None else None
+        review_url = str(review_url_raw) if review_url_raw else None
+        paid_at = invoice.paid_at or datetime.utcnow()
+        subject, html, text = payment_received_template(
+            customer_name=contact.name.split()[0] if contact.name else "there",
+            business_name=business_name,
+            invoice_number=invoice.invoice_number,
+            amount_paid=f"£{invoice.total}",
+            paid_date=paid_at.strftime("%d %b %Y"),
+            review_url=review_url,
+        )
+        await send_event_email(
+            to_email=contact.email,
+            subject=subject,
+            html_body=html,
+            text_body=text,
+            event="payment_received",
+            template="payment_received",
+            from_name=business_name,
+            reply_to=(tenant.email if tenant is not None and tenant.email else None),
+            context={
+                "invoice_id": str(invoice.id),
+                "tenant_id": str(invoice.tenant_id),
+            },
+        )
+    except Exception as exc:
+        logger.error(
+            "payment_received_email_failed",
+            invoice_id=str(invoice.id),
+            error_type=type(exc).__name__,
+            error=str(exc)[:300],
+        )
 
 
 async def _mark_event_seen(event_id: str, event_type: str) -> bool:
@@ -136,6 +192,10 @@ async def _handle_payment_intent_succeeded(event_data: dict[str, Any]) -> None:
         # Snapshot before commit: commit() expires the ORM object and lazy
         # refresh outside a greenlet raises MissingGreenlet.
         log_invoice_id = str(invoice.id)
+        # Confirm the payment to the customer (thank-you + review prompt).
+        # Best-effort: runs pre-commit while the session's RLS context is
+        # live, and never raises — the webhook 200 must not depend on it.
+        await _email_customer_payment_received(session, invoice)
         await session.commit()
         logger.info("stripe_invoice_paid", invoice_id=log_invoice_id)
 

@@ -13,12 +13,18 @@ move to match (an end-less job schedule keeps each appointment's existing
 duration; unscheduling a job leaves its appointments untouched). This router
 never creates appointments from job schedules, and appointment edits never
 propagate back onto the job.
+
+Booking confirmation: the same PATCH that sets or moves a job's
+scheduled_start also emails the customer a ``booking_confirmed`` email
+(best-effort, tenant-branded, Reply-To the tenant). Unrelated PATCHes and
+unscheduling send nothing.
 """
 
 from datetime import datetime
 from typing import Annotated, Any
 from uuid import UUID
 
+import structlog
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -26,12 +32,15 @@ from sqlalchemy.orm import selectinload
 
 from app.database import get_db
 from app.dependencies import TenantDep
-from app.models import Appointment, Contact, Job, Quote, User
+from app.email import send_event_email
+from app.email_templates import booking_confirmed as booking_confirmed_template
+from app.models import Appointment, Contact, Job, Quote, Tenant, User
 from app.push import notify_staff
 from app.rls import set_tenant_in_session
 from app.schemas import JobCreate, JobRead, JobUpdate
 
 router = APIRouter(prefix="/jobs", tags=["Jobs"])
+logger = structlog.get_logger("api.jobs")
 DbDep = Annotated[AsyncSession, Depends(get_db)]
 
 
@@ -142,6 +151,59 @@ async def _sync_linked_appointments(db: AsyncSession, tenant_id: UUID, job: Job)
         appointment.end_at = job.scheduled_end or (job.scheduled_start + duration)
 
 
+async def _email_booking_confirmed(db: AsyncSession, tenant_id: UUID, job: Job) -> None:
+    """Email the customer a booking confirmation for a freshly scheduled job.
+
+    Best-effort and never raises: dispatch gaps surface via
+    ``send_event_email``'s logging. Tenant-branded with the tenant's own
+    Reply-To so "need to change it? reply to this email" lands with the
+    tradesperson.
+    """
+    if job.scheduled_start is None:
+        return
+    try:
+        contact = job.contact
+        tenant_row = await db.get(Tenant, tenant_id)
+        business_name = tenant_row.name if tenant_row is not None else "Your tradesperson"
+        visit_date = job.scheduled_start.strftime("%A %d %B %Y")
+        start_time = job.scheduled_start.strftime("%H:%M")
+        if job.scheduled_end is not None:
+            time_window = f"{start_time} - {job.scheduled_end.strftime('%H:%M')}"
+        else:
+            time_window = f"from {start_time}"
+        address_parts = [part for part in (job.address, job.postcode) if part]
+        subject, html, text = booking_confirmed_template(
+            customer_name=contact.name.split()[0] if contact.name else "there",
+            business_name=business_name,
+            job_title=job.title,
+            visit_date=visit_date,
+            time_window=time_window,
+            address=", ".join(address_parts) if address_parts else None,
+            tradie_name=business_name,
+            tradie_phone=(
+                tenant_row.phone if tenant_row is not None and tenant_row.phone else None
+            ),
+        )
+        await send_event_email(
+            to_email=contact.email,
+            subject=subject,
+            html_body=html,
+            text_body=text,
+            event="booking_confirmed",
+            template="booking_confirmed",
+            from_name=business_name,
+            reply_to=(tenant_row.email if tenant_row is not None and tenant_row.email else None),
+            context={"job_id": str(job.id), "tenant_id": str(tenant_id)},
+        )
+    except Exception as exc:
+        logger.error(
+            "booking_confirmed_email_failed",
+            job_id=str(job.id),
+            error_type=type(exc).__name__,
+            error=str(exc)[:300],
+        )
+
+
 @router.patch("/{job_id}")
 async def update_job(
     job_id: UUID,
@@ -154,10 +216,16 @@ async def update_job(
     changes = data.model_dump(exclude_unset=True)
     if "assigned_user_id" in changes:
         await _validate_assignee(db, tenant.id, changes["assigned_user_id"])
+    previous_start = job.scheduled_start
     for key, value in changes.items():
         setattr(job, key, value)
     if "scheduled_start" in changes or "scheduled_end" in changes:
         await _sync_linked_appointments(db, tenant.id, job)
+        # Booking confirmation to the customer on every schedule change that
+        # lands on a real slot (first scheduling and reschedules alike;
+        # unscheduling sends nothing — the electrician tells them directly).
+        if "scheduled_start" in changes and job.scheduled_start != previous_start:
+            await _email_booking_confirmed(db, tenant.id, job)
     await db.commit()
     # The assignee/media relationships were loaded by the initial _get_job;
     # expire them so the re-read reflects the values just written.

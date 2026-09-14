@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import date, datetime
+from datetime import UTC, date, datetime
 from decimal import Decimal
 from typing import Any
 from uuid import UUID, uuid4
@@ -1519,3 +1519,39 @@ class StripeAccount(Base, TimestampMixin):
     charges_enabled: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     payouts_enabled: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     onboarding_complete: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+
+
+class CustomerPortalToken(Base):
+    """A magic-link bearer token that signs a homeowner into the customer portal.
+
+    Minted when a portal magic link is emailed (or embedded in a transactional
+    email such as quote-accepted); the raw token only ever appears in the
+    emailed link (``/auth/magic?token=...`` on the tenant's portal subdomain).
+    Only the SHA-256 hash is stored so a leaked DB dump cannot be replayed.
+    Re-issuing for a customer revokes their earlier still-valid tokens so only
+    the newest emailed link stays valid.
+
+    Deliberately a plain ``Base`` (same pattern as ``DocumentAccessToken``):
+    the magic-link exchange looks the token up before any tenant/auth context
+    exists, so the table must stay out of ``app.rls.TENANT_SCOPED_TABLES``.
+    ``tenant_id`` is a plain column (no FK) so rows survive tenant teardown;
+    the exchange endpoint then 401s like any invalid token.
+    """
+
+    __tablename__ = "customer_portal_tokens"
+
+    id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
+    customer_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("customers.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    tenant_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), nullable=False, index=True)
+    token_hash: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(UTC), nullable=False
+    )
+    last_used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

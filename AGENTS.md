@@ -29,9 +29,15 @@ tradesperson and homeowner/customer flows against the real FastAPI backend
 and uses a white-label theme system.
 - **`web/app/`** — a React + Vite back-office SPA. It implements the tradesperson
 dashboard, CRM, quotes, jobs, invoices, calendar, reviews, AI insights, and settings.
-- **`web/landing/`** — the Next.js marketing site: brand hero with demo-video slots,
-feature showcases, and Paddle-localised pricing. Standalone `output` build,
-Railway-ready.
+- **`web/landing/`** — the marketing site (active app: Vite + React at
+  `web/landing/new design/app`; the old Next.js directory is unused). One bundle,
+  host-aware: `www`/apex serves marketing, pricing, blog, the interactive quote
+  demo, and the secure token pages (`/quote/:token`, `/invoice/:token`,
+  `/pay/:token`, `/fair-use`, `/reset-password`); **`{tenant-slug}.mytradeportal.co.uk`
+  serves the tenant-branded customer portal** (portal mode, `src/portal/`) —
+  invisible magic-link auth, quote-request form with inline AI triage check,
+  quote accept/decline/discuss, bookings, invoice pay, branded password reset.
+  See `docs/decisions/ADR-004-tenant-subdomain-portal.md`.
 - **`packages/shared/ts/`** — shared TypeScript design tokens and utilities used by
 `mobile/` and `web/app/`.
 - **`packages/shared/py/mtp_shared/`** — shared Python primitives (Pydantic models,

@@ -4,11 +4,17 @@ These endpoints back the customer side of the white-label app. A customer
 belongs to one business (tenant), identified by slug at register/login time.
 Auth is a bearer token with ``subject_type="customer"`` so it can never be used
 against the staff API.
+
+The web portal additionally supports invisible (magic-link) auth: emails embed
+a link on the tenant's portal subdomain carrying a one-customer token that
+``POST /customer/auth/magic`` exchanges for the same customer JWT.
 """
 
-from datetime import UTC, datetime
+import inspect
+import secrets
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
-from typing import Annotated
+from typing import Annotated, Any
 from uuid import UUID
 
 import structlog
@@ -18,9 +24,10 @@ from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from app import stripe_client
 from app.ai_telemetry import record_quote_outcome
 from app.database import get_db
-from app.dependencies import CurrentCustomerDep
+from app.dependencies import CurrentCustomerDep, _extract_tenant_slug
 from app.email import send_event_email
 from app.email_templates import account_created as account_created_template
 from app.email_templates import quote_accepted as quote_accepted_template
@@ -30,19 +37,27 @@ from app.models import (
     BillOfQuantities,
     Contact,
     Customer,
+    CustomerPortalToken,
+    DocumentAccessToken,
     Invoice,
     MediaAsset,
     Quote,
     QuoteRequest,
     Tenant,
 )
+from app.portal_links import hash_portal_token, magic_link_url, portal_url
 from app.push import notify_staff
 from app.rls import bypass_rls_for_transaction, set_tenant_in_session
 from app.routers.contacts import BLOCKED_CUSTOMER_DETAIL, contact_is_blocked
+from app.routers.public_docs import _invoice_payment_url, hash_document_token
 from app.schemas import (
     AppointmentCreate,
     AppointmentRead,
     CustomerLogin,
+    CustomerMagicLinkCustomer,
+    CustomerMagicLinkExchange,
+    CustomerMagicLinkRequest,
+    CustomerMagicLinkTokenResponse,
     CustomerQuoteAccept,
     CustomerRead,
     CustomerRegister,
@@ -99,6 +114,9 @@ class CustomerInvoiceRead(BaseModel):
     business_name: str
     business_logo_url: str | None
     business_primary_color: str
+    # Stripe /pay page URL for unpaid invoices when the tenant takes card
+    # payments; null when card payment is unavailable or already settled.
+    payment_url: str | None = None
 
 
 def _customer_invoice_read(invoice: Invoice, tenant: Tenant | None) -> CustomerInvoiceRead:
@@ -251,10 +269,15 @@ async def register_customer(
     existing = await db.scalar(
         select(Customer).where(Customer.tenant_id == tenant.id, Customer.email == str(data.email))
     )
-    if existing is not None:
+    if existing is not None and existing.password_hash:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="An account with this email already exists",
+        )
+    if existing is not None and not data.password:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="An account with this email already exists — check your inbox for a sign-in link",
         )
 
     # Reuse the CRM contact created when the homeowner requested their quote —
@@ -281,19 +304,36 @@ async def register_customer(
         if data.postcode:
             contact.postcode = data.postcode
 
-    customer = Customer(
-        tenant_id=tenant.id,
-        contact_id=contact.id,
-        email=str(data.email),
-        full_name=data.full_name,
-        phone=data.phone,
-        address=data.address,
-        postcode=data.postcode,
-        password_hash=get_password_hash(data.password),
-        marketing_consent=data.marketing_consent,
-        preferred_contact_method=data.preferred_contact_method,
-    )
-    db.add(customer)
+    if existing is not None:
+        # Claim a passwordless account auto-provisioned at quote-request intake:
+        # set the password and refresh details instead of forking a record.
+        customer = existing
+        customer.contact_id = contact.id
+        customer.full_name = data.full_name
+        customer.password_hash = get_password_hash(data.password)
+        if data.phone:
+            customer.phone = data.phone
+        if data.address:
+            customer.address = data.address
+        if data.postcode:
+            customer.postcode = data.postcode
+        customer.marketing_consent = data.marketing_consent
+        if data.preferred_contact_method:
+            customer.preferred_contact_method = data.preferred_contact_method
+    else:
+        customer = Customer(
+            tenant_id=tenant.id,
+            contact_id=contact.id,
+            email=str(data.email),
+            full_name=data.full_name,
+            phone=data.phone,
+            address=data.address,
+            postcode=data.postcode,
+            password_hash=get_password_hash(data.password),
+            marketing_consent=data.marketing_consent,
+            preferred_contact_method=data.preferred_contact_method,
+        )
+        db.add(customer)
     await db.flush()
 
     # If the customer arrived from a quote request, link the two records so
@@ -432,6 +472,140 @@ async def login_customer(
         customer=CustomerRead.model_validate(customer),
         tenants=associations,
     )
+
+
+_MAGIC_LINK_401 = HTTPException(
+    status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or expired magic link"
+)
+_MAGIC_REQUEST_RESPONSE = {
+    "detail": "If an account exists for this email, a sign-in link is on its way."
+}
+
+
+@router.post("/auth/magic", response_model=CustomerMagicLinkTokenResponse)
+@limiter.limit("10/minute")
+async def exchange_magic_link(
+    data: CustomerMagicLinkExchange,
+    request: Request,
+    db: DbDep,
+) -> CustomerMagicLinkTokenResponse:
+    """Exchange a portal magic-link token for a customer session JWT.
+
+    Pre-auth endpoint: the token row lives outside RLS (same pattern as
+    document access tokens). Unknown, expired and revoked tokens all fail with
+    the same 401 so the endpoint never confirms a token exists. When the
+    request arrives on a tenant subdomain, the token must belong to that
+    tenant — a link leaked across businesses does not sign in.
+    """
+    await bypass_rls_for_transaction(db)
+    record = await db.scalar(
+        select(CustomerPortalToken).where(
+            CustomerPortalToken.token_hash == hash_portal_token(data.token)
+        )
+    )
+    if record is None or record.revoked_at is not None or record.expires_at < datetime.now(UTC):
+        raise _MAGIC_LINK_401
+
+    slug = _extract_tenant_slug(request.headers.get("host"))
+    if slug is not None:
+        host_tenant = await db.scalar(
+            select(Tenant).where(Tenant.slug == slug, Tenant.is_active.is_(True))
+        )
+        if host_tenant is None or host_tenant.id != record.tenant_id:
+            raise _MAGIC_LINK_401
+
+    customer = await db.get(Customer, record.customer_id)
+    if customer is None or not customer.is_active or customer.tenant_id != record.tenant_id:
+        raise _MAGIC_LINK_401
+
+    record.last_used_at = datetime.now(UTC)
+    await db.commit()
+
+    from app.config import settings
+
+    session_expires_at = datetime.now(UTC) + timedelta(
+        minutes=settings.auth_access_token_expire_minutes
+    )
+    return CustomerMagicLinkTokenResponse(
+        access_token=_issue_token(customer),
+        customer=CustomerMagicLinkCustomer(
+            id=customer.id, full_name=customer.full_name, email=customer.email
+        ),
+        expires_at=session_expires_at,
+    )
+
+
+@router.post("/auth/magic/request", status_code=status.HTTP_202_ACCEPTED)
+@limiter.limit("5/hour")
+async def request_magic_link(
+    data: CustomerMagicLinkRequest,
+    request: Request,
+    db: DbDep,
+) -> dict[str, str]:
+    """Email a portal magic link to the customer, if the account exists.
+
+    The response is deliberately identical whether or not a customer with this
+    email exists in the resolved tenant, so the endpoint cannot be used to
+    enumerate accounts. The tenant comes from the Host subdomain (falling back
+    to the default tenant on bare hosts, matching ``resolve_tenant``).
+    """
+    await bypass_rls_for_transaction(db)
+    slug = _extract_tenant_slug(request.headers.get("host"))
+
+    from app.config import settings
+
+    tenant = await db.scalar(
+        select(Tenant).where(
+            Tenant.slug == (slug or settings.default_tenant_slug),
+            Tenant.is_active.is_(True),
+        )
+    )
+    customer = None
+    if tenant is not None:
+        customer = await db.scalar(
+            select(Customer).where(
+                Customer.tenant_id == tenant.id,
+                func.lower(Customer.email) == str(data.email).lower(),
+                Customer.is_active.is_(True),
+            )
+        )
+
+    if tenant is not None and customer is not None:
+        link = await magic_link_url(db, tenant, customer, "/quotes")
+        await db.commit()
+        # Transactional sign-in mail, platform-branded from the no-reply
+        # sender. Best-effort: the wrapper logs and never raises.
+        subject = f"Your sign-in link — {tenant.name}"
+        text = (
+            f"Hi {customer.full_name or 'there'},\n\n"
+            f"Use this link to sign in to your {tenant.name} portal:\n{link}\n\n"
+            "If you didn't request it, you can ignore this email.\n\n"
+            "— My Trade Portal"
+        )
+        html = f"""\
+<!doctype html>
+<html>
+  <body style="font-family:-apple-system,Segoe UI,Roboto,sans-serif;color:#0f172a;max-width:560px;margin:0 auto;padding:24px;">
+    <h1 style="font-size:22px;margin:0 0 12px;">Your sign-in link</h1>
+    <p>Hi {customer.full_name or "there"},</p>
+    <p>Use the button below to sign in to your <strong>{tenant.name}</strong> portal.</p>
+    <p style="margin:24px 0;"><a href="{link}" style="background:#D4650A;color:#ffffff;padding:12px 20px;border-radius:8px;text-decoration:none;">Sign in</a></p>
+    <p style="color:#64748b;font-size:13px;">If you didn't request this link, you can ignore this email.</p>
+    <p style="color:#64748b;font-size:13px;margin-top:32px;">— My Trade Portal</p>
+  </body>
+</html>
+"""
+        await send_event_email(
+            to_email=customer.email,
+            subject=subject,
+            html_body=html,
+            text_body=text,
+            event="magic_link_requested",
+            template="magic_link",
+            context={"customer_id": str(customer.id), "tenant_id": str(tenant.id)},
+        )
+
+    return _MAGIC_REQUEST_RESPONSE
 
 
 @router.get("/me", response_model=CustomerRead)
@@ -619,9 +793,11 @@ async def accept_quote(
     quote.status = "approved"
     quote.approved_at = datetime.utcnow()
     # The customer's reconfirmed dates ride on the quote so they surface when
-    # the electrician converts it to a job.
-    if data is not None and data.preferred_dates is not None:
-        quote.accepted_dates = data.preferred_dates
+    # the electrician converts it to a job. Both client shapes (list of date
+    # strings, list of {date} objects) normalise to the same string list.
+    preferred_dates = data.preferred_date_strings() if data is not None else None
+    if preferred_dates is not None:
+        quote.accepted_dates = preferred_dates
     dates_note = ""
     if quote.accepted_dates:
         dates_note = f" Customer confirmed preferred dates: {', '.join(quote.accepted_dates)}."
@@ -640,18 +816,40 @@ async def accept_quote(
         quote=quote,
         extra_payload={"actor": "customer", "customer_id": str(customer.id)},
     )
+    # The confirmation email carries a magic link straight back into the portal
+    # so the customer can track the booking without a password.
+    tenant = await db.get(Tenant, customer.tenant_id)
+    business_name = tenant.name if tenant is not None else "Your electrician"
+    magic_link: str | None = None
+    portal_home: str | None = None
+    if tenant is not None:
+        portal_home = portal_url(tenant, "/quotes")
+        magic_link = await magic_link_url(db, tenant, customer, f"/quotes/{quote.id}")
     await db.commit()
     # Confirm the acceptance to the customer by email. No response is expected,
     # so it goes out platform-branded from the no-reply sender. Best-effort:
     # the wrapper logs and never raises.
-    tenant = await db.get(Tenant, customer.tenant_id)
-    business_name = tenant.name if tenant is not None else "Your electrician"
-    subject, html, text = quote_accepted_template(
-        customer_name=customer.full_name.split()[0] if customer.full_name else "there",
-        business_name=business_name,
-        quote_title=quote.title,
-        quote_total=f"£{quote.total}",
+    template_kwargs: dict[str, Any] = {
+        "customer_name": customer.full_name.split()[0] if customer.full_name else "there",
+        "business_name": business_name,
+        "quote_title": quote.title,
+        "quote_total": f"£{quote.total}",
+    }
+    # The email-template rewrite (magic-link + booking-pending copy) ships
+    # separately; pass the new kwargs only when the template accepts them so
+    # this call site works against both versions. The template's ``portal_url``
+    # is the magic sign-in link (falling back to the plain portal home page).
+    accepted_params = inspect.signature(quote_accepted_template).parameters
+    accepts_var_kwargs = any(
+        p.kind is inspect.Parameter.VAR_KEYWORD for p in accepted_params.values()
     )
+    for key, value in (
+        ("magic_link", magic_link),
+        ("portal_url", magic_link or portal_home),
+    ):
+        if value is not None and (accepts_var_kwargs or key in accepted_params):
+            template_kwargs[key] = value
+    subject, html, text = quote_accepted_template(**template_kwargs)
     await send_event_email(
         to_email=customer.email,
         subject=subject,
@@ -782,7 +980,36 @@ async def get_my_invoice(
     """Invoice detail with line items and business branding for rendering."""
     invoice = await _get_customer_invoice(db, customer, invoice_id)
     tenant = await db.get(Tenant, customer.tenant_id)
-    return _customer_invoice_read(invoice, tenant)
+    read = _customer_invoice_read(invoice, tenant)
+    read.payment_url = await _portal_invoice_payment_url(db, invoice, tenant)
+    return read
+
+
+async def _portal_invoice_payment_url(
+    db: AsyncSession, invoice: Invoice, tenant: Tenant | None
+) -> str | None:
+    """Stripe /pay URL for an unpaid portal invoice, or None when unavailable.
+
+    Reuses the public-docs payment helper. The /pay page URL is keyed on a
+    document access token, so a dedicated token is minted here WITHOUT
+    revoking the one emailed with the invoice (unlike ``issue_document_token``)
+    — both the emailed link and the portal pay link keep working.
+    """
+    if tenant is None or invoice.status == "paid" or not stripe_client.is_configured():
+        return None
+    raw = secrets.token_urlsafe(32)
+    db.add(
+        DocumentAccessToken(
+            tenant_id=tenant.id,
+            kind="invoice",
+            document_id=invoice.id,
+            token_hash=hash_document_token(raw),
+            contact_email=None,
+            expires_at=datetime.utcnow() + timedelta(days=30),
+        )
+    )
+    await db.flush()
+    return await _invoice_payment_url(db, invoice, tenant, raw)
 
 
 @router.post("/invoices/{invoice_id}/pay")

@@ -41,6 +41,27 @@ def password_reset(*, name: str | None, reset_url: str) -> tuple[str, str, str]:
     return subject, html, text
 
 
+def _magic_link_cta(url: str, label: str) -> tuple[str, str]:
+    """Primary sign-in CTA block for a magic portal link, as (text, html)."""
+    text = f"{label}:\n{url}\n\n"
+    html = f"""\
+    <p style="margin:24px 0;">
+      <a href="{url}" style="background:#4F46E5;color:#fff;padding:12px 20px;border-radius:8px;text-decoration:none;font-weight:600;">{label}</a>
+    </p>
+    <p style="color:#64748b;font-size:13px;">This link signs you in — no password needed. If the button doesn't work, copy and paste it:<br><a href="{url}" style="color:#4F46E5;">{url}</a></p>
+"""
+    return text, html
+
+
+def _view_only_secondary(view_url: str) -> tuple[str, str]:
+    """Secondary view-only document link shown under a magic-link CTA."""
+    text = f"Prefer not to sign in? View a read-only copy here:\n{view_url}\n\n"
+    html = f"""\
+    <p style="color:#64748b;font-size:13px;">Prefer not to sign in? <a href="{view_url}" style="color:#4F46E5;">View a read-only copy</a> instead.</p>
+"""
+    return text, html
+
+
 def quote_ready(
     *,
     customer_name: str,
@@ -48,13 +69,33 @@ def quote_ready(
     quote_title: str,
     quote_total: str,
     view_url: str,
+    portal_url: str | None = None,
 ) -> tuple[str, str, str]:
+    """Quote-issued email. (subject, html, text).
+
+    ``portal_url`` is the magic sign-in link to the customer portal; when
+    present it becomes the primary CTA and ``view_url`` (the view-only
+    document page) drops to a secondary "view without signing in" link.
+    """
     subject = f"Your quote from {business_name}"
+    if portal_url:
+        text_cta, html_cta = _magic_link_cta(portal_url, "View and accept your quote")
+        text_secondary, html_secondary = _view_only_secondary(view_url)
+    else:
+        text_cta = f"View and accept the quote here:\n{view_url}\n\n"
+        html_cta = f"""\
+    <p style="margin:24px 0;">
+      <a href="{view_url}" style="background:#4F46E5;color:#fff;padding:12px 20px;border-radius:8px;text-decoration:none;font-weight:600;">View quote</a>
+    </p>
+    <p style="color:#64748b;font-size:13px;">If the button doesn't work, copy and paste this link:<br><a href="{view_url}" style="color:#4F46E5;">{view_url}</a></p>
+"""
+        text_secondary, html_secondary = "", ""
     text = (
         f"Hi {customer_name},\n\n"
         f"{business_name} has sent you a quote for '{quote_title}'.\n"
         f"Total: {quote_total}\n\n"
-        f"View and accept the quote here:\n{view_url}\n\n"
+        f"{text_cta}"
+        f"{text_secondary}"
         "— My Trade Portal"
     )
     html = f"""\
@@ -65,10 +106,8 @@ def quote_ready(
     <p>Hi {customer_name},</p>
     <p><strong>{business_name}</strong> has sent you a quote for <strong>{quote_title}</strong>.</p>
     <p style="font-size:20px;font-weight:700;margin:16px 0;">Total: {quote_total}</p>
-    <p style="margin:24px 0;">
-      <a href="{view_url}" style="background:#4F46E5;color:#fff;padding:12px 20px;border-radius:8px;text-decoration:none;font-weight:600;">View quote</a>
-    </p>
-    <p style="color:#64748b;font-size:13px;">If the button doesn't work, copy and paste this link:<br><a href="{view_url}" style="color:#4F46E5;">{view_url}</a></p>
+{html_cta}\
+{html_secondary}\
     <p style="color:#64748b;font-size:13px;margin-top:32px;">— My Trade Portal</p>
   </body>
 </html>
@@ -120,18 +159,27 @@ def invoice_sent(
     invoice_total: str,
     payment_details: dict[str, str] | None = None,
     view_url: str | None = None,
+    portal_url: str | None = None,
 ) -> tuple[str, str, str]:
     """Invoice-issued email. (subject, html, text).
 
     ``payment_details`` carries the tenant's bank-transfer details (keys:
     ``account_name``, ``sort_code``, ``account_number``, ``reference``); the
     block is omitted entirely when the tenant has not configured them.
-    ``view_url`` is the secure web page for the invoice (customers without
-    the app); when absent the email falls back to the app-only copy.
+    ``portal_url`` is the magic sign-in link to the customer portal; when
+    present it becomes the primary CTA and ``view_url`` (the view-only
+    document/pay page) drops to a secondary "view without signing in" link.
+    When neither is present the email falls back to the app-only copy.
     """
     subject = f"Invoice {invoice_number} from {business_name}"
     payment_text, payment_html = _payment_details_block(payment_details)
-    if view_url:
+    if portal_url:
+        text_cta, html_cta = _magic_link_cta(portal_url, "View and pay your invoice")
+        if view_url:
+            text_secondary, html_secondary = _view_only_secondary(view_url)
+        else:
+            text_secondary, html_secondary = "", ""
+    elif view_url:
         text_cta = f"View your invoice online here:\n{view_url}\n\n"
         html_cta = f"""\
     <p style="margin:24px 0;">
@@ -139,15 +187,18 @@ def invoice_sent(
     </p>
     <p style="color:#64748b;font-size:13px;">If the button doesn't work, copy and paste this link:<br><a href="{view_url}" style="color:#4F46E5;">{view_url}</a></p>
 """
+        text_secondary, html_secondary = "", ""
     else:
         text_cta = "Open the app to view and pay.\n\n"
         html_cta = "    <p>Open the app to view and pay.</p>\n"
+        text_secondary, html_secondary = "", ""
     text = (
         f"Hi {customer_name},\n\n"
         f"{business_name} has sent you invoice {invoice_number}.\n"
         f"Total due: {invoice_total}\n\n"
         f"{payment_text}"
         f"{text_cta}"
+        f"{text_secondary}"
         "— My Trade Portal"
     )
     html = f"""\
@@ -160,6 +211,7 @@ def invoice_sent(
     <p style="font-size:20px;font-weight:700;margin:16px 0;">Total due: {invoice_total}</p>
 {payment_html}\
 {html_cta}\
+{html_secondary}\
     <p style="color:#64748b;font-size:13px;margin-top:32px;">— My Trade Portal</p>
   </body>
 </html>
@@ -173,16 +225,43 @@ def quote_reminder(
     business_name: str,
     quote_title: str,
     quote_total: str,
-    view_url: str,
+    view_url: str | None = None,
+    portal_url: str | None = None,
 ) -> tuple[str, str, str]:
-    """Follow-up email for a sent-but-unanswered quote. (subject, html, text)."""
+    """Follow-up email for a sent-but-unanswered quote. (subject, html, text).
+
+    ``portal_url`` is the magic sign-in link; when present it is the primary
+    CTA and ``view_url`` (the view-only document page, when also given) drops
+    to a secondary "view without signing in" link. When neither is present
+    the email falls back to the app-only copy.
+    """
     subject = f"Reminder: your quote from {business_name}"
+    if portal_url:
+        text_cta, html_cta = _magic_link_cta(portal_url, "View and accept your quote")
+        if view_url:
+            text_secondary, html_secondary = _view_only_secondary(view_url)
+        else:
+            text_secondary, html_secondary = "", ""
+    elif view_url:
+        text_cta = f"View and accept the quote here:\n{view_url}\n\n"
+        html_cta = f"""\
+    <p style="margin:24px 0;">
+      <a href="{view_url}" style="background:#4F46E5;color:#fff;padding:12px 20px;border-radius:8px;text-decoration:none;font-weight:600;">View quote</a>
+    </p>
+    <p style="color:#64748b;font-size:13px;">If the button doesn't work, copy and paste this link:<br><a href="{view_url}" style="color:#4F46E5;">{view_url}</a></p>
+"""
+        text_secondary, html_secondary = "", ""
+    else:
+        text_cta = "Open the app to view and accept the quote.\n\n"
+        html_cta = "    <p>Open the app to view and accept the quote.</p>\n"
+        text_secondary, html_secondary = "", ""
     text = (
         f"Hi {customer_name},\n\n"
         f"Just a friendly reminder that {business_name} sent you a quote for "
         f"'{quote_title}'.\n"
         f"Total: {quote_total}\n\n"
-        f"View and accept the quote here:\n{view_url}\n\n"
+        f"{text_cta}"
+        f"{text_secondary}"
         f"If you have any questions, just reply to this email.\n\n"
         "— My Trade Portal"
     )
@@ -194,10 +273,8 @@ def quote_reminder(
     <p>Hi {customer_name},</p>
     <p>Just a friendly reminder that <strong>{business_name}</strong> sent you a quote for <strong>{quote_title}</strong>.</p>
     <p style="font-size:20px;font-weight:700;margin:16px 0;">Total: {quote_total}</p>
-    <p style="margin:24px 0;">
-      <a href="{view_url}" style="background:#4F46E5;color:#fff;padding:12px 20px;border-radius:8px;text-decoration:none;font-weight:600;">View quote</a>
-    </p>
-    <p style="color:#64748b;font-size:13px;">If the button doesn't work, copy and paste this link:<br><a href="{view_url}" style="color:#4F46E5;">{view_url}</a></p>
+{html_cta}\
+{html_secondary}\
     <p style="color:#64748b;font-size:13px;">If you have any questions, just reply to this email.</p>
     <p style="color:#64748b;font-size:13px;margin-top:32px;">— My Trade Portal</p>
   </body>
@@ -214,26 +291,37 @@ def invoice_reminder(
     invoice_total: str,
     payment_details: dict[str, str] | None = None,
     view_url: str | None = None,
+    portal_url: str | None = None,
 ) -> tuple[str, str, str]:
     """Payment-chasing email for an unpaid sent invoice. (subject, html, text).
 
     ``payment_details`` carries the tenant's bank-transfer details (same
     shape as :func:`invoice_sent`); the block is omitted when unconfigured.
-    When ``view_url`` is given (the secure web invoice page), it replaces the
-    "open the app" instruction — the link works with or without the app.
+    ``portal_url`` is the magic sign-in link; when present it is the primary
+    CTA and ``view_url`` (the secure web invoice page, when also given) drops
+    to a secondary "view without signing in" link. When neither is present
+    the email falls back to the app-only copy.
     """
     subject = f"Reminder: invoice {invoice_number} from {business_name}"
     payment_text, payment_html = _payment_details_block(payment_details)
-    if view_url:
+    if portal_url:
+        action_text, action_html = _magic_link_cta(portal_url, "View and pay your invoice")
+        if view_url:
+            text_secondary, html_secondary = _view_only_secondary(view_url)
+        else:
+            text_secondary, html_secondary = "", ""
+    elif view_url:
         action_text = f"View and pay online:\n{view_url}\n\n"
         action_html = (
             f'<p><a href="{view_url}" style="display:inline-block;background:#0F1E26;'
             'color:#FFC107;padding:12px 24px;text-decoration:none;font-weight:700;">'
             "View and pay online</a></p>"
         )
+        text_secondary, html_secondary = "", ""
     else:
         action_text = "Open the app to view and pay.\n\n"
         action_html = "    <p>Open the app to view and pay.</p>"
+        text_secondary, html_secondary = "", ""
     text = (
         f"Hi {customer_name},\n\n"
         f"This is a reminder that invoice {invoice_number} from {business_name} "
@@ -241,6 +329,7 @@ def invoice_reminder(
         f"Total due: {invoice_total}\n\n"
         f"{payment_text}"
         f"{action_text}"
+        f"{text_secondary}"
         f"If you have already paid, please ignore this reminder.\n\n"
         "— My Trade Portal"
     )
@@ -254,6 +343,7 @@ def invoice_reminder(
     <p style="font-size:20px;font-weight:700;margin:16px 0;">Total due: {invoice_total}</p>
 {payment_html}\
 {action_html}
+{html_secondary}\
     <p style="color:#64748b;font-size:13px;">If you have already paid, please ignore this reminder.</p>
     <p style="color:#64748b;font-size:13px;margin-top:32px;">— My Trade Portal</p>
   </body>
@@ -352,14 +442,27 @@ def quote_accepted(
     business_name: str,
     quote_title: str,
     quote_total: str,
+    portal_url: str | None = None,
 ) -> tuple[str, str, str]:
-    """Confirmation email after the customer accepts a quote. (subject, html, text)."""
+    """Confirmation email after the customer accepts a quote. (subject, html, text).
+
+    Tells the customer their booking request is now pending — the follow-up
+    ``booking_confirmed`` email lands once the electrician schedules the work.
+    ``portal_url`` is the magic sign-in link to track the booking in the
+    customer portal; omitted when the customer has no portal account.
+    """
     subject = f"Quote accepted — {business_name}"
+    if portal_url:
+        text_cta, html_cta = _magic_link_cta(portal_url, "Track your booking")
+    else:
+        text_cta, html_cta = "", ""
     text = (
         f"Hi {customer_name},\n\n"
         f"Thanks — you've accepted the quote for '{quote_title}' from {business_name}.\n"
         f"Total: {quote_total}\n\n"
-        f"{business_name} will be in touch to schedule the work.\n\n"
+        f"Your booking request is pending — we'll email you as soon as "
+        f"{business_name} has scheduled the work.\n\n"
+        f"{text_cta}"
         "— My Trade Portal"
     )
     html = f"""\
@@ -370,7 +473,137 @@ def quote_accepted(
     <p>Hi {customer_name},</p>
     <p>Thanks — you've accepted the quote for <strong>{quote_title}</strong> from <strong>{business_name}</strong>.</p>
     <p style="font-size:20px;font-weight:700;margin:16px 0;">Total: {quote_total}</p>
-    <p>{business_name} will be in touch to schedule the work.</p>
+    <p>Your booking request is <strong>pending</strong> — we'll email you as soon as {business_name} has scheduled the work.</p>
+{html_cta}\
+    <p style="color:#64748b;font-size:13px;margin-top:32px;">— My Trade Portal</p>
+  </body>
+</html>
+"""
+    return subject, html, text
+
+
+def booking_confirmed(
+    *,
+    customer_name: str,
+    business_name: str,
+    job_title: str,
+    visit_date: str,
+    time_window: str,
+    address: str | None = None,
+    tradie_name: str | None = None,
+    tradie_phone: str | None = None,
+) -> tuple[str, str, str]:
+    """Booking confirmation after the electrician schedules the job.
+
+    ``visit_date``/``time_window`` are pre-formatted display strings (the
+    caller owns locale formatting). ``tradie_name``/``tradie_phone`` identify
+    who is coming; ``address`` is the visit location. Changes are handled by
+    replying — the sender's Reply-To is the tenant's own address.
+    """
+    subject = f"Booking confirmed — {business_name}"
+    details_text = f"Date: {visit_date}\nTime: {time_window}\n"
+    details_rows = (
+        f'<tr><td style="padding:4px 12px 4px 0;color:#64748b;">Date</td>'
+        f'<td style="padding:4px 0;font-weight:600;">{escape(visit_date)}</td></tr>'
+        f'<tr><td style="padding:4px 12px 4px 0;color:#64748b;">Time</td>'
+        f'<td style="padding:4px 0;font-weight:600;">{escape(time_window)}</td></tr>'
+    )
+    if address:
+        details_text += f"Address: {address}\n"
+        details_rows += (
+            '<tr><td style="padding:4px 12px 4px 0;color:#64748b;">Address</td>'
+            f'<td style="padding:4px 0;font-weight:600;">{escape(address)}</td></tr>'
+        )
+    if tradie_name:
+        tradie_line = f"{tradie_name}"
+        if tradie_phone:
+            tradie_line += f" ({tradie_phone})"
+        details_text += f"Your tradesperson: {tradie_line}\n"
+        details_rows += (
+            '<tr><td style="padding:4px 12px 4px 0;color:#64748b;">Your tradesperson</td>'
+            f'<td style="padding:4px 0;font-weight:600;">{escape(tradie_line)}</td></tr>'
+        )
+    text = (
+        f"Hi {customer_name},\n\n"
+        f"Good news — {business_name} has booked in your job '{job_title}'.\n\n"
+        f"{details_text}\n"
+        "Need to change it? Just reply to this email and we'll rearrange.\n\n"
+        "— My Trade Portal"
+    )
+    html = f"""\
+<!doctype html>
+<html>
+  <body style="font-family:-apple-system,Segoe UI,Roboto,sans-serif;color:#0f172a;max-width:560px;margin:0 auto;padding:24px;">
+    <h1 style="font-size:22px;margin:0 0 12px;">Booking confirmed</h1>
+    <p>Hi {customer_name},</p>
+    <p>Good news — <strong>{business_name}</strong> has booked in your job <strong>{job_title}</strong>.</p>
+    <div style="background:#f1f5f9;border-radius:8px;padding:16px;margin:16px 0;">
+      <table style="border-collapse:collapse;font-size:14px;">{details_rows}</table>
+    </div>
+    <p>Need to change it? Just reply to this email and we'll rearrange.</p>
+    <p style="color:#64748b;font-size:13px;margin-top:32px;">— My Trade Portal</p>
+  </body>
+</html>
+"""
+    return subject, html, text
+
+
+def payment_received(
+    *,
+    customer_name: str,
+    business_name: str,
+    invoice_number: str,
+    amount_paid: str,
+    paid_date: str,
+    review_url: str | None = None,
+) -> tuple[str, str, str]:
+    """Payment confirmation after an invoice is settled online. (subject, html, text).
+
+    Positions itself as the confirmation + thank-you; Stripe sends its own
+    card receipt, which the copy mentions so the customer expects both. When
+    the tenant has configured a ``review_url`` (tenant settings), a review
+    prompt CTA is appended.
+    """
+    subject = f"Payment received — invoice {invoice_number}"
+    if review_url:
+        text_review = (
+            f"How did we do? Leave {business_name} a review — it only takes a minute:\n"
+            f"{review_url}\n\n"
+        )
+        html_review = f"""\
+    <div style="background:#f1f5f9;border-radius:8px;padding:16px;margin:16px 0;">
+      <p style="margin:0 0 8px;font-weight:600;">How did we do?</p>
+      <p style="margin:0 0 12px;color:#475569;font-size:14px;">Your feedback helps {business_name} win more work — it only takes a minute.</p>
+      <a href="{escape(review_url)}" style="background:#FFC107;color:#0F1E26;padding:12px 20px;border-radius:8px;text-decoration:none;font-weight:700;">Leave {business_name} a review</a>
+    </div>
+"""
+    else:
+        text_review, html_review = "", ""
+    text = (
+        f"Hi {customer_name},\n\n"
+        f"Thank you — {business_name} has received your payment of {amount_paid} "
+        f"for invoice {invoice_number}, paid on {paid_date}.\n\n"
+        "This email confirms your payment. Stripe will also email you a card "
+        "receipt for your records.\n\n"
+        f"{text_review}"
+        "— My Trade Portal"
+    )
+    html = f"""\
+<!doctype html>
+<html>
+  <body style="font-family:-apple-system,Segoe UI,Roboto,sans-serif;color:#0f172a;max-width:560px;margin:0 auto;padding:24px;">
+    <h1 style="font-size:22px;margin:0 0 12px;">Payment received — thank you</h1>
+    <p>Hi {customer_name},</p>
+    <p>Thank you — <strong>{business_name}</strong> has received your payment.</p>
+    <div style="background:#f1f5f9;border-radius:8px;padding:16px;margin:16px 0;">
+      <table style="border-collapse:collapse;font-size:14px;">
+        <tr><td style="padding:4px 12px 4px 0;color:#64748b;">Invoice</td><td style="padding:4px 0;font-weight:600;">{invoice_number}</td></tr>
+        <tr><td style="padding:4px 12px 4px 0;color:#64748b;">Amount paid</td><td style="padding:4px 0;font-weight:600;">{amount_paid}</td></tr>
+        <tr><td style="padding:4px 12px 4px 0;color:#64748b;">Paid on</td><td style="padding:4px 0;font-weight:600;">{escape(paid_date)}</td></tr>
+      </table>
+    </div>
+    <p style="color:#475569;font-size:14px;">This email confirms your payment. Stripe will also email you a card receipt for your records.</p>
+{html_review}\
     <p style="color:#64748b;font-size:13px;margin-top:32px;">— My Trade Portal</p>
   </body>
 </html>
