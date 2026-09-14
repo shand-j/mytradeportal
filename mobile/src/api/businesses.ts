@@ -11,6 +11,7 @@ type PublicConfigResponse = {
   businessServices: string[];
   contactPhone: string | null;
   address: string | null;
+  reviewUrl: string | null;
 };
 
 type CurrentTenantResponse = {
@@ -43,6 +44,8 @@ type TenantSettings = {
   workingDayStart?: string;
   workingDayEnd?: string;
   workingDays?: number[];
+  /** Public review link (Google Reviews etc.) surfaced on the customer portal. */
+  reviewUrl?: string;
   [key: string]: unknown;
 };
 
@@ -59,6 +62,7 @@ function normalizeConfig(data: PublicConfigResponse): BusinessConfig {
     businessServices: data.businessServices ?? [],
     contactPhone: data.contactPhone ?? undefined,
     address: data.address ?? undefined,
+    reviewUrl: data.reviewUrl ?? undefined,
   };
 }
 
@@ -97,6 +101,11 @@ function normalizeTenant(tenant: CurrentTenantResponse): BusinessConfig {
     businessServices: [],
     contactPhone: tenant.phone ?? undefined,
     address: tenant.address ?? undefined,
+    // The review link lives in the free-form settings JSONB (review_url).
+    reviewUrl:
+      typeof tenant.settings?.reviewUrl === "string" && tenant.settings.reviewUrl
+        ? tenant.settings.reviewUrl
+        : undefined,
     quotesPerWeek: tenant.quotesPerWeek ?? undefined,
     avgMinutesPerQuote: tenant.avgMinutesPerQuote ?? undefined,
   };
@@ -113,6 +122,8 @@ export type UpdateTenantInput = {
   phone?: string;
   address?: string;
   primaryColor?: string;
+  /** Public review link; PATCH /tenants/me flattens it into tenant settings. */
+  reviewUrl?: string;
 };
 
 /** Persist branding/business details for the authenticated user's tenant. */

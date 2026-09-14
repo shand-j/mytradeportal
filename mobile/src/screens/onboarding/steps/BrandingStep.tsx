@@ -21,6 +21,15 @@ const BRAND_COLOURS = [
 
 const HEX_RE = /^#?([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/;
 
+/** Soft check: review links should be full https URLs, but never block the step. */
+function reviewUrlWarning(raw: string): string | null {
+  const value = raw.trim();
+  if (!value) return null;
+  return /^https:\/\/.+\..+/.test(value)
+    ? null
+    : "This doesn't look like a full https:// link — customers will be sent here exactly as typed.";
+}
+
 /** Normalise #RGB/#RRGGBB (any case, # optional) to uppercase #RRGGBB, or null. */
 function normaliseHex(raw: string): string | null {
   const match = raw.trim().match(HEX_RE);
@@ -41,6 +50,7 @@ export function BrandingStep({ data, onNext }: BrandingStepProps) {
   );
   const [hexInput, setHexInput] = useState(primaryColor.toUpperCase());
   const [hexError, setHexError] = useState<string | null>(null);
+  const [reviewUrl, setReviewUrl] = useState((data?.reviewUrl as string) ?? "");
 
   const pickPreset = (colour: string) => {
     setPrimaryColor(colour);
@@ -115,10 +125,28 @@ export function BrandingStep({ data, onNext }: BrandingStepProps) {
           </View>
         </View>
 
+        <View className="rounded-2xl bg-slate-100 p-4 gap-3">
+          <FormField
+            testID="branding-review-url"
+            label="Review link (Google, Checkatrade, Trustpilot…)"
+            value={reviewUrl}
+            onChangeText={setReviewUrl}
+            placeholder="https://g.page/r/your-business/review"
+            autoCapitalize="none"
+            keyboardType="default"
+            helper="We'll ask your customers for a review after they pay."
+          />
+          {reviewUrlWarning(reviewUrl) && (
+            <Text testID="branding-review-url-warning" variant="caption" color="warning">
+              {reviewUrlWarning(reviewUrl)}
+            </Text>
+          )}
+        </View>
+
         <Button
           testID="branding-continue"
           title="Continue"
-          onPress={() => onNext({ primaryColor })}
+          onPress={() => onNext({ primaryColor, reviewUrl: reviewUrl.trim() || undefined })}
         />
         <Button title="Skip for now" variant="outline" onPress={() => onNext({ skipped: true })} />
       </View>

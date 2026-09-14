@@ -257,6 +257,18 @@ export default defineRailway(() => {
       STRIPE_SECRET_KEY: preserve(),
       STRIPE_WEBHOOK_SECRET: preserve(),
       STRIPE_CONNECT_CLIENT_ID: preserve(),
+      // Tenant portal (ADR-004): customer-facing pages at
+      // https://{slug}.mytradeportal.co.uk. Literal product constant, like
+      // PASSWORD_RESET_BASE_URL.
+      PORTAL_BASE_DOMAIN: "mytradeportal.co.uk",
+      // Portal magic-link lifetime, guest-thread TTL, and the intake-triage
+      // model/timeout. Set once in the dashboard; preserve() keeps applies
+      // from overwriting them. While unset, the code defaults apply
+      // (30 days, gpt-4o-mini, 12s, 120 min).
+      PORTAL_MAGIC_TTL_DAYS: preserve(),
+      INTAKE_TRIAGE_MODEL: preserve(),
+      INTAKE_TRIAGE_TIMEOUT_SECONDS: preserve(),
+      GUEST_THREAD_TTL_MINUTES: preserve(),
       // New Relic observability (free tier). Set NEW_RELIC_LICENSE_KEY to enable APM.
       NEW_RELIC_LICENSE_KEY: preserve(),
       NEW_RELIC_APP_NAME: "mytradeportal-api",
@@ -282,6 +294,9 @@ export default defineRailway(() => {
       VITE_API_URL: "https://api-production-65db.up.railway.app",
       VITE_PADDLE_ENV: "sandbox",
       VITE_PADDLE_CLIENT_TOKEN: preserve(),
+      // Stripe.js key (pk_...) for the tenant portal invoice /pay page.
+      // Public by design (browser-side); set in the dashboard.
+      VITE_STRIPE_PUBLISHABLE_KEY: preserve(),
       // Legacy price vars kept until the pricing page cutover is fully rolled
       // out; the landing reads the SOLE_TRADER/PRO/TEAM names below.
       VITE_PADDLE_PRICE_STARTER_MONTH: preserve(),

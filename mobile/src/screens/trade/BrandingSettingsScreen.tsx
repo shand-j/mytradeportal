@@ -25,6 +25,15 @@ const BRAND_COLOURS = [
 
 const HEX_RE = /^#?([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/;
 
+/** Soft check: review links should be full https URLs, but never block saving. */
+function reviewUrlWarning(raw: string): string | null {
+  const value = raw.trim();
+  if (!value) return null;
+  return /^https:\/\/.+\..+/.test(value)
+    ? null
+    : "This doesn't look like a full https:// link — customers will be sent here exactly as typed.";
+}
+
 /** Normalise #RGB/#RRGGBB (any case, # optional) to uppercase #RRGGBB, or null. */
 function normaliseHex(raw: string): string | null {
   const match = raw.trim().match(HEX_RE);
@@ -54,6 +63,7 @@ export function BrandingSettingsScreen({ onClose }: BrandingSettingsScreenProps)
   const [primaryColor, setPrimaryColor] = useState("");
   const [hexInput, setHexInput] = useState("");
   const [hexError, setHexError] = useState<string | null>(null);
+  const [reviewUrl, setReviewUrl] = useState("");
   const [error, setError] = useState<string | null>(null);
 
   const pickPreset = (colour: string) => {
@@ -82,6 +92,7 @@ export function BrandingSettingsScreen({ onClose }: BrandingSettingsScreenProps)
     setAddress((prev) => prev || tenant.address || "");
     setPrimaryColor((prev) => prev || tenant.primaryColor || "");
     setHexInput((prev) => prev || (tenant.primaryColor ?? "").toUpperCase());
+    setReviewUrl((prev) => prev || tenant.reviewUrl || "");
   }, [tenant]);
 
   const saveMutation = useMutation({
@@ -110,6 +121,8 @@ export function BrandingSettingsScreen({ onClose }: BrandingSettingsScreenProps)
       phone: phone.trim() || undefined,
       address: address.trim() || undefined,
       primaryColor: primaryColor || undefined,
+      // Empty string clears the link server-side (settings merge).
+      reviewUrl: reviewUrl.trim(),
     });
   };
 
@@ -133,6 +146,24 @@ export function BrandingSettingsScreen({ onClose }: BrandingSettingsScreenProps)
             keyboardType="phone-pad"
           />
           <FormField label="Address" value={address} onChangeText={setAddress} placeholder="Address" />
+        </View>
+
+        <View className="rounded-2xl bg-slate-100 p-4 gap-3">
+          <FormField
+            testID="branding-review-url"
+            label="Review link (Google, Checkatrade, Trustpilot…)"
+            value={reviewUrl}
+            onChangeText={setReviewUrl}
+            placeholder="https://g.page/r/your-business/review"
+            autoCapitalize="none"
+            keyboardType="default"
+            helper="We'll ask your customers for a review after they pay."
+          />
+          {reviewUrlWarning(reviewUrl) && (
+            <Text testID="branding-review-url-warning" variant="caption" color="warning">
+              {reviewUrlWarning(reviewUrl)}
+            </Text>
+          )}
         </View>
 
         <View className="rounded-2xl bg-slate-100 p-4 gap-3">

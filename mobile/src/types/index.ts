@@ -19,6 +19,8 @@ export type BusinessConfig = {
   businessServices?: string[];
   contactPhone?: string;
   address?: string;
+  /** Public review link (Google/Checkatrade/Trustpilot) shown after payment. */
+  reviewUrl?: string;
   /** Onboarding metrics: typical quoting volume (used for the time-saved card). */
   quotesPerWeek?: number;
   avgMinutesPerQuote?: number;
