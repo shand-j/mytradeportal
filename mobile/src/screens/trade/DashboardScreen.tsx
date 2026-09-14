@@ -1,7 +1,7 @@
-import { useMemo, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import { Pressable, ScrollView, View } from "react-native";
-import { useRouter } from "expo-router";
-import { colors } from "@mtp/shared-ts";
+import { useFocusEffect, useRouter } from "expo-router";
+import { useQueryClient } from "@tanstack/react-query";
 import { Button } from "../../components/ui/Button";
 import { Header } from "../../components/ui/Header";
 import { IconButton } from "../../components/ui/IconButton";
@@ -13,7 +13,6 @@ import { LeadCard } from "../../components/trade/LeadCard";
 import { NotificationBell } from "../../components/notifications/NotificationBell";
 import { useAuth } from "../../contexts/AuthContext";
 import { useBusiness } from "../../theme/ThemeProvider";
-import { useOfflineStore } from "../../stores/offlineStore";
 import { useOutstandingQuotes } from "../../api/quotes";
 import { useJobsList } from "../../api/jobs";
 import { useLeadsList } from "../../api/quoteRequests";
@@ -30,8 +29,9 @@ const MAX_DAY_JOBS = 3;
 const TOP_NEW_QUOTES_COUNT = 2;
 
 /**
- * Rough typical job value (£) per quote category, used for estimated-value
- * figures. Client-side heuristic, not a quote.
+ * Rough typical job value (£) per quote category — fallback for estimated-value
+ * figures when the lead has no AI-drafted quote total yet.
+ * Client-side heuristic, not a quote.
  */
 export const CATEGORY_TYPICAL_VALUE: Record<string, number> = {
   consumer_unit: 850,
@@ -51,6 +51,8 @@ export const CATEGORY_TYPICAL_VALUE: Record<string, number> = {
 const DEFAULT_TYPICAL_VALUE = 500;
 
 function leadEstimatedValue(lead: Lead): number {
+  // The real AI-draft total beats the category heuristic when available.
+  if (lead.quoteTotal && lead.quoteTotal > 0) return lead.quoteTotal;
   const category = lead.structuredData?.category as string | undefined;
   return CATEGORY_TYPICAL_VALUE[category ?? "other"] ?? DEFAULT_TYPICAL_VALUE;
 }
@@ -100,9 +102,24 @@ export function DashboardScreen(_props: DashboardScreenProps) {
   const router = useRouter();
   const { user } = useAuth();
   const { business } = useBusiness();
-  const isOnline = useOfflineStore((s) => s.isOnline);
-  const toggleOnline = useOfflineStore((s) => s.toggleOnline);
   const [selectedDateIndex, setSelectedDateIndex] = useState(0);
+
+  // Refresh the dashboard data every time the tab regains focus. The first
+  // focus coincides with the queries' initial mount fetch, so skip it to
+  // avoid double-fetching.
+  const queryClient = useQueryClient();
+  const isFirstFocus = useRef(true);
+  useFocusEffect(
+    useCallback(() => {
+      if (isFirstFocus.current) {
+        isFirstFocus.current = false;
+        return;
+      }
+      for (const key of ["quotes", "quote-requests", "jobs", "dashboard", "invoices"]) {
+        void queryClient.invalidateQueries({ queryKey: [key] });
+      }
+    }, [queryClient])
+  );
 
   const today = new Date();
   const nextDays = useMemo(() => {
@@ -124,11 +141,21 @@ export function DashboardScreen(_props: DashboardScreenProps) {
   const visibleDayJobs = selectedDayJobs.slice(0, MAX_DAY_JOBS);
   const hiddenDayJobs = selectedDayJobs.length - visibleDayJobs.length;
 
-  const { leads, isLoading: leadsLoading } = useLeadsList();
+  const { allLeads, isLoading: leadsLoading } = useLeadsList();
 
-  // New quote requests still waiting for a quote (converted/dead are excluded
-  // upstream; "new" = customer submitted, not yet quoted).
-  const newLeads = useMemo(() => leads.filter((lead) => lead.status === "new"), [leads]);
+  // Leads that still need the tradesperson's attention: fresh submissions
+  // not yet quoted, plus leads the backend auto-drafted a quote for (status
+  // converted_to_quote) whose quote is still an unsent draft. Without the
+  // second branch the section is permanently empty on real tenants, because
+  // every public quote request is auto-converted within seconds.
+  const newLeads = useMemo(
+    () =>
+      allLeads.filter(
+        (lead) =>
+          lead.status === "new" || (lead.status === "converted" && lead.quoteStatus === "draft")
+      ),
+    [allLeads]
+  );
 
   // Customer-submitted requests drive the banner (manual entries excluded).
   const newCustomerLeads = useMemo(
@@ -171,14 +198,6 @@ export function DashboardScreen(_props: DashboardScreenProps) {
         rightAction={
           <View className="flex-row items-center gap-1">
             <NotificationBell role="trade" />
-            <IconButton
-              testID="offline-toggle"
-              icon={isOnline ? "cloud-done" : "cloud-offline"}
-              size={22}
-              color={isOnline ? colors.success : colors.warningText}
-              onPress={toggleOnline}
-              accessibilityLabel="Toggle connectivity"
-            />
             <IconButton
               testID="dashboard-more"
               icon="more"
@@ -241,7 +260,7 @@ export function DashboardScreen(_props: DashboardScreenProps) {
               router.push({ pathname: "/(trade)/quotes", params: { filter: "new", sort: "fifo" } })
             }
           >
-            <View className="flex-1 gap-1 rounded-2xl bg-accent-50 p-4">
+            <View className="min-h-28 flex-1 gap-1 rounded-2xl bg-accent-50 p-4">
               <View className="flex-row items-center justify-between">
                 <Text variant="caption" color="secondary">
                   Outstanding quotes
@@ -261,7 +280,7 @@ export function DashboardScreen(_props: DashboardScreenProps) {
             </View>
           </Pressable>
           <View testID="dashboard-time-saved-card" className="flex-1">
-            <View className="flex-1 gap-1 rounded-2xl bg-primary-50 p-4">
+            <View className="min-h-28 flex-1 gap-1 rounded-2xl bg-primary-50 p-4">
               <View className="flex-row items-center justify-between">
                 <Text variant="caption" color="secondary">
                   Hours saved by AI
@@ -300,12 +319,15 @@ export function DashboardScreen(_props: DashboardScreenProps) {
               className="flex-1"
               onPress={() => router.push("/(trade)/analytics")}
             >
-              <View className="flex-1 gap-1 rounded-2xl bg-accent-50 p-4">
+              <View className="min-h-28 flex-1 gap-1 rounded-2xl bg-accent-50 p-4">
                 <Text variant="caption" color="secondary">
                   Paid this month
                 </Text>
                 {kpiLoading ? (
-                  <View className="mt-1 h-8 w-20 rounded bg-accent-100" />
+                  <>
+                    <View className="mt-1 h-8 w-20 rounded bg-accent-100" />
+                    <View className="h-3 w-24 rounded bg-accent-100" />
+                  </>
                 ) : (
                   <Text variant="title" weight="bold">
                     £{(kpi?.revenueThisMonth ?? 0).toFixed(0)}
@@ -324,7 +346,7 @@ export function DashboardScreen(_props: DashboardScreenProps) {
               className="flex-1"
               onPress={() => router.push("/(trade)/invoices")}
             >
-              <View className="flex-1 gap-1 rounded-2xl bg-primary-50 p-4">
+              <View className="min-h-28 flex-1 gap-1 rounded-2xl bg-primary-50 p-4">
                 <Text variant="caption" color="secondary">
                   Outstanding invoices
                 </Text>
@@ -355,9 +377,17 @@ export function DashboardScreen(_props: DashboardScreenProps) {
           {topNewQuotes.map((lead) => (
             <LeadCard key={lead.id} lead={lead} onPress={() => router.push(`/(trade)/lead/${lead.id}`)} />
           ))}
+          {leadsLoading &&
+            [0, 1].map((i) => (
+              <View key={i} className="gap-2 rounded-2xl border border-gray-200 bg-white p-4">
+                <View className="h-4 w-3/4 rounded bg-neutral-200" />
+                <View className="h-3 w-1/2 rounded bg-neutral-200" />
+                <View className="h-4 w-16 rounded bg-neutral-200" />
+              </View>
+            ))}
           {topNewQuotes.length === 0 && !leadsLoading && (
             <Text variant="caption" color="secondary">
-              No new quote requests right now.
+              No new quotes yet
             </Text>
           )}
         </View>

@@ -180,7 +180,7 @@ describe("trade leads", () => {
     await tapId("tab-dashboard");
     await waitForText("Dashboard");
     await tapText("+ New lead");
-    await waitForText("Manual lead entry");
+    await waitForText("Add New Customer");
 
     await setValue(await messageTextView(), LEAD_MESSAGE, "Urgency");
     await tapText("Phone");

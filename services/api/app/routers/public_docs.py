@@ -29,7 +29,7 @@ from urllib.parse import urlencode
 
 import structlog
 from fastapi import APIRouter, Depends, HTTPException, Request, status
-from sqlalchemy import select, update
+from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -37,8 +37,14 @@ from app import stripe_client
 from app.config import PUBLIC_DOCS_BASE_URL
 from app.database import get_db
 from app.limiter import limiter
-from app.models import Contact, DocumentAccessToken, Invoice, Quote, StripeAccount, Tenant
-from app.rls import bypass_rls_for_transaction
+from app.models import Contact, Customer, DocumentAccessToken, Invoice, Quote, StripeAccount, Tenant
+from app.payment_details import tenant_payment_details
+from app.quote_acceptance import apply_quote_acceptance, apply_quote_decline
+from app.rls import bypass_rls_for_transaction, set_tenant_in_session
+
+# FastAPI evaluates body-model annotations at route registration, so this
+# import must stay at runtime despite the future-annotations banner.
+from app.schemas import CustomerQuoteAccept  # noqa: TC001
 
 if TYPE_CHECKING:
     from uuid import UUID
@@ -135,6 +141,70 @@ async def _load_token(db: AsyncSession, kind: str, raw_token: str) -> DocumentAc
     return record
 
 
+def _quote_payload(quote: Quote, contact: Contact | None) -> dict[str, Any]:
+    """Quote-specific fields of the public render payload."""
+    return {
+        "status": quote.status,
+        "title": quote.title,
+        "description": quote.description,
+        "invoice_number": None,
+        "customer_first_name": _first_name(contact.name if contact else None),
+        "lines": [
+            {
+                "description": line.description,
+                "quantity": str(line.quantity),
+                "unit": line.unit,
+                "unit_price": str(line.unit_price),
+                "total": str(line.total),
+            }
+            for line in quote.line_items
+        ],
+        "subtotal": _money(quote.subtotal),
+        "vat_rate": str(quote.vat_rate),
+        "vat_amount": _money(quote.vat_amount),
+        "total": _money(quote.total),
+        "sent_at": quote.sent_at.isoformat() if quote.sent_at else None,
+        "valid_until": quote.valid_until.isoformat() if quote.valid_until else None,
+        "due_date": None,
+        "paid_at": None,
+    }
+
+
+def _base_payload(kind: str, tenant: Tenant) -> dict[str, Any]:
+    """Fields shared by the quote and invoice render payloads."""
+    return {
+        "kind": kind,
+        "tenant": _tenant_block(tenant),
+        "currency": "GBP",
+        "payment_url": None,
+        "payment_details": None,
+    }
+
+
+async def _load_token_and_tenant(
+    db: AsyncSession, kind: str, raw_token: str
+) -> tuple[DocumentAccessToken, Tenant]:
+    """Resolve a document token and its tenant, or raise the uniform 404."""
+    record = await _load_token(db, kind, raw_token)
+    tenant = await db.get(Tenant, record.tenant_id)
+    if tenant is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not found")
+    return record, tenant
+
+
+async def _load_quote_for_action(
+    db: AsyncSession, record: DocumentAccessToken
+) -> tuple[Quote, Contact | None]:
+    """Load the token's quote (with lines) and its contact for an action call."""
+    quote = await db.scalar(
+        select(Quote).where(Quote.id == record.document_id).options(selectinload(Quote.line_items))
+    )
+    if quote is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not found")
+    contact = await db.get(Contact, quote.contact_id)
+    return quote, contact
+
+
 _OPEN_INTENT_STATUSES = frozenset(
     {"requires_payment_method", "requires_confirmation", "requires_action"}
 )
@@ -217,55 +287,13 @@ async def get_public_document(
     if kind not in ("quote", "invoice"):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not found")
     await bypass_rls_for_transaction(db)
-    record = await _load_token(db, kind, token)
+    record, tenant = await _load_token_and_tenant(db, kind, token)
 
-    tenant = await db.get(Tenant, record.tenant_id)
-    if tenant is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not found")
-
-    payload: dict[str, Any] = {
-        "kind": kind,
-        "tenant": _tenant_block(tenant),
-        "currency": "GBP",
-        "payment_url": None,
-    }
+    payload = _base_payload(kind, tenant)
 
     if kind == "quote":
-        quote = await db.scalar(
-            select(Quote)
-            .where(Quote.id == record.document_id)
-            .options(selectinload(Quote.line_items))
-        )
-        if quote is None:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not found")
-        contact = await db.get(Contact, quote.contact_id)
-        payload.update(
-            {
-                "status": quote.status,
-                "title": quote.title,
-                "description": quote.description,
-                "invoice_number": None,
-                "customer_first_name": _first_name(contact.name if contact else None),
-                "lines": [
-                    {
-                        "description": line.description,
-                        "quantity": str(line.quantity),
-                        "unit": line.unit,
-                        "unit_price": str(line.unit_price),
-                        "total": str(line.total),
-                    }
-                    for line in quote.line_items
-                ],
-                "subtotal": _money(quote.subtotal),
-                "vat_rate": str(quote.vat_rate),
-                "vat_amount": _money(quote.vat_amount),
-                "total": _money(quote.total),
-                "sent_at": quote.sent_at.isoformat() if quote.sent_at else None,
-                "valid_until": quote.valid_until.isoformat() if quote.valid_until else None,
-                "due_date": None,
-                "paid_at": None,
-            }
-        )
+        quote, contact = await _load_quote_for_action(db, record)
+        payload.update(_quote_payload(quote, contact))
         return payload
 
     invoice = await db.scalar(
@@ -302,6 +330,95 @@ async def get_public_document(
             "due_date": invoice.due_date.isoformat() if invoice.due_date else None,
             "paid_at": invoice.paid_at.isoformat() if invoice.paid_at else None,
             "payment_url": await _invoice_payment_url(db, invoice, tenant, token),
+            # Bank-transfer fallback for tenants without Stripe: the web page
+            # shows these as the payment CTA when payment_url is null.
+            "payment_details": tenant_payment_details(
+                tenant.settings, reference=invoice.invoice_number
+            ),
         }
     )
+    return payload
+
+
+@router.post("/quote/{token}/accept")
+@limiter.limit("60/hour")
+async def accept_public_quote(
+    request: Request,
+    token: str,
+    db: DbDep,
+    data: CustomerQuoteAccept | None = None,
+) -> dict[str, Any]:
+    """Token-authorized quote acceptance from the emailed web page.
+
+    Same transition, staff notification, outcome event and confirmation email
+    as the authenticated portal accept (shared in
+    :func:`app.quote_acceptance.apply_quote_acceptance`) — the document token
+    stands in for login. When the token's recipient email matches a customer
+    account, the confirmation email carries the usual magic sign-in link.
+    """
+    await bypass_rls_for_transaction(db)
+    record, tenant = await _load_token_and_tenant(db, "quote", token)
+    # The bypass is transaction-local and the shared transition commits, so
+    # scope the session to the tenant for everything after the token lookup.
+    await set_tenant_in_session(db, tenant.id)
+    quote, contact = await _load_quote_for_action(db, record)
+    if quote.status != "sent":
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Quote can no longer be accepted",
+        )
+    recipient = record.contact_email or (contact.email if contact else None)
+    customer: Customer | None = None
+    if recipient:
+        customer = await db.scalar(
+            select(Customer).where(
+                Customer.tenant_id == tenant.id,
+                func.lower(Customer.email) == recipient.lower(),
+            )
+        )
+    customer_name = (
+        (contact.name if contact else None)
+        or (customer.full_name if customer is not None else "")
+        or "Your customer"
+    )
+    await apply_quote_acceptance(
+        db,
+        quote=quote,
+        tenant=tenant,
+        customer_name=customer_name,
+        preferred_dates=data.preferred_date_strings() if data is not None else None,
+        outcome_payload={
+            "actor": "customer",
+            "channel": "email_link",
+            **({"customer_id": str(customer.id)} if customer is not None else {}),
+        },
+        email_contact_id=quote.contact_id,
+        email_to=recipient,
+        customer=customer,
+    )
+    payload = _base_payload("quote", tenant)
+    payload.update(_quote_payload(quote, contact))
+    return payload
+
+
+@router.post("/quote/{token}/decline")
+@limiter.limit("60/hour")
+async def decline_public_quote(
+    request: Request,
+    token: str,
+    db: DbDep,
+) -> dict[str, Any]:
+    """Token-authorized quote decline from the emailed web page."""
+    await bypass_rls_for_transaction(db)
+    record, tenant = await _load_token_and_tenant(db, "quote", token)
+    await set_tenant_in_session(db, tenant.id)
+    quote, contact = await _load_quote_for_action(db, record)
+    if quote.status != "sent":
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Quote can no longer be declined",
+        )
+    await apply_quote_decline(db, quote=quote)
+    payload = _base_payload("quote", tenant)
+    payload.update(_quote_payload(quote, contact))
     return payload

@@ -154,6 +154,9 @@ function mapLead(qr: ApiQuoteRequest): Lead {
     requiresCallback: qr.requiresCallback ?? false,
     customerReachable: qr.customerReachable,
     contactPreferredMethod: qr.contactPreferredMethod ?? null,
+    quoteId: qr.quote?.id ?? undefined,
+    quoteStatus: qr.quote?.status ?? undefined,
+    quoteTotal: qr.quote ? parseFloat(qr.quote.total) || 0 : undefined,
   };
 }
 
@@ -279,10 +282,18 @@ export function useLeadsList() {
     queryFn: fetchLeads,
   });
 
+  const allLeads = (query.data ?? []).map(mapLead);
   return {
     // Converted leads are excluded: their quote row represents them in the
     // list, so showing both would duplicate the same work item.
-    leads: (query.data ?? []).map(mapLead).filter((lead) => lead.status !== "converted"),
+    leads: allLeads.filter((lead) => lead.status !== "converted"),
+    /**
+     * Unfiltered leads, including converted ones. The dashboard needs these:
+     * the backend auto-drafts a quote for every public quote request (marking
+     * it converted_to_quote), so "needs attention" includes converted leads
+     * whose quote is still a draft.
+     */
+    allLeads,
     isConnected: query.isSuccess,
     isLoading: query.isLoading,
   };

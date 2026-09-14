@@ -1,6 +1,6 @@
 """Pydantic schemas for API requests and responses."""
 
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from decimal import Decimal, InvalidOperation
 from typing import Any, Literal
 from uuid import UUID
@@ -430,6 +430,7 @@ class QuoteCreate(BaseModel):
     line_items: list[QuoteLineItemCreate] = Field(default_factory=list)
     vat_rate: Decimal = Decimal("0.20")
     valid_until: datetime | None = None
+    estimated_hours: Decimal | None = None
 
 
 class QuoteRead(BaseModel):
@@ -467,6 +468,11 @@ class QuoteRead(BaseModel):
     # Uplift from the tenant's quote-rounding setting (0 when off). ``total``
     # already includes it; the UI shows a "rounded up" indicator when > 0.
     rounding_adjustment: Decimal = Decimal("0.00")
+    # Estimated total working hours for the job (AI-estimated or manually
+    # set). ``is_multi_day`` is derived against the tenant's daily working
+    # hours, attached transiently by the router as ``_tenant_daily_hours``.
+    estimated_hours: Decimal | None = None
+    is_multi_day: bool = False
 
     @model_validator(mode="before")
     @classmethod
@@ -475,9 +481,13 @@ class QuoteRead(BaseModel):
         if isinstance(value, dict):
             extra_data = value.get("extra_data") or {}
             line_items = value.get("line_items") or []
+            daily_hours = value.get("_tenant_daily_hours")
+            estimated = value.get("estimated_hours")
         else:
             extra_data = getattr(value, "extra_data", None) or {}
             line_items = getattr(value, "line_items", None) or []
+            daily_hours = getattr(value, "_tenant_daily_hours", None)
+            estimated = getattr(value, "estimated_hours", None)
 
         rag = extra_data.get("rag") if isinstance(extra_data, dict) else None
         if not isinstance(rag, dict):
@@ -488,6 +498,13 @@ class QuoteRead(BaseModel):
                 return bool(item.get("ai_generated"))
             return bool(getattr(item, "ai_generated", False))
 
+        multi_day = False
+        if daily_hours and estimated is not None:
+            try:
+                multi_day = float(estimated) > float(daily_hours)
+            except (TypeError, ValueError):
+                multi_day = False
+
         ai_fields = {
             "ai_generated": any(_is_ai(item) for item in line_items),
             "ai_confidence": rag.get("confidence"),
@@ -495,6 +512,7 @@ class QuoteRead(BaseModel):
             "ai_assumptions": rag.get("assumptions") or [],
             "ai_notes": rag.get("notes"),
             "retrieval_status": rag.get("retrieval_status"),
+            "is_multi_day": multi_day,
         }
         if isinstance(value, dict):
             merged = {**ai_fields, **value}
@@ -514,6 +532,8 @@ class QuoteUpdate(BaseModel):
     valid_until: datetime | None = None
     status: str | None = None
     line_items: list[QuoteLineItemCreate] | None = None
+    # Explicit null clears the estimate; omitting the key leaves it untouched.
+    estimated_hours: Decimal | None = None
 
 
 class QuoteGenerateRequest(BaseModel):
@@ -709,6 +729,28 @@ class JobRead(BaseModel):
         except Exception:  # unloaded relationship outside a session
             value.photos = []
         return value
+
+
+class ScheduleSuggestionDay(BaseModel):
+    """One working day's share of a suggested multi-day schedule."""
+
+    date: date
+    hours: float
+
+
+class ScheduleSuggestion(BaseModel):
+    """Earliest start where the full block sequence fits the calendar.
+
+    Returned by ``GET /jobs/suggest-schedule``: day 1 starts at
+    ``start_time`` (the tenant's working-day start) on ``start_date``;
+    subsequent days are consecutive working days, each capped at the daily
+    working hours.
+    """
+
+    start_date: date
+    start_time: str
+    days: list[ScheduleSuggestionDay]
+    is_multi_day: bool
 
 
 # ---------------------------------------------------------------------------

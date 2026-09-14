@@ -68,9 +68,9 @@ from app.models import (
     Reminder,
     Tenant,
 )
+from app.payment_details import tenant_payment_details
 from app.push import notify_staff
 from app.rls import set_tenant_in_session
-from app.routers.invoices import _tenant_payment_details
 
 if TYPE_CHECKING:
     from uuid import UUID
@@ -309,7 +309,7 @@ async def _process_invoice_reminders(
             business_name=tenant.name,
             invoice_number=invoice.invoice_number,
             invoice_total=f"£{invoice.total}",
-            payment_details=_tenant_payment_details(
+            payment_details=tenant_payment_details(
                 tenant.settings, reference=invoice.invoice_number
             ),
             view_url=view_url,

@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { api } from "../lib/apiClient";
+import { api, ApiError } from "../lib/apiClient";
 import { ApiContact } from "./quotes";
 import { Job, JobStatus } from "../types";
 
@@ -76,6 +76,43 @@ export async function convertQuoteToJob(
   schedule?: ConvertToJobSchedule
 ): Promise<ApiJob> {
   return api.post<ApiJob>(`/quotes/${quoteId}/convert-to-job`, schedule ?? {});
+}
+
+/** Camelized ScheduleSuggestion from GET /jobs/suggest-schedule. */
+export type ScheduleSuggestion = {
+  startDate: string;
+  startTime: string;
+  days: { date: string; hours: number }[];
+  isMultiDay: boolean;
+};
+
+/**
+ * Earliest start where the quote's full working-day block sequence fits
+ * (GET /jobs/suggest-schedule?quote_id=). Null when nothing fits within the
+ * server's search window (404).
+ */
+export async function fetchScheduleSuggestion(quoteId: string): Promise<ScheduleSuggestion | null> {
+  try {
+    return await api.get<ScheduleSuggestion>(`/jobs/suggest-schedule?quote_id=${quoteId}`);
+  } catch (err) {
+    if (err instanceof ApiError && err.status === 404) return null;
+    throw err;
+  }
+}
+
+/** Schedule suggestion for a quote; disabled until a quote is selected. */
+export function useScheduleSuggestion(quoteId: string | null | undefined) {
+  const query = useQuery({
+    queryKey: ["schedule-suggestion", quoteId],
+    queryFn: () => fetchScheduleSuggestion(quoteId as string),
+    enabled: !!quoteId,
+  });
+
+  return {
+    suggestion: query.data ?? null,
+    isConnected: query.isSuccess,
+    isLoading: !!quoteId && query.isLoading,
+  };
 }
 
 export async function startJob(id: string): Promise<ApiJob> {

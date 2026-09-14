@@ -66,6 +66,16 @@ like `/generate`.
 domestic jobs scored on kind coverage, keyword hit-rate, guide price band, and
 line-count sanity. Offline mode replays canned fixtures (no API keys); `--live`
 calls the real LLM. Run it from `services/api` with `python -m evals.run_evals`.
+- Quotes carry `estimated_hours` (working hours): AI generation asks the LLM
+for a quote-level estimate and falls back to summing time-billed line items
+(hour/day units); manual quotes can set it via `POST/PATCH /quotes`.
+`QuoteRead.is_multi_day` derives it against the tenant's daily working hours.
+`services/api/app/work_blocks.py` is the shared planner: when the duration
+exceeds the daily hours, job create/convert caps day 1 and books the
+remaining consecutive working-day blocks as appointments; job reschedules
+shift those block appointments by the same delta. `GET /jobs/suggest-schedule`
+(`quote_id=` or `hours=`) returns the earliest start where the whole block
+sequence fits around existing appointments and scheduled jobs.
 
 ### Reminder scheduler and tenant scheduling settings
 

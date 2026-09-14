@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Alert, Image, Linking, Modal, Platform, Pressable, ScrollView, TextInput, View } from "react-native";
+import { Alert, Image, KeyboardAvoidingView, Linking, Modal, Platform, Pressable, ScrollView, TextInput, View } from "react-native";
 import DateTimePicker from "@react-native-community/datetimepicker";
 import { useQuery } from "@tanstack/react-query";
 import { Button } from "../../components/ui/Button";
@@ -56,7 +56,10 @@ type JobUpdatePatch = {
 
 type JobDetailScreenProps = {
   job: Job;
+  /** Header back button — returns to the previous screen (quote-context nav). */
   onClose: () => void;
+  /** Footer "Close" action after completion — exits to the dashboard tab. */
+  onExitToDashboard: () => void;
   /** Persist the on-site line items as a real invoice. */
   onSubmitInvoice?: (
     lineItems: { description: string; amount: number }[],
@@ -97,6 +100,7 @@ type JobDetailScreenProps = {
 export function JobDetailScreen({
   job,
   onClose,
+  onExitToDashboard,
   onSubmitInvoice,
   onCreateInvoiceAi,
   onStart,
@@ -385,7 +389,15 @@ export function JobDetailScreen({
     <Screen>
       <Header title="Job detail" onBack={onClose} />
 
-      <ScrollView className="flex-1" contentContainerClassName="gap-4 pb-4">
+      <KeyboardAvoidingView
+        style={{ flex: 1 }}
+        behavior={Platform.OS === "ios" ? "padding" : undefined}
+      >
+      <ScrollView
+        className="flex-1"
+        contentContainerClassName="gap-4 pb-4"
+        keyboardShouldPersistTaps="handled"
+      >
         <View className="flex-row items-center justify-between rounded-2xl bg-slate-100 p-4">
           <Text variant="body" weight="semibold" numberOfLines={1} className="flex-1">
             {job.title}
@@ -735,13 +747,14 @@ export function JobDetailScreen({
                 />
               </>
             )}
-            <Button title="Close" variant="outline" onPress={onClose} />
+            <Button title="Close" variant="outline" onPress={onExitToDashboard} />
           </>
         )}
         {status === "cancelled" && (
           <Button title="Re-open" variant="outline" onPress={() => setStatus("confirmed")} />
         )}
       </View>
+      </KeyboardAvoidingView>
 
       {Platform.OS === "web" ? (
         <Modal

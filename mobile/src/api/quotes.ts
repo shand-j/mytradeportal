@@ -44,6 +44,10 @@ export type ApiQuote = {
   aiAssumptions?: string[];
   aiNotes?: string | null;
   retrievalStatus?: string | null;
+  /** Server-estimated total working hours (string-encoded Decimal, nullable). */
+  estimatedHours?: string | null;
+  /** True when estimatedHours exceeds the tenant's daily working hours. */
+  isMultiDay?: boolean;
 };
 
 export async function fetchQuotes(): Promise<ApiQuote[]> {

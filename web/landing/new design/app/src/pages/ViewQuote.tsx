@@ -4,6 +4,8 @@ import Nav from '../sections/Nav'
 import Footer from '../sections/Footer'
 import { usePageMeta } from '../hooks/usePageMeta'
 import {
+  acceptPublicQuote,
+  declinePublicQuote,
   fetchPublicDocument,
   PublicDocsApiError,
   type PublicDocPayload,
@@ -57,7 +59,7 @@ export function usePublicDocument(kind: 'quote' | 'invoice') {
     }
   }, [kind, token])
 
-  return { status, error, doc }
+  return { status, error, doc, setDoc }
 }
 
 export function formatMoney(currency: string, value: string): string {
@@ -86,14 +88,13 @@ const STATUS_LABELS: Record<string, string> = {
 export function StatusBadge({ status }: { status: string }) {
   const positive = status === 'approved' || status === 'accepted' || status === 'paid'
   const negative = status === 'rejected' || status === 'cancelled'
+  // Solid chip with its own opaque background + white border: it must stay
+  // readable on any tenant brand colour (it sits on the branded header).
+  const backgroundColor = positive ? '#15803d' : negative ? '#b91c1c' : '#0f1e26'
   return (
     <span
-      className="inline-block border-2 px-2.5 py-1 text-[11px] font-bold uppercase tracking-[0.08em]"
-      style={{
-        borderColor: positive ? '#15803d' : negative ? '#b91c1c' : 'var(--ink)',
-        color: positive ? '#15803d' : negative ? '#b91c1c' : 'var(--ink)',
-        backgroundColor: positive ? '#15803d14' : negative ? '#b91c1c14' : 'transparent',
-      }}
+      className="inline-block shrink-0 border-2 border-white px-2.5 py-1 text-[11px] font-bold uppercase tracking-[0.08em] text-white"
+      style={{ backgroundColor }}
     >
       {STATUS_LABELS[status] ?? status}
     </span>
@@ -156,11 +157,11 @@ export function DocumentShell({
           <img
             src={doc.tenant.logo_url}
             alt={`${doc.tenant.name} logo`}
-            className="h-10 w-10 border-2 border-white/40 bg-white object-contain"
+            className="h-10 w-10 shrink-0 border-2 border-white/40 bg-white object-contain"
           />
         )}
         <div className="min-w-0 flex-1">
-          <p className="truncate font-display text-[18px] font-extrabold uppercase tracking-[0.02em] text-white">
+          <p className="font-display text-[18px] font-extrabold uppercase leading-tight tracking-[0.02em] text-white [overflow-wrap:anywhere]">
             {doc.tenant.name}
           </p>
           <p className="text-[12px] uppercase tracking-[0.1em] text-white/75">{heading}</p>
@@ -258,18 +259,207 @@ export function DocumentShell({
   )
 }
 
-export default function ViewQuote() {
-  usePageMeta('Your quote — My Trade Portal', 'View the quote your electrician sent you.')
-  useNoIndex()
-  const { status, error, doc } = usePublicDocument('quote')
-  const portal = isPortalMode()
+function AcceptQuotePanel({
+  token,
+  onDone,
+  onCancel,
+}: {
+  token: string
+  onDone: (updated: PublicDocPayload) => void
+  onCancel: () => void
+}) {
+  const [dates, setDates] = useState<string[]>([])
+  const [newDate, setNewDate] = useState('')
+  const [submitting, setSubmitting] = useState(false)
+  const [error, setError] = useState('')
+
+  async function handleConfirm() {
+    if (submitting) return
+    setSubmitting(true)
+    setError('')
+    try {
+      const updated = await acceptPublicQuote(
+        token,
+        dates.length > 0 ? dates.map((date) => ({ date })) : undefined,
+      )
+      onDone(updated)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Something went wrong — please try again.')
+      setSubmitting(false)
+    }
+  }
+
+  return (
+    <div className="mt-[var(--space-md)] border-2 border-[var(--ink)] bg-[var(--paper)] p-4">
+      <p className="text-[14px] font-semibold">Accept this quote</p>
+      <p className="mt-1 text-[13px] leading-relaxed text-[var(--muted)]">
+        Optionally suggest the dates that suit you — your electrician will confirm the visit.
+      </p>
+      <div className="mt-[var(--space-sm)] flex flex-wrap items-center gap-2">
+        {dates.map((date) => (
+          <span
+            key={date}
+            className="inline-flex items-center gap-2 border-2 border-[var(--ink)] bg-[var(--paper-2)] px-2.5 py-1 text-[13px]"
+          >
+            {new Date(`${date}T00:00:00`).toLocaleDateString('en-GB', {
+              day: 'numeric',
+              month: 'short',
+            })}
+            <button
+              type="button"
+              aria-label={`Remove ${date}`}
+              onClick={() => setDates((prev) => prev.filter((d) => d !== date))}
+              className="font-bold"
+            >
+              ×
+            </button>
+          </span>
+        ))}
+        <input
+          type="date"
+          value={newDate}
+          min={new Date().toISOString().slice(0, 10)}
+          onChange={(e) => setNewDate(e.target.value)}
+          aria-label="Pick a preferred date"
+          className="border-2 border-[var(--ink)] bg-[var(--paper)] px-3 py-1.5 text-[13.5px] focus:outline-none"
+        />
+        <button
+          type="button"
+          disabled={!newDate || dates.includes(newDate)}
+          onClick={() => {
+            setDates((prev) => [...prev, newDate])
+            setNewDate('')
+          }}
+          className="border-2 border-[var(--ink)] bg-[var(--paper)] px-3 py-1.5 text-[12.5px] font-bold uppercase tracking-[0.06em] disabled:opacity-40"
+        >
+          Add
+        </button>
+      </div>
+      {error && (
+        <p role="alert" className="mt-[var(--space-sm)] text-[13px] text-[var(--accent-dark)]">
+          {error}
+        </p>
+      )}
+      <div className="mt-[var(--space-md)] flex flex-wrap gap-2">
+        <button
+          type="button"
+          onClick={handleConfirm}
+          disabled={submitting}
+          className="chip chip--fill justify-center disabled:opacity-50"
+        >
+          {submitting ? 'Accepting…' : 'Confirm acceptance'}
+        </button>
+        <button type="button" onClick={onCancel} className="chip justify-center">
+          Cancel
+        </button>
+      </div>
+    </div>
+  )
+}
+
+function QuoteActionBar({
+  doc,
+  token,
+  onUpdate,
+}: {
+  doc: PublicDocPayload
+  token: string
+  onUpdate: (updated: PublicDocPayload) => void
+}) {
+  const [panel, setPanel] = useState<'none' | 'accept' | 'decline'>('none')
+  const [declining, setDeclining] = useState(false)
+  const [declineError, setDeclineError] = useState('')
 
   const replyHref =
-    doc?.tenant.reply_email != null
+    doc.tenant.reply_email != null
       ? `mailto:${doc.tenant.reply_email}?subject=${encodeURIComponent(
           `Re: your quote${doc.title ? ` — ${doc.title}` : ''}`,
         )}`
       : null
+
+  async function handleDecline() {
+    if (declining) return
+    setDeclining(true)
+    setDeclineError('')
+    try {
+      onUpdate(await declinePublicQuote(token))
+    } catch (err) {
+      setDeclineError(
+        err instanceof Error ? err.message : 'Something went wrong — please try again.',
+      )
+      setDeclining(false)
+    }
+  }
+
+  return (
+    <div className="mt-[var(--space-xl)] border-2 border-[var(--rule)] bg-[var(--paper-2)] p-5">
+      <p className="text-[14px] leading-relaxed">
+        Happy with the quote? Accept it to send {doc.tenant.name} a booking request — they'll
+        confirm once the work is scheduled.
+      </p>
+      <div className="mt-[var(--space-md)] flex flex-col gap-2 sm:flex-row sm:flex-wrap">
+        <button
+          type="button"
+          onClick={() => setPanel(panel === 'accept' ? 'none' : 'accept')}
+          className="chip chip--fill justify-center"
+        >
+          Accept quote
+        </button>
+        <button
+          type="button"
+          onClick={() => setPanel(panel === 'decline' ? 'none' : 'decline')}
+          className="chip justify-center"
+        >
+          Decline
+        </button>
+        {replyHref && (
+          <a href={replyHref} className="chip justify-center">
+            Ask a question
+          </a>
+        )}
+      </div>
+      {panel === 'accept' && (
+        <AcceptQuotePanel
+          token={token}
+          onDone={onUpdate}
+          onCancel={() => setPanel('none')}
+        />
+      )}
+      {panel === 'decline' && (
+        <div className="mt-[var(--space-md)] border-2 border-[var(--ink)] bg-[var(--paper)] p-4">
+          <p className="text-[14px] leading-relaxed">
+            Decline this quote? {doc.tenant.name} will be notified that you're not going ahead.
+          </p>
+          {declineError && (
+            <p role="alert" className="mt-[var(--space-sm)] text-[13px] text-[var(--accent-dark)]">
+              {declineError}
+            </p>
+          )}
+          <div className="mt-[var(--space-md)] flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={handleDecline}
+              disabled={declining}
+              className="chip chip--fill justify-center disabled:opacity-50"
+            >
+              {declining ? 'Declining…' : 'Yes, decline this quote'}
+            </button>
+            <button type="button" onClick={() => setPanel('none')} className="chip justify-center">
+              Keep it
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+export default function ViewQuote() {
+  usePageMeta('Your quote — My Trade Portal', 'View the quote your electrician sent you.')
+  useNoIndex()
+  const { status, error, doc, setDoc } = usePublicDocument('quote')
+  const { token = '' } = useParams()
+  const portal = isPortalMode()
 
   return (
     <main className="relative flex min-h-screen flex-col">
@@ -294,20 +484,20 @@ export default function ViewQuote() {
         )}
         {status === 'loaded' && doc && (
           <DocumentShell doc={doc} heading="Quote">
-            {doc.status === 'sent' && replyHref && (
-              <div className="mt-[var(--space-xl)] border-2 border-[var(--rule)] bg-[var(--paper-2)] p-5">
-                <p className="text-[14px] leading-relaxed">
-                  Happy with the quote, or have a question? Reply directly to your electrician:
-                </p>
-                <a href={replyHref} className="chip chip--fill mt-[var(--space-md)] justify-center">
-                  Reply to your electrician
-                </a>
-              </div>
+            {doc.status === 'sent' && (
+              <QuoteActionBar doc={doc} token={token} onUpdate={setDoc} />
             )}
             {doc.status === 'approved' && (
               <p className="mt-[var(--space-xl)] border-2 border-[var(--ink)] bg-[var(--accent)] p-4 text-[14px] font-semibold leading-relaxed text-[var(--ink-deep)]">
-                You've accepted this quote — {doc.tenant.name} will be in touch to schedule the
-                work.
+                Booking request sent — {doc.tenant.name} will confirm your visit once it's
+                scheduled. We've emailed you a confirmation with a link to track the booking in
+                the customer portal.
+              </p>
+            )}
+            {doc.status === 'rejected' && (
+              <p className="mt-[var(--space-xl)] border-2 border-[var(--rule)] bg-[var(--paper-2)] p-4 text-[14px] leading-relaxed">
+                You've declined this quote. Changed your mind? Reply to the quote email or contact{' '}
+                {doc.tenant.name} directly.
               </p>
             )}
           </DocumentShell>

@@ -51,7 +51,7 @@ export function CRMScreen(_props: CRMScreenProps) {
         </Text>
         <Button
           testID="customers-new-customer"
-          title="New Customer"
+          title="Add New Customer"
           onPress={() => router.push("/(trade)/manual-lead")}
         />
         <TextInput

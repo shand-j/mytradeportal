@@ -10,11 +10,10 @@ a link on the tenant's portal subdomain carrying a one-customer token that
 ``POST /customer/auth/magic`` exchanges for the same customer JWT.
 """
 
-import inspect
 import secrets
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
-from typing import Annotated, Any
+from typing import Annotated
 from uuid import UUID
 
 import structlog
@@ -25,12 +24,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app import stripe_client
-from app.ai_telemetry import record_quote_outcome
 from app.database import get_db
 from app.dependencies import CurrentCustomerDep, _extract_tenant_slug
 from app.email import send_customer_email
 from app.email_templates import account_created as account_created_template
-from app.email_templates import quote_accepted as quote_accepted_template
 from app.limiter import limiter
 from app.models import (
     Appointment,
@@ -49,9 +46,8 @@ from app.portal_links import (
     flip_preferred_contact_to_app,
     hash_portal_token,
     magic_link_url,
-    portal_url,
 )
-from app.push import notify_staff
+from app.quote_acceptance import apply_quote_acceptance, apply_quote_decline
 from app.rls import bypass_rls_for_transaction, set_tenant_in_session
 from app.routers.contacts import BLOCKED_CUSTOMER_DETAIL, contact_is_blocked
 from app.routers.public_docs import _invoice_payment_url, hash_document_token
@@ -873,86 +869,20 @@ async def accept_quote(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Quote cannot be accepted",
         )
-    quote.status = "approved"
-    quote.approved_at = datetime.utcnow()
-    # The customer's reconfirmed dates ride on the quote so they surface when
-    # the electrician converts it to a job. Both client shapes (list of date
-    # strings, list of {date} objects) normalise to the same string list.
-    preferred_dates = data.preferred_date_strings() if data is not None else None
-    if preferred_dates is not None:
-        quote.accepted_dates = preferred_dates
-    dates_note = ""
-    if quote.accepted_dates:
-        dates_note = f" Customer confirmed preferred dates: {', '.join(quote.accepted_dates)}."
-    await notify_staff(
-        db,
-        customer.tenant_id,
-        kind="quote_accepted",
-        title="Quote accepted",
-        body=f"{customer.full_name} accepted quote '{quote.title}'.{dates_note}",
-        link=f"/quotes/{quote.id}",
-    )
-    await record_quote_outcome(
-        db,
-        outcome="quote_accepted",
-        tenant_id=customer.tenant_id,
-        quote=quote,
-        extra_payload={"actor": "customer", "customer_id": str(customer.id)},
-    )
-    # The confirmation email carries a magic link straight back into the portal
-    # so the customer can track the booking without a password.
+    # Both client shapes (list of date strings, list of {date} objects)
+    # normalise to the same string list inside the shared transition.
     tenant = await db.get(Tenant, customer.tenant_id)
-    business_name = tenant.name if tenant is not None else "Your electrician"
-    magic_link: str | None = None
-    portal_home: str | None = None
-    if tenant is not None:
-        portal_home = portal_url(tenant, "/quotes")
-        magic_link = await magic_link_url(db, tenant, customer, f"/quotes/{quote.id}")
-    await db.commit()
-    # Confirm the acceptance to the customer by email. No response is expected,
-    # so it goes out platform-branded from the no-reply sender. Best-effort:
-    # the wrapper logs and never raises.
-    template_kwargs: dict[str, Any] = {
-        "customer_name": customer.full_name.split()[0] if customer.full_name else "there",
-        "business_name": business_name,
-        "quote_title": quote.title,
-        "quote_total": f"£{quote.total}",
-    }
-    # The email-template rewrite (magic-link + booking-pending copy) ships
-    # separately; pass the new kwargs only when the template accepts them so
-    # this call site works against both versions. The template's ``portal_url``
-    # is the magic sign-in link (falling back to the plain portal home page).
-    accepted_params = inspect.signature(quote_accepted_template).parameters
-    accepts_var_kwargs = any(
-        p.kind is inspect.Parameter.VAR_KEYWORD for p in accepted_params.values()
-    )
-    for key, value in (
-        ("magic_link", magic_link),
-        ("portal_url", magic_link or portal_home),
-    ):
-        if value is not None and (accepts_var_kwargs or key in accepted_params):
-            template_kwargs[key] = value
-    subject, html, text = quote_accepted_template(**template_kwargs)
-    await send_customer_email(
+    await apply_quote_acceptance(
         db,
-        tenant_id=customer.tenant_id,
-        contact_id=customer.contact_id,
-        purpose="quote confirmation",
-        to_email=customer.email,
-        subject=subject,
-        html_body=html,
-        text_body=text,
-        event="quote_accepted",
-        template="quote_accepted",
-        context={
-            "quote_id": str(quote.id),
-            "customer_id": str(customer.id),
-            "tenant_id": str(customer.tenant_id),
-        },
+        quote=quote,
+        tenant=tenant,
+        customer_name=customer.full_name,
+        preferred_dates=data.preferred_date_strings() if data is not None else None,
+        outcome_payload={"actor": "customer", "customer_id": str(customer.id)},
+        email_contact_id=customer.contact_id,
+        email_to=customer.email,
+        customer=customer,
     )
-    # The acceptance commit already happened above; persist any email-failure
-    # alert the send just raised (no-op when the send succeeded).
-    await db.commit()
     # Re-fetch with relationships eager-loaded: QuoteRead serialises
     # line_items/contact, which are expired on the committed object.
     return await _get_customer_quote(db, customer, quote_id)
@@ -971,9 +901,7 @@ async def reject_quote(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Quote cannot be rejected",
         )
-    quote.status = "rejected"
-    quote.approved_at = None
-    await db.commit()
+    await apply_quote_decline(db, quote=quote)
     await db.refresh(quote)
     return quote
 

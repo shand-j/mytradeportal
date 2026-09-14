@@ -32,7 +32,7 @@ logger = structlog.get_logger("api.rag")
 # Prompt versions recorded on every ai_call_events row. Bump whenever the
 # prompts above change materially so quality/cost can be compared across
 # prompt iterations.
-QUOTE_DRAFT_PROMPT_VERSION = "quote-draft.v8"
+QUOTE_DRAFT_PROMPT_VERSION = "quote-draft.v9"
 TRIAGE_FOLLOWUP_PROMPT_VERSION = "triage-followup.v3"
 
 
@@ -111,6 +111,9 @@ unit_price is per metre and the quantity is the exact metreage.
 - Prefer between 3 and 12 line items. Do not invent unrelated work. Never return \
 an empty quote for a plausible electrical job — if the description is vague, \
 return your best-effort minimal draft and record what you assumed.
+- Always set ``estimated_hours``: your best estimate of the TOTAL on-site \
+working hours the whole job will take one electrician (a number, e.g. 6.5). \
+It drives scheduling, so be realistic rather than optimistic.
 
 Respond with valid JSON in exactly this shape:
 {
@@ -119,6 +122,7 @@ Respond with valid JSON in exactly this shape:
 "quantity": 4, "unit": "hour", "unit_price": 80.00, "catalogue_ref": null, \
 "reason": "brief justification"}
   ],
+  "estimated_hours": 4.0,
   "assumptions": ["Any assumptions you made"],
   "notes": "Any warnings or clarifications for the electrician"
 }

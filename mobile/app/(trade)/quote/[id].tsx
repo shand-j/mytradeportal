@@ -4,6 +4,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { QuoteEditScreen } from "../../../src/screens/trade/QuoteEditScreen";
 import { useQuote, useConvertQuoteToInvoice } from "../../../src/api/quotes";
 import { fetchJobs, useConvertQuoteToJob } from "../../../src/api/jobs";
+import { fetchInvoices } from "../../../src/api/invoices";
 import { ApiError } from "../../../src/lib/apiClient";
 
 export default function QuoteDetailRoute() {
@@ -15,11 +16,23 @@ export default function QuoteDetailRoute() {
   const convert = useConvertQuoteToInvoice();
   const convertToJob = useConvertQuoteToJob();
   const jobsQuery = useQuery({ queryKey: ["jobs"], queryFn: fetchJobs });
+  const invoicesQuery = useQuery({ queryKey: ["invoices"], queryFn: fetchInvoices });
   const [jobConvertFailed, setJobConvertFailed] = useState(false);
 
   const existingJobId = useMemo(
     () => jobsQuery.data?.find((j) => j.quoteId === id)?.id ?? null,
     [jobsQuery.data, id]
+  );
+
+  // Once a sent (or paid) invoice exists for the quote, the backend rejects
+  // edits with 409 quote_invoiced — mirror that here and show the quote
+  // read-only instead of letting edits fail on save. Draft invoices don't lock.
+  const invoicedReadOnly = useMemo(
+    () =>
+      invoicesQuery.data?.some(
+        (inv) => inv.quoteId === id && (inv.status === "sent" || inv.status === "paid")
+      ) ?? false,
+    [invoicesQuery.data, id]
   );
 
   if (!realQuote) return null;
@@ -56,6 +69,7 @@ export default function QuoteDetailRoute() {
       onConvertToJob={handleConvertToJob}
       existingJobId={existingJobId}
       jobConvertFailed={jobConvertFailed}
+      invoicedReadOnly={invoicedReadOnly}
     />
   );
 }

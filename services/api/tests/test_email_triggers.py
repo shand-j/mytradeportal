@@ -401,7 +401,7 @@ async def test_quote_accept_dispatches_confirmation_email(
         subject_type="customer",
     )
     send_mock = AsyncMock(return_value=True)
-    monkeypatch.setattr("app.routers.customer_portal.send_customer_email", send_mock)
+    monkeypatch.setattr("app.quote_acceptance.send_customer_email", send_mock)
 
     response = await client.post(
         f"/customer/quotes/{quote.id}/accept",

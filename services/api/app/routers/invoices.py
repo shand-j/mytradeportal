@@ -27,6 +27,7 @@ from app.dependencies import CurrentUserDep, TenantDep
 from app.email import resolve_customer_magic_link, send_customer_email
 from app.email_templates import invoice_sent as invoice_sent_template
 from app.models import Contact, Invoice, InvoiceLineItem, Job, Quote, QuoteRequest, Tenant
+from app.payment_details import tenant_payment_details
 from app.push import notify_customer, notify_staff
 from app.rls import set_tenant_in_session
 from app.routers.public_docs import issue_document_token, public_document_url
@@ -53,28 +54,6 @@ async def generate_invoice_number(db: AsyncSession, tenant_id: UUID) -> str:
         if suffix.isdigit():
             max_number = max(max_number, int(suffix))
     return f"INV-{max_number + 1:03d}"
-
-
-def _tenant_payment_details(
-    settings: dict[str, Any] | None, *, reference: str
-) -> dict[str, str] | None:
-    """Build the bank-transfer block for the invoice email from tenant settings.
-
-    The payment reference defaults to the invoice number so the customer can
-    always reconcile the transfer. Returns None when no bank details are
-    configured so the email omits the block entirely.
-    """
-    if not settings:
-        return None
-    details = {
-        "account_name": str(settings.get("bank_account_name", "") or ""),
-        "sort_code": str(settings.get("bank_sort_code", "") or ""),
-        "account_number": str(settings.get("bank_account_number", "") or ""),
-        "reference": reference,
-    }
-    if not any(details[key] for key in ("account_name", "sort_code", "account_number")):
-        return None
-    return details
 
 
 async def _get_invoice(db: AsyncSession, tenant_id: UUID, invoice_id: UUID) -> Invoice:
@@ -365,7 +344,7 @@ async def send_invoice(
     tenant_row = await db.get(Tenant, tenant.id)
     if contact is not None and contact.email:
         business_name = tenant_row.name if tenant_row is not None else "Your electrician"
-        payment_details = _tenant_payment_details(
+        payment_details = tenant_payment_details(
             tenant_row.settings if tenant_row is not None else None,
             reference=invoice.invoice_number,
         )

@@ -22,6 +22,13 @@ export interface PublicDocLine {
   total: string
 }
 
+export interface PublicDocPaymentDetails {
+  account_name: string
+  sort_code: string
+  account_number: string
+  reference: string
+}
+
 export interface PublicDocPayload {
   kind: 'quote' | 'invoice'
   status: string
@@ -41,6 +48,7 @@ export interface PublicDocPayload {
   due_date: string | null
   paid_at: string | null
   payment_url: string | null
+  payment_details: PublicDocPaymentDetails | null
 }
 
 export class PublicDocsApiError extends Error {
@@ -81,4 +89,58 @@ export async function fetchPublicDocument(
     throw new PublicDocsApiError('Something went wrong — please try again.', res.status)
   }
   return (await res.json()) as PublicDocPayload
+}
+
+async function postPublicQuoteAction(
+  token: string,
+  action: 'accept' | 'decline',
+  body: Record<string, unknown>,
+): Promise<PublicDocPayload> {
+  let res: Response
+  try {
+    res = await fetch(`${API}/public/quote/${encodeURIComponent(token)}/${action}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    })
+  } catch {
+    throw new PublicDocsApiError('Network error — check your connection and try again.', 0)
+  }
+  if (res.status === 404) {
+    throw new PublicDocsApiError('This link is invalid or has expired.', 404)
+  }
+  if (res.status === 409) {
+    throw new PublicDocsApiError(
+      'This quote has already been responded to — reload the page to see the latest state.',
+      409,
+    )
+  }
+  if (res.status === 429) {
+    throw new PublicDocsApiError('Too many attempts — try again in a little while.', 429)
+  }
+  if (!res.ok) {
+    throw new PublicDocsApiError('Something went wrong — please try again.', res.status)
+  }
+  return (await res.json()) as PublicDocPayload
+}
+
+/**
+ * Accept a quote from the emailed token page. `preferredDates` (YYYY-MM-DD)
+ * ride on the quote so the electrician sees them when scheduling. Resolves
+ * with the refreshed render payload (status becomes `approved`).
+ */
+export function acceptPublicQuote(
+  token: string,
+  preferredDates?: { date: string }[],
+): Promise<PublicDocPayload> {
+  return postPublicQuoteAction(
+    token,
+    'accept',
+    preferredDates && preferredDates.length > 0 ? { preferred_dates: preferredDates } : {},
+  )
+}
+
+/** Decline a quote from the emailed token page (status becomes `rejected`). */
+export function declinePublicQuote(token: string): Promise<PublicDocPayload> {
+  return postPublicQuoteAction(token, 'decline', {})
 }

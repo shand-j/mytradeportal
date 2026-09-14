@@ -16,7 +16,8 @@ import { Header } from "../../components/ui/Header";
 import { Screen } from "../../components/ui/Screen";
 import { Text } from "../../components/ui/Text";
 import { useContactsList, findOrCreateContact } from "../../api/contacts";
-import { useCreateJob, useConvertQuoteToJob } from "../../api/jobs";
+import { useCreateJob, useConvertQuoteToJob, useScheduleSuggestion } from "../../api/jobs";
+import type { ScheduleSuggestion } from "../../api/jobs";
 import { ApiQuote, fetchQuotes, setQuoteApproval, useApiQuote } from "../../api/quotes";
 import { fetchAvailability, useAvailability } from "../../api/appointments";
 import { useUsersList } from "../../api/users";
@@ -45,6 +46,25 @@ export function quotedLabourHours(quote: ApiQuote): number {
     if (!HOUR_UNIT_RE.test((li.unit ?? "").trim())) return sum;
     return sum + (parseFloat(li.quantity) || 0);
   }, 0);
+}
+
+/** Quote's duration estimate: server estimate first, labour-hours fallback. */
+function quotedEstimatedHours(quote: ApiQuote): number {
+  const server = parseFloat(quote.estimatedHours ?? "");
+  if (!Number.isNaN(server) && server > 0) return server;
+  return quotedLabourHours(quote);
+}
+
+/** "Tue 16 Sep (+ 2 more days)" label for a schedule suggestion. */
+function suggestionLabel(suggestion: ScheduleSuggestion): string {
+  const start = new Date(`${suggestion.startDate}T12:00:00`);
+  const day = start.toLocaleDateString("en-GB", {
+    weekday: "short",
+    day: "numeric",
+    month: "short",
+  });
+  const extra = suggestion.days.length - 1;
+  return extra > 0 ? `${day} (+ ${extra} more day${extra > 1 ? "s" : ""})` : day;
 }
 
 /** Earliest free 1-hour slot across the next 7 days (tomorrow first). */
@@ -157,8 +177,9 @@ export function JobCreateScreen({ onClose, initialQuoteId }: JobCreateScreenProp
     );
   }, [contacts, customerSearch]);
 
-  // N18: selecting a quote prefills title, customer, duration (from quoted
-  // labour hours) and proposes the earliest available start slot.
+  // N18: selecting a quote prefills title, customer, duration (from the
+  // quote's server-side estimated hours, falling back to quoted labour hours)
+  // and proposes the earliest available start slot.
   const prefilledQuoteRef = useRef<string | null>(null);
   useEffect(() => {
     if (!selectedQuote || prefilledQuoteRef.current === selectedQuote.id) return;
@@ -166,7 +187,7 @@ export function JobCreateScreen({ onClose, initialQuoteId }: JobCreateScreenProp
     setTitle(selectedQuote.title);
     setContactId(selectedQuote.customer.id);
     setCustomerMode("search");
-    const hours = quotedLabourHours(selectedQuote);
+    const hours = quotedEstimatedHours(selectedQuote);
     setDurationHours(hours > 0 ? String(hours) : "");
     void suggestFirstSlot().then((slot) => {
       if (slot) {
@@ -175,6 +196,11 @@ export function JobCreateScreen({ onClose, initialQuoteId }: JobCreateScreenProp
       }
     });
   }, [selectedQuote]);
+
+  // Server-side recommendation: earliest start where the quote's whole
+  // working-day block sequence fits around the existing calendar.
+  const { suggestion: scheduleSuggestion } = useScheduleSuggestion(selectedQuote?.id ?? null);
+  const isMultiDayQuote = selectedQuote?.isMultiDay === true;
 
   const dateValid = date.trim() === "" || DATE_RE.test(date.trim());
   const timeValid = time.trim() === "" || TIME_RE.test(time.trim());
@@ -640,6 +666,38 @@ export function JobCreateScreen({ onClose, initialQuoteId }: JobCreateScreenProp
             )}
           </View>
 
+          {isMultiDayQuote && (
+            <View
+              testID="job-create-multiday"
+              className="gap-1 rounded-xl border border-amber-200 bg-amber-50 p-3"
+            >
+              <Text variant="body" weight="semibold">
+                Multi-day job
+                {scheduleSuggestion ? ` — spans ${scheduleSuggestion.days.length} working days` : ""}
+              </Text>
+              <Text variant="caption" color="secondary">
+                The schedule is split across consecutive working days, capped at your daily working
+                hours.
+              </Text>
+            </View>
+          )}
+
+          {scheduleSuggestion && (
+            <Pressable
+              testID="job-create-schedule-suggestion"
+              onPress={() => {
+                setDate(scheduleSuggestion.startDate);
+                setTime(scheduleSuggestion.startTime);
+              }}
+            >
+              <View className="rounded-xl border border-primary-100 bg-primary-50 p-3">
+                <Text variant="caption" color="secondary">
+                  Earliest fit: {suggestionLabel(scheduleSuggestion)} — tap to use it.
+                </Text>
+              </View>
+            </Pressable>
+          )}
+
           {Platform.OS === "web" ? (
             <>
               <FormField
@@ -725,9 +783,11 @@ export function JobCreateScreen({ onClose, initialQuoteId }: JobCreateScreenProp
             onChangeText={setDurationHours}
             placeholder="e.g. 30"
             helper={
-              selectedQuote
-                ? "Prefilled from the quote's labour hours — edit if the plan changed."
-                : "Optional — sets the job's end time from the start."
+              isMultiDayQuote
+                ? "Total hours — split across consecutive working days when the job is created."
+                : selectedQuote
+                  ? "Prefilled from the quote's estimated hours — edit if the plan changed."
+                  : "Optional — sets the job's end time from the start."
             }
             error={durationValid ? null : "Enter a positive number of hours, e.g. 8"}
             keyboardType="decimal-pad"

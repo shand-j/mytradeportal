@@ -12,7 +12,7 @@ const ROUTE_MAP: Record<string, (params?: NavigationParams) => string> = {
   Analytics: () => "/(trade)/analytics",
   Branding: () => "/(trade)/branding",
   "Follow-ups": () => "/(trade)/follow-ups",
-  "Manual lead": () => "/(trade)/manual-lead",
+  "Add New Customer": () => "/(trade)/manual-lead",
   LeadDetail: (params) => `/(trade)/lead/${params?.id ?? ""}`,
   Quote: (params) => `/(trade)/quote/${params?.id ?? ""}`,
   QuoteIntake: (params) => `/(trade)/quote-intake?leadId=${params?.leadId ?? ""}`,

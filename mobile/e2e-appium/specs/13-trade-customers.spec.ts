@@ -146,7 +146,7 @@ describe("trade customers", () => {
 
   it("creates a customer with a unique email and persists all fields", async () => {
     await tapId("customers-new-customer");
-    await waitForText("Manual lead entry");
+    await waitForText("Add New Customer");
 
     await setValue(await messageTextView(), LEAD_MESSAGE);
     await setValue(await inputByPlaceholder("Name"), CUSTOMER_NAME);

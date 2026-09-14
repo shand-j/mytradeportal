@@ -70,6 +70,12 @@ export type Lead = {
   customerReachable?: boolean;
   /** The customer's preferred follow-up channel, when captured. */
   contactPreferredMethod?: "email" | "phone" | null;
+  /** Linked quote id when the lead has been (auto-)converted to a quote. */
+  quoteId?: string;
+  /** Backend status of the linked quote ("draft" while awaiting tradesperson review). */
+  quoteStatus?: string;
+  /** Total (£) of the linked quote, when one exists. */
+  quoteTotal?: number;
 };
 
 export type QuoteStatus =

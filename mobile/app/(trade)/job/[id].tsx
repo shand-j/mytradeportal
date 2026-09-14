@@ -68,6 +68,7 @@ export default function JobDetailRoute() {
     <JobDetailScreen
       job={realJob}
       onClose={() => router.back()}
+      onExitToDashboard={() => router.replace("/(trade)/dashboard")}
       onStart={() => start.mutateAsync().then(() => undefined)}
       onComplete={() => complete.mutateAsync().then(() => undefined)}
       busy={start.isPending || complete.isPending}

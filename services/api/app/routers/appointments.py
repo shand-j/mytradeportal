@@ -13,6 +13,7 @@ from app.dependencies import TenantDep
 from app.models import Appointment, Contact, Job
 from app.rls import set_tenant_in_session
 from app.schemas import AppointmentCreate, AppointmentRead, AppointmentUpdate
+from app.work_blocks import working_hours
 
 router = APIRouter(prefix="/appointments", tags=["Appointments"])
 DbDep = Annotated[AsyncSession, Depends(get_db)]
@@ -21,31 +22,14 @@ DbDep = Annotated[AsyncSession, Depends(get_db)]
 def _working_hours(settings: dict[str, Any] | None) -> tuple[time, time, set[int]]:
     """Resolve the tenant's working hours from tenant settings.
 
-    Settings keys: ``working_day_start`` / ``working_day_end`` ("HH:MM") and
-    ``working_days`` (list of weekday ints, Monday=0). Defaults preserve the
-    historical behaviour: 08:00-18:00, every day of the week.
+    Thin wrapper over :func:`app.work_blocks.working_hours` (the shared
+    implementation used by availability, multi-day block planning and the
+    schedule suggestion). Settings keys: ``working_day_start`` /
+    ``working_day_end`` ("HH:MM") and ``working_days`` (list of weekday ints,
+    Monday=0). Defaults preserve the historical behaviour: 08:00-18:00, every
+    day of the week.
     """
-
-    def _parse(value: Any, fallback: time) -> time:
-        try:
-            hour, minute = str(value).split(":")
-            parsed = time(int(hour), int(minute))
-        except (ValueError, AttributeError):
-            return fallback
-        return parsed
-
-    s = settings or {}
-    start = _parse(s.get("working_day_start", "08:00"), time(8, 0))
-    end = _parse(s.get("working_day_end", "18:00"), time(18, 0))
-    days: set[int] = set(range(7))
-    raw_days = s.get("working_days")
-    if isinstance(raw_days, list):
-        parsed_days = {
-            int(d) for d in raw_days if str(d).lstrip("-").isdigit() and 0 <= int(d) <= 6
-        }
-        if parsed_days:
-            days = parsed_days
-    return start, end, days
+    return working_hours(settings)
 
 
 async def _get_appointment(db: AsyncSession, tenant_id: UUID, appointment_id: UUID) -> Appointment:

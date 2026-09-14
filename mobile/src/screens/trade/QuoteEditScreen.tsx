@@ -109,6 +109,8 @@ export type QuoteEditScreenProps = {
   existingJobId?: string | null;
   /** True after convert-to-job 409'd without a resolvable job (legacy quote). */
   jobConvertFailed?: boolean;
+  /** True once a sent/paid invoice exists for this quote: edit + refine lock. */
+  invoicedReadOnly?: boolean;
 };
 
 export function QuoteEditScreen({
@@ -119,6 +121,7 @@ export function QuoteEditScreen({
   onConvertToJob,
   existingJobId,
   jobConvertFailed,
+  invoicedReadOnly,
 }: QuoteEditScreenProps) {
   const router = useRouter();
   const seedQuote = seed;
@@ -133,6 +136,8 @@ export function QuoteEditScreen({
   const [refineError, setRefineError] = useState<string | null>(null);
 
   const isRealQuote = !!seedQuote && UUID_RE.test(seedQuote.id);
+  // A sent/paid invoice locks the quote server-side (409 quote_invoiced).
+  const readOnly = !!invoicedReadOnly;
 
   // --- Debounced auto-save of line-item edits (real backend quotes only) ---
   const queryClient = useQueryClient();
@@ -147,7 +152,7 @@ export function QuoteEditScreen({
   const vatRate = seedQuote?.vatRate ?? 0.2;
 
   const runPendingSave = () => {
-    if (!seedQuote || !isRealQuote) return;
+    if (!seedQuote || !isRealQuote || readOnly) return;
     saveChainRef.current = saveChainRef.current.then(async () => {
       // Another edit may have queued a newer snapshot while we waited.
       const current = pendingSaveRef.current;
@@ -167,7 +172,7 @@ export function QuoteEditScreen({
   };
 
   useEffect(() => {
-    if (!isRealQuote) return;
+    if (!isRealQuote || readOnly) return;
     if (!lastSavedRef.current) {
       lastSavedRef.current = items;
       return;
@@ -408,6 +413,17 @@ export function QuoteEditScreen({
           )}
         </View>
 
+        {readOnly && (
+          <View
+            testID="quote-invoiced-readonly"
+            className="rounded-xl border border-slate-200 bg-slate-100 p-3"
+          >
+            <Text variant="caption" color="secondary" align="center">
+              Invoiced — read-only. The invoice has been sent, so this quote can no longer be edited.
+            </Text>
+          </View>
+        )}
+
         {acceptedDates.length > 0 && (
           <View
             testID="quote-accepted-dates"
@@ -462,7 +478,9 @@ export function QuoteEditScreen({
                   <Icon name="sparkles" size={12} color="#D97706" />
                 )}
               </View>
-              <IconButton icon="close" size={18} color="#6B7280" onPress={() => removeItem(item.id)} />
+              {!readOnly && (
+                <IconButton icon="close" size={18} color="#6B7280" onPress={() => removeItem(item.id)} />
+              )}
             </View>
 
             <TextInput
@@ -471,6 +489,7 @@ export function QuoteEditScreen({
               value={item.description}
               onChangeText={(value) => updateItem(item.id, "description", value)}
               placeholder="Description"
+              editable={!readOnly}
             />
 
             <View className="flex-row flex-wrap gap-2">
@@ -483,6 +502,7 @@ export function QuoteEditScreen({
                   value={item.qty}
                   onChangeText={(value) => updateItem(item.id, "qty", value)}
                   keyboardType="decimal-pad"
+                  editable={!readOnly}
                 />
               </View>
               <View className="min-w-[70px] flex-1">
@@ -493,6 +513,7 @@ export function QuoteEditScreen({
                   className="h-9 rounded-lg border border-slate-200 px-3 text-sm text-slate-900"
                   value={item.unit}
                   onChangeText={(value) => updateItem(item.id, "unit", value)}
+                  editable={!readOnly}
                 />
               </View>
               <View className="min-w-[100px] flex-[1.5]">
@@ -504,17 +525,18 @@ export function QuoteEditScreen({
                   value={item.unitPrice}
                   onChangeText={(value) => updateItem(item.id, "unitPrice", value)}
                   keyboardType="decimal-pad"
+                  editable={!readOnly}
                 />
               </View>
             </View>
           </View>
         ))}
 
-        <Button title="+ Add line item" variant="outline" onPress={addLine} />
+        {!readOnly && <Button title="+ Add line item" variant="outline" onPress={addLine} />}
           </>
         )}
 
-        {seedQuote?.aiGenerated && isRealQuote && (
+        {!readOnly && seedQuote?.aiGenerated && isRealQuote && (
           <View className="rounded-2xl border border-slate-200 bg-white p-3 gap-2">
             <Text variant="body" weight="semibold">
               Refine with AI
@@ -604,14 +626,16 @@ export function QuoteEditScreen({
           )}
         </View>
 
-        <Button
-          testID="quote-save"
-          title={updateQuoteMutation.isPending ? "Saving…" : "Save changes"}
-          variant={isSent ? "primary" : "outline"}
-          disabled={updateQuoteMutation.isPending || sendQuoteMutation.isPending || !isRealQuote}
-          onPress={() => void handleSave()}
-        />
-        {!isSent && (
+        {!readOnly && (
+          <Button
+            testID="quote-save"
+            title={updateQuoteMutation.isPending ? "Saving…" : "Save changes"}
+            variant={isSent ? "primary" : "outline"}
+            disabled={updateQuoteMutation.isPending || sendQuoteMutation.isPending || !isRealQuote}
+            onPress={() => void handleSave()}
+          />
+        )}
+        {!readOnly && !isSent && (
           <Button
             testID="quote-approve-send"
             title={sendQuoteMutation.isPending ? "Sending…" : "Send quote"}

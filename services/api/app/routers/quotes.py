@@ -50,6 +50,7 @@ from app.models import (
     Communication,
     Contact,
     Event,
+    Invoice,
     Job,
     MediaAsset,
     Quote,
@@ -68,6 +69,7 @@ from app.rag import (
 from app.rag.validation import build_quote_from_validation
 from app.rls import set_tenant_in_session
 from app.routers.invoices import _get_invoice, generate_invoice_number
+from app.routers.jobs import create_block_appointments, plan_job_blocks
 from app.routers.public_docs import issue_document_token, public_document_url
 from app.schemas import (
     InvoiceRead,
@@ -84,6 +86,11 @@ from app.schemas import (
     QuoteUpdate,
 )
 from app.trial import maybe_extend_trial
+from app.work_blocks import (
+    WorkBlock,
+    daily_working_hours,
+    resolve_estimated_hours,
+)
 
 router = APIRouter(prefix="/quotes", tags=["Quotes"])
 DbDep = Annotated[AsyncSession, Depends(get_db)]
@@ -105,7 +112,36 @@ async def _get_quote(db: AsyncSession, tenant_id: UUID, quote_id: UUID) -> Quote
     quote = result.scalar_one_or_none()
     if quote is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Quote not found")
+    # Attach the tenant's daily working hours transiently so QuoteRead can
+    # derive ``is_multi_day`` from ``estimated_hours`` (see the schema).
+    tenant_row = await db.get(Tenant, tenant_id)
+    setattr(  # noqa: B010 - mypy strict rejects assigning an undeclared attr
+        quote,
+        "_tenant_daily_hours",
+        daily_working_hours(tenant_row.settings if tenant_row is not None else None),
+    )
     return quote
+
+
+async def _assert_quote_not_invoiced(db: AsyncSession, tenant_id: UUID, quote: Quote) -> None:
+    """Reject edits once a sent invoice exists for the quote (409 ``quote_invoiced``).
+
+    Draft invoices don't block — the electrician may still be fixing the quote
+    that seeded them. A sent (or paid) invoice does: the quote's numbers are now
+    what the customer was billed, so the quote becomes read-only.
+    """
+    sent_invoice_id = await db.scalar(
+        select(Invoice.id).where(
+            Invoice.tenant_id == tenant_id,
+            Invoice.quote_id == quote.id,
+            Invoice.status.in_(["sent", "paid"]),
+        )
+    )
+    if sent_invoice_id is not None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="quote_invoiced",
+        )
 
 
 @router.get("")
@@ -122,7 +158,12 @@ async def list_quotes(tenant: TenantDep, db: DbDep) -> list[QuoteRead]:
         .where(Quote.tenant_id == tenant.id)
         .order_by(Quote.created_at.desc())
     )
-    return [QuoteRead.model_validate(q) for q in result.scalars().all()]
+    daily_hours = daily_working_hours(tenant.settings)
+    quotes = list(result.scalars().all())
+    for q in quotes:
+        # Transient attribute QuoteRead uses to derive ``is_multi_day``.
+        setattr(q, "_tenant_daily_hours", daily_hours)  # noqa: B010 - mypy strict
+    return [QuoteRead.model_validate(q) for q in quotes]
 
 
 @router.post("", status_code=status.HTTP_201_CREATED)
@@ -149,6 +190,7 @@ async def create_quote(
         # tenants would never fall through to their 0% rate.
         vat_rate=data.vat_rate if "vat_rate" in data.model_fields_set else tenant_vat_rate(tenant),
         valid_until=data.valid_until,
+        estimated_hours=data.estimated_hours,
     )
     quote.line_items = [
         QuoteLineItem(tenant_id=tenant.id, **item.model_dump()) for item in data.line_items
@@ -228,6 +270,7 @@ async def update_quote(
 ) -> QuoteRead:
     """Update a quote's details, status, or line items."""
     quote = await _get_quote(db, tenant.id, quote_id)
+    await _assert_quote_not_invoiced(db, tenant.id, quote)
     update_data = data.model_dump(exclude_unset=True)
 
     # Snapshot before mutating so the training event keeps the pre-edit state.
@@ -453,6 +496,7 @@ async def refine_quote(
     ``/generate`` because it makes the same expensive LLM calls.
     """
     quote = await _get_quote(db, tenant.id, quote_id)
+    await _assert_quote_not_invoiced(db, tenant.id, quote)
 
     # Snapshot pre-refine so the training event keeps the pre-edit state.
     lines_before = _line_items_snapshot(quote)
@@ -559,6 +603,13 @@ async def refine_quote(
         )
     calculate_quote_totals(quote)
     apply_quote_rounding(quote, tenant.settings)
+    # Refresh the duration estimate from the regenerated lines (manual lines
+    # are in quote.line_items too, so their hours keep counting).
+    quote.estimated_hours = resolve_estimated_hours(
+        ((float(li.quantity), li.unit) for li in quote.line_items),
+        generated.get("estimated_hours"),
+        tenant.settings,
+    )
     _record_quote_training_event(
         db,
         tenant.id,
@@ -1063,6 +1114,12 @@ async def _generate_rag_quote(
             )
         calculate_quote_totals(quote)
 
+    quote.estimated_hours = resolve_estimated_hours(
+        ((float(li.quantity), li.unit) for li in quote.line_items),
+        generated.get("estimated_hours"),
+        tenant.settings,
+    )
+
     quote.extra_data = {**(quote.extra_data or {})}
     quote.extra_data["rag"]["generation_seconds"] = generation_seconds
     quote.extra_data["rag"]["completeness"] = completeness
@@ -1470,10 +1527,13 @@ async def convert_quote_to_job(
     the job notes so they survive onto the electrician's calendar. When no
     explicit scheduled_start is given, the earliest accepted date also
     prefills it (09:00 local, naive-UTC convention), with scheduled_end
-    derived from the quote's per-hour labour lines (two-hour default). An
-    explicitly provided scheduled_start always wins. The job's address and
-    postcode are denormalised from the contact at this point — a later
-    contact edit does not rewrite the job.
+    derived from the quote's estimated hours, falling back to its per-hour
+    labour lines (two-hour default). An explicitly provided scheduled_start
+    always wins. When the total duration exceeds the tenant's daily working
+    hours the job is multi-day: day 1 is capped at the daily hours and the
+    remaining consecutive working-day blocks are created as appointments on
+    the job. The job's address and postcode are denormalised from the contact
+    at this point — a later contact edit does not rewrite the job.
     """
     quote = await _get_quote(db, tenant.id, quote_id)
     if quote.status != "approved":
@@ -1515,15 +1575,40 @@ async def convert_quote_to_job(
 
     scheduled_start = schedule.scheduled_start
     scheduled_end = schedule.scheduled_end
+    # The quote's stored estimate wins over the older labour-lines heuristic.
+    estimated = float(quote.estimated_hours) if quote.estimated_hours is not None else 0.0
+    if estimated <= 0:
+        estimated = _quoted_labour_hours(quote)
     if scheduled_start is None and quote.accepted_dates:
         earliest = _earliest_accepted_date(quote.accepted_dates)
         if earliest is not None:
             # 09:00 local under the naive-UTC convention of the schedule columns.
             scheduled_start = datetime(earliest.year, earliest.month, earliest.day, 9, 0)
             if scheduled_end is None:
-                hours = _quoted_labour_hours(quote)
-                duration = timedelta(hours=hours) if hours > 0 else _DEFAULT_JOB_DURATION
+                duration = timedelta(hours=estimated) if estimated > 0 else _DEFAULT_JOB_DURATION
                 scheduled_end = scheduled_start + duration
+
+    # An explicit start without an end inherits the quote's estimated
+    # duration; the multi-day split below caps it at the daily hours.
+    if scheduled_start is not None and scheduled_end is None and estimated > 0:
+        scheduled_end = scheduled_start + timedelta(hours=estimated)
+
+    # Multi-day split: when the total duration exceeds the tenant's daily
+    # working hours, day 1 is capped at the daily hours and the remaining
+    # working-day blocks become appointments on the job (see app.work_blocks).
+    blocks: list[WorkBlock] = []
+    if scheduled_start is not None:
+        total_hours: float | None = None
+        if scheduled_end is not None:
+            total_hours = (scheduled_end - scheduled_start).total_seconds() / 3600
+        elif estimated > 0:
+            total_hours = estimated
+        if total_hours is not None and total_hours > 0:
+            blocks = plan_job_blocks(
+                tenant.settings, scheduled_start, scheduled_start + timedelta(hours=total_hours)
+            )
+            if blocks:
+                scheduled_end = scheduled_start + timedelta(hours=blocks[0].hours)
 
     job = Job(
         tenant_id=tenant.id,
@@ -1542,6 +1627,8 @@ async def convert_quote_to_job(
     )
     db.add(job)
     await db.flush()
+    if blocks:
+        await create_block_appointments(db, tenant.id, job, blocks, tenant.settings)
 
     # Photos uploaded against the quote's quote request (or the quote itself)
     # carry through to the job record.

@@ -289,6 +289,11 @@ class Quote(TenantScopedBase):
         index=True,
     )
     extra_data: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict, nullable=False)
+    # Estimated total on-site working hours for the quoted work. AI-generated
+    # quotes populate it from the LLM's estimate (falling back to the summed
+    # time-billed line items); manual quotes can set it via PATCH. Drives the
+    # multi-day split when converting to a job.
+    estimated_hours: Mapped[Decimal | None] = mapped_column(Numeric(6, 2), nullable=True)
 
     contact: Mapped[Contact] = relationship("Contact", back_populates="quotes")
     line_items: Mapped[list[QuoteLineItem]] = relationship(
