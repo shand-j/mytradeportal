@@ -31,6 +31,15 @@ export default defineConfig({
         target: "http://localhost:8000",
         changeOrigin: true,
       },
+      // Password reset (portal-branded page) + tenant settings reads.
+      "/auth": {
+        target: "http://localhost:8000",
+        changeOrigin: true,
+      },
+      "/tenants": {
+        target: "http://localhost:8000",
+        changeOrigin: true,
+      },
     },
   },
   resolve: {
