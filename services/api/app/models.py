@@ -1555,3 +1555,35 @@ class CustomerPortalToken(Base):
     )
     last_used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class EmailFailureAlert(Base):
+    """Dedupe ledger for staff "customer email wasn't delivered" alerts.
+
+    One row per (tenant, contact, calendar day): the first send-time failure
+    or Resend bounce webhook for a contact inserts a row and pages staff;
+    every further failure that day — any purpose, either source — sees the
+    row and stays silent, so a broken mailbox cannot spam the electrician's
+    bell on every reminder sweep or webhook retry.
+
+    Deliberately a plain ``Base`` (same pattern as ``ProcessedWebhook``): rows
+    are written from contexts with no tenant GUC (bounce webhooks) and are
+    only ever read with an explicit tenant_id predicate. ``contact_id`` is a
+    plain column (no FK) so ledger rows survive contact/tenant teardown.
+    """
+
+    __tablename__ = "email_failure_alerts"
+    __table_args__ = (
+        UniqueConstraint(
+            "tenant_id", "contact_id", "alert_date", name="uq_email_failure_alerts_day"
+        ),
+    )
+
+    id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
+    tenant_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), nullable=False, index=True)
+    contact_id: Mapped[UUID | None] = mapped_column(PGUUID(as_uuid=True), nullable=True, index=True)
+    alert_date: Mapped[date] = mapped_column(Date, nullable=False)
+    source: Mapped[str] = mapped_column(String(20), nullable=False)  # send | bounce
+    purpose: Mapped[str] = mapped_column(String(100), nullable=False)
+    error_class: Mapped[str] = mapped_column(String(100), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)

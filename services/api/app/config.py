@@ -99,3 +99,8 @@ PORTAL_BASE_DOMAIN: str = os.environ.get("PORTAL_BASE_DOMAIN", "mytradeportal.co
 # Days a customer portal magic-link token stays valid; re-issuing revokes the
 # customer's earlier tokens so only the newest emailed link works.
 PORTAL_MAGIC_TTL_DAYS: int = int(os.environ.get("PORTAL_MAGIC_TTL_DAYS", "30"))
+
+# --- Resend inbound webhooks (bounce/delivery-failure alerts) -----------------
+# Svix signing secret (whsec_...) for POST /webhooks/resend. Empty disables
+# the endpoint: it answers 503 so Resend keeps retrying until configured.
+RESEND_WEBHOOK_SECRET: str = os.environ.get("RESEND_WEBHOOK_SECRET", "").strip()

@@ -2,7 +2,7 @@
 
 Sequence under test: quote ready (magic link) → acceptance confirmation →
 booking confirmed on scheduling → invoice sent (magic link) → payment
-received + review prompt. All sends are mocked — send_event_email/send_email
+received + review prompt. All sends are mocked — send_customer_email/send_email
 calls are captured, never delivered.
 
 The magic-link helper (``app.email.resolve_customer_magic_link``) wraps
@@ -58,12 +58,12 @@ DOC_URL_MARKER = "/quote/"  # PUBLIC_DOCS_BASE_URL + kind + raw token
 
 
 class _EmailRecorder:
-    """Stand-in for send_event_email/send_email that records calls."""
+    """Stand-in for send_customer_email that records calls (db arg dropped)."""
 
     def __init__(self) -> None:
         self.calls: list[dict[str, Any]] = []
 
-    async def __call__(self, **kwargs: Any) -> bool:
+    async def __call__(self, db: Any = None, **kwargs: Any) -> bool:
         self.calls.append(kwargs)
         return True
 
@@ -284,7 +284,7 @@ async def test_quote_send_email_contains_magic_link_when_customer_exists(
 
     magic_link_url = _stub_portal_links(monkeypatch)
     recorder = _EmailRecorder()
-    monkeypatch.setattr("app.routers.quotes.send_event_email", recorder)
+    monkeypatch.setattr("app.routers.quotes.send_customer_email", recorder)
 
     response = await client.post(
         f"/quotes/{quote['id']}/send", headers={"X-Tenant-ID": str(tenant.id)}
@@ -311,7 +311,7 @@ async def test_quote_send_email_falls_back_to_doc_link_without_customer(
     quote = await _create_quote_via_api(client, str(tenant.id), str(contact.id))
 
     recorder = _EmailRecorder()
-    monkeypatch.setattr("app.routers.quotes.send_event_email", recorder)
+    monkeypatch.setattr("app.routers.quotes.send_customer_email", recorder)
 
     response = await client.post(
         f"/quotes/{quote['id']}/send", headers={"X-Tenant-ID": str(tenant.id)}
@@ -346,7 +346,7 @@ async def test_invoice_send_email_contains_magic_link_when_customer_exists(
 
     magic_link_url = _stub_portal_links(monkeypatch)
     recorder = _EmailRecorder()
-    monkeypatch.setattr("app.routers.invoices.send_email", recorder)
+    monkeypatch.setattr("app.routers.invoices.send_customer_email", recorder)
 
     response = await client.post(
         f"/invoices/{invoice['id']}/send", headers={"X-Tenant-ID": str(tenant.id)}
@@ -382,7 +382,7 @@ async def test_invoice_send_email_falls_back_to_doc_link_without_customer(
     invoice = create.json()
 
     recorder = _EmailRecorder()
-    monkeypatch.setattr("app.routers.invoices.send_email", recorder)
+    monkeypatch.setattr("app.routers.invoices.send_customer_email", recorder)
 
     response = await client.post(
         f"/invoices/{invoice['id']}/send", headers={"X-Tenant-ID": str(tenant.id)}
@@ -440,7 +440,7 @@ async def test_booking_confirmed_email_fires_on_schedule_patch(
     job = job_response.json()
 
     recorder = _EmailRecorder()
-    monkeypatch.setattr("app.routers.jobs.send_event_email", recorder)
+    monkeypatch.setattr("app.routers.jobs.send_customer_email", recorder)
 
     start = datetime(2026, 9, 21, 9, 0)
     end = datetime(2026, 9, 21, 11, 0)
@@ -490,7 +490,7 @@ async def test_booking_confirmed_email_not_fired_on_unrelated_patch(
     job = job_response.json()
 
     recorder = _EmailRecorder()
-    monkeypatch.setattr("app.routers.jobs.send_event_email", recorder)
+    monkeypatch.setattr("app.routers.jobs.send_customer_email", recorder)
 
     patch = await client.patch(
         f"/jobs/{job['id']}",
@@ -584,7 +584,7 @@ async def test_payment_received_email_with_review_cta(
     )
     _patch_construct(monkeypatch, event)
     recorder = _EmailRecorder()
-    monkeypatch.setattr("app.routers.stripe_webhooks.send_event_email", recorder)
+    monkeypatch.setattr("app.routers.stripe_webhooks.send_customer_email", recorder)
     try:
         response = await _post_event(event)
 
@@ -615,7 +615,7 @@ async def test_payment_received_email_without_review_url_has_no_review_block(
     )
     _patch_construct(monkeypatch, event)
     recorder = _EmailRecorder()
-    monkeypatch.setattr("app.routers.stripe_webhooks.send_event_email", recorder)
+    monkeypatch.setattr("app.routers.stripe_webhooks.send_customer_email", recorder)
     try:
         response = await _post_event(event)
 
@@ -638,7 +638,7 @@ async def test_webhook_still_200_when_customer_email_send_raises(
     )
     _patch_construct(monkeypatch, event)
     monkeypatch.setattr(
-        "app.routers.stripe_webhooks.send_event_email",
+        "app.routers.stripe_webhooks.send_customer_email",
         AsyncMock(side_effect=RuntimeError("resend down")),
     )
     try:
@@ -712,7 +712,7 @@ async def test_quote_reminder_sends_magic_link_and_skips_doc_token(
     doc_view_url = AsyncMock(return_value="https://mytradeportal.co.uk/quote/should-not-be-used")
     monkeypatch.setattr("app.scheduler._document_view_url", doc_view_url)
     recorder = _EmailRecorder()
-    monkeypatch.setattr("app.scheduler.send_event_email", recorder)
+    monkeypatch.setattr("app.scheduler.send_customer_email", recorder)
 
     summary = await run_reminder_tick(db)
 
@@ -736,7 +736,7 @@ async def test_quote_reminder_sends_doc_token_when_no_customer(
     await db.commit()
 
     recorder = _EmailRecorder()
-    monkeypatch.setattr("app.scheduler.send_event_email", recorder)
+    monkeypatch.setattr("app.scheduler.send_customer_email", recorder)
 
     summary = await run_reminder_tick(db)
 
@@ -764,7 +764,7 @@ async def test_invoice_reminder_sends_magic_link_and_skips_doc_token(
     doc_view_url = AsyncMock(return_value="https://mytradeportal.co.uk/invoice/unused")
     monkeypatch.setattr("app.scheduler._document_view_url", doc_view_url)
     recorder = _EmailRecorder()
-    monkeypatch.setattr("app.scheduler.send_event_email", recorder)
+    monkeypatch.setattr("app.scheduler.send_customer_email", recorder)
 
     summary = await run_reminder_tick(db)
 
@@ -788,7 +788,7 @@ async def test_invoice_reminder_sends_doc_token_when_no_customer(
     await db.commit()
 
     recorder = _EmailRecorder()
-    monkeypatch.setattr("app.scheduler.send_event_email", recorder)
+    monkeypatch.setattr("app.scheduler.send_customer_email", recorder)
 
     summary = await run_reminder_tick(db)
 
@@ -887,7 +887,7 @@ async def test_staff_chat_message_to_app_preference_sends_push_and_email(
     magic_link_url = AsyncMock(return_value=MAGIC_URL)
     monkeypatch.setattr("app.routers.communications.magic_link_url", magic_link_url)
     recorder = _EmailRecorder()
-    monkeypatch.setattr("app.routers.communications.send_event_email", recorder)
+    monkeypatch.setattr("app.routers.communications.send_customer_email", recorder)
 
     await _staff_chat_message(admin_client, tenant_id, ids["quote_request_id"])
 
@@ -936,7 +936,7 @@ async def test_staff_chat_message_email_links_quote_when_thread_has_one(
     magic_link_url = AsyncMock(return_value=MAGIC_URL)
     monkeypatch.setattr("app.routers.communications.magic_link_url", magic_link_url)
     recorder = _EmailRecorder()
-    monkeypatch.setattr("app.routers.communications.send_event_email", recorder)
+    monkeypatch.setattr("app.routers.communications.send_customer_email", recorder)
 
     await _staff_chat_message(admin_client, tenant_id, ids["quote_request_id"])
 
@@ -955,7 +955,7 @@ async def test_staff_chat_message_to_phone_preference_sends_push_but_no_email(
     push = AsyncMock()
     monkeypatch.setattr("app.push.send_expo_push", push)
     recorder = _EmailRecorder()
-    monkeypatch.setattr("app.routers.communications.send_event_email", recorder)
+    monkeypatch.setattr("app.routers.communications.send_customer_email", recorder)
 
     await _staff_chat_message(admin_client, tenant_id, ids["quote_request_id"])
 
@@ -1038,7 +1038,7 @@ async def _schedule_job_and_capture_email(
     magic_link_url = AsyncMock(return_value=CLAIM_URL)
     monkeypatch.setattr("app.routers.jobs.magic_link_url", magic_link_url)
     recorder = _EmailRecorder()
-    monkeypatch.setattr("app.routers.jobs.send_event_email", recorder)
+    monkeypatch.setattr("app.routers.jobs.send_customer_email", recorder)
 
     patch = await client.patch(
         f"/jobs/{job['id']}",

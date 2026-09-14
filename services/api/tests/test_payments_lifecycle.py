@@ -115,7 +115,7 @@ async def test_full_stripe_payment_lifecycle(
     monkeypatch.setattr("app.stripe_client.create_account_link", account_link)
     monkeypatch.setattr("app.stripe_client.create_payment_intent", create_intent)
     monkeypatch.setattr("app.stripe_client.create_refund", create_refund)
-    monkeypatch.setattr("app.routers.invoices.send_email", send_email)
+    monkeypatch.setattr("app.routers.invoices.send_customer_email", send_email)
 
     account_event_id = f"evt_{uuid4().hex}"
     succeeded_event_id = f"evt_{uuid4().hex}"

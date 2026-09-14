@@ -187,6 +187,8 @@ export default defineRailway(() => {
       RESEND_FROM_EMAIL: preserve(),
       // Transactional sender (password resets etc.): platform-branded no-reply.
       RESEND_NO_REPLY_EMAIL: preserve(),
+      // Svix signing secret for the Resend bounce webhook (/webhooks/resend).
+      RESEND_WEBHOOK_SECRET: preserve(),
       // Password for the mtp_metabase BI role — init_db keeps the prod role
       // in sync with this on every deploy.
       METABASE_DB_PASSWORD: preserve(),

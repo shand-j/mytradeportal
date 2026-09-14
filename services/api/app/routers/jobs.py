@@ -34,7 +34,7 @@ from sqlalchemy.orm import selectinload
 
 from app.database import get_db
 from app.dependencies import TenantDep
-from app.email import send_event_email
+from app.email import send_customer_email
 from app.email_templates import booking_confirmed as booking_confirmed_template
 from app.models import Appointment, Contact, Customer, Job, Quote, Tenant, User
 from app.portal_links import magic_link_url
@@ -158,7 +158,7 @@ async def _email_booking_confirmed(db: AsyncSession, tenant_id: UUID, job: Job) 
     """Email the customer a booking confirmation for a freshly scheduled job.
 
     Best-effort and never raises: dispatch gaps surface via
-    ``send_event_email``'s logging. Tenant-branded with the tenant's own
+    ``send_customer_email``'s logging. Tenant-branded with the tenant's own
     Reply-To so "need to change it? reply to this email" lands with the
     tradesperson.
     """
@@ -202,7 +202,11 @@ async def _email_booking_confirmed(db: AsyncSession, tenant_id: UUID, job: Job) 
             ),
             claim_url=claim_url,
         )
-        await send_event_email(
+        await send_customer_email(
+            db,
+            tenant_id=tenant_id,
+            contact_id=contact.id,
+            purpose="booking confirmation",
             to_email=contact.email,
             subject=subject,
             html_body=html,

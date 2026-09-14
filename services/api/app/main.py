@@ -48,6 +48,7 @@ from app.routers import (
     public_threads,
     quote_requests,
     quotes,
+    resend_webhooks,
     reviews,
     stripe_webhooks,
     tenants,
@@ -197,6 +198,7 @@ app.include_router(public_threads.router)
 app.include_router(billing.router)
 app.include_router(webhooks.router)
 app.include_router(stripe_webhooks.router)
+app.include_router(resend_webhooks.router)
 app.include_router(analytics.router)
 app.include_router(reviews.router)
 app.include_router(communications.router)

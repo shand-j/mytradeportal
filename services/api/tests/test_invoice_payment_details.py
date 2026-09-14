@@ -110,11 +110,11 @@ async def test_invoice_email_includes_tenant_bank_details(
 
     sent: list[dict[str, Any]] = []
 
-    async def _fake_send_email(**kwargs: Any) -> dict[str, Any]:
+    async def _fake_send_email(db: Any = None, **kwargs: Any) -> bool:
         sent.append(kwargs)
-        return {"id": "test"}
+        return True
 
-    monkeypatch.setattr("app.routers.invoices.send_email", _fake_send_email)
+    monkeypatch.setattr("app.routers.invoices.send_customer_email", _fake_send_email)
 
     send_response = await admin_client.post(
         f"/invoices/{invoice['id']}/send",
@@ -158,11 +158,11 @@ async def test_invoice_email_without_bank_details_omits_block(
 
     sent: list[dict[str, Any]] = []
 
-    async def _fake_send_email(**kwargs: Any) -> dict[str, Any]:
+    async def _fake_send_email(db: Any = None, **kwargs: Any) -> bool:
         sent.append(kwargs)
-        return {"id": "test"}
+        return True
 
-    monkeypatch.setattr("app.routers.invoices.send_email", _fake_send_email)
+    monkeypatch.setattr("app.routers.invoices.send_customer_email", _fake_send_email)
 
     send_response = await admin_client.post(
         f"/invoices/{invoice['id']}/send",

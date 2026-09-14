@@ -25,7 +25,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.ai_telemetry import record_quote_outcome
 from app.alerting import send_alert
 from app.database import engine
-from app.email import send_event_email
+from app.email import send_customer_email
 from app.email_templates import payment_received as payment_received_template
 from app.models import Contact, Invoice, Payment, ProcessedWebhook, Quote, StripeAccount, Tenant
 from app.push import notify_staff
@@ -40,7 +40,7 @@ async def _email_customer_payment_received(session: AsyncSession, invoice: Invoi
     """Best-effort payment confirmation (+ review prompt) to the customer.
 
     Reads everything it needs while the session's RLS context is still live,
-    then renders and dispatches through ``send_event_email`` (which never
+    then renders and dispatches through ``send_customer_email`` (which never
     raises). Any failure is logged and swallowed — the webhook's 200 must
     never depend on customer email delivery. Stripe sends its own card
     receipt; ours is the confirmation and thank-you.
@@ -67,7 +67,11 @@ async def _email_customer_payment_received(session: AsyncSession, invoice: Invoi
             paid_date=paid_at.strftime("%d %b %Y"),
             review_url=review_url,
         )
-        await send_event_email(
+        await send_customer_email(
+            session,
+            tenant_id=invoice.tenant_id,
+            contact_id=contact.id,
+            purpose="payment receipt",
             to_email=contact.email,
             subject=subject,
             html_body=html,

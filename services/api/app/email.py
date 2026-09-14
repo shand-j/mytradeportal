@@ -6,9 +6,11 @@ the transport — they only supply the payload.
 """
 
 import base64
+from collections.abc import Awaitable, Callable
 from email.message import EmailMessage
 from email.utils import formataddr
 from typing import Any
+from uuid import UUID
 
 import aiosmtplib as aiosmtplib
 import httpx as httpx
@@ -94,6 +96,7 @@ async def _send_via_resend(
     attachments: list[tuple[str, str, bytes]] | None,
     from_name: str | None = None,
     reply_to: str | None = None,
+    tags: dict[str, str] | None = None,
 ) -> dict[str, Any]:
     """POST the message to Resend's REST API."""
     payload: dict[str, Any] = {
@@ -106,6 +109,10 @@ async def _send_via_resend(
         payload["reply_to"] = [reply_to]
     if text_body:
         payload["text"] = text_body
+    if tags:
+        # Resend tags ride along to the bounce/failed webhooks, letting us
+        # match a non-delivery back to the tenant contact it was sent to.
+        payload["tags"] = [{"name": name, "value": value} for name, value in tags.items()]
     if attachments:
         payload["attachments"] = [
             {
@@ -142,8 +149,13 @@ async def _send_via_smtp(
     attachments: list[tuple[str, str, bytes]] | None,
     from_name: str | None = None,
     reply_to: str | None = None,
+    tags: dict[str, str] | None = None,
 ) -> dict[str, Any]:
-    """SMTP fallback used by the local Mailpit dev stack."""
+    """SMTP fallback used by the local Mailpit dev stack.
+
+    ``tags`` is accepted for signature parity with the Resend transport and
+    ignored — SMTP has no webhook channel to correlate bounces through.
+    """
     message = EmailMessage()
     message["From"] = formataddr((from_name or settings.smtp_from_name, settings.smtp_from_email))
     message["To"] = to_email
@@ -182,6 +194,7 @@ async def send_email(
     attachments: list[tuple[str, str, bytes]] | None = None,
     from_name: str | None = None,
     reply_to: str | None = None,
+    tags: dict[str, str] | None = None,
 ) -> dict[str, Any]:
     """Send an email via Resend (preferred) or SMTP (dev fallback).
 
@@ -192,14 +205,15 @@ async def send_email(
     ``from_name`` overrides the friendly display name on the ``From`` header
     (e.g. tenant business name for white-label sends). ``reply_to`` sets a
     single reply address so recipients replying land with the tenant, not the
-    shared platform inbox.
+    shared platform inbox. ``tags`` are Resend message tags (no-op on the
+    SMTP path) echoed back on bounce/failed webhooks.
     """
     if settings.resend_api_key:
         return await _send_via_resend(
-            to_email, subject, html_body, text_body, attachments, from_name, reply_to
+            to_email, subject, html_body, text_body, attachments, from_name, reply_to, tags
         )
     return await _send_via_smtp(
-        to_email, subject, html_body, text_body, attachments, from_name, reply_to
+        to_email, subject, html_body, text_body, attachments, from_name, reply_to, tags
     )
 
 
@@ -215,6 +229,8 @@ async def send_event_email(
     reply_to: str | None = None,
     attachments: list[tuple[str, str, bytes]] | None = None,
     context: dict[str, Any] | None = None,
+    tags: dict[str, str] | None = None,
+    on_failure: Callable[[str], Awaitable[None]] | None = None,
 ) -> bool:
     """Send an event-triggered email with uniform logging. Never raises.
 
@@ -226,8 +242,16 @@ async def send_event_email(
       id, ...), and ``False``. Callers must pass identifying context so the
       skipped customer is traceable.
     * Transport/Resend failure → error log (``email_send_failed``) with the
-      recipient, template and event, and ``False``.
+      recipient, template and event, and ``False``. When ``on_failure`` is
+      given it is awaited with the exception class name (never the raw
+      payload) — the hook's own errors are logged and swallowed so the
+      never-raises contract holds.
     * Success → info log (``email_dispatched``) and ``True``.
+
+    ``tags`` are passed through to the Resend transport (see
+    :func:`send_email`); customer-facing callers should go through
+    :func:`send_customer_email`, which sets the ``mtp_*`` correlation tags
+    and the staff-alert failure hook for them.
     """
     log_context = {"email_event": event, "template": template, **(context or {})}
     if not to_email or not to_email.strip():
@@ -242,6 +266,7 @@ async def send_event_email(
             attachments=attachments,
             from_name=from_name,
             reply_to=reply_to,
+            tags=tags,
         )
     except Exception as exc:
         logger.error(
@@ -251,6 +276,85 @@ async def send_event_email(
             error=str(exc)[:300],
             **log_context,
         )
+        if on_failure is not None:
+            try:
+                await on_failure(type(exc).__name__)
+            except Exception as hook_exc:
+                logger.error(
+                    "email_failure_hook_failed",
+                    recipient=to_email,
+                    error_type=type(hook_exc).__name__,
+                    error=str(hook_exc)[:300],
+                    **log_context,
+                )
         return False
     logger.info("email_dispatched", recipient=to_email, **log_context)
     return True
+
+
+async def send_customer_email(
+    db: AsyncSession,
+    *,
+    tenant_id: UUID,
+    contact_id: UUID | None,
+    purpose: str,
+    to_email: str | None,
+    subject: str,
+    html_body: str,
+    text_body: str | None = None,
+    event: str,
+    template: str,
+    from_name: str | None = None,
+    reply_to: str | None = None,
+    attachments: list[tuple[str, str, bytes]] | None = None,
+    context: dict[str, Any] | None = None,
+) -> bool:
+    """Send a customer-facing email with failure alerting. Never raises.
+
+    Wrapper around :func:`send_event_email` for mail addressed to a tenant's
+    customer (quote, invoice, reminder, chat, ...):
+
+    * Stamps Resend tags ``mtp_tenant``/``mtp_contact`` so the
+      ``/webhooks/resend`` bounce handler can match a non-delivery back to
+      the contact it was sent to (no-op on the SMTP fallback path).
+    * On transport failure, pages tenant staff via
+      :func:`app.email_alerts.alert_staff_email_failure` — one in-app
+      notification per (tenant, contact, day) directing them to phone the
+      customer instead. Staff-facing mail must keep using
+      :func:`send_event_email` directly so a failing staff alert can never
+      trigger another alert (no alert loops).
+
+    The caller's session is used for the alert writes and the caller commits
+    (same convention as :func:`app.push.notify_staff`).
+    """
+    from app.email_alerts import alert_staff_email_failure
+
+    tags = {"mtp_tenant": str(tenant_id)}
+    if contact_id is not None:
+        tags["mtp_contact"] = str(contact_id)
+
+    async def _alert(error_class: str) -> None:
+        await alert_staff_email_failure(
+            db,
+            tenant_id=tenant_id,
+            contact_id=contact_id,
+            recipient_email=to_email,
+            purpose=purpose,
+            error_class=error_class,
+            source="send",
+        )
+
+    return await send_event_email(
+        to_email=to_email,
+        subject=subject,
+        html_body=html_body,
+        text_body=text_body,
+        event=event,
+        template=template,
+        from_name=from_name,
+        reply_to=reply_to,
+        attachments=attachments,
+        context=context,
+        tags=tags,
+        on_failure=_alert,
+    )

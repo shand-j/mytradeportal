@@ -277,7 +277,7 @@ async def test_quote_send_dispatches_quote_ready_email(
     quote = await _create_quote_via_api(client, str(tenant.id), str(contact.id))
 
     send_mock = AsyncMock(return_value=True)
-    monkeypatch.setattr("app.routers.quotes.send_event_email", send_mock)
+    monkeypatch.setattr("app.routers.quotes.send_customer_email", send_mock)
 
     response = await client.post(
         f"/quotes/{quote['id']}/send", headers={"X-Tenant-ID": str(tenant.id)}
@@ -333,7 +333,7 @@ async def test_customer_register_dispatches_account_created_email(
     await _create_tenant(db, slug)
 
     send_mock = AsyncMock(return_value=True)
-    monkeypatch.setattr("app.routers.customer_portal.send_event_email", send_mock)
+    monkeypatch.setattr("app.routers.customer_portal.send_customer_email", send_mock)
 
     response = await client.post(
         "/customer/register",
@@ -401,7 +401,7 @@ async def test_quote_accept_dispatches_confirmation_email(
         subject_type="customer",
     )
     send_mock = AsyncMock(return_value=True)
-    monkeypatch.setattr("app.routers.customer_portal.send_event_email", send_mock)
+    monkeypatch.setattr("app.routers.customer_portal.send_customer_email", send_mock)
 
     response = await client.post(
         f"/customer/quotes/{quote.id}/accept",

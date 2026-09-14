@@ -28,7 +28,7 @@ from app import stripe_client
 from app.ai_telemetry import record_quote_outcome
 from app.database import get_db
 from app.dependencies import CurrentCustomerDep, _extract_tenant_slug
-from app.email import send_event_email
+from app.email import send_customer_email
 from app.email_templates import account_created as account_created_template
 from app.email_templates import quote_accepted as quote_accepted_template
 from app.limiter import limiter
@@ -384,7 +384,11 @@ async def register_customer(
         business_name=tenant.name,
         login_url=f"{app_origin}/customer-login" if app_origin else None,
     )
-    await send_event_email(
+    await send_customer_email(
+        db,
+        tenant_id=tenant.id,
+        contact_id=customer.contact_id,
+        purpose="welcome",
         to_email=customer.email,
         subject=subject,
         html_body=html,
@@ -393,6 +397,9 @@ async def register_customer(
         template="account_created",
         context={"customer_id": str(customer.id), "tenant_id": str(tenant.id)},
     )
+    # The account commit already happened above; persist any email-failure
+    # alert the send just raised (no-op when the send succeeded).
+    await db.commit()
 
     return CustomerTokenResponse(
         access_token=_issue_token(customer),
@@ -601,7 +608,11 @@ async def request_magic_link(
   </body>
 </html>
 """
-        await send_event_email(
+        await send_customer_email(
+            db,
+            tenant_id=tenant.id,
+            contact_id=customer.contact_id,
+            purpose="sign-in link",
             to_email=customer.email,
             subject=subject,
             html_body=html,
@@ -610,6 +621,9 @@ async def request_magic_link(
             template="magic_link",
             context={"customer_id": str(customer.id), "tenant_id": str(tenant.id)},
         )
+        # The token commit already happened above; persist any email-failure
+        # alert the send just raised (no-op when the send succeeded).
+        await db.commit()
 
     return _MAGIC_REQUEST_RESPONSE
 
@@ -919,7 +933,11 @@ async def accept_quote(
         if value is not None and (accepts_var_kwargs or key in accepted_params):
             template_kwargs[key] = value
     subject, html, text = quote_accepted_template(**template_kwargs)
-    await send_event_email(
+    await send_customer_email(
+        db,
+        tenant_id=customer.tenant_id,
+        contact_id=customer.contact_id,
+        purpose="quote confirmation",
         to_email=customer.email,
         subject=subject,
         html_body=html,
@@ -932,6 +950,9 @@ async def accept_quote(
             "tenant_id": str(customer.tenant_id),
         },
     )
+    # The acceptance commit already happened above; persist any email-failure
+    # alert the send just raised (no-op when the send succeeded).
+    await db.commit()
     # Re-fetch with relationships eager-loaded: QuoteRead serialises
     # line_items/contact, which are expired on the committed object.
     return await _get_customer_quote(db, customer, quote_id)

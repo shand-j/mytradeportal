@@ -163,11 +163,11 @@ async def test_magic_request_sends_email_when_customer_exists(
 
     sent: list[dict[str, Any]] = []
 
-    async def fake_send(**kwargs: Any) -> bool:
+    async def fake_send(db: Any = None, **kwargs: Any) -> bool:
         sent.append(kwargs)
         return True
 
-    monkeypatch.setattr("app.routers.customer_portal.send_event_email", fake_send)
+    monkeypatch.setattr("app.routers.customer_portal.send_customer_email", fake_send)
 
     resp = await client.post(
         "/customer/auth/magic/request",
@@ -195,11 +195,11 @@ async def test_magic_request_silent_for_unknown_email(
 
     sent: list[dict[str, Any]] = []
 
-    async def fake_send(**kwargs: Any) -> bool:
+    async def fake_send(db: Any = None, **kwargs: Any) -> bool:
         sent.append(kwargs)
         return True
 
-    monkeypatch.setattr("app.routers.customer_portal.send_event_email", fake_send)
+    monkeypatch.setattr("app.routers.customer_portal.send_customer_email", fake_send)
 
     resp = await client.post(
         "/customer/auth/magic/request",

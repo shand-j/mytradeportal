@@ -6,21 +6,6 @@ Feature: Parked and specified-not-built capabilities
   none of them should be asserted in CI until un-parked.
 
   @gap
-  Scenario: Email bounce or send failure alerts staff with a phone fallback
-    # Founder rule: when a customer email bounces or fails to send, the
-    # electrician is told in-app and directed to phone the customer instead.
-    # Status: implementation INTERRUPTED mid-flight — untracked, uncommitted,
-    # untested code exists in services/api/app/email_alerts.py (design
-    # docstring is the spec) and services/api/app/routers/resend_webhooks.py
-    # (Svix-verified POST /webhooks/resend, per-day dedupe ledger in
-    # email_failure_alerts). Router is wired in app/main.py but no tests exist.
-    Given a quote-ready or reminder email to a customer
-    When the Resend send raises, or an email.bounced / email.failed webhook arrives
-    Then staff receive one alert per tenant+contact+day naming the failed email
-      and directing them to the customer's phone number
-    And alerts never raise and cannot loop (staff mail skips the failure hook)
-
-  @gap
   Scenario: Installable portal PWA
     # Spec: docs/mytradeportal-research/PRD-Customer-Portal.md §4;
     # beta-backlog row S4 (planned, post-beta-start).

@@ -102,11 +102,11 @@ async def test_send_quote_mints_token_and_emails_landing_link(
 ) -> None:
     sent: dict[str, Any] = {}
 
-    async def fake_send_event_email(**kwargs: Any) -> bool:
+    async def fake_send_customer_email(db: Any = None, **kwargs: Any) -> bool:
         sent.update(kwargs)
         return True
 
-    monkeypatch.setattr("app.routers.quotes.send_event_email", fake_send_event_email)
+    monkeypatch.setattr("app.routers.quotes.send_customer_email", fake_send_customer_email)
 
     tenant = await _create_tenant(client, f"pub-{uuid4().hex[:8]}")
     contact = await _create_contact(client, tenant["id"], "Quote Homeowner")
@@ -136,7 +136,7 @@ async def test_send_invoice_mints_token_and_emails_landing_link(
     client: AsyncClient, db: AsyncSession, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     send_email = AsyncMock(return_value=True)
-    monkeypatch.setattr("app.routers.invoices.send_email", send_email)
+    monkeypatch.setattr("app.routers.invoices.send_customer_email", send_email)
 
     tenant = await _create_tenant(client, f"pub-{uuid4().hex[:8]}")
     contact = await _create_contact(client, tenant["id"], "Invoice Homeowner")
@@ -164,11 +164,11 @@ async def test_resend_revokes_previous_token(
 ) -> None:
     bodies: list[str] = []
 
-    async def fake_send_event_email(**kwargs: Any) -> bool:
+    async def fake_send_customer_email(db: Any = None, **kwargs: Any) -> bool:
         bodies.append(kwargs["html_body"])
         return True
 
-    monkeypatch.setattr("app.routers.quotes.send_event_email", fake_send_event_email)
+    monkeypatch.setattr("app.routers.quotes.send_customer_email", fake_send_customer_email)
 
     tenant = await _create_tenant(client, f"pub-{uuid4().hex[:8]}")
     contact = await _create_contact(client, tenant["id"], "Resend Homeowner")
@@ -197,11 +197,11 @@ async def _send_quote_and_get_token(
 ) -> tuple[dict[str, Any], dict[str, Any], str]:
     sent: dict[str, Any] = {}
 
-    async def fake_send_event_email(**kwargs: Any) -> bool:
+    async def fake_send_customer_email(db: Any = None, **kwargs: Any) -> bool:
         sent.update(kwargs)
         return True
 
-    monkeypatch.setattr("app.routers.quotes.send_event_email", fake_send_event_email)
+    monkeypatch.setattr("app.routers.quotes.send_customer_email", fake_send_customer_email)
 
     tenant = await _create_tenant(client, f"pub-{uuid4().hex[:8]}")
     contact = await _create_contact(client, tenant["id"], "View Homeowner")
@@ -248,7 +248,7 @@ async def test_public_invoice_payload_without_paddle_has_no_payment_url(
     client: AsyncClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     send_email = AsyncMock(return_value=True)
-    monkeypatch.setattr("app.routers.invoices.send_email", send_email)
+    monkeypatch.setattr("app.routers.invoices.send_customer_email", send_email)
     # Paddle is unconfigured in tests, so checkout creation must degrade to
     # payment_url=None rather than break the page.
     tenant = await _create_tenant(client, f"pub-{uuid4().hex[:8]}")
@@ -275,7 +275,7 @@ async def test_public_invoice_paid_has_no_payment_url(
     client: AsyncClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     send_email = AsyncMock(return_value=True)
-    monkeypatch.setattr("app.routers.invoices.send_email", send_email)
+    monkeypatch.setattr("app.routers.invoices.send_customer_email", send_email)
     tenant = await _create_tenant(client, f"pub-{uuid4().hex[:8]}")
     contact = await _create_contact(client, tenant["id"], "Paid Homeowner")
     invoice = await _create_invoice(client, tenant["id"], contact["id"])
@@ -353,7 +353,7 @@ async def _sent_card_invoice(
 ) -> tuple[str, dict[str, Any], str]:
     """Tenant + (optional) Stripe Connect account + sent invoice + raw token."""
     send_email = AsyncMock(return_value=True)
-    monkeypatch.setattr("app.routers.invoices.send_email", send_email)
+    monkeypatch.setattr("app.routers.invoices.send_customer_email", send_email)
 
     tenant = await _create_tenant(client, f"pay-{uuid4().hex[:8]}")
     contact = await _create_contact(client, tenant["id"], "Matrix Homeowner")

@@ -200,7 +200,7 @@ async def email_triage_question(
     email address.
     """
     from app.config import settings
-    from app.email import send_event_email
+    from app.email import send_customer_email
     from app.email_templates import triage_question as triage_question_template
     from app.models import Contact
 
@@ -217,7 +217,11 @@ async def email_triage_question(
         question=question,
         chat_url=chat_url,
     )
-    await send_event_email(
+    await send_customer_email(
+        db,
+        tenant_id=tenant.id,
+        contact_id=contact.id if contact is not None else None,
+        purpose="triage question",
         to_email=contact.email if contact is not None else None,
         subject=subject,
         html_body=html,

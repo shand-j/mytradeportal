@@ -52,7 +52,7 @@ from app.config import (
     ROLLUP_TICK_SECONDS,
 )
 from app.database import AsyncSessionLocal
-from app.email import resolve_customer_magic_link, send_event_email
+from app.email import resolve_customer_magic_link, send_customer_email
 from app.email_templates import invoice_reminder as invoice_reminder_template
 from app.email_templates import quote_reminder as quote_reminder_template
 from app.fx import store_fx_rate
@@ -205,7 +205,11 @@ async def _process_quote_reminders(
             view_url=view_url,
             portal_url=portal_url,
         )
-        delivered = await send_event_email(
+        delivered = await send_customer_email(
+            db,
+            tenant_id=tenant.id,
+            contact_id=contact.id if contact is not None else None,
+            purpose="quote reminder",
             to_email=contact.email if contact is not None else None,
             subject=subject,
             html_body=html,
@@ -218,7 +222,7 @@ async def _process_quote_reminders(
         )
         if not delivered:
             # Not recorded as a reminder: a customer we could not reach must
-            # not burn one of their chase slots. send_event_email already
+            # not burn one of their chase slots. send_customer_email already
             # logged the skip/failure loudly.
             continue
 
@@ -311,7 +315,11 @@ async def _process_invoice_reminders(
             view_url=view_url,
             portal_url=portal_url,
         )
-        delivered = await send_event_email(
+        delivered = await send_customer_email(
+            db,
+            tenant_id=tenant.id,
+            contact_id=contact.id if contact is not None else None,
+            purpose="invoice reminder",
             to_email=contact.email if contact is not None else None,
             subject=subject,
             html_body=html,

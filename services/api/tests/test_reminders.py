@@ -19,12 +19,12 @@ pytestmark = pytest.mark.asyncio
 
 
 class _EmailRecorder:
-    """Stand-in for app.scheduler.send_event_email that records calls."""
+    """Stand-in for app.scheduler.send_customer_email that records calls."""
 
     def __init__(self) -> None:
         self.calls: list[dict[str, Any]] = []
 
-    async def __call__(self, **kwargs):  # type: ignore[no-untyped-def]
+    async def __call__(self, db: Any = None, **kwargs):  # type: ignore[no-untyped-def]
         self.calls.append(kwargs)
         return True
 
@@ -32,7 +32,7 @@ class _EmailRecorder:
 @pytest_asyncio.fixture
 async def email_recorder(monkeypatch: pytest.MonkeyPatch) -> AsyncGenerator[_EmailRecorder, None]:
     recorder = _EmailRecorder()
-    monkeypatch.setattr("app.scheduler.send_event_email", recorder)
+    monkeypatch.setattr("app.scheduler.send_customer_email", recorder)
     yield recorder
 
 
@@ -233,10 +233,10 @@ async def test_quote_reminder_without_contact_email_not_counted(
     db.add(_make_quote(tenant_id, contact.id))
     await db.commit()
 
-    async def _fail_send(**kwargs):  # type: ignore[no-untyped-def]
+    async def _fail_send(db: Any = None, **kwargs):  # type: ignore[no-untyped-def]
         return False
 
-    monkeypatch.setattr("app.scheduler.send_event_email", _fail_send)
+    monkeypatch.setattr("app.scheduler.send_customer_email", _fail_send)
     summary = await run_reminder_tick(db)
     assert summary["quote_reminders"] == 0
     reminders = (await db.execute(select(Reminder))).scalars().all()

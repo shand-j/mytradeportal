@@ -42,7 +42,7 @@ from app.calculations import (
 from app.config import settings
 from app.database import get_db
 from app.dependencies import AiAllowanceDep, CurrentUserDep, TenantDep
-from app.email import resolve_customer_magic_link, send_event_email
+from app.email import resolve_customer_magic_link, send_customer_email
 from app.email_templates import quote_ready as quote_ready_template
 from app.limiter import limiter, tenant_key
 from app.models import (
@@ -344,7 +344,11 @@ async def send_quote(
         view_url=view_url,
         portal_url=portal_url,
     )
-    await send_event_email(
+    await send_customer_email(
+        db,
+        tenant_id=tenant.id,
+        contact_id=contact.id if contact is not None else None,
+        purpose="quote",
         to_email=contact.email if contact is not None else None,
         subject=subject,
         html_body=html,

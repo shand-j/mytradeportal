@@ -232,7 +232,7 @@ async def _setup_public_invoice(
 ) -> tuple[Tenant, dict[str, Any], str]:
     """Create a tenant + sent invoice and return (tenant, invoice, raw token)."""
     send_email = AsyncMock(return_value=True)
-    monkeypatch.setattr("app.routers.invoices.send_email", send_email)
+    monkeypatch.setattr("app.routers.invoices.send_customer_email", send_email)
 
     tenant_resp = await client.post(
         "/tenants", json={"slug": f"pay-{uuid4().hex[:8]}", "name": "Pay Ltd"}

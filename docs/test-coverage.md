@@ -66,7 +66,7 @@ Shared API-test support not tied to one journey: test_tenancy.py:3, test_tenant_
 
 | Item | Spec | Status note |
 |---|---|---|
-| Email bounce/send-failure → staff phone fallback | design docstring in uncommitted `services/api/app/email_alerts.py` + `routers/resend_webhooks.py` | implementation interrupted mid-flight: untracked, no tests |
+| ~~Email bounce/send-failure → staff phone fallback~~ | `services/api/app/email_alerts.py` + `routers/resend_webhooks.py` | **shipped** — 9 tests in `tests/test_email_failure_alerts.py`; moved to `platform-observability.feature`. Only ops step left: register the webhook in the Resend dashboard (`POST /webhooks/resend`, `RESEND_WEBHOOK_SECRET`) |
 | Portal PWA install | PRD-Customer-Portal.md §4; beta-backlog S4 | planned post-beta-start |
 | Embeddable widget | PRD-Customer-Portal.md §4.1–4.2; S4 | planned |
 | QR asset pack | PRD-Customer-Portal.md §4.1; S4 | in-app QR modal built (ae1f3a6); print assets not |

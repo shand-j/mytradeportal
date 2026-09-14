@@ -55,3 +55,18 @@ Feature: AI observability, alerting, data export and email reminders
     Then app/analytics.py writes an analytics.* row to the events table,
       fail-open, with optional PostHog passthrough when POSTHOG_API_KEY is set
     # services/api/tests/test_analytics.py (8), test_analytics_shim.py (6).
+
+  @automated-integration
+  Scenario: Email bounce or send failure alerts staff with a phone fallback
+    # Founder rule: when a customer email bounces or fails to send, the
+    # electrician is told in-app and directed to phone the customer instead.
+    Given a customer-facing email (quote, invoice, reminder, chat, booking,
+      receipt, welcome, sign-in link, quote confirmation)
+    When the Resend/SMTP send raises, or a signed email.bounced / email.failed
+      webhook arrives at POST /webhooks/resend
+    Then staff receive one alert per tenant+contact+day naming the failed email
+      and directing them to the customer's phone number
+    And alerts never raise and cannot loop (staff mail skips the failure hook)
+    # services/api/app/email_alerts.py, routers/resend_webhooks.py;
+    # tests/test_email_failure_alerts.py (9). Outgoing customer mail carries
+    # mtp_tenant/mtp_contact tags for bounce matching.

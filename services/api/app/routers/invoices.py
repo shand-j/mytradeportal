@@ -24,7 +24,7 @@ from app.calculations import (
 )
 from app.database import get_db
 from app.dependencies import CurrentUserDep, TenantDep
-from app.email import resolve_customer_magic_link, send_email
+from app.email import resolve_customer_magic_link, send_customer_email
 from app.email_templates import invoice_sent as invoice_sent_template
 from app.models import Contact, Invoice, InvoiceLineItem, Job, Quote, QuoteRequest, Tenant
 from app.push import notify_customer, notify_staff
@@ -394,17 +394,21 @@ async def send_invoice(
             view_url=view_url,
             portal_url=portal_url,
         )
-        try:
-            await send_email(
-                to_email=contact.email,
-                subject=subject,
-                html_body=html,
-                text_body=text,
-                from_name=business_name,
-                reply_to=tenant_row.email if tenant_row is not None and tenant_row.email else None,
-            )
-        except Exception:
-            logger.warning("invoice_email_failed", invoice_id=str(invoice.id))
+        await send_customer_email(
+            db,
+            tenant_id=tenant.id,
+            contact_id=contact.id,
+            purpose="invoice",
+            to_email=contact.email,
+            subject=subject,
+            html_body=html,
+            text_body=text,
+            event="invoice_sent",
+            template="invoice_sent",
+            from_name=business_name,
+            reply_to=tenant_row.email if tenant_row is not None and tenant_row.email else None,
+            context={"invoice_id": str(invoice.id), "tenant_id": str(tenant.id)},
+        )
 
     await db.commit()
     return InvoiceRead.model_validate(await _get_invoice(db, tenant.id, invoice.id))
