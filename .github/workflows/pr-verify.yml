@@ -23,73 +23,10 @@ env:
   PR_NUMBER: ${{ github.event.pull_request.number || github.event.inputs.pr_number }}
 
 jobs:
-  quality-gates:
-    # Same setup as the python job in ci.yml: in-process pytest against
-    # service containers. No live LLM/Paddle access exists here, so these
-    # tests run purely on fixtures/mocks (identical to the existing CI job).
-    runs-on: ubuntu-latest
-    services:
-      postgres:
-        image: postgres:16
-        env:
-          POSTGRES_USER: mtp
-          POSTGRES_PASSWORD: mtp
-          POSTGRES_DB: mtp
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd "pg_isready -U mtp"
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
-      qdrant:
-        image: qdrant/qdrant:v1.11.5
-        ports:
-          - 6333:6333
-      redis:
-        image: redis:7
-        ports:
-          - 6379:6379
-        options: >-
-          --health-cmd "redis-cli ping"
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
-    env:
-      DATABASE_URL: postgresql+asyncpg://mtp:mtp@localhost:5432/mtp
-      QDRANT_URL: http://localhost:6333
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-
-      - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install -e ".[dev]"
-
-      - name: Lint with ruff
-        run: ruff check .
-
-      - name: Format check with ruff
-        run: ruff format --check .
-
-      - name: Type check with mypy
-        run: |
-          mypy services/api packages/shared/py
-          mypy --config-file mypy-admin.ini services/admin
-
-      - name: Test with pytest
-        run: pytest
-
   pr-env-verify:
     # Discover the PR's Railway environment, wait for the api deploy to become
     # healthy, then run the deployed-API smoke suite and a light Playwright
     # pass over the landing/portal bundle.
-    needs: quality-gates
     if: ${{ env.PR_NUMBER != '' }}
     runs-on: ubuntu-latest
     permissions:
