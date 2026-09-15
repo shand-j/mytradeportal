@@ -8,7 +8,8 @@
 #   2. Railway CLI discovery:
 #        railway environment list --ephemeral --json   -> find the ephemeral
 #          environment Railway's GitHub integration created for this PR
-#          (named "pr-<number>" / "pr-<number>-<branch>"), then
+#          (named "<project>-pr-<number>", tagged with meta.prNumber; the
+#          script matches meta.prNumber first, then a name pattern), then
 #        railway domain list --service <svc> --environment <env> --json
 #          -> first service-type domain (custom domains are ignored).
 #
@@ -91,9 +92,20 @@ elif isinstance(payload, dict):
         edges = payload.get("environments", {}).get("edges", [])
         nodes = [e.get("node", {}) for e in edges]
 
-# Railway names PR environments "pr-<number>" or "pr-<number>-<branch>".
-pattern = re.compile(rf"^pr-{re.escape(pr_number)}(?:[-_.].*)?$", re.IGNORECASE)
-matches = [n["name"] for n in nodes if isinstance(n, dict) and n.get("name") and pattern.match(n["name"])]
+# Railway tags PR environments with meta.prNumber; fall back to name
+# matching ("<project>-pr-<number>", "pr-<number>", "pr-<number>-<branch>").
+def _is_pr_env(node: dict) -> bool:
+    meta = node.get("meta") or {}
+    try:
+        if int(meta.get("prNumber")) == int(pr_number):
+            return True
+    except (TypeError, ValueError):
+        pass
+    pattern = re.compile(rf"(?:^|[-_])pr-{re.escape(pr_number)}(?:[-_.]|$)", re.IGNORECASE)
+    return bool(node.get("name") and pattern.search(str(node["name"])))
+
+
+matches = [n["name"] for n in nodes if isinstance(n, dict) and _is_pr_env(n)]
 if matches:
     print(sorted(matches)[0])
     sys.exit(0)

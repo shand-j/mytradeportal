@@ -38,7 +38,10 @@ Workflow: [`.github/workflows/pr-verify.yml`](../.github/workflows/pr-verify.yml
 1. Explicit overrides: `RAILWAY_PR_API_URL` / `RAILWAY_PR_LANDING_URL`.
 2. Railway CLI discovery:
    - `railway environment list --ephemeral --json` — finds the ephemeral
-     environment named `pr-<number>` / `pr-<number>-<branch>`;
+     environment Railway auto-created for this PR. Railway names them
+     `<project>-pr-<number>` and tags them with `meta.prNumber`; the script
+     matches on `meta.prNumber` first and falls back to a name pattern
+     (`pr-<number>`, `pr-<number>-<branch>`);
    - `railway domain list --service api|landing --environment <env> --json` —
      takes the first active service-type domain (custom domains are ignored).
 
@@ -68,8 +71,9 @@ rejects a bad signature, intake 404 on an unknown slug, OpenAPI docs. All are
 non-destructive and need no seeded tenant.
 
 **Landing/portal** (Playwright): home loads with hero/pricing/quote demo,
-`/fair-use` renders, `/quote/:token` and `/pay/:token` show the invalid-link
-error state for bogus tokens.
+`/fair-use` renders, `/quote/:token` and `/pay/:token` reach a terminal error
+state for bogus tokens (asserted as "invalid link or error alert" — see the
+VITE_API_URL limitation below).
 
 ### Limitations
 
@@ -90,6 +94,15 @@ error state for bogus tokens.
 - **Ephemeral environment lifetime**: Railway tears the PR environment down
   when the PR closes; re-running the workflow afterwards requires re-opening
   the PR or dispatching manually.
+- **PR landings call the production API.** Production's `landing` service
+  bakes a literal `VITE_API_URL=https://api-production-…`, and PR environments
+  inherit it, so browser-side API calls from a PR landing hit production and
+  fail CORS (the frontend shows its error state). The token-page Playwright
+  tests therefore accept either the invalid-link or the error alert. The
+  platform fix is to switch `VITE_API_URL` (and `VITE_DEMO_API_URL`) to a
+  Railway reference variable that resolves per-environment, e.g.
+  `https://${{api.RAILWAY_PUBLIC_DOMAIN}}` — worth doing before relying on
+  browser-driven PR-env tests beyond smoke level.
 
 ## Running locally
 
