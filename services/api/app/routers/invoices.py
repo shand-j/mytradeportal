@@ -28,6 +28,7 @@ from app.email import resolve_customer_magic_link, send_customer_email
 from app.email_templates import invoice_sent as invoice_sent_template
 from app.models import Contact, Invoice, InvoiceLineItem, Job, Quote, QuoteRequest, Tenant
 from app.payment_details import tenant_payment_details
+from app.payment_notifications import send_payment_received_email
 from app.push import notify_customer, notify_staff
 from app.rls import set_tenant_in_session
 from app.routers.public_docs import issue_document_token, public_document_url
@@ -400,7 +401,13 @@ async def mark_invoice_paid(
     current_user: CurrentUserDep,
     db: DbDep,
 ) -> InvoiceRead:
-    """Mark an invoice as paid."""
+    """Mark an invoice as paid.
+
+    Settles the invoice outside Stripe (bank transfer, cash, ...) and tells
+    the customer: the same ``payment_received`` confirmation (+ review
+    prompt) the Stripe webhook sends goes out with the non-card copy variant.
+    Best-effort — a dispatch failure never blocks the mark-paid.
+    """
     invoice = await _get_invoice(db, tenant.id, invoice_id)
     invoice.status = "paid"
     invoice.paid_at = datetime.utcnow()
@@ -423,6 +430,7 @@ async def mark_invoice_paid(
         body=f"Invoice {invoice.invoice_number} for £{invoice.total} has been marked paid.",
         link=f"/invoices/{invoice.id}",
     )
+    await send_payment_received_email(db, invoice, card_payment=False)
     # Close the AI funnel when the invoice traces back to an AI-drafted quote.
     if invoice.quote_id is not None:
         source_quote = await db.get(Quote, invoice.quote_id)

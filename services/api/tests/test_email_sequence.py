@@ -742,7 +742,7 @@ async def test_payment_received_email_with_review_cta(
     )
     _patch_construct(monkeypatch, event)
     recorder = _EmailRecorder()
-    monkeypatch.setattr("app.routers.stripe_webhooks.send_customer_email", recorder)
+    monkeypatch.setattr("app.payment_notifications.send_customer_email", recorder)
     try:
         response = await _post_event(event)
 
@@ -773,7 +773,7 @@ async def test_payment_received_email_without_review_url_has_no_review_block(
     )
     _patch_construct(monkeypatch, event)
     recorder = _EmailRecorder()
-    monkeypatch.setattr("app.routers.stripe_webhooks.send_customer_email", recorder)
+    monkeypatch.setattr("app.payment_notifications.send_customer_email", recorder)
     try:
         response = await _post_event(event)
 
@@ -796,7 +796,7 @@ async def test_webhook_still_200_when_customer_email_send_raises(
     )
     _patch_construct(monkeypatch, event)
     monkeypatch.setattr(
-        "app.routers.stripe_webhooks.send_customer_email",
+        "app.payment_notifications.send_customer_email",
         AsyncMock(side_effect=RuntimeError("resend down")),
     )
     try:
@@ -811,6 +811,87 @@ async def test_webhook_still_200_when_customer_email_send_raises(
             assert invoice.paid_via == "stripe"
     finally:
         await _cleanup_stripe_seed(ids, [event_id])
+
+
+# ---------------------------------------------------------------------------
+# Manual mark-paid: same payment_received confirmation, non-card copy variant
+# ---------------------------------------------------------------------------
+
+
+async def _create_invoice_for_tenant(
+    client: AsyncClient, tenant: Tenant, contact: Contact
+) -> dict[str, Any]:
+    create = await client.post(
+        "/invoices",
+        headers={"X-Tenant-ID": str(tenant.id)},
+        json={
+            "contact_id": str(contact.id),
+            "line_items": [
+                {"description": "Labour", "quantity": "2", "unit_price": "50.00"},
+            ],
+        },
+    )
+    assert create.status_code == 201, create.text
+    data: dict[str, Any] = create.json()
+    return data
+
+
+async def test_mark_paid_sends_payment_received_email_with_review_cta(
+    client: AsyncClient, db: AsyncSession, monkeypatch: MonkeyPatch
+) -> None:
+    """Manual mark-paid now confirms to the customer, review CTA included (#114)."""
+    tenant = await _create_tenant(
+        db,
+        f"mpaid-{uuid4().hex[:8]}",
+        settings={"email": "sparks@example.com", "review_url": "https://g.page/r/acme-review"},
+    )
+    contact = await _create_contact(db, tenant)
+    invoice = await _create_invoice_for_tenant(client, tenant, contact)
+
+    recorder = _EmailRecorder()
+    monkeypatch.setattr("app.payment_notifications.send_customer_email", recorder)
+
+    response = await client.post(
+        f"/invoices/{invoice['id']}/mark-paid", headers={"X-Tenant-ID": str(tenant.id)}
+    )
+    assert response.status_code == 200, response.text
+    assert response.json()["status"] == "paid"
+    assert response.json()["paid_via"] == "manual"
+
+    assert len(recorder.calls) == 1
+    call = recorder.calls[0]
+    assert call["event"] == "payment_received"
+    assert call["template"] == "payment_received"
+    assert call["to_email"] == "homeowner@example.com"
+    assert call["from_name"] == tenant.name
+    assert invoice["invoice_number"] in call["html_body"]
+    assert "£100.00" in call["html_body"]
+    # Manual path: the copy must NOT claim a card payment / Stripe receipt.
+    assert "Stripe will also email you a card receipt" not in call["html_body"]
+    assert "Stripe will also email you a card receipt" not in call["text_body"]
+    # Review prompt present because the tenant configured review_url.
+    assert "How did we do?" in call["html_body"]
+    assert "https://g.page/r/acme-review" in call["html_body"]
+
+
+async def test_mark_paid_email_omits_review_cta_without_review_url(
+    client: AsyncClient, db: AsyncSession, monkeypatch: MonkeyPatch
+) -> None:
+    tenant = await _create_tenant(db, f"mpaid-{uuid4().hex[:8]}")
+    contact = await _create_contact(db, tenant)
+    invoice = await _create_invoice_for_tenant(client, tenant, contact)
+
+    recorder = _EmailRecorder()
+    monkeypatch.setattr("app.payment_notifications.send_customer_email", recorder)
+
+    response = await client.post(
+        f"/invoices/{invoice['id']}/mark-paid", headers={"X-Tenant-ID": str(tenant.id)}
+    )
+    assert response.status_code == 200, response.text
+    assert len(recorder.calls) == 1
+    assert recorder.calls[0]["event"] == "payment_received"
+    assert "How did we do?" not in recorder.calls[0]["html_body"]
+    assert "Stripe will also email you a card receipt" not in recorder.calls[0]["html_body"]
 
 
 # ---------------------------------------------------------------------------

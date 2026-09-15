@@ -576,13 +576,16 @@ def payment_received(
     amount_paid: str,
     paid_date: str,
     review_url: str | None = None,
+    card_payment: bool = True,
 ) -> tuple[str, str, str]:
-    """Payment confirmation after an invoice is settled online. (subject, html, text).
+    """Payment confirmation after an invoice is settled. (subject, html, text).
 
-    Positions itself as the confirmation + thank-you; Stripe sends its own
-    card receipt, which the copy mentions so the customer expects both. When
-    the tenant has configured a ``review_url`` (tenant settings), a review
-    prompt CTA is appended.
+    Positions itself as the confirmation + thank-you. ``card_payment=True``
+    (Stripe webhook path) mentions that Stripe also emails a card receipt;
+    ``card_payment=False`` (manual mark-paid, e.g. bank transfer) omits that —
+    the copy must never claim a card payment that did not happen. When the
+    tenant has configured a ``review_url`` (tenant settings), a review prompt
+    CTA is appended.
     """
     subject = f"Payment received — invoice {invoice_number}"
     if review_url:
@@ -599,12 +602,23 @@ def payment_received(
 """
     else:
         text_review, html_review = "", ""
+    receipt_note = (
+        "This email confirms your payment. Stripe will also email you a card "
+        "receipt for your records.\n\n"
+        if card_payment
+        else "This email confirms your payment.\n\n"
+    )
+    receipt_note_html = (
+        '<p style="color:#475569;font-size:14px;">This email confirms your payment. '
+        "Stripe will also email you a card receipt for your records.</p>"
+        if card_payment
+        else ""
+    )
     text = (
         f"Hi {customer_name},\n\n"
         f"Thank you — {business_name} has received your payment of {amount_paid} "
         f"for invoice {invoice_number}, paid on {paid_date}.\n\n"
-        "This email confirms your payment. Stripe will also email you a card "
-        "receipt for your records.\n\n"
+        f"{receipt_note}"
         f"{text_review}"
         "— My Trade Portal"
     )
@@ -622,7 +636,7 @@ def payment_received(
         <tr><td style="padding:4px 12px 4px 0;color:#64748b;">Paid on</td><td style="padding:4px 0;font-weight:600;">{escape(paid_date)}</td></tr>
       </table>
     </div>
-    <p style="color:#475569;font-size:14px;">This email confirms your payment. Stripe will also email you a card receipt for your records.</p>
+{receipt_note_html}\
 {html_review}\
     <p style="color:#64748b;font-size:13px;margin-top:32px;">— My Trade Portal</p>
   </body>
