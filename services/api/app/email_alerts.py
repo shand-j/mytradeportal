@@ -45,6 +45,7 @@ def _alert_content(
     purpose: str,
     error_class: str,
     phone: str | None,
+    detail: str | None = None,
 ) -> tuple[str, str]:
     """Title + body for the staff alert, including the phone directive."""
     title = f"Email to {name} wasn't delivered"
@@ -53,7 +54,11 @@ def _alert_content(
         if phone
         else "Reach them another way — their email isn't working."
     )
-    body = f"The {purpose} email to {recipient_email or name} failed ({error_class}). {directive}"
+    detail_part = f" Bounce details: {detail}." if detail else ""
+    body = (
+        f"The {purpose} email to {recipient_email or name} failed ({error_class})."
+        f"{detail_part} {directive}"
+    )
     return title, body
 
 
@@ -113,12 +118,15 @@ async def alert_staff_email_failure(
     purpose: str,
     error_class: str,
     source: str,
+    detail: str | None = None,
 ) -> bool:
     """Notify tenant staff that a customer email failed. Never raises.
 
     Returns ``True`` when a new alert was raised, ``False`` when deduped (an
     alert for this contact already went out today) or when alerting itself
-    failed. The caller's session is used and the caller commits (same
+    failed. ``detail`` (e.g. the Resend bounce type/reason) is appended to the
+    staff alert body so deliverability issues are diagnosable from the alert
+    alone. The caller's session is used and the caller commits (same
     convention as :func:`app.push.notify_staff`); the writes run inside a
     savepoint so a dedupe race or RLS problem rolls back only the alert, not
     the caller's work.
@@ -157,6 +165,7 @@ async def alert_staff_email_failure(
             purpose=purpose,
             error_class=error_class,
             phone=phone,
+            detail=detail,
         )
         async with db.begin_nested():
             db.add(
@@ -188,6 +197,7 @@ async def alert_staff_email_failure(
             contact_id=str(contact_id) if contact_id else None,
             purpose=purpose,
             error_class=error_class,
+            detail=detail,
             source=source,
         )
     except Exception as exc:
