@@ -95,7 +95,9 @@ jobs:
       contents: read
       pull-requests: write # post the verification comment
     env:
-      RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+      # Account-scoped token must be able to see the project's ephemeral envs;
+      # RAILWAY_PREVIEW_TOKEN is the account token, RAILWAY_TOKEN is legacy.
+      RAILWAY_TOKEN: ${{ secrets.RAILWAY_PREVIEW_TOKEN || secrets.RAILWAY_TOKEN }}
       # The CLI's linked-project config (.railway/config.json) is gitignored,
       # so CI must pin the project explicitly for non-interactive calls.
       RAILWAY_PROJECT_ID: ${{ vars.RAILWAY_PROJECT_ID }}
@@ -113,6 +115,14 @@ jobs:
 
       - name: Install Railway CLI
         run: npm install -g @railway/cli@5.28.0
+
+      - name: Diagnose Railway token visibility
+        run: |
+          echo "Projects visible to RAILWAY_TOKEN:"
+          railway list --json 2>&1 | python3 -c 'import json,sys; d=json.load(sys.stdin); [print(" -", p.get("name"), p.get("id")) for p in (d if isinstance(d, list) else d.get("projects", []))]' || true
+          echo "Environments visible in project ${RAILWAY_PROJECT_ID}:"
+          railway environment list --ephemeral --json 2>&1 | head -c 2000 || true
+          echo
 
       # Railway creates the PR environment when the PR opens, but the deploy
       # can take several minutes — retry discovery + health until both are up
