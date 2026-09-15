@@ -27,7 +27,6 @@ jobs:
     # Discover the PR's Railway environment, wait for the api deploy to become
     # healthy, then run the deployed-API smoke suite and a light Playwright
     # pass over the landing/portal bundle.
-    if: ${{ env.PR_NUMBER != '' }}
     runs-on: ubuntu-latest
     permissions:
       pull-requests: write # post the verification comment
