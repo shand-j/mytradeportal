@@ -25,8 +25,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.ai_telemetry import record_quote_outcome
 from app.alerting import send_alert
 from app.database import engine
+from app.models import Invoice, Payment, ProcessedWebhook, Quote, StripeAccount
 from app.payment_notifications import send_payment_received_email
-from app.models import Contact, Invoice, Payment, ProcessedWebhook, Quote, StripeAccount, Tenant
 from app.push import notify_staff
 from app.rls import bypass_rls_for_transaction, set_tenant_in_session
 from app.stripe_client import PaymentsNotConfiguredError, construct_event

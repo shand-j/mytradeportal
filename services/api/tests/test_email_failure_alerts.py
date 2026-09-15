@@ -429,9 +429,7 @@ async def test_webhook_bounce_logs_type_and_reason_and_alerts_with_detail(
 
         # Structured log carries the bounce type + reason.
         processed = [
-            record
-            for record in caplog.records
-            if "resend_webhook_processed" in record.getMessage()
+            record for record in caplog.records if "resend_webhook_processed" in record.getMessage()
         ]
         assert len(processed) == 1
         log_text = processed[0].getMessage()
@@ -473,9 +471,7 @@ async def test_webhook_bounce_reason_truncated(
             response = await _post_resend(body, _svix_headers(body, _SECRET))
         assert response.status_code == 200, response.text
         processed = [
-            record
-            for record in caplog.records
-            if "resend_webhook_processed" in record.getMessage()
+            record for record in caplog.records if "resend_webhook_processed" in record.getMessage()
         ]
         assert len(processed) == 1
         log_text = processed[0].getMessage()
