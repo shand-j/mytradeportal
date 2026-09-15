@@ -9,10 +9,12 @@ quote request, TTL ``GUEST_THREAD_TTL_MINUTES``).
 The AI turn reuses the same ``generate_followup`` machinery and closure
 rules as the authenticated ``/communications/{id}/ai-followup`` endpoint
 (confidence ≥ 80 or the turn cap closes the thread; a turn-cap closure flags
-the lead for a callback), bounded by the same hard timeout as the intake
-check. AI failures fail open: the customer's message is always persisted and
-returned, ``ai_reply`` is simply absent — never a 5xx. On closure the
-existing background requote is scheduled.
+the lead for a callback). The portal awaits the reply synchronously, so the
+turn is bounded by its own (larger) timeout —
+``settings.guest_followup_timeout_seconds`` — rather than the intake check's
+12s budget. AI failures fail open: the customer's message is always
+persisted and returned, ``ai_reply`` is simply absent — never a 5xx. On
+closure the existing background requote is scheduled.
 """
 
 import asyncio
@@ -26,7 +28,6 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app import config
 from app.ai_telemetry import ACTOR_CUSTOMER, FEATURE_TRIAGE_FOLLOWUP, AiCallContext
 from app.config import settings
 from app.database import get_db
@@ -144,9 +145,9 @@ async def post_guest_message(
     Mirrors the closure rules of ``/communications/{id}/ai-followup``: an
     already-closed thread returns the closure message; confidence ≥ 80 or the
     final allowed turn closes with a thank-you (or callback-flagged) message;
-    closure schedules the background requote. The AI call is wrapped in the
-    same hard timeout as the intake check and every failure returns the
-    customer message without an ``ai_reply``.
+    closure schedules the background requote. The awaited AI call is wrapped
+    in ``settings.guest_followup_timeout_seconds`` and every failure returns
+    the customer message without an ``ai_reply``.
     """
     tenant, quote_request = await _get_guest_thread(qr_id, request, db)
 
@@ -215,7 +216,7 @@ async def post_guest_message(
                     quote_request_id=qr_id,
                 ),
             ),
-            timeout=config.INTAKE_TRIAGE_TIMEOUT_SECONDS,
+            timeout=settings.guest_followup_timeout_seconds,
         )
     except Exception as exc:
         # Timeout, RuntimeError from the LLM layer, anything: fail open. The
