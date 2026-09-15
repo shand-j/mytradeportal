@@ -69,7 +69,7 @@ from app.rag import (
 from app.rag.validation import build_quote_from_validation
 from app.rls import set_tenant_in_session
 from app.routers.invoices import _get_invoice, generate_invoice_number
-from app.routers.jobs import create_block_appointments, plan_job_blocks
+from app.routers.jobs import _email_booking_confirmed, create_block_appointments, plan_job_blocks
 from app.routers.public_docs import issue_document_token, public_document_url
 from app.schemas import (
     InvoiceRead,
@@ -1533,7 +1533,9 @@ async def convert_quote_to_job(
     hours the job is multi-day: day 1 is capped at the daily hours and the
     remaining consecutive working-day blocks are created as appointments on
     the job. The job's address and postcode are denormalised from the contact
-    at this point — a later contact edit does not rewrite the job.
+    at this point — a later contact edit does not rewrite the job. When the
+    conversion lands on a schedule the customer gets the ``booking_confirmed``
+    email, same as job create and reschedules.
     """
     quote = await _get_quote(db, tenant.id, quote_id)
     if quote.status != "approved":
@@ -1629,6 +1631,11 @@ async def convert_quote_to_job(
     await db.flush()
     if blocks:
         await create_block_appointments(db, tenant.id, job, blocks, tenant.settings)
+    # A converted quote that lands on a schedule confirms the booking to the
+    # customer (same helper as job create/PATCH reschedule; no-ops when the
+    # job is unscheduled).
+    if job.scheduled_start is not None:
+        await _email_booking_confirmed(db, tenant.id, job)
 
     # Photos uploaded against the quote's quote request (or the quote itself)
     # carry through to the job record.

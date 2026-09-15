@@ -513,6 +513,164 @@ async def test_booking_confirmed_email_not_fired_on_unrelated_patch(
     assert "from 13:00" in recorder.calls[0]["html_body"]
 
 
+async def _booking_tenant_with_contact(
+    client: AsyncClient, db: AsyncSession
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    """Tenant (branded settings) + contact, shared by the create/convert tests."""
+    tenant = await _create_tenant_via_api(client, f"book-{uuid4().hex[:8]}")
+    await set_tenant_in_session(db, UUID(tenant["id"]))
+    tenant_row = await db.get(Tenant, UUID(tenant["id"]))
+    assert tenant_row is not None
+    tenant_row.settings = {"email": "sparks@example.com", "phone": "07700 900123"}
+    await db.flush()
+    contact_response = await client.post(
+        "/contacts",
+        headers={"X-Tenant-ID": tenant["id"]},
+        json={
+            "name": "Amy Homeowner",
+            "email": "amy@example.com",
+            "address": "1 Millbank",
+            "postcode": "SW1P 3AA",
+        },
+    )
+    assert contact_response.status_code == 201, contact_response.text
+    return tenant, contact_response.json()
+
+
+async def test_booking_confirmed_email_fires_once_on_create_with_schedule(
+    client: AsyncClient, db: AsyncSession, monkeypatch: MonkeyPatch
+) -> None:
+    """Direct job creation on a real slot emails the confirmation (Fixes #116)."""
+    tenant, contact = await _booking_tenant_with_contact(client, db)
+
+    recorder = _EmailRecorder()
+    monkeypatch.setattr("app.routers.jobs.send_customer_email", recorder)
+
+    start = datetime(2026, 9, 21, 9, 0)
+    job_response = await client.post(
+        "/jobs",
+        headers={"X-Tenant-ID": tenant["id"]},
+        json={
+            "contact_id": contact["id"],
+            "title": "Fuse board swap",
+            "scheduled_start": start.isoformat(),
+            "scheduled_end": (start + timedelta(hours=2)).isoformat(),
+        },
+    )
+    assert job_response.status_code == 201, job_response.text
+    assert len(recorder.calls) == 1
+    call = recorder.calls[0]
+    assert call["event"] == "booking_confirmed"
+    assert call["template"] == "booking_confirmed"
+    assert call["to_email"] == "amy@example.com"
+    assert call["from_name"] == tenant["name"]
+    assert call["reply_to"] == "sparks@example.com"
+    assert start.strftime("%A %d %B %Y") in call["html_body"]
+    assert "09:00 - 11:00" in call["html_body"]
+
+
+async def test_booking_confirmed_email_not_sent_on_create_without_schedule(
+    client: AsyncClient, db: AsyncSession, monkeypatch: MonkeyPatch
+) -> None:
+    """An unscheduled job create sends nothing (Fixes #116)."""
+    tenant, contact = await _booking_tenant_with_contact(client, db)
+
+    recorder = _EmailRecorder()
+    monkeypatch.setattr("app.routers.jobs.send_customer_email", recorder)
+
+    job_response = await client.post(
+        "/jobs",
+        headers={"X-Tenant-ID": tenant["id"]},
+        json={"contact_id": contact["id"], "title": "Fuse board swap"},
+    )
+    assert job_response.status_code == 201, job_response.text
+    assert recorder.calls == []
+
+
+async def test_booking_confirmed_email_fires_once_on_convert_to_job_with_schedule(
+    client: AsyncClient, db: AsyncSession, monkeypatch: MonkeyPatch
+) -> None:
+    """Quote → job conversion on a real slot emails the confirmation (Fixes #116)."""
+    tenant, contact = await _booking_tenant_with_contact(client, db)
+    quote_response = await client.post(
+        "/quotes",
+        headers={"X-Tenant-ID": tenant["id"]},
+        json={
+            "contact_id": contact["id"],
+            "title": "Fuse board swap",
+            "line_items": [
+                {"description": "Labour", "quantity": "1", "unit_price": "100.00"},
+            ],
+        },
+    )
+    assert quote_response.status_code == 201, quote_response.text
+    quote = quote_response.json()
+    approve = await client.post(
+        f"/quotes/{quote['id']}/approve",
+        headers={"X-Tenant-ID": tenant["id"]},
+        json={},
+    )
+    assert approve.status_code == 200, approve.text
+
+    recorder = _EmailRecorder()
+    monkeypatch.setattr("app.routers.jobs.send_customer_email", recorder)
+
+    start = datetime(2026, 9, 22, 9, 0)
+    convert = await client.post(
+        f"/quotes/{quote['id']}/convert-to-job",
+        headers={"X-Tenant-ID": tenant["id"]},
+        json={
+            "scheduled_start": start.isoformat(),
+            "scheduled_end": (start + timedelta(hours=2)).isoformat(),
+        },
+    )
+    assert convert.status_code == 201, convert.text
+    assert len(recorder.calls) == 1
+    call = recorder.calls[0]
+    assert call["event"] == "booking_confirmed"
+    assert call["to_email"] == "amy@example.com"
+    assert call["from_name"] == tenant["name"]
+    assert start.strftime("%A %d %B %Y") in call["html_body"]
+
+
+async def test_booking_confirmed_email_not_sent_on_convert_without_schedule(
+    client: AsyncClient, db: AsyncSession, monkeypatch: MonkeyPatch
+) -> None:
+    """Conversion without accepted dates or an explicit start sends nothing."""
+    tenant, contact = await _booking_tenant_with_contact(client, db)
+    quote_response = await client.post(
+        "/quotes",
+        headers={"X-Tenant-ID": tenant["id"]},
+        json={
+            "contact_id": contact["id"],
+            "title": "Fuse board swap",
+            "line_items": [
+                {"description": "Labour", "quantity": "1", "unit_price": "100.00"},
+            ],
+        },
+    )
+    assert quote_response.status_code == 201, quote_response.text
+    quote = quote_response.json()
+    approve = await client.post(
+        f"/quotes/{quote['id']}/approve",
+        headers={"X-Tenant-ID": tenant["id"]},
+        json={},
+    )
+    assert approve.status_code == 200, approve.text
+
+    recorder = _EmailRecorder()
+    monkeypatch.setattr("app.routers.jobs.send_customer_email", recorder)
+
+    convert = await client.post(
+        f"/quotes/{quote['id']}/convert-to-job",
+        headers={"X-Tenant-ID": tenant["id"]},
+        json={},
+    )
+    assert convert.status_code == 201, convert.text
+    assert convert.json()["scheduled_start"] is None
+    assert recorder.calls == []
+
+
 # ---------------------------------------------------------------------------
 # Payment received: customer email from the Stripe succeeded webhook
 # ---------------------------------------------------------------------------
