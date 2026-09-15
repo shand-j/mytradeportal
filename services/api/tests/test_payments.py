@@ -118,7 +118,7 @@ async def test_connect_503_payments_unavailable_when_stripe_rejects_account(
 
     monkeypatch.setattr("app.config.STRIPE_SECRET_KEY", "sk_test_x")
     create_account = AsyncMock(
-        side_effect=stripe.InvalidRequestError(
+        side_effect=stripe.InvalidRequestError(  # type: ignore[no-untyped-call]
             "You can only create new accounts if you've signed up for Connect",
             param=None,
             code="account_invalid",
