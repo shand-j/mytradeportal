@@ -33,7 +33,10 @@ from datetime import UTC, datetime, timedelta
 API = "https://backboard.railway.com/graphql/v2"
 
 TERMINAL_BAD = {"FAILED", "CRASHED"}
-TERMINAL_GOOD = {"SUCCESS"}
+# SKIPPED: Railway dedupes unchanged builds (e.g. a merge that only touches
+# workflow/docs) — the currently live deployment already serves the commit,
+# so there is nothing to wait for.
+TERMINAL_GOOD = {"SUCCESS", "SKIPPED"}
 
 
 def fail(msg: str, code: int = 1) -> None:
@@ -148,7 +151,12 @@ def main() -> None:
                 f"status={status} created={node['createdAt']} fresh={fresh}"
             )
             if fresh and status in TERMINAL_GOOD:
-                print(f"[wait_for_deploy] fresh deployment {node['id']} is live")
+                note = (
+                    "build skipped — live deployment already serves this commit"
+                    if status == "SKIPPED"
+                    else "is live"
+                )
+                print(f"[wait_for_deploy] fresh deployment {node['id']} {note}")
                 return
             if fresh and status in TERMINAL_BAD:
                 fail(f"fresh deployment {node['id']} terminated with status {status}", 1)

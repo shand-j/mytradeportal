@@ -27,6 +27,7 @@ interface MailpitMessage {
   Subject: string;
   Text: string;
   HTML: string;
+  From?: { Address?: string; Name?: string };
 }
 
 async function mailpitApi(path: string): Promise<unknown> {
@@ -40,9 +41,66 @@ async function mailpitApi(path: string): Promise<unknown> {
 }
 
 export interface CapturedEmail {
+  id: string;
   subject: string;
   text: string;
   html: string;
+  /** Sender address from the From header (e.g. quotes@mytradeportal.co.uk). */
+  from: string;
+}
+
+async function listMessages(
+  to: string,
+  subjectIncludes?: string,
+): Promise<MailpitMessageListItem[]> {
+  const list = (await mailpitApi("/api/v1/messages")) as { messages: MailpitMessageListItem[] };
+  const wanted = to.toLowerCase();
+  return list.messages.filter(
+    (m) =>
+      m.To.some((t) => (t.Address ?? "").toLowerCase() === wanted) &&
+      (!subjectIncludes || m.Subject.includes(subjectIncludes)),
+  );
+}
+
+/** Poll the mailbox until at least `minCount` emails to `to` (optionally
+ * matching a subject substring) have arrived, then return them all —
+ * newest first, in Mailpit list order. Throws on timeout. */
+export async function waitForEmails(
+  to: string,
+  opts: { subjectIncludes?: string; minCount?: number; timeoutMs?: number } = {},
+): Promise<CapturedEmail[]> {
+  if (!mailpitConfigured()) {
+    throw new Error("MAILPIT_URL / MAILPIT_BASIC_AUTH not set");
+  }
+  const timeoutMs = opts.timeoutMs ?? 60_000;
+  const minCount = opts.minCount ?? 1;
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    const matches = await listMessages(to, opts.subjectIncludes);
+    if (matches.length >= minCount) {
+      const full = await Promise.all(
+        matches.map(async (m) => {
+          const message = (await mailpitApi(`/api/v1/message/${m.ID}`)) as MailpitMessage;
+          return {
+            id: m.ID,
+            subject: message.Subject,
+            text: message.Text ?? "",
+            html: message.HTML ?? "",
+            from: message.From?.Address ?? "",
+          };
+        }),
+      );
+      return full;
+    }
+    if (Date.now() > deadline) {
+      throw new Error(
+        `only ${matches.length} Mailpit email(s) to ${to}` +
+          (opts.subjectIncludes ? ` with subject containing "${opts.subjectIncludes}"` : "") +
+          ` within ${timeoutMs}ms (wanted ${minCount})`,
+      );
+    }
+    await new Promise((resolve) => setTimeout(resolve, 3_000));
+  }
 }
 
 /** Poll the mailbox until an email to `to` (optionally matching a subject
@@ -51,30 +109,6 @@ export async function waitForEmail(
   to: string,
   opts: { subjectIncludes?: string; timeoutMs?: number } = {},
 ): Promise<CapturedEmail> {
-  if (!mailpitConfigured()) {
-    throw new Error("MAILPIT_URL / MAILPIT_BASIC_AUTH not set");
-  }
-  const timeoutMs = opts.timeoutMs ?? 60_000;
-  const deadline = Date.now() + timeoutMs;
-  const wanted = to.toLowerCase();
-  for (;;) {
-    const list = (await mailpitApi("/api/v1/messages")) as { messages: MailpitMessageListItem[] };
-    const match = list.messages.find(
-      (m) =>
-        m.To.some((t) => (t.Address ?? "").toLowerCase() === wanted) &&
-        (!opts.subjectIncludes || m.Subject.includes(opts.subjectIncludes)),
-    );
-    if (match) {
-      const full = (await mailpitApi(`/api/v1/message/${match.ID}`)) as MailpitMessage;
-      return { subject: full.Subject, text: full.Text ?? "", html: full.HTML ?? "" };
-    }
-    if (Date.now() > deadline) {
-      throw new Error(
-        `no Mailpit email to ${to}` +
-          (opts.subjectIncludes ? ` with subject containing "${opts.subjectIncludes}"` : "") +
-          ` within ${timeoutMs}ms (mailbox holds ${list.messages.length} messages)`,
-      );
-    }
-    await new Promise((resolve) => setTimeout(resolve, 3_000));
-  }
+  const [first] = await waitForEmails(to, { ...opts, minCount: 1 });
+  return first;
 }
