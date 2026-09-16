@@ -42,6 +42,11 @@ export async function seedCustomer(...args: any[]): Promise<any> {
   return mod.seedCustomer(...args);
 }
 
+export async function seedContact(...args: any[]): Promise<any> {
+  const mod = await loadSeedHelpers();
+  return mod.seedContact(...args);
+}
+
 export async function seedBusinessServices(...args: any[]): Promise<any> {
   const mod = await loadSeedHelpers();
   return mod.seedBusinessServices(...args);
