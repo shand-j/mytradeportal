@@ -1,6 +1,8 @@
 name: Pnpm Debug
 on:
   workflow_dispatch:
+  push:
+    paths: [".github/workflows/pnpm-debug.yml"]
 
 jobs:
   debug:
