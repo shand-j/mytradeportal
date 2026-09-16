@@ -149,4 +149,22 @@ jobs:
         # --confirm-destructive is required because the IaC corrects region
         # drift for native DB plugins and re-attaches existing Docker volumes.
         # These are expected, pre-go-live changes.
-        run: railway config apply --yes --confirm-destructive
+        run: |
+          # Code deploys don't depend on this step — the Railway GitHub
+          # integration rebuilds services on every push (verified on
+          # 2026-09-16). What the CLI must accept here is the CI project
+          # token, and v5.28+ rejects it with Invalid RAILWAY_TOKEN, so a
+          # token rejection degrades to a loud warning instead of a red
+          # deploy job; any other failure still fails.
+          set +e
+          OUTPUT=$(railway config apply --yes --confirm-destructive 2>&1)
+          CODE=$?
+          set -e
+          if [ "$CODE" -ne 0 ]; then
+            if echo "$OUTPUT" | grep -q "Invalid RAILWAY_TOKEN"; then
+              echo "::warning::railway config apply skipped: the CI RAILWAY_TOKEN is rejected by the Railway CLI (v5.28+ rejects newer project tokens). IaC drift was NOT corrected — run 'railway config apply' locally with a logged-in session after any IaC change. Code deploys are unaffected."
+              exit 0
+            fi
+            echo "$OUTPUT"
+            exit "$CODE"
+          fi
