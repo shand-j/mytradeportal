@@ -154,7 +154,13 @@ test.describe.serial("B — Customer quote request + account creation", () => {
     // Log in via the business code first so there is a session to log out of.
     await loginAsCustomer(page, tenant, { email: JANE_EMAIL, password: CUSTOMER_PASSWORD });
     await tap(page, "tab-profile");
-    await tapText(page, "Log out");
+    // The profile screen loads customer data from the deployed API; under CI
+    // runner load (video recording + parallel workers) the render can exceed
+    // tapText's default 20s, so wait generously for the logout row.
+    const logout = page.getByText("Log out", { exact: false }).first();
+    await logout.waitFor({ state: "visible", timeout: 60_000 });
+    await logout.click({ force: true });
+    await sleep(400);
 
     // Back on the role select: go straight to customer login — no business
     // code. Login is tenant-agnostic (the account is located by email).
