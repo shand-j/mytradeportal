@@ -1,0 +1,103 @@
+name: Staging E2E
+
+# Regression safety net against the persistent Railway "staging" environment
+# (a fork of production). Runs on every push to main — staging auto-deploys
+# from main, so this catches regressions in the fully deployed stack — plus a
+# nightly cron as a heartbeat. See docs/ci-pr-environments.md.
+
+on:
+  push:
+    branches: [main]
+  schedule:
+    # 06:17 UTC daily — off the :00/:30 herd marks.
+    - cron: "17 6 * * *"
+  workflow_dispatch:
+
+concurrency:
+  # Never cancel an in-flight staging run: it is the pre-production safety
+  # net and its results must be attributable to exactly one deploy.
+  group: staging-e2e
+  cancel-in-progress: false
+
+env:
+  RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+  RAILWAY_PROJECT_ID: ${{ vars.RAILWAY_PROJECT_ID }}
+
+jobs:
+  staging-verify:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install test dependencies
+        run: python -m pip install --upgrade pip pytest httpx
+
+      - name: Resolve staging environment URLs
+        id: staging-env
+        run: scripts/ci/env_url.sh staging | tee -a "$GITHUB_OUTPUT"
+
+      - name: Wait for deployed API health
+        run: |
+          API_URL="${{ steps.staging-env.outputs.api_url }}"
+          for attempt in $(seq 1 60); do
+            if curl -fsS --max-time 10 "$API_URL/health"; then
+              echo "API is healthy: $API_URL"
+              exit 0
+            fi
+            echo "Attempt ${attempt}/60: $API_URL/health not ready — sleeping 15s"
+            sleep 15
+          done
+          echo "::error::$API_URL/health did not become ready within 15 minutes."
+          exit 1
+
+      - name: Deployed-API smoke suite
+        id: api-smoke
+        env:
+          TEST_API_BASE_URL: ${{ steps.staging-env.outputs.api_url }}
+          TEST_SETUP_TOKEN: "" # keep the deployed smoke read-only: no writes, no background AI drafts
+        run: python -m pytest services/api/tests_deployed -o addopts='' -v
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "pnpm"
+          cache-dependency-path: pnpm-lock.yaml
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Install Playwright chromium
+        # Hoisted node_modules: the playwright bin lives in the workspace-root
+        # .bin and is only resolvable via `pnpm exec` from the root (pnpm exec
+        # from a member package does not fall back to the root .bin).
+        run: pnpm exec playwright install chromium
+
+      - name: Landing/portal smoke (Playwright, chromium)
+        id: landing-smoke
+        env:
+          TEST_LANDING_URL: ${{ steps.staging-env.outputs.landing_url }}
+        # testDir is resolved relative to the config file, so this works from root.
+        run: pnpm exec playwright test --config web/app/playwright.pr.config.ts
+
+      - name: Mobile regression against staging API (Playwright, chromium)
+        id: mobile-regression
+        env:
+          E2E_API_BASE_URL: ${{ steps.staging-env.outputs.api_url }}
+          E2E_STAGING_SETUP_TOKEN: ${{ secrets.E2E_STAGING_SETUP_TOKEN }}
+          # Generous timeouts: AI quote generation/refine calls the real LLM
+          # (60-120s per call) from CI.
+          E2E_WORKERS: "2"
+        # Config path is relative to the invocation dir; testDir/globalSetup
+        # resolve relative to the config file.
+        run: pnpm exec playwright test --config mobile/playwright.config.staging.ts
