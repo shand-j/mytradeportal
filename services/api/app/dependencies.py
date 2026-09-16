@@ -154,8 +154,15 @@ async def get_current_user(
         return None
     try:
         user_id = UUID(claims.get("sub"))
+        tenant_id = UUID(str(claims.get("tenant_id")))
     except (ValueError, TypeError):
         return None
+    # Users are RLS tenant-scoped: establish the token's tenant context BEFORE
+    # the lookup, mirroring get_current_customer. Without this, endpoints that
+    # resolve the user without a TenantDep (e.g. /auth/me, /auth/tenant-status)
+    # only authenticated when a pooled connection happened to carry the right
+    # app.current_tenant GUC — an intermittent 401 under pool churn.
+    await set_tenant_in_session(db, tenant_id)
     user = await db.get(User, user_id)
     if user is None or not user.is_active:
         return None

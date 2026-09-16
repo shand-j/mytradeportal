@@ -51,7 +51,7 @@ export default function PortalMagicAuth() {
     if (!email || status === 'sending') return
     setStatus('sending')
     try {
-      await requestMagicLink(email)
+      await requestMagicLink(email, slug)
     } finally {
       setStatus('sent')
     }

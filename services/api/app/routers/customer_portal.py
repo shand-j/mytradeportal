@@ -491,6 +491,19 @@ _MAGIC_REQUEST_RESPONSE = {
 }
 
 
+def _resolve_request_slug(request: Request) -> str | None:
+    """Tenant slug from the ``X-Tenant-Slug`` header, else the Host subdomain.
+
+    The header lets non-subdomain callers (the web portal served from the
+    marketing origin, E2E) address a specific tenant; Host inference remains
+    for subdomain-served requests.
+    """
+    header_slug = request.headers.get("X-Tenant-Slug")
+    if header_slug:
+        return header_slug
+    return _extract_tenant_slug(request.headers.get("host"))
+
+
 @router.post("/auth/magic", response_model=CustomerMagicLinkTokenResponse)
 @limiter.limit("10/minute")
 async def exchange_magic_link(
@@ -515,7 +528,7 @@ async def exchange_magic_link(
     if record is None or record.revoked_at is not None or record.expires_at < datetime.now(UTC):
         raise _MAGIC_LINK_401
 
-    slug = _extract_tenant_slug(request.headers.get("host"))
+    slug = _resolve_request_slug(request)
     if slug is not None:
         host_tenant = await db.scalar(
             select(Tenant).where(Tenant.slug == slug, Tenant.is_active.is_(True))
@@ -559,7 +572,7 @@ async def request_magic_link(
     to the default tenant on bare hosts, matching ``resolve_tenant``).
     """
     await bypass_rls_for_transaction(db)
-    slug = _extract_tenant_slug(request.headers.get("host"))
+    slug = _resolve_request_slug(request)
 
     from app.config import settings
 
@@ -655,7 +668,7 @@ async def claim_account(
     if record is None or record.revoked_at is not None or record.expires_at < datetime.now(UTC):
         raise _CLAIM_401
 
-    slug = _extract_tenant_slug(request.headers.get("host"))
+    slug = _resolve_request_slug(request)
     if slug is not None:
         host_tenant = await db.scalar(
             select(Tenant).where(Tenant.slug == slug, Tenant.is_active.is_(True))

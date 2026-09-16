@@ -114,3 +114,66 @@ jobs:
           name: mobile-test-results
           path: mobile/test-results
           retention-days: 7
+
+  deployed-write-suite:
+    # Stateful API coverage against throwaway tenants on staging: paywall
+    # transitions, Stripe Connect + forged card-payment/refund webhooks,
+    # Paddle subscription sync, trial extension, Resend bounce alerts,
+    # customer magic links, data export. Requires the setup token and the
+    # environment's webhook secrets, so it runs only here — pr-verify stays
+    # read-only and skips every deployed_write test.
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install test dependencies
+        run: python -m pip install --upgrade pip pytest httpx
+
+      - name: Resolve staging environment URLs
+        id: staging-env
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+          RAILWAY_PROJECT_ID: ${{ vars.RAILWAY_PROJECT_ID }}
+        run: scripts/ci/env_url.sh staging | tee -a "$GITHUB_OUTPUT"
+
+      - name: Resolve webhook secrets from the staging api
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+          RAILWAY_PROJECT_ID: ${{ vars.RAILWAY_PROJECT_ID }}
+        run: |
+          # Test-side secrets needed to forge webhook signatures the api will
+          # accept; read straight from the staging api service (never stored
+          # in GitHub secrets, so rotations can't drift).
+          python3 scripts/ci/env_secrets.py staging api \
+            --prefix TEST_ \
+            STRIPE_WEBHOOK_SECRET PADDLE_WEBHOOK_SECRET RESEND_WEBHOOK_SECRET \
+            PADDLE_PRICE_ID_PRO_MONTH >> "$GITHUB_ENV"
+
+      - name: Wait for deployed API health
+        run: |
+          API_URL="${{ steps.staging-env.outputs.api_url }}"
+          for attempt in $(seq 1 60); do
+            if curl -fsS --max-time 10 "$API_URL/health"; then
+              echo "API is healthy: $API_URL"
+              exit 0
+            fi
+            echo "Attempt ${attempt}/60: $API_URL/health not ready — sleeping 15s"
+            sleep 15
+          done
+          echo "::error::$API_URL/health did not become ready within 15 minutes."
+          exit 1
+
+      - name: Deployed write suite (throwaway tenants)
+        env:
+          TEST_API_BASE_URL: ${{ steps.staging-env.outputs.api_url }}
+          TEST_SETUP_TOKEN: ${{ secrets.E2E_STAGING_SETUP_TOKEN }}
+          MAILPIT_URL: ${{ secrets.MAILPIT_URL }}
+          MAILPIT_BASIC_AUTH: ${{ secrets.MAILPIT_BASIC_AUTH }}
+        run: python -m pytest services/api/tests_deployed -m deployed_write -o addopts='' -v
