@@ -40,6 +40,12 @@ jobs:
         id: staging-env
         run: scripts/ci/env_url.sh staging | tee -a "$GITHUB_OUTPUT"
 
+      # The push triggers a staging rebuild; assert against the new image,
+      # never the previous deployment (a stale race failed this suite on
+      # 2026-09-16 with errors only explainable by old code).
+      - name: Wait for fresh api deployment
+        run: python3 scripts/ci/wait_for_deploy.py staging api 1200
+
       - name: Wait for deployed API health
         run: |
           API_URL="${{ steps.staging-env.outputs.api_url }}"
@@ -155,6 +161,12 @@ jobs:
             --prefix TEST_ \
             STRIPE_WEBHOOK_SECRET PADDLE_WEBHOOK_SECRET RESEND_WEBHOOK_SECRET \
             PADDLE_PRICE_ID_PRO_MONTH >> "$GITHUB_ENV"
+
+      # Same stale-deploy race as staging-verify: the write suite mutates
+      # state, so asserting against the previous image would be worse than
+      # useless — it would report the new commit's tests against old code.
+      - name: Wait for fresh api deployment
+        run: python3 scripts/ci/wait_for_deploy.py staging api 1200
 
       - name: Wait for deployed API health
         run: |

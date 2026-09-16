@@ -118,15 +118,27 @@ run by the `deployed-write-suite` job in `staging-e2e.yml` only): stateful
 journeys, each under its own throwaway tenant created with `TEST_SETUP_TOKEN`:
 Paddle cancel/activate webhooks driving the paywall (tenant-status + 402
 middleware), Stripe Connect onboarding mirror plus a forged
-`payment_intent.succeeded`/`charge.refunded` chain over a real PaymentIntent
-(public invoice → paid → payment-received email with review CTA → refunded),
-trial extension after 3 sent AI-drafted quotes, Resend bounce → staff alert
+`payment_intent.succeeded`/`charge.refunded` settlement chain (public invoice
+→ paid → payment-received email with review CTA → refunded). The public
+invoice asserts the documented fail-open degrade (`payment_url: null`): Stripe
+only grants destination-charge capability to a genuinely onboarded account,
+and the hosted KYC flow is hcaptcha-gated, so it cannot be completed
+headlessly in CI — the success-path `payment_url` contract is covered
+in-process with a mocked Stripe (`services/api/tests/test_payments.py`).
+Trial extension after 3 sent AI-drafted quotes, Resend bounce → staff alert
 (in-app + email), customer magic-link exchange/claim, and the data-export
 shape. Webhook events are forged with the environment's own webhook secrets
 (resolved at runtime by `scripts/ci/env_secrets.py`, never stored in GitHub),
 and email assertions read the shared Mailpit instance. Every test skips
 without `TEST_SETUP_TOKEN`/`TEST_*_WEBHOOK_SECRET`, so the read-only
 `pr-verify` job stays read-only.
+
+**Fresh-deploy gate**: both staging jobs run `scripts/ci/wait_for_deploy.py`
+before touching the API — the push rebuilds staging, and asserting against
+the previous deployment once produced failures only explainable by stale
+code (2026-09-16). The gate polls Railway's GraphQL API (the CLI rejects the
+CI token) until a deployment created after the job started reaches SUCCESS,
+and fails loudly if that deployment FAILS/CRASHES.
 
 **Landing/portal** (Playwright): home loads with hero/pricing/quote demo,
 `/fair-use` renders, `/quote/:token` and `/pay/:token` reach a terminal error
