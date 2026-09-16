@@ -129,6 +129,9 @@ jobs:
           echo "::error::Railway PR environment for PR #${PR_NUMBER} did not appear within 15 minutes."
           exit 1
 
+      - name: Install Railway CLI
+        run: npm install -g @railway/cli
+
       - name: Route PR environment email to Mailpit
         # PR environments are throwaway forks of production, which would
         # otherwise send real email through Resend during E2E (cost + quota).
