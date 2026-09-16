@@ -265,10 +265,17 @@ export async function consumeMagicToken(token: string): Promise<MagicAuthRespons
 }
 
 /** Always resolves (202 generic) — never reveals whether the email exists. */
-export async function requestMagicLink(email: string): Promise<void> {
+export async function requestMagicLink(email: string, slug?: string): Promise<void> {
   const res = await fetch(`${API_BASE}/customer/auth/magic/request`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: {
+      'Content-Type': 'application/json',
+      // The api resolves the tenant from the Host subdomain, which only works
+      // when this bundle is served from a tenant subdomain. Served from the
+      // marketing origin (VITE_API_URL set), Host is the api domain — pin the
+      // tenant explicitly so the right customer gets the link.
+      ...(slug ? { 'X-Tenant-Slug': slug } : {}),
+    },
     body: JSON.stringify({ email }),
   })
   if (!res.ok && res.status === 429) await parseError(res)

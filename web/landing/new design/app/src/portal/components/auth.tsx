@@ -9,6 +9,7 @@ import { requestMagicLink } from '../api'
  * answers 202 generic whether or not the address is known.
  */
 export function SignInPanel({ heading = 'Sign in to continue' }: { heading?: string }) {
+  const { slug } = usePortal()
   const [email, setEmail] = useState('')
   const [status, setStatus] = useState<'idle' | 'sending' | 'sent'>('idle')
 
@@ -17,7 +18,7 @@ export function SignInPanel({ heading = 'Sign in to continue' }: { heading?: str
     if (!email || status === 'sending') return
     setStatus('sending')
     try {
-      await requestMagicLink(email)
+      await requestMagicLink(email, slug)
     } finally {
       setStatus('sent')
     }

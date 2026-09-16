@@ -86,7 +86,7 @@ export default function PortalClaim() {
     if (!email || status === 'sending') return
     setStatus('sending')
     try {
-      await requestMagicLink(email)
+      await requestMagicLink(email, slug)
     } finally {
       setStatus('sent')
     }

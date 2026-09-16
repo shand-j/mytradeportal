@@ -138,12 +138,13 @@ disallow_any_generics = false
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["services", "packages", "evals", "security"]
-addopts = "-m 'not eval and not security and not deployed' --cov=services --cov=packages --cov-report=term-missing"
+addopts = "-m 'not eval and not security and not deployed and not deployed_write' --cov=services --cov=packages --cov-report=term-missing"
 markers = [
     "eval: Golden-dataset end-to-end evaluation against the OCERP service",
     "evals: Offline golden-set eval harness tests for the AI quote pipeline",
     "security: Security tests that require live target credentials and are not run by default",
     "deployed: Smoke tests that hit a live deployed API (TEST_API_BASE_URL); never run by default",
+    "deployed_write: Stateful write-suite tests against staging (TEST_SETUP_TOKEN); never run by default",
 ]
 
 [tool.coverage.run]

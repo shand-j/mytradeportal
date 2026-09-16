@@ -21,7 +21,7 @@ function SessionExpiredBanner() {
     if (!email || sending) return
     setSending(true)
     try {
-      await requestMagicLink(email)
+      await requestMagicLink(email, slug)
       setSent(true)
     } finally {
       setSending(false)
