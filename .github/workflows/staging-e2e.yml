@@ -2,15 +2,12 @@ name: Staging E2E
 
 # Regression safety net against the persistent Railway "staging" environment
 # (a fork of production). Runs on every push to main — staging auto-deploys
-# from main, so this catches regressions in the fully deployed stack — plus a
-# nightly cron as a heartbeat. See docs/ci-pr-environments.md.
+# from main, so this catches regressions in the fully deployed stack. See
+# docs/ci-pr-environments.md.
 
 on:
   push:
     branches: [main]
-  schedule:
-    # 06:17 UTC daily — off the :00/:30 herd marks.
-    - cron: "17 6 * * *"
   workflow_dispatch:
 
 concurrency:
@@ -95,6 +92,12 @@ jobs:
         env:
           E2E_API_BASE_URL: ${{ steps.staging-env.outputs.api_url }}
           E2E_STAGING_SETUP_TOKEN: ${{ secrets.E2E_STAGING_SETUP_TOKEN }}
+          # Staging email routes to the shared Mailpit instance (see
+          # docs/ci-pr-environments.md), so E2E can assert that customer/
+          # tenant emails were sent and inspect their contents — at zero
+          # Resend cost.
+          MAILPIT_URL: ${{ secrets.MAILPIT_URL }}
+          MAILPIT_BASIC_AUTH: ${{ secrets.MAILPIT_BASIC_AUTH }}
           # Single worker: a remote API (Supabase auth latency) plus video
           # recording makes 2-worker runs exceed the specs' 20-30s render
           # waits (observed as C12/F/N2 flakes on the first staging run).

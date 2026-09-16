@@ -1,4 +1,5 @@
 import { test } from "@playwright/test";
+import { mailpitConfigured, waitForEmail } from "./mailpit";
 import {
   api,
   bodyText,
@@ -117,5 +118,18 @@ test.describe.serial("O — Notifications", () => {
     const text = (await bodyText(page)).toLowerCase();
     expect(text).not.toContain("something went wrong");
     expect(text).not.toContain("could not load");
+  });
+
+  // Email side of the same flow: staging/PR apis route outbound email into
+  // the shared Mailpit instance instead of Resend, so the invoice send must
+  // land there with the total and a payable link — zero Resend sends.
+  test("N2: the invoice email lands in Mailpit with total and payable link", async () => {
+    test.skip(!mailpitConfigured(), "MAILPIT_URL / MAILPIT_BASIC_AUTH not set");
+    const email = await waitForEmail(customer.email, { subjectIncludes: "Invoice", timeoutMs: 30_000 });
+    expect(email.subject).toMatch(/^Invoice \S+ from /);
+    // Invoice: 1 x £120 + 20% VAT = £144 total.
+    expect(email.text + email.html).toContain("144");
+    // Customers without the app get a secure view/pay link on the site.
+    expect(email.html).toMatch(/https:\/\//);
   });
 });

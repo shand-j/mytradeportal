@@ -129,6 +129,22 @@ jobs:
           echo "::error::Railway PR environment for PR #${PR_NUMBER} did not appear within 15 minutes."
           exit 1
 
+      - name: Route PR environment email to Mailpit
+        # PR environments are throwaway forks of production, which would
+        # otherwise send real email through Resend during E2E (cost + quota).
+        # Repoint the PR api at the shared staging Mailpit instance over its
+        # public SMTP endpoint (auth-enabled; Mailpit never relays onward).
+        # Uses raw GraphQL like pr_env_url.sh: the Railway CLI rejects the
+        # project token used in CI. Skipped when URL overrides point the run
+        # at a hand-built env without an id.
+        if: steps.pr-env.outputs.env_id != ''
+        env:
+          MAILPIT_SMTP: ${{ secrets.MAILPIT_SMTP }}
+          MAILPIT_BASIC_AUTH: ${{ secrets.MAILPIT_BASIC_AUTH }}
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+          RAILWAY_PROJECT_ID: ${{ vars.RAILWAY_PROJECT_ID }}
+        run: python3 scripts/ci/route_env_email.py "${{ steps.pr-env.outputs.env_id }}"
+
       - name: Wait for deployed API health
         run: |
           API_URL="${{ steps.pr-env.outputs.api_url }}"
