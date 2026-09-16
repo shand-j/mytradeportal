@@ -513,6 +513,164 @@ async def test_booking_confirmed_email_not_fired_on_unrelated_patch(
     assert "from 13:00" in recorder.calls[0]["html_body"]
 
 
+async def _booking_tenant_with_contact(
+    client: AsyncClient, db: AsyncSession
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    """Tenant (branded settings) + contact, shared by the create/convert tests."""
+    tenant = await _create_tenant_via_api(client, f"book-{uuid4().hex[:8]}")
+    await set_tenant_in_session(db, UUID(tenant["id"]))
+    tenant_row = await db.get(Tenant, UUID(tenant["id"]))
+    assert tenant_row is not None
+    tenant_row.settings = {"email": "sparks@example.com", "phone": "07700 900123"}
+    await db.flush()
+    contact_response = await client.post(
+        "/contacts",
+        headers={"X-Tenant-ID": tenant["id"]},
+        json={
+            "name": "Amy Homeowner",
+            "email": "amy@example.com",
+            "address": "1 Millbank",
+            "postcode": "SW1P 3AA",
+        },
+    )
+    assert contact_response.status_code == 201, contact_response.text
+    return tenant, contact_response.json()
+
+
+async def test_booking_confirmed_email_fires_once_on_create_with_schedule(
+    client: AsyncClient, db: AsyncSession, monkeypatch: MonkeyPatch
+) -> None:
+    """Direct job creation on a real slot emails the confirmation (Fixes #116)."""
+    tenant, contact = await _booking_tenant_with_contact(client, db)
+
+    recorder = _EmailRecorder()
+    monkeypatch.setattr("app.routers.jobs.send_customer_email", recorder)
+
+    start = datetime(2026, 9, 21, 9, 0)
+    job_response = await client.post(
+        "/jobs",
+        headers={"X-Tenant-ID": tenant["id"]},
+        json={
+            "contact_id": contact["id"],
+            "title": "Fuse board swap",
+            "scheduled_start": start.isoformat(),
+            "scheduled_end": (start + timedelta(hours=2)).isoformat(),
+        },
+    )
+    assert job_response.status_code == 201, job_response.text
+    assert len(recorder.calls) == 1
+    call = recorder.calls[0]
+    assert call["event"] == "booking_confirmed"
+    assert call["template"] == "booking_confirmed"
+    assert call["to_email"] == "amy@example.com"
+    assert call["from_name"] == tenant["name"]
+    assert call["reply_to"] == "sparks@example.com"
+    assert start.strftime("%A %d %B %Y") in call["html_body"]
+    assert "09:00 - 11:00" in call["html_body"]
+
+
+async def test_booking_confirmed_email_not_sent_on_create_without_schedule(
+    client: AsyncClient, db: AsyncSession, monkeypatch: MonkeyPatch
+) -> None:
+    """An unscheduled job create sends nothing (Fixes #116)."""
+    tenant, contact = await _booking_tenant_with_contact(client, db)
+
+    recorder = _EmailRecorder()
+    monkeypatch.setattr("app.routers.jobs.send_customer_email", recorder)
+
+    job_response = await client.post(
+        "/jobs",
+        headers={"X-Tenant-ID": tenant["id"]},
+        json={"contact_id": contact["id"], "title": "Fuse board swap"},
+    )
+    assert job_response.status_code == 201, job_response.text
+    assert recorder.calls == []
+
+
+async def test_booking_confirmed_email_fires_once_on_convert_to_job_with_schedule(
+    client: AsyncClient, db: AsyncSession, monkeypatch: MonkeyPatch
+) -> None:
+    """Quote → job conversion on a real slot emails the confirmation (Fixes #116)."""
+    tenant, contact = await _booking_tenant_with_contact(client, db)
+    quote_response = await client.post(
+        "/quotes",
+        headers={"X-Tenant-ID": tenant["id"]},
+        json={
+            "contact_id": contact["id"],
+            "title": "Fuse board swap",
+            "line_items": [
+                {"description": "Labour", "quantity": "1", "unit_price": "100.00"},
+            ],
+        },
+    )
+    assert quote_response.status_code == 201, quote_response.text
+    quote = quote_response.json()
+    approve = await client.post(
+        f"/quotes/{quote['id']}/approve",
+        headers={"X-Tenant-ID": tenant["id"]},
+        json={},
+    )
+    assert approve.status_code == 200, approve.text
+
+    recorder = _EmailRecorder()
+    monkeypatch.setattr("app.routers.jobs.send_customer_email", recorder)
+
+    start = datetime(2026, 9, 22, 9, 0)
+    convert = await client.post(
+        f"/quotes/{quote['id']}/convert-to-job",
+        headers={"X-Tenant-ID": tenant["id"]},
+        json={
+            "scheduled_start": start.isoformat(),
+            "scheduled_end": (start + timedelta(hours=2)).isoformat(),
+        },
+    )
+    assert convert.status_code == 201, convert.text
+    assert len(recorder.calls) == 1
+    call = recorder.calls[0]
+    assert call["event"] == "booking_confirmed"
+    assert call["to_email"] == "amy@example.com"
+    assert call["from_name"] == tenant["name"]
+    assert start.strftime("%A %d %B %Y") in call["html_body"]
+
+
+async def test_booking_confirmed_email_not_sent_on_convert_without_schedule(
+    client: AsyncClient, db: AsyncSession, monkeypatch: MonkeyPatch
+) -> None:
+    """Conversion without accepted dates or an explicit start sends nothing."""
+    tenant, contact = await _booking_tenant_with_contact(client, db)
+    quote_response = await client.post(
+        "/quotes",
+        headers={"X-Tenant-ID": tenant["id"]},
+        json={
+            "contact_id": contact["id"],
+            "title": "Fuse board swap",
+            "line_items": [
+                {"description": "Labour", "quantity": "1", "unit_price": "100.00"},
+            ],
+        },
+    )
+    assert quote_response.status_code == 201, quote_response.text
+    quote = quote_response.json()
+    approve = await client.post(
+        f"/quotes/{quote['id']}/approve",
+        headers={"X-Tenant-ID": tenant["id"]},
+        json={},
+    )
+    assert approve.status_code == 200, approve.text
+
+    recorder = _EmailRecorder()
+    monkeypatch.setattr("app.routers.jobs.send_customer_email", recorder)
+
+    convert = await client.post(
+        f"/quotes/{quote['id']}/convert-to-job",
+        headers={"X-Tenant-ID": tenant["id"]},
+        json={},
+    )
+    assert convert.status_code == 201, convert.text
+    assert convert.json()["scheduled_start"] is None
+    assert recorder.calls == []
+
+
 # ---------------------------------------------------------------------------
 # Payment received: customer email from the Stripe succeeded webhook
 # ---------------------------------------------------------------------------
@@ -584,7 +742,7 @@ async def test_payment_received_email_with_review_cta(
     )
     _patch_construct(monkeypatch, event)
     recorder = _EmailRecorder()
-    monkeypatch.setattr("app.routers.stripe_webhooks.send_customer_email", recorder)
+    monkeypatch.setattr("app.payment_notifications.send_customer_email", recorder)
     try:
         response = await _post_event(event)
 
@@ -615,7 +773,7 @@ async def test_payment_received_email_without_review_url_has_no_review_block(
     )
     _patch_construct(monkeypatch, event)
     recorder = _EmailRecorder()
-    monkeypatch.setattr("app.routers.stripe_webhooks.send_customer_email", recorder)
+    monkeypatch.setattr("app.payment_notifications.send_customer_email", recorder)
     try:
         response = await _post_event(event)
 
@@ -638,7 +796,7 @@ async def test_webhook_still_200_when_customer_email_send_raises(
     )
     _patch_construct(monkeypatch, event)
     monkeypatch.setattr(
-        "app.routers.stripe_webhooks.send_customer_email",
+        "app.payment_notifications.send_customer_email",
         AsyncMock(side_effect=RuntimeError("resend down")),
     )
     try:
@@ -653,6 +811,87 @@ async def test_webhook_still_200_when_customer_email_send_raises(
             assert invoice.paid_via == "stripe"
     finally:
         await _cleanup_stripe_seed(ids, [event_id])
+
+
+# ---------------------------------------------------------------------------
+# Manual mark-paid: same payment_received confirmation, non-card copy variant
+# ---------------------------------------------------------------------------
+
+
+async def _create_invoice_for_tenant(
+    client: AsyncClient, tenant: Tenant, contact: Contact
+) -> dict[str, Any]:
+    create = await client.post(
+        "/invoices",
+        headers={"X-Tenant-ID": str(tenant.id)},
+        json={
+            "contact_id": str(contact.id),
+            "line_items": [
+                {"description": "Labour", "quantity": "2", "unit_price": "50.00"},
+            ],
+        },
+    )
+    assert create.status_code == 201, create.text
+    data: dict[str, Any] = create.json()
+    return data
+
+
+async def test_mark_paid_sends_payment_received_email_with_review_cta(
+    client: AsyncClient, db: AsyncSession, monkeypatch: MonkeyPatch
+) -> None:
+    """Manual mark-paid now confirms to the customer, review CTA included (#114)."""
+    tenant = await _create_tenant(
+        db,
+        f"mpaid-{uuid4().hex[:8]}",
+        settings={"email": "sparks@example.com", "review_url": "https://g.page/r/acme-review"},
+    )
+    contact = await _create_contact(db, tenant)
+    invoice = await _create_invoice_for_tenant(client, tenant, contact)
+
+    recorder = _EmailRecorder()
+    monkeypatch.setattr("app.payment_notifications.send_customer_email", recorder)
+
+    response = await client.post(
+        f"/invoices/{invoice['id']}/mark-paid", headers={"X-Tenant-ID": str(tenant.id)}
+    )
+    assert response.status_code == 200, response.text
+    assert response.json()["status"] == "paid"
+    assert response.json()["paid_via"] == "manual"
+
+    assert len(recorder.calls) == 1
+    call = recorder.calls[0]
+    assert call["event"] == "payment_received"
+    assert call["template"] == "payment_received"
+    assert call["to_email"] == "homeowner@example.com"
+    assert call["from_name"] == tenant.name
+    assert invoice["invoice_number"] in call["html_body"]
+    assert "£100.00" in call["html_body"]
+    # Manual path: the copy must NOT claim a card payment / Stripe receipt.
+    assert "Stripe will also email you a card receipt" not in call["html_body"]
+    assert "Stripe will also email you a card receipt" not in call["text_body"]
+    # Review prompt present because the tenant configured review_url.
+    assert "How did we do?" in call["html_body"]
+    assert "https://g.page/r/acme-review" in call["html_body"]
+
+
+async def test_mark_paid_email_omits_review_cta_without_review_url(
+    client: AsyncClient, db: AsyncSession, monkeypatch: MonkeyPatch
+) -> None:
+    tenant = await _create_tenant(db, f"mpaid-{uuid4().hex[:8]}")
+    contact = await _create_contact(db, tenant)
+    invoice = await _create_invoice_for_tenant(client, tenant, contact)
+
+    recorder = _EmailRecorder()
+    monkeypatch.setattr("app.payment_notifications.send_customer_email", recorder)
+
+    response = await client.post(
+        f"/invoices/{invoice['id']}/mark-paid", headers={"X-Tenant-ID": str(tenant.id)}
+    )
+    assert response.status_code == 200, response.text
+    assert len(recorder.calls) == 1
+    assert recorder.calls[0]["event"] == "payment_received"
+    assert "How did we do?" not in recorder.calls[0]["html_body"]
+    assert "Stripe will also email you a card receipt" not in recorder.calls[0]["html_body"]
 
 
 # ---------------------------------------------------------------------------

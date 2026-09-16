@@ -9,7 +9,11 @@ Only ``email.bounced`` and ``email.failed`` are handled: the ``mtp_tenant`` /
 ``mtp_contact`` tags stamped by :func:`app.email.send_customer_email` at send
 time resolve the recipient back to a tenant contact, and staff get the same
 phone-directive alert as a send-time failure (same per-day dedupe, so a
-bounce following a send-time failure does not page twice). Untagged or
+bounce following a send-time failure does not page twice). For bounces the
+payload's ``bounce.type`` / ``bounce.reason`` (e.g. ``hard_bounce`` + the
+SMTP diagnostic) ride along into the structured log and the staff alert body
+— that is what makes deliverability incidents (DKIM/SPF/DMARC, domain
+reputation) diagnosable without opening the Resend dashboard. Untagged or
 unknown events are acked with a 200 no-op so Resend stops retrying them.
 
 An unconfigured secret answers 503 (loud, and Resend replays the event once
@@ -120,6 +124,28 @@ def _recipient(data: dict[str, Any]) -> str | None:
     return None
 
 
+# Cap the free-text SMTP reason we log/store so a hostile or runaway payload
+# cannot blow up log lines or alert bodies.
+_MAX_BOUNCE_REASON_LENGTH = 300
+
+
+def _bounce_details(data: dict[str, Any]) -> tuple[str | None, str | None]:
+    """Extract ``(bounce.type, bounce.reason)`` from an email.bounced payload.
+
+    Both are free-text/absent on most events; ``None`` either way. The reason
+    (raw SMTP diagnostic) is truncated to ``_MAX_BOUNCE_REASON_LENGTH``.
+    """
+    raw_bounce = data.get("bounce")
+    if not isinstance(raw_bounce, dict):
+        return None, None
+    bounce_type = raw_bounce.get("type")
+    bounce_reason = raw_bounce.get("reason")
+    return (
+        str(bounce_type) if bounce_type else None,
+        str(bounce_reason)[:_MAX_BOUNCE_REASON_LENGTH] if bounce_reason else None,
+    )
+
+
 @router.post("/resend")
 async def resend_webhook(request: Request) -> dict[str, str]:
     """Receive and verify Resend webhook events."""
@@ -167,6 +193,11 @@ async def resend_webhook(request: Request) -> dict[str, str]:
         logger.info("resend_webhook_untagged", event_type=event_type)
         return {"status": "ignored"}
 
+    bounce_type, bounce_reason = _bounce_details(data)
+    detail = None
+    if bounce_type or bounce_reason:
+        detail = f"type={bounce_type or 'unknown'}, reason={bounce_reason or 'unknown'}"
+
     async with AsyncSession(engine) as session:
         alerted = await alert_staff_email_failure(
             session,
@@ -176,6 +207,7 @@ async def resend_webhook(request: Request) -> dict[str, str]:
             purpose="customer",
             error_class="bounce" if event_type == "email.bounced" else "delivery failure",
             source="bounce",
+            detail=detail,
         )
         await session.commit()
     logger.info(
@@ -183,6 +215,8 @@ async def resend_webhook(request: Request) -> dict[str, str]:
         event_type=event_type,
         tenant_id=str(tenant_id),
         contact_id=str(contact_id),
+        bounce_type=bounce_type,
+        bounce_reason=bounce_reason,
         alerted=alerted,
     )
     return {"status": "ok"}

@@ -22,11 +22,13 @@ appointment per subsequent working-day block (see ``app.work_blocks``).
 GET /jobs/suggest-schedule returns the earliest start where a quote's whole
 block sequence fits around existing appointments and scheduled jobs.
 
-Booking confirmation: the same PATCH that sets or moves a job's
-scheduled_start also emails the customer a ``booking_confirmed`` email
-(best-effort, tenant-branded, Reply-To the tenant). Passwordless
-(auto-provisioned) customers get an account-claim magic-link CTA in that
-email; customers with a password do not. Unrelated PATCHes and unscheduling
+Booking confirmation: creating a job with a real slot (``scheduled_start``
+set, directly or via quote convert-to-job) emails the customer a
+``booking_confirmed`` email (best-effort, tenant-branded, Reply-To the
+tenant), and so does every later PATCH that moves ``scheduled_start``
+(reschedules included). Passwordless (auto-provisioned) customers get an
+account-claim magic-link CTA in that email; customers with a password do
+not. Creating a job without a schedule, unrelated PATCHes and unscheduling
 send nothing.
 """
 
@@ -205,6 +207,10 @@ async def create_job(data: JobCreate, tenant: TenantDep, db: DbDep) -> JobRead:
             body=f"'{job.title}' scheduled for {scheduled_str}.",
             link=f"/job/{job.id}",
         )
+    # First scheduling emails the booking confirmation just like a reschedule
+    # does — the email dispatches only when the job landed on a real slot.
+    if job.scheduled_start is not None:
+        await _email_booking_confirmed(db, tenant.id, job)
     await db.commit()
     return JobRead.model_validate(await _get_job(db, tenant.id, job.id))
 
@@ -263,7 +269,14 @@ async def _email_booking_confirmed(db: AsyncSession, tenant_id: UUID, job: Job) 
     if job.scheduled_start is None:
         return
     try:
-        contact = job.contact
+        contact = await db.get(Contact, job.contact_id)
+        if contact is None:
+            logger.warning(
+                "booking_confirmed_email_skipped",
+                job_id=str(job.id),
+                reason="no_contact",
+            )
+            return
         tenant_row = await db.get(Tenant, tenant_id)
         business_name = tenant_row.name if tenant_row is not None else "Your tradesperson"
         visit_date = job.scheduled_start.strftime("%A %d %B %Y")

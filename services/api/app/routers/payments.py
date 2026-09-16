@@ -8,7 +8,9 @@ endpoint (``app.routers.public_docs``) and settled via
 
 Paddle is NOT involved anywhere here — it remains for the platform's own SaaS
 subscription only. Unconfigured Stripe (empty ``STRIPE_SECRET_KEY``) yields a
-clean 503 ``payments_not_configured``, never a 500.
+clean 503 ``payments_not_configured``; Stripe-side failures during onboarding
+(e.g. the platform not enrolled in Connect) yield 503 ``payments_unavailable``
+with a ``connect_failed`` log event — never a 500.
 """
 
 from typing import Annotated, Any, cast
@@ -161,6 +163,19 @@ async def connect_stripe_account(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
                 detail="payments_not_configured",
             ) from exc
+        except Exception as exc:
+            if not stripe_client.is_stripe_error(exc):
+                raise
+            logger.error(
+                "connect_failed",
+                tenant_id=str(tenant.id),
+                error_type=type(exc).__name__,
+                error=str(exc)[:300],
+            )
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="payments_unavailable",
+            ) from exc
         account = StripeAccount(
             tenant_id=tenant.id,
             stripe_account_id=str(created["id"]),
@@ -168,11 +183,25 @@ async def connect_stripe_account(
         db.add(account)
         await db.flush()
 
-    onboarding_url = await stripe_client.create_account_link(
-        account.stripe_account_id,
-        return_url=return_url,
-        refresh_url=refresh_url,
-    )
+    try:
+        onboarding_url = await stripe_client.create_account_link(
+            account.stripe_account_id,
+            return_url=return_url,
+            refresh_url=refresh_url,
+        )
+    except Exception as exc:
+        if not stripe_client.is_stripe_error(exc):
+            raise
+        logger.error(
+            "connect_failed",
+            tenant_id=str(tenant.id),
+            error_type=type(exc).__name__,
+            error=str(exc)[:300],
+        )
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="payments_unavailable",
+        ) from exc
     await db.commit()
     return ConnectRead(onboarding_url=onboarding_url)
 

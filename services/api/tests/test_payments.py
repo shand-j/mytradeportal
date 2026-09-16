@@ -14,6 +14,7 @@ from unittest.mock import AsyncMock
 from uuid import UUID, uuid4
 
 import pytest
+from app.logging import configure_logging
 from app.models import Invoice, Payment, StripeAccount, Tenant
 from app.rls import set_tenant_in_session
 from httpx import AsyncClient
@@ -21,6 +22,12 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 pytestmark = pytest.mark.asyncio
+
+# Route structlog through stdlib so caplog can assert the connect_failed log
+# event. Import time is safe: pytest imports every test module during
+# collection, before any test runs and therefore before any structlog logger
+# proxy caches its factory (the app configures logging only in its lifespan).
+configure_logging("INFO")
 
 _TOKEN_RE = re.compile(r"https://www\.mytradeportal\.co\.uk/invoice/([A-Za-z0-9_-]+)")
 
@@ -98,6 +105,45 @@ async def test_connect_503_when_stripe_unconfigured(
     )
     assert response.status_code == 503
     assert response.json()["detail"] == "payments_not_configured"
+
+
+async def test_connect_503_payments_unavailable_when_stripe_rejects_account(
+    admin_client: AsyncClient,
+    db: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Platform not enrolled in Connect → clean 503 + connect_failed log, never a 500 (#115)."""
+    import stripe
+
+    monkeypatch.setattr("app.config.STRIPE_SECRET_KEY", "sk_test_x")
+    create_account = AsyncMock(
+        side_effect=stripe.InvalidRequestError(  # type: ignore[no-untyped-call]
+            "You can only create new accounts if you've signed up for Connect",
+            param=None,
+            code="account_invalid",
+        )
+    )
+    monkeypatch.setattr("app.stripe_client.create_express_account", create_account)
+
+    payload = {"return_url": "https://app.example/ok", "refresh_url": "https://app.example/re"}
+    with caplog.at_level("ERROR", logger="api.payments"):
+        response = await admin_client.post("/payments/connect", json=payload)
+
+    assert response.status_code == 503
+    assert response.json()["detail"] == "payments_unavailable"
+    assert create_account.await_count == 1
+    connect_failures = [
+        record for record in caplog.records if "connect_failed" in record.getMessage()
+    ]
+    assert len(connect_failures) == 1
+    assert "InvalidRequestError" in connect_failures[0].getMessage()
+
+    # No half-written StripeAccount row is left behind.
+    tenant_id = _tenant_id(admin_client)
+    await set_tenant_in_session(db, tenant_id)
+    account = await db.scalar(select(StripeAccount).where(StripeAccount.tenant_id == tenant_id))
+    assert account is None
 
 
 async def test_connect_returns_onboarding_url_and_reuses_account(

@@ -1,5 +1,6 @@
 """Tests for the guest-scoped public chat thread endpoints."""
 
+import asyncio
 import json
 from types import SimpleNamespace
 from typing import Any
@@ -183,6 +184,71 @@ async def test_thread_ai_failure_returns_message_without_reply(
     )
     assert reply.status_code == 200, reply.text
     data = reply.json()
+    assert data["message"]["body"] == "It's about 20 years old."
+    assert data["ai_reply"] is None
+    assert data["closed"] is False
+
+
+async def test_guest_followup_slow_llm_within_budget_returns_ai_reply(
+    client: AsyncClient, db: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A slow-but-within-budget LLM still returns the ai_reply (Fixes #117)."""
+    slug = f"pub-{uuid4().hex[:8]}"
+    await _create_tenant(db, slug)
+    ack = await _submit_with_question(client, db, slug, monkeypatch)
+    qr_id = ack["id"]
+    headers = {"Authorization": f"Bearer {ack['ai_check']['thread_token']}"}
+
+    # Generous budget, LLM that takes a beat: the portal awaits ai_reply.
+    monkeypatch.setattr(config.settings, "guest_followup_timeout_seconds", 30.0)
+
+    async def slow_followup(*args: Any, **kwargs: Any) -> dict[str, Any]:
+        await asyncio.sleep(0.05)
+        return _followup_payload(40, False, "And where is it located?")
+
+    monkeypatch.setattr(
+        "app.routers.public_threads.generate_followup", AsyncMock(side_effect=slow_followup)
+    )
+    reply = await client.post(
+        f"/public/threads/{qr_id}/messages",
+        headers=headers,
+        json={"body": "It's about 20 years old."},
+    )
+    assert reply.status_code == 200, reply.text
+    data = reply.json()
+    assert data["message"]["body"] == "It's about 20 years old."
+    assert data["closed"] is False
+    assert data["ai_reply"] is not None
+    assert data["ai_reply"]["body"] == "And where is it located?"
+
+
+async def test_guest_followup_beyond_budget_fails_open(
+    client: AsyncClient, db: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A too-slow LLM stores the message and returns ai_reply=null (Fixes #117)."""
+    slug = f"pub-{uuid4().hex[:8]}"
+    await _create_tenant(db, slug)
+    ack = await _submit_with_question(client, db, slug, monkeypatch)
+    qr_id = ack["id"]
+    headers = {"Authorization": f"Bearer {ack['ai_check']['thread_token']}"}
+
+    monkeypatch.setattr(config.settings, "guest_followup_timeout_seconds", 0.05)
+
+    async def too_slow_followup(*args: Any, **kwargs: Any) -> dict[str, Any]:
+        await asyncio.sleep(5)
+        return _followup_payload(85, True, "too late")
+
+    monkeypatch.setattr(
+        "app.routers.public_threads.generate_followup", AsyncMock(side_effect=too_slow_followup)
+    )
+    reply = await client.post(
+        f"/public/threads/{qr_id}/messages",
+        headers=headers,
+        json={"body": "It's about 20 years old."},
+    )
+    assert reply.status_code == 200, reply.text
+    data = reply.json()
+    # Fail-open: the customer's message is stored and returned, no 5xx.
     assert data["message"]["body"] == "It's about 20 years old."
     assert data["ai_reply"] is None
     assert data["closed"] is False

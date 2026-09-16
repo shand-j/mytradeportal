@@ -29,6 +29,7 @@ import httpx
 import pytest
 from app.database import engine
 from app.email import send_customer_email, send_event_email
+from app.logging import configure_logging
 from app.main import app
 from app.models import Contact, EmailFailureAlert, Notification, Tenant, User
 from app.rls import bypass_rls_in_session, set_tenant_in_session
@@ -38,6 +39,13 @@ from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 pytestmark = pytest.mark.asyncio
+
+# Route structlog through stdlib so caplog can assert structured log fields
+# (the app only configures logging in its lifespan, which test transports
+# never enter). Must run before any test executes: logger proxies cache
+# their factory on first use, and pytest imports all test modules during
+# collection, before the first test runs.
+configure_logging("INFO")
 
 _SECRET = "whsec_" + base64.b64encode(b"resend-webhook-test-secret").decode()
 _CUSTOMER_EMAIL = "harriet@example.com"
@@ -335,18 +343,27 @@ def _svix_headers(body: bytes, secret: str, msg_id: str = "msg_test_1") -> dict[
     }
 
 
-def _bounce_event(*, tenant_id: UUID, contact_id: UUID, event_type: str = "email.bounced") -> bytes:
+def _bounce_event(
+    *,
+    tenant_id: UUID,
+    contact_id: UUID,
+    event_type: str = "email.bounced",
+    bounce: dict[str, Any] | None = None,
+) -> bytes:
+    data: dict[str, Any] = {
+        "email_id": f"em_{uuid4().hex[:12]}",
+        "from": "quotes@mytradeportal.co.uk",
+        "to": [_CUSTOMER_EMAIL],
+        "subject": "Your quote is ready",
+        "tags": {"mtp_tenant": str(tenant_id), "mtp_contact": str(contact_id)},
+    }
+    if bounce is not None:
+        data["bounce"] = bounce
     return json.dumps(
         {
             "type": event_type,
             "created_at": "2026-09-14T10:00:00.000Z",
-            "data": {
-                "email_id": f"em_{uuid4().hex[:12]}",
-                "from": "quotes@mytradeportal.co.uk",
-                "to": [_CUSTOMER_EMAIL],
-                "subject": "Your quote is ready",
-                "tags": {"mtp_tenant": str(tenant_id), "mtp_contact": str(contact_id)},
-            },
+            "data": data,
         }
     ).encode()
 
@@ -384,6 +401,83 @@ async def test_webhook_bounce_with_valid_signature_alerts_staff_once(
         assert response.status_code == 200
         assert len(await _failure_notifications(ids["tenant_id"])) == 1
         assert await _alert_row_count(ids["tenant_id"]) == 1
+    finally:
+        await _cleanup(ids["tenant_id"])
+
+
+async def test_webhook_bounce_logs_type_and_reason_and_alerts_with_detail(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    """bounce.type/reason reach the structured log AND the staff alert (#113)."""
+    ids = await _seed(with_staff=True)
+    fake = _patch_resend(monkeypatch, fail_recipients=set())
+    monkeypatch.setattr("app.config.RESEND_WEBHOOK_SECRET", _SECRET)
+    reason = (
+        "550 5.7.1 Unauthenticated email from mytradeportal.co.uk is not accepted "
+        "due to domain's DMARC policy"
+    )
+    body = _bounce_event(
+        tenant_id=ids["tenant_id"],
+        contact_id=ids["contact_id"],
+        bounce={"type": "hard_bounce", "reason": reason},
+    )
+    try:
+        with caplog.at_level("INFO", logger="api.resend_webhooks"):
+            response = await _post_resend(body, _svix_headers(body, _SECRET))
+        assert response.status_code == 200, response.text
+        assert response.json()["status"] == "ok"
+
+        # Structured log carries the bounce type + reason.
+        processed = [
+            record for record in caplog.records if "resend_webhook_processed" in record.getMessage()
+        ]
+        assert len(processed) == 1
+        log_text = processed[0].getMessage()
+        assert "hard_bounce" in log_text
+        assert reason in log_text
+
+        # The tagged contact is flagged (dedupe ledger row) and the in-app
+        # alert body carries the bounce detail alongside the phone directive.
+        assert await _alert_row_count(ids["tenant_id"]) == 1
+        notifications = await _failure_notifications(ids["tenant_id"])
+        assert len(notifications) == 1
+        assert "hard_bounce" in notifications[0].body
+        assert reason in notifications[0].body
+        assert f"Contact them by phone instead: {_PHONE}" in notifications[0].body
+
+        # The staff alert email body contains the reason too.
+        staff_posts = [post for post in fake.posts if post["to"] == [_STAFF_EMAIL]]
+        assert len(staff_posts) == 1
+        assert "hard_bounce" in staff_posts[0]["text"]
+        assert reason in staff_posts[0]["text"]
+    finally:
+        await _cleanup(ids["tenant_id"])
+
+
+async def test_webhook_bounce_reason_truncated(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    """A runaway SMTP reason is truncated to a sane length (#113)."""
+    ids = await _seed()
+    monkeypatch.setattr("app.config.RESEND_WEBHOOK_SECRET", _SECRET)
+    long_reason = "x" * 500
+    body = _bounce_event(
+        tenant_id=ids["tenant_id"],
+        contact_id=ids["contact_id"],
+        bounce={"type": "hard_bounce", "reason": long_reason},
+    )
+    try:
+        with caplog.at_level("INFO", logger="api.resend_webhooks"):
+            response = await _post_resend(body, _svix_headers(body, _SECRET))
+        assert response.status_code == 200, response.text
+        processed = [
+            record for record in caplog.records if "resend_webhook_processed" in record.getMessage()
+        ]
+        assert len(processed) == 1
+        log_text = processed[0].getMessage()
+        assert "hard_bounce" in log_text
+        assert "x" * 300 in log_text
+        assert "x" * 301 not in log_text
     finally:
         await _cleanup(ids["tenant_id"])
 

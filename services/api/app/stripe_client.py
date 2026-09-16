@@ -17,6 +17,7 @@ startup-time crash — callers translate that to a 503 / a ``null`` payment URL.
 """
 
 import asyncio
+import sys
 from typing import Any
 
 import structlog
@@ -34,6 +35,18 @@ class PaymentsNotConfiguredError(RuntimeError):
     def __init__(self, detail: str = "payments_not_configured") -> None:
         super().__init__(detail)
         self.detail = detail
+
+
+def is_stripe_error(exc: BaseException) -> bool:
+    """True when ``exc`` is a ``stripe.StripeError`` from the lazily imported SDK.
+
+    Lets routers catch Stripe-side failures (e.g. the platform not enrolled
+    in Connect) without importing ``stripe`` themselves — the SDK only enters
+    ``sys.modules`` once a configured call has been made, which is exactly
+    the path that raises.
+    """
+    stripe = sys.modules.get("stripe")
+    return stripe is not None and isinstance(exc, stripe.StripeError)
 
 
 def is_configured() -> bool:

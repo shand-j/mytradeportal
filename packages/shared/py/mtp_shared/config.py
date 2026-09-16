@@ -143,6 +143,13 @@ class Settings(BaseSettings):
     # message + 1 customer reply. Was hard-coded to 3; 5 lets the AI probe
     # more when the initial answers don't tip confidence over 80%.
     max_followup_turns: int = Field(default=5)
+    # Hard asyncio budget for one guest-thread AI follow-up turn. The portal
+    # awaits the reply synchronously (ai_reply in the POST response), so this
+    # gets a larger budget than the inline intake check (12s) — a slow model
+    # must not silently degrade the promised "AI follows up" experience to a
+    # one-way thread. Fail-open still applies: on timeout the customer's
+    # message is stored and the response carries ai_reply=null.
+    guest_followup_timeout_seconds: float = Field(default=90.0, gt=0)
 
     # OpenConstructionERP microservice
     ocerp_url: str = Field(default="http://ocerp:8000")
