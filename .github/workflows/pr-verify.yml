@@ -27,7 +27,7 @@ jobs:
     # Same setup as the python job in ci.yml: in-process pytest against
     # service containers. No live LLM/Paddle access exists here, so these
     # tests run purely on fixtures/mocks (identical to the existing CI job).
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-latest
     services:
       postgres:
         image: postgres:16
@@ -90,7 +90,7 @@ jobs:
     # healthy, then run the deployed-API smoke suite and a light Playwright
     # pass over the landing/portal bundle.
     needs: quality-gates
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-latest
     permissions:
       contents: read
       pull-requests: write # post the verification comment
