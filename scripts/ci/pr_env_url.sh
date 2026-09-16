@@ -20,6 +20,7 @@
 # project config (.railway/config.json, local use).
 #
 # Output (also appendable to GITHUB_OUTPUT):
+#   env_id=<Railway environment id>
 #   api_url=<https://...>
 #   landing_url=<https://...>
 #
@@ -34,11 +35,7 @@ if [[ -z "$PR_NUMBER" ]]; then
   exit 2
 fi
 
-API_URL="${RAILWAY_PR_API_URL:-}"
-LANDING_URL="${RAILWAY_PR_LANDING_URL:-}"
-
-if [[ -z "$API_URL" || -z "$LANDING_URL" ]]; then
-  PR_NUMBER="$PR_NUMBER" python3 <<'PY'
+PR_NUMBER="$PR_NUMBER" python3 <<'PY'
 import json
 import os
 import re
@@ -134,6 +131,7 @@ if not envs:
     )
     sys.exit(3)
 env = sorted(envs, key=lambda n: n["name"])[0]
+print(f"env_id={env['id']}")
 
 # 2. List service domains in that environment.
 data = gql(
@@ -191,4 +189,3 @@ if missing:
     )
     sys.exit(4)
 PY
-fi

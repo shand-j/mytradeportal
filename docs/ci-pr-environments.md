@@ -17,7 +17,11 @@ Workflow: [`.github/workflows/pr-verify.yml`](../.github/workflows/pr-verify.yml
    1. Resolves the PR environment's public URLs (see below), retrying for up
       to 15 minutes — Railway creates the environment when the PR opens, but
       the copy-of-production deploy takes several minutes.
-   2. Polls `GET {api}/health` until it returns 200 (up to 15 minutes).
+   2. Routes the PR environment's outbound email to the shared staging
+      **Mailpit** instance (deleting `RESEND_API_KEY` and setting `SMTP_*`
+      on the PR api), so no test email ever reaches Resend. See
+      [Email routing](#email-routing-in-non-production-environments-mailpit).
+   3. Polls `GET {api}/health` until it returns 200 (up to 15 minutes).
    3. Runs the deployed-API smoke suite
       ([`services/api/tests_deployed/`](../services/api/tests_deployed)) with
       `TEST_API_BASE_URL` set to the PR environment's API URL.
@@ -53,6 +57,45 @@ Workflow: [`.github/workflows/pr-verify.yml`](../.github/workflows/pr-verify.yml
    # exits 3 with "no ephemeral PR environment found for PR #123 ..." until
    # the Railway GitHub integration has created one for that PR
    ```
+
+## Email routing in non-production environments (Mailpit)
+
+Staging and every Railway PR environment route **all** outbound email into a
+single shared **Mailpit** instance (the `mailpit` service in the `staging`
+environment, image `axllent/mailpit`) instead of Resend. Two reasons:
+
+- **Resend quota/cost** — a staging-e2e run sends ~a dozen emails; PR
+  environments are copy-of-production and would send real email for every
+  test tenant. Both now cost zero Resend sends.
+- **Testability** — E2E can assert that an email was actually delivered and
+  inspect its subject/body/links (e.g. the invoice email's total and payable
+  link), which was impossible with real email.
+
+How it works:
+
+- The api's email helper prefers Resend whenever `RESEND_API_KEY` is set and
+  falls back to SMTP otherwise, so routing an environment to Mailpit is:
+  delete `RESEND_API_KEY`, set `SMTP_HOST`/`SMTP_PORT`/`SMTP_USE_TLS=false`/
+  `SMTP_USERNAME`/`SMTP_PASSWORD`/`SMTP_FROM_EMAIL`/`SMTP_FROM_NAME` to the
+  Mailpit endpoint. Applied by hand once to staging; `pr-verify.yml` applies
+  it automatically to every PR environment right after URL resolution.
+- Mailpit exposes a public **HTTPS domain** (basic-auth protected; UI + REST
+  API for assertions) and a public **SMTP TCP endpoint** (auth-enabled;
+  `MP_SMTP_AUTH_ALLOW_INSECURE=true` because the TCP proxy is plaintext —
+  acceptable here: the mailbox holds only test data and Mailpit never relays
+  onward).
+- The mobile E2E helper [`mobile/e2e/mailpit.ts`](../mobile/e2e/mailpit.ts)
+  polls `GET {MAILPIT_URL}/api/v1/messages` (basic auth from
+  `MAILPIT_BASIC_AUTH = user:password`) until a message to the test's unique
+  recipient appears. The mailbox is shared, so always filter by recipient.
+
+| Secret | Purpose |
+|---|---|
+| `MAILPIT_URL` | Mailpit HTTPS root (UI + REST API) used by E2E assertions. |
+| `MAILPIT_BASIC_AUTH` | `user:password` for the Mailpit UI/API (and user/pass for the SMTP endpoint). |
+| `MAILPIT_SMTP` | Mailpit SMTP endpoint as `host:port`, written into PR environments' `SMTP_HOST`/`SMTP_PORT`. |
+
+Production is untouched and continues to send via Resend.
 
 ## Required GitHub secrets
 
