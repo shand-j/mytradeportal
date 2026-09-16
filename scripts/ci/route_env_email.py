@@ -43,8 +43,8 @@ def main() -> None:
     if not env_id:
         fail("usage: route_env_email.py <environment-id>", 2)
 
-    mailpit_smtp = os.environ.get("MAILPIT_SMTP", "")
-    mailpit_auth = os.environ.get("MAILPIT_BASIC_AUTH", "")
+    mailpit_smtp = os.environ.get("MAILPIT_SMTP", "").strip()
+    mailpit_auth = os.environ.get("MAILPIT_BASIC_AUTH", "").strip()
     if ":" not in mailpit_smtp or ":" not in mailpit_auth:
         fail("MAILPIT_SMTP (host:port) and MAILPIT_BASIC_AUTH (user:pass) are required")
     smtp_host, smtp_port = mailpit_smtp.rsplit(":", 1)
