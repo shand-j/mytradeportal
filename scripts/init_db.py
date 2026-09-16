@@ -22,6 +22,7 @@ from typing import TYPE_CHECKING
 
 from sqlalchemy import create_engine, inspect, text
 from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.exc import OperationalError
 from sqlalchemy.schema import CreateColumn
 
 if TYPE_CHECKING:
@@ -266,15 +267,35 @@ def init_api_schema() -> None:
         # The BI role must exist before its database is created with it as owner.
         _create_metabase_role(conn)
     _create_metabase_database(engine)
-    with engine.begin() as conn:
-        Base.metadata.create_all(conn)
-        # ``create_all`` never issues ``ALTER TABLE`` for new columns on
-        # existing tables, so bring the live schema forward for any columns
-        # added to the models since the last deploy.
-        sync_missing_columns(conn, Base.metadata)
-        _create_app_role(conn)
-        _create_metabase_role(conn)
-        apply_tenant_rls_sync(conn)
+    # Concurrent boots (blue/green deploys, api + admin preDeploy racing) all
+    # run this DDL; serialize on a session-level advisory lock and retry once
+    # on the transient deadlock the lock can't prevent (observed on the
+    # staging deploy of 2026-09-16, killing the whole deployment).
+    for attempt in (1, 2):
+        try:
+            with engine.begin() as conn:
+                conn.exec_driver_sql("SELECT pg_advisory_lock(727272)")
+                try:
+                    Base.metadata.create_all(conn)
+                    # ``create_all`` never issues ``ALTER TABLE`` for new columns on
+                    # existing tables, so bring the live schema forward for any columns
+                    # added to the models since the last deploy.
+                    sync_missing_columns(conn, Base.metadata)
+                    _create_app_role(conn)
+                    _create_metabase_role(conn)
+                    apply_tenant_rls_sync(conn)
+                finally:
+                    # Advisory locks are session-scoped, NOT transactional: a
+                    # later rollback would not release them, and a pooled
+                    # connection carrying the lock would serialize (or wedge)
+                    # every other init.
+                    conn.exec_driver_sql("SELECT pg_advisory_unlock(727272)")
+            break
+        except OperationalError as exc:
+            if attempt == 1 and "deadlock detected" in str(exc):
+                print("[init_db] Deadlock during schema init (transient); retrying once")
+                continue
+            raise
 
     # Sanity check: every expected tenant-scoped table must have RLS + FORCE.
     with engine.connect() as conn:

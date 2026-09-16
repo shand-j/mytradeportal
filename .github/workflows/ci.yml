@@ -130,10 +130,13 @@ jobs:
       - name: Rotate Django superuser password (optional)
         env:
           RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+          RAILWAY_PROJECT_ID: ${{ vars.RAILWAY_PROJECT_ID }}
           DJANGO_SUPERUSER_PASSWORD: ${{ secrets.DJANGO_SUPERUSER_PASSWORD }}
         run: |
           if [ -n "$DJANGO_SUPERUSER_PASSWORD" ]; then
-            railway variable set DJANGO_SUPERUSER_PASSWORD="$DJANGO_SUPERUSER_PASSWORD" --service admin --environment production
+            # GraphQL, not the CLI: v5.28+ rejects the CI project token.
+            python3 scripts/ci/set_variable.py production admin \
+              DJANGO_SUPERUSER_PASSWORD "$DJANGO_SUPERUSER_PASSWORD"
           else
             echo "DJANGO_SUPERUSER_PASSWORD not set in MyTradePortal/Production; superuser will not be rotated on this deploy."
           fi
