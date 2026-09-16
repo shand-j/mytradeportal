@@ -57,9 +57,7 @@ def main() -> None:
         try:
             with open(cfg_path) as fh:
                 projects = json.load(fh).get("projects", {})
-            project_id = next(
-                (p.get("project") for p in projects.values() if p.get("project")), ""
-            )
+            project_id = next((p.get("project") for p in projects.values() if p.get("project")), "")
         except (OSError, json.JSONDecodeError):
             project_id = ""
     if not token or not project_id:
