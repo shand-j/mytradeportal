@@ -114,17 +114,17 @@ async def test_connect_503_payments_unavailable_when_stripe_rejects_account(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
     """Platform not enrolled in Connect → clean 503 + connect_failed log, never a 500 (#115)."""
-    import stripe
+    from app import stripe_client
 
     monkeypatch.setattr("app.config.STRIPE_SECRET_KEY", "sk_test_x")
     create_account = AsyncMock(
-        side_effect=stripe.InvalidRequestError(  # type: ignore[no-untyped-call]
-            "You can only create new accounts if you've signed up for Connect",
-            param=None,
-            code="account_invalid",
+        side_effect=stripe_client.StripeV2Error(
+            400,
+            "accounts_v2_access_blocked",
+            "Accounts v2 is not enabled for your merchant.",
         )
     )
-    monkeypatch.setattr("app.stripe_client.create_express_account", create_account)
+    monkeypatch.setattr("app.stripe_client.create_connected_account_v2", create_account)
 
     payload = {"return_url": "https://app.example/ok", "refresh_url": "https://app.example/re"}
     with caplog.at_level("ERROR", logger="api.payments"):
@@ -137,7 +137,7 @@ async def test_connect_503_payments_unavailable_when_stripe_rejects_account(
         record for record in caplog.records if "connect_failed" in record.getMessage()
     ]
     assert len(connect_failures) == 1
-    assert "InvalidRequestError" in connect_failures[0].getMessage()
+    assert "StripeV2Error" in connect_failures[0].getMessage()
 
     # No half-written StripeAccount row is left behind.
     tenant_id = _tenant_id(admin_client)
@@ -152,7 +152,7 @@ async def test_connect_returns_onboarding_url_and_reuses_account(
     monkeypatch.setattr("app.config.STRIPE_SECRET_KEY", "sk_test_x")
     create_account = AsyncMock(return_value={"id": "acct_test_1"})
     account_link = AsyncMock(return_value="https://connect.stripe.com/setup/s/test")
-    monkeypatch.setattr("app.stripe_client.create_express_account", create_account)
+    monkeypatch.setattr("app.stripe_client.create_connected_account_v2", create_account)
     monkeypatch.setattr("app.stripe_client.create_account_link", account_link)
 
     payload = {"return_url": "https://app.example/ok", "refresh_url": "https://app.example/re"}

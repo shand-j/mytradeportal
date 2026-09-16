@@ -111,7 +111,7 @@ async def test_full_stripe_payment_lifecycle(
     create_intent = AsyncMock(return_value={"id": "pi_lc_1", "client_secret": "pi_lc_1_secret"})
     create_refund = AsyncMock(return_value={"id": "re_lc_1", "status": "succeeded"})
     send_email = AsyncMock(return_value=True)
-    monkeypatch.setattr("app.stripe_client.create_express_account", create_account)
+    monkeypatch.setattr("app.stripe_client.create_connected_account_v2", create_account)
     monkeypatch.setattr("app.stripe_client.create_account_link", account_link)
     monkeypatch.setattr("app.stripe_client.create_payment_intent", create_intent)
     monkeypatch.setattr("app.stripe_client.create_refund", create_refund)

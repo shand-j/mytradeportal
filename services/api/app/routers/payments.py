@@ -9,8 +9,9 @@ endpoint (``app.routers.public_docs``) and settled via
 Paddle is NOT involved anywhere here — it remains for the platform's own SaaS
 subscription only. Unconfigured Stripe (empty ``STRIPE_SECRET_KEY``) yields a
 clean 503 ``payments_not_configured``; Stripe-side failures during onboarding
-(e.g. the platform not enrolled in Connect) yield 503 ``payments_unavailable``
-with a ``connect_failed`` log event — never a 500.
+(e.g. the platform not enrolled in Connect, or the Accounts v2 preview being
+unavailable) yield 503 ``payments_unavailable`` with a ``connect_failed`` log
+event — never a 500.
 """
 
 from typing import Annotated, Any, cast
@@ -142,7 +143,13 @@ async def connect_stripe_account(
     current_user: CurrentUserDep,
     db: DbDep,
 ) -> ConnectRead:
-    """Create (or reuse) the tenant's Express account and return its onboarding URL."""
+    """Create (or reuse) the tenant's Express account and return its onboarding URL.
+
+    The account is provisioned through the Accounts v2 API as a recipient
+    account (see ``stripe_client.create_connected_account_v2``); the hosted
+    onboarding link itself is still a v1 Account Link, which Stripe supports
+    for v2 account IDs.
+    """
     if not stripe_client.is_configured():
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -154,8 +161,9 @@ async def connect_stripe_account(
     account = await _get_stripe_account(db, tenant.id)
     if account is None:
         try:
-            created = await stripe_client.create_express_account(
+            created = await stripe_client.create_connected_account_v2(
                 email=current_user.email if current_user is not None else tenant.email or None,
+                display_name=tenant.name,
                 tenant_id=str(tenant.id),
             )
         except stripe_client.PaymentsNotConfiguredError as exc:
