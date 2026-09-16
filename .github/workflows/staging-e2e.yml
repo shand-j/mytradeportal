@@ -61,6 +61,7 @@ jobs:
         id: api-smoke
         env:
           TEST_API_BASE_URL: ${{ steps.staging-env.outputs.api_url }}
+          TEST_SETUP_TOKEN: "" # keep the deployed smoke read-only: no writes, no background AI drafts
         run: python -m pytest services/api/tests_deployed -o addopts='' -v
 
       - name: Set up pnpm
