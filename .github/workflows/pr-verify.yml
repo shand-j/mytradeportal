@@ -129,38 +129,21 @@ jobs:
           echo "::error::Railway PR environment for PR #${PR_NUMBER} did not appear within 15 minutes."
           exit 1
 
-      - name: Install Railway CLI
-        run: npm install -g @railway/cli
-
       - name: Route PR environment email to Mailpit
         # PR environments are throwaway forks of production, which would
         # otherwise send real email through Resend during E2E (cost + quota).
         # Repoint the PR api at the shared staging Mailpit instance over its
         # public SMTP endpoint (auth-enabled; Mailpit never relays onward).
-        # Skipped when URL overrides point the run at a hand-built env.
+        # Uses raw GraphQL like pr_env_url.sh: the Railway CLI rejects the
+        # project token used in CI. Skipped when URL overrides point the run
+        # at a hand-built env without an id.
         if: steps.pr-env.outputs.env_id != ''
         env:
           MAILPIT_SMTP: ${{ secrets.MAILPIT_SMTP }}
           MAILPIT_BASIC_AUTH: ${{ secrets.MAILPIT_BASIC_AUTH }}
-        run: |
-          ENV_ID="${{ steps.pr-env.outputs.env_id }}"
-          SMTP_HOST="${MAILPIT_SMTP%%:*}"
-          SMTP_PORT="${MAILPIT_SMTP##*:}"
-          SMTP_USER="${MAILPIT_BASIC_AUTH%%:*}"
-          SMTP_PASS="${MAILPIT_BASIC_AUTH#*:}"
-          set -e
-          # `--json` skips the interactive confirmation prompt (there is no
-          # --yes flag); the key is absent once an env is already routed.
-          railway variable delete RESEND_API_KEY --service api --environment "$ENV_ID" --json \
-            || echo "RESEND_API_KEY not present - email already routed"
-          printf '%s' "$SMTP_HOST"      | railway variable set SMTP_HOST --service api --environment "$ENV_ID" --stdin
-          printf '%s' "$SMTP_PORT"      | railway variable set SMTP_PORT --service api --environment "$ENV_ID" --stdin
-          printf 'false'                | railway variable set SMTP_USE_TLS --service api --environment "$ENV_ID" --stdin
-          printf '%s' "$SMTP_USER"      | railway variable set SMTP_USERNAME --service api --environment "$ENV_ID" --stdin
-          printf '%s' "$SMTP_PASS"      | railway variable set SMTP_PASSWORD --service api --environment "$ENV_ID" --stdin
-          printf 'quotes@mytradeportal.co.uk' | railway variable set SMTP_FROM_EMAIL --service api --environment "$ENV_ID" --stdin
-          printf 'My Trade Portal'      | railway variable set SMTP_FROM_NAME --service api --environment "$ENV_ID" --stdin
-          echo "PR #$PR_NUMBER api email routed to Mailpit (env $ENV_ID)"
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+          RAILWAY_PROJECT_ID: ${{ vars.RAILWAY_PROJECT_ID }}
+        run: python3 scripts/ci/route_env_email.py "${{ steps.pr-env.outputs.env_id }}"
 
       - name: Wait for deployed API health
         run: |
