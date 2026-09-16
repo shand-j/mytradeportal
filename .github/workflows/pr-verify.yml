@@ -89,7 +89,6 @@ jobs:
     # Discover the PR's Railway environment, wait for the api deploy to become
     # healthy, then run the deployed-API smoke suite and a light Playwright
     # pass over the landing/portal bundle.
-    needs: quality-gates
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -121,6 +120,8 @@ jobs:
           echo "Environments visible in project ${RAILWAY_PROJECT_ID}:"
           railway environment list --ephemeral --json 2>&1 | head -c 2000 || true
           echo
+          echo "Direct script test:"
+          bash -x scripts/ci/pr_env_url.sh "${PR_NUMBER}"; echo "script exit: $?"
 
       # Railway creates the PR environment when the PR opens, but the deploy
       # can take several minutes — retry discovery + health until both are up
@@ -129,13 +130,13 @@ jobs:
         id: pr-env
         run: |
           echo "Resolving Railway PR environment for PR #${PR_NUMBER}..."
-          for attempt in $(seq 1 30); do
+          for attempt in $(seq 1 1); do
             if urls=$(scripts/ci/pr_env_url.sh "${PR_NUMBER}"); then
               echo "$urls" | tee -a "$GITHUB_OUTPUT"
               exit 0
             fi
             echo "Attempt ${attempt}/30: PR environment not ready yet — sleeping 30s"
-            sleep 30
+            sleep 5
           done
           echo "::error::Railway PR environment for PR #${PR_NUMBER} did not appear within 15 minutes."
           exit 1
