@@ -163,15 +163,17 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Install Playwright chromium
-        working-directory: web/app
+        # Hoisted node_modules: the playwright bin lives in the workspace-root
+        # .bin and is only resolvable via `pnpm exec` from the root (pnpm exec
+        # from a member package does not fall back to the root .bin).
         run: pnpm exec playwright install chromium
 
       - name: Landing/portal smoke (Playwright, chromium)
         id: landing-smoke
-        working-directory: web/app
         env:
           TEST_LANDING_URL: ${{ steps.pr-env.outputs.landing_url }}
-        run: pnpm exec playwright test --config playwright.pr.config.ts
+        # testDir is resolved relative to the config file, so this works from root.
+        run: pnpm exec playwright test --config web/app/playwright.pr.config.ts
 
       - name: Comment results on the PR
         if: always()
