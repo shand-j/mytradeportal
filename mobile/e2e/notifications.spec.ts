@@ -10,7 +10,6 @@ import {
   seedLead,
   seedScheduledJob,
   seedSentQuote,
-  sleep,
   tap,
   Tenant,
   waitText,
@@ -18,10 +17,10 @@ import {
 
 const CUSTOMER_PASSWORD = "E2E-Customer-1";
 
-// Bell-list deep links: a mapped notification lands on its entity screen; an
-// unmapped one (customer invoice links have no customer route) marks read and
-// stays put without erroring. Both notifications are produced by API-side
-// effects — no LLM involvement.
+// Bell-list deep links: staff notifications land on their entity screen, and
+// a customer "invoice_sent" notification deep-links to the customer invoice
+// screen (added after the original suite treated it as unmapped). Both
+// notifications are produced by API-side effects — no LLM involvement.
 
 test.describe.serial("O — Notifications", () => {
   let tenant: Tenant;
@@ -42,8 +41,8 @@ test.describe.serial("O — Notifications", () => {
     });
 
     // Sending an invoice linked to a registered customer's quote fires a
-    // customer "invoice_sent" notification (/customer/invoice/{id}), which the
-    // customer app intentionally does not route anywhere.
+    // customer "invoice_sent" notification (/customer/invoice/{id}), which
+    // the customer app routes to the invoice detail screen.
     const lead = await seedLead(tenant, {
       title: "E2E Notified lead",
       category: "consumer_unit",
@@ -97,9 +96,7 @@ test.describe.serial("O — Notifications", () => {
     await waitText(page, job.title);
   });
 
-  test("N2: an unmapped customer notification navigates nowhere without error", async ({
-    page,
-  }) => {
+  test("N2: a customer invoice notification deep-links to the invoice", async ({ page }) => {
     await loginAsCustomer(page, tenant, {
       email: customer.email,
       password: CUSTOMER_PASSWORD,
@@ -112,12 +109,11 @@ test.describe.serial("O — Notifications", () => {
       .first();
     await row.waitFor({ state: "visible", timeout: 30000 });
     await row.click({ force: true });
-    await sleep(1000);
 
-    // Customer invoice links resolve to no route: the row marks read and the
-    // app stays on the notifications screen without surfacing an error.
-    await waitText(page, "Notifications");
-    expect(page.url()).toContain("notifications");
+    // The customer app routes invoice notifications to the invoice screen
+    // (invoice detail with payment CTA was added after this suite was written).
+    await waitText(page, "AWAITING PAYMENT", 30000);
+    expect(page.url()).toContain("/invoice/");
     const text = (await bodyText(page)).toLowerCase();
     expect(text).not.toContain("something went wrong");
     expect(text).not.toContain("could not load");

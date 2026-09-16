@@ -95,9 +95,11 @@ jobs:
         env:
           E2E_API_BASE_URL: ${{ steps.staging-env.outputs.api_url }}
           E2E_STAGING_SETUP_TOKEN: ${{ secrets.E2E_STAGING_SETUP_TOKEN }}
-          # Generous timeouts: AI quote generation/refine calls the real LLM
-          # (60-120s per call) from CI.
-          E2E_WORKERS: "2"
+          # Single worker: a remote API (Supabase auth latency) plus video
+          # recording makes 2-worker runs exceed the specs' 20-30s render
+          # waits (observed as C12/F/N2 flakes on the first staging run).
+          # Serial also eases LLM rate pressure.
+          E2E_WORKERS: "1"
         # Config path is relative to the invocation dir; testDir/globalSetup
         # resolve relative to the config file.
         run: pnpm exec playwright test --config mobile/playwright.config.staging.ts
