@@ -106,6 +106,7 @@ export async function loginAsTradeOwner(page: Page, tenant: Tenant): Promise<voi
   await fill(page, "login-password", tenant.adminPassword);
   await tap(page, "login-submit");
   await waitText(page, "Dashboard", 30000);
+  await settleAfterLogin();
 }
 
 export async function loginAsCustomer(
@@ -125,6 +126,21 @@ export async function loginAsCustomer(
   // The customer home screen shows either the business name or "My quotes"
   // depending on whether branding loaded; wait for the primary action instead.
   await page.locator('[data-testid="request-new-quote"]').waitFor({ state: "visible", timeout: 30000 });
+  await settleAfterLogin();
+}
+
+/**
+ * Let the post-login screen transition finish before interacting.
+ *
+ * On CI (video encoding + runner CPU contention) the React Navigation
+ * slide-in is still running when the landing screen's first elements become
+ * visible; a tap fired mid-transition lands on the outgoing screen and is
+ * dropped, which presented as the first post-login tap silently doing
+ * nothing (N2/C12/F). Locally the transition completes fast enough to hide
+ * this. The dashboard polls, so wait a fixed settle rather than networkidle.
+ */
+async function settleAfterLogin(): Promise<void> {
+  await sleep(2000);
 }
 
 async function fillBusinessCode(page: Page, code: string): Promise<void> {
