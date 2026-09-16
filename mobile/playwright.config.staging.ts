@@ -27,7 +27,7 @@ if (!API_BASE_URL) {
 
 export default defineConfig({
   testDir: "./e2e",
-  testMatch: /(regression|jobs|crm|settings|dashboard|messages|notifications)\.spec\.ts/,
+  testMatch: /(regression|jobs|crm|settings|dashboard|messages|notifications|emails|rounding|branding|blocked|ai-metadata|customer-invoices)\.spec\.ts/,
   fullyParallel: true,
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 1 : 0,
