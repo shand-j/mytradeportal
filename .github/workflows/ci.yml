@@ -68,7 +68,9 @@ jobs:
           mypy --config-file mypy-admin.ini services/admin
 
       - name: Test with pytest
-        run: pytest
+        # Coverage floor: current main measures 70% (term-missing report in addopts).
+        # Do not lower this; raise it when coverage improves.
+        run: pytest --cov-fail-under=70
 
   mobile:
     runs-on: ubuntu-latest
