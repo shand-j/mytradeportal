@@ -72,6 +72,16 @@ export async function api(...args: any[]): Promise<any> {
   return mod.api(...args);
 }
 
+export async function apiRaw(...args: any[]): Promise<any> {
+  const mod = await loadSeedHelpers();
+  return mod.apiRaw(...args);
+}
+
+export async function loginCustomer(...args: any[]): Promise<any> {
+  const mod = await loadSeedHelpers();
+  return mod.loginCustomer(...args);
+}
+
 async function resetAppState(page: Page): Promise<void> {
   await page.context().clearCookies();
   await page.evaluate(() => {
