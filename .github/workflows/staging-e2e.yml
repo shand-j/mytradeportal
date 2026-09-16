@@ -103,3 +103,11 @@ jobs:
         # Config path is relative to the invocation dir; testDir/globalSetup
         # resolve relative to the config file.
         run: pnpm exec playwright test --config mobile/playwright.config.staging.ts
+
+      - name: Upload mobile test results (screenshots, videos, page snapshots)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mobile-test-results
+          path: mobile/test-results
+          retention-days: 7
