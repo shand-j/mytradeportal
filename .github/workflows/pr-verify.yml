@@ -163,7 +163,8 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Install Playwright chromium
-        run: pnpm --dir web/app exec playwright install chromium
+        working-directory: web/app
+        run: pnpm exec playwright install chromium
 
       - name: Landing/portal smoke (Playwright, chromium)
         id: landing-smoke
