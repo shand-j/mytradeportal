@@ -479,30 +479,40 @@ test.describe.serial("F — In-app chat", () => {
     await tap(page, "chat-send");
     await waitText(page, reply);
 
-    // After the customer reply, the AI should close the loop with a thank-you
-    // message confirming the electrician will review the request. The LLM call
-    // takes 55-77s, so allow generous time for it to be generated and rendered.
-    await waitText(page, "electrician", 180000);
-
-    // Assert the backend thread contains the reply and the final AI closure.
-    const messages = (await api(tenant, `/communications?quote_request_id=${leadId}`)) as Array<{
+    // The thread always closes — on LLM confidence or, failing that, at the
+    // turn cap (the backend then forces a callback closure; both paths set
+    // ai_metadata.complete=true). How many questions the LLM spends before
+    // the in-test reply varies (early confident closures make seeded turns
+    // no-ops), so this reply may not be the final turn: poll through any
+    // extra AI turns until the last message is a closure. Each LLM call
+    // takes 55-77s.
+    type ChatMessage = {
       body: string;
       sender_role: string;
       ai_metadata: { complete?: boolean; confidence?: number } | null;
-    }>;
+    };
+    const closurePattern = /notified|give you a call/;
+    const deadline = Date.now() + 8 * 60_000;
+    let messages: ChatMessage[] = [];
+    let finalAi: ChatMessage | undefined;
+    for (;;) {
+      messages = (await api(tenant, `/communications?quote_request_id=${leadId}`)) as ChatMessage[];
+      const aiMessages = messages.filter((m) => m.sender_role === "ai");
+      finalAi = aiMessages[aiMessages.length - 1];
+      if (finalAi?.ai_metadata?.complete === true) break;
+      if (Date.now() > deadline) break;
+      await sleep(20_000);
+    }
+
+    // Assert the backend thread contains the reply and the final AI closure.
     const replyMessage = messages.find(
       (m) => m.sender_role === "customer" && m.body === reply
     );
     expect(replyMessage).toBeTruthy();
-
-    const finalAi = messages
-      .filter((m) => m.sender_role === "ai")
-      .pop();
-    expect(finalAi).toBeTruthy();
-    // The final turn always closes: confident closure ("…notified…") or
-    // turn-cap callback closure ("…give you a call…") — both are valid per the
-    // product's dual-closure design; which one depends on LLM confidence.
-    expect(finalAi!.body?.toLowerCase()).toMatch(/notified|give you a call/);
+    expect(finalAi, "thread did not close within 8 minutes").toBeTruthy();
+    // Dual-closure design: confident closure ("…notified…") or turn-cap
+    // callback closure ("…give you a call…").
+    expect(finalAi!.body?.toLowerCase()).toMatch(closurePattern);
     expect(finalAi!.ai_metadata?.complete).toBe(true);
   });
 });
