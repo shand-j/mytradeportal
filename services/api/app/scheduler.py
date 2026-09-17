@@ -45,6 +45,7 @@ from app.audit import Actions, write_audit_log
 from app.config import (
     AI_FAIR_USE_MONTHLY_THRESHOLD,
     AI_MONTHLY_BUDGET_GBP,
+    AI_MONTHLY_INVOICE_USD,
     FX_REFRESH_MAX_AGE_DAYS,
     REMINDER_TICK_SECONDS,
     ROLLUP_RUN_HOUR_UTC,
@@ -55,7 +56,7 @@ from app.database import AsyncSessionLocal
 from app.email import resolve_customer_magic_link, send_customer_email
 from app.email_templates import invoice_reminder as invoice_reminder_template
 from app.email_templates import quote_reminder as quote_reminder_template
-from app.fx import store_fx_rate
+from app.fx import get_usd_gbp_rate, store_fx_rate
 from app.models import (
     AiAlertState,
     AiCallEvent,
@@ -486,7 +487,10 @@ async def reminder_loop(stop: asyncio.Event) -> None:
 #    fair-use alerts (an org's current-month AI action count reaches
 #    ``AI_FAIR_USE_MONTHLY_THRESHOLD``, once per org per month — internal ops
 #    only, never customer-visible), all deduped via the ``ai_alert_state``
-#    table. An unhandled exception in the pass itself fires a once-per-day
+#    table. On the first tick of a new month it also reconciles the month
+#    that just closed: estimated rollup spend vs ``AI_MONTHLY_INVOICE_USD``
+#    (provider invoice), alerting once per month when |variance| > 10% (#60).
+#    An unhandled exception in the pass itself fires a once-per-day
 #    ``rollup_failed`` alert and the loop keeps its schedule.
 #
 # The loop never raises; per-step failures are logged and the next step still
@@ -511,6 +515,9 @@ _BUDGET_THRESHOLDS: tuple[tuple[str, Decimal], ...] = (
 
 _COST_SPIKE_FACTOR = Decimal("3")
 _LATENCY_SPIKE_FACTOR = 2.0
+# |variance| above this percent between the platform-estimated month and the
+# provider invoice fires one cost-drift alert per month (#60).
+_COST_DRIFT_THRESHOLD_PCT = Decimal("10")
 # Require at least this many trailing days of data before anomaly detection
 # fires, so a quiet first week does not page anyone.
 _ANOMALY_MIN_TRAILING_DAYS = 3
@@ -941,6 +948,66 @@ async def _check_fair_use_alerts(db: AsyncSession, day: date) -> list[str]:
     return fired
 
 
+async def _check_cost_drift_alerts(db: AsyncSession, day: date) -> list[str]:
+    """Reconcile the just-closed month's estimated spend vs the provider invoice.
+
+    Sums ``cost_gbp`` over ``ai_rollup_feature_day`` for the month containing
+    ``day`` (the budget alert's source of truth), converts
+    ``AI_MONTHLY_INVOICE_USD`` to GBP at the stored USD→GBP rate, and fires
+    one alert per month when the absolute variance exceeds 10% (#60). A
+    structured event is logged either way. The automatic companion to the
+    manual ``scripts/reconcile_ai_costs.py`` run.
+
+    Empty/invalid invoice = check skipped, like an unset monthly budget.
+    """
+    if not AI_MONTHLY_INVOICE_USD:
+        return []
+    try:
+        invoice_usd = Decimal(AI_MONTHLY_INVOICE_USD)
+    except Exception:
+        logger.warning("ai_cost_drift_invoice_invalid", value=AI_MONTHLY_INVOICE_USD)
+        return []
+    if invoice_usd <= 0:
+        return []
+    month_start = date(day.year, day.month, 1)
+    month_end = date(day.year + (day.month == 12), day.month % 12 + 1, 1)
+    spent = await db.scalar(
+        select(func.coalesce(func.sum(AiRollupFeatureDay.cost_gbp), 0)).where(
+            AiRollupFeatureDay.date >= month_start,
+            AiRollupFeatureDay.date < month_end,
+        )
+    )
+    spent_gbp = Decimal(str(spent or 0))
+    rate, rate_date = await get_usd_gbp_rate(db, day)
+    invoice_gbp = invoice_usd * rate
+    variance = (spent_gbp - invoice_gbp) / invoice_gbp * Decimal("100") if invoice_gbp > 0 else None
+    period = f"{day.year:04d}-{day.month:02d}"
+    drifted = variance is not None and abs(variance) > _COST_DRIFT_THRESHOLD_PCT
+    logger.info(
+        "ai_cost_drift_check",
+        period=period,
+        spent_gbp=str(spent_gbp),
+        invoice_usd=str(invoice_usd),
+        invoice_gbp=str(invoice_gbp),
+        usd_gbp=str(rate),
+        fx_rate_date=str(rate_date),
+        variance_pct=str(variance) if variance is not None else None,
+        drift=drifted,
+    )
+    if not drifted:
+        return []
+    assert variance is not None  # narrowed by drifted
+    subject = f"AI cost drift {variance:+.1f}% ({period})"
+    body = (
+        f"Platform-estimated AI spend for {period} was £{spent_gbp:.2f} vs the "
+        f"provider invoice of ${invoice_usd:.2f} (≈ £{invoice_gbp:.2f} at the stored "
+        f"USD→GBP rate of {rate}) — a variance of {variance:+.2f}%, over the 10% "
+        "threshold. Investigate pricing drift, missing models in the price list, "
+        "or untracked calls."
+    )
+    return ["cost_drift"] if await _fire_alert_once(db, period, "cost_drift", subject, body) else []
+
+
 async def _run_rollup_tick(db: AsyncSession, now: datetime) -> dict[str, Any]:
     """One nightly pass: fold yesterday, refresh FX, evaluate alerts."""
     yesterday = (now - timedelta(days=1)).date()
@@ -951,6 +1018,11 @@ async def _run_rollup_tick(db: AsyncSession, now: datetime) -> dict[str, Any]:
         summary["budget_alerts"] = await _check_budget_alerts(db, yesterday)
         summary["anomaly_alerts"] = await _check_anomaly_alerts(db, yesterday)
         summary["fair_use_alerts"] = await _check_fair_use_alerts(db, yesterday)
+        # The drift check reconciles the month that just closed, so it only
+        # runs on the first tick of a new month (yesterday = month's last day).
+        next_day = yesterday + timedelta(days=1)
+        if (next_day.year, next_day.month) != (yesterday.year, yesterday.month):
+            summary["cost_drift_alerts"] = await _check_cost_drift_alerts(db, yesterday)
     except Exception as exc:
         # Alert evaluation must not be lost with the fold — the rollup rows
         # are already committed; log and continue.
