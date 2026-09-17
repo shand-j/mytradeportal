@@ -30,6 +30,16 @@ Tenant settings keys (merged via ``PATCH /tenants/me``):
 * ``quote_reminder_interval_days`` (int, default 3)
 * ``invoice_reminders_enabled`` (bool, default true)
 * ``invoice_reminder_interval_days`` (int, default 7)
+
+Per-customer overrides (F2) live on ``Contact.reminder_preferences``
+(``PATCH /contacts/{id}``, merged key-by-key): ``quote_chase_enabled`` /
+``invoice_chase_enabled`` skip that document type for the contact and
+``max_reminders`` caps the tenant cadence downward. Reminder emails may carry
+an AI-drafted personalised paragraph (``feature="reminder_draft"`` in
+``ai_call_events``); the first successful draft per quote/invoice is cached
+on the ``Reminder`` row payload (``ai_draft``) and reused for later episodes.
+Drafting is fail-open: any LLM failure or sanity-gate rejection falls back
+to the static template and the send still happens.
 """
 
 from __future__ import annotations
@@ -75,6 +85,7 @@ from app.models import (
 )
 from app.payment_details import tenant_payment_details
 from app.push import notify_staff
+from app.reminder_draft import draft_reminder_message
 from app.rls import set_tenant_in_session
 
 if TYPE_CHECKING:
@@ -135,6 +146,89 @@ async def _reminder_state(
     return count or 0, last_sent
 
 
+def _chase_preferences(contact: Contact | None) -> dict[str, Any]:
+    """The contact's reminder-preference overrides ({} = tenant defaults)."""
+    if contact is None or not isinstance(contact.reminder_preferences, dict):
+        return {}
+    return contact.reminder_preferences
+
+
+def _chase_enabled(contact: Contact | None, kind: str) -> bool:
+    """Per-customer chase switch; missing/None preference = tenant default (on)."""
+    value = _chase_preferences(contact).get(f"{kind}_chase_enabled")
+    return True if value is None else bool(value)
+
+
+def _contact_max_reminders(contact: Contact | None) -> int | None:
+    """Per-customer cap on reminder count, or None when unset/invalid."""
+    value = _chase_preferences(contact).get("max_reminders")
+    if value is None:
+        return None
+    try:
+        return max(1, int(str(value)))
+    except (TypeError, ValueError):
+        return None
+
+
+async def _reminder_personal_message(
+    db: AsyncSession,
+    tenant: Tenant,
+    contact: Contact | None,
+    *,
+    kind: str,
+    entity_id: UUID,
+    document_label: str,
+    total: str,
+    status_line: str,
+) -> str | None:
+    """Personalised AI draft for one reminder episode.
+
+    Reuses the first successful draft cached on a prior ``Reminder`` row for
+    this entity (payload key ``ai_draft``) so the copy stays consistent across
+    the chase sequence and the LLM is never re-paid per episode. Otherwise
+    drafts once via :func:`app.reminder_draft.draft_reminder_message`.
+    Returns ``None`` whenever drafting is unavailable or rejected — the
+    caller then sends the static template (fail-open).
+    """
+    rows = (
+        (
+            await db.execute(
+                select(Reminder.payload)
+                .where(Reminder.entity_type == kind, Reminder.entity_id == entity_id)
+                .order_by(Reminder.sequence)
+            )
+        )
+        .scalars()
+        .all()
+    )
+    for payload in rows:
+        cached = (payload or {}).get("ai_draft")
+        if isinstance(cached, str) and cached.strip():
+            return cached
+    try:
+        return await draft_reminder_message(
+            db,
+            tenant_id=tenant.id,
+            business_name=tenant.name,
+            customer_name=contact.name if contact is not None else None,
+            kind=kind,
+            document_label=document_label,
+            total=total,
+            status_line=status_line,
+        )
+    except Exception as exc:
+        # Belt and braces: the draft helper is already fail-open, but an
+        # unexpected bug there must never hold up the reminder send.
+        logger.warning(
+            "reminder_draft_unexpected_error",
+            entity_type=kind,
+            entity_id=str(entity_id),
+            error_type=type(exc).__name__,
+            error=str(exc)[:300],
+        )
+        return None
+
+
 async def _document_view_url(
     db: AsyncSession, kind: str, document_id: UUID, tenant_id: UUID, contact_email: str | None
 ) -> str:
@@ -181,14 +275,24 @@ async def _process_quote_reminders(
         # An expired quote should not be chased further.
         if quote.valid_until is not None and quote.valid_until < now:
             continue
+
+        contact = await db.get(Contact, quote.contact_id)
+        # Per-customer overrides (F2): a contact can opt out of quote chases
+        # and/or cap the number of reminders below the tenant cadence.
+        if not _chase_enabled(contact, "quote"):
+            continue
+        effective_max = config.quote_max
+        contact_max = _contact_max_reminders(contact)
+        if contact_max is not None:
+            effective_max = min(effective_max, contact_max)
+
         count, last_sent = await _reminder_state(db, "quote", quote.id)
-        if count >= config.quote_max:
+        if count >= effective_max:
             continue
         anchor = last_sent or quote.sent_at
         if anchor is None or now - anchor < interval:
             continue
 
-        contact = await db.get(Contact, quote.contact_id)
         # Magic portal link when the contact has a customer account. When one
         # is sent we skip minting a fresh document token — minting revokes the
         # view link emailed at send time for no benefit.
@@ -200,6 +304,17 @@ async def _process_quote_reminders(
                 db, "quote", quote.id, tenant.id, contact.email if contact else None
             )
         )
+        sent_days = (now - quote.sent_at).days if quote.sent_at is not None else 0
+        personal_message = await _reminder_personal_message(
+            db,
+            tenant,
+            contact,
+            kind="quote",
+            entity_id=quote.id,
+            document_label=quote.title,
+            total=f"£{quote.total}",
+            status_line=f"sent {sent_days} day(s) ago and not yet accepted",
+        )
         subject, html, text = quote_reminder_template(
             customer_name=contact.name.split()[0]
             if contact is not None and contact.name
@@ -209,6 +324,7 @@ async def _process_quote_reminders(
             quote_total=f"£{quote.total}",
             view_url=view_url,
             portal_url=portal_url,
+            personal_message=personal_message,
         )
         delivered = await send_customer_email(
             db,
@@ -232,6 +348,14 @@ async def _process_quote_reminders(
             continue
 
         sequence = count + 1
+        reminder_payload: dict[str, Any] = {
+            "quote_id": str(quote.id),
+            "total": str(quote.total),
+        }
+        if personal_message:
+            # Cache the draft on the row so retries/replays and later episodes
+            # of this chase reuse the same copy without re-paying the LLM.
+            reminder_payload["ai_draft"] = personal_message
         db.add(
             Reminder(
                 tenant_id=tenant.id,
@@ -239,7 +363,7 @@ async def _process_quote_reminders(
                 entity_id=quote.id,
                 channel="email",
                 sequence=sequence,
-                payload={"quote_id": str(quote.id), "total": str(quote.total)},
+                payload=reminder_payload,
             )
         )
         await notify_staff(
@@ -247,7 +371,7 @@ async def _process_quote_reminders(
             tenant.id,
             kind="quote_reminder_sent",
             title="Quote reminder sent",
-            body=f"Reminder {sequence} of {config.quote_max} emailed to "
+            body=f"Reminder {sequence} of {effective_max} emailed to "
             f"{contact.name if contact is not None else 'the customer'} for '{quote.title}'.",
             link=f"/quotes/{quote.id}",
         )
@@ -258,7 +382,7 @@ async def _process_quote_reminders(
             action=Actions.QUOTE_REMINDER_SENT,
             entity_type="quote",
             entity_id=quote.id,
-            payload={"sequence": sequence, "max": config.quote_max},
+            payload={"sequence": sequence, "max": effective_max},
         )
         sent += 1
     return sent
@@ -285,7 +409,16 @@ async def _process_invoice_reminders(
         .all()
     )
     for invoice in invoices:
+        contact = await db.get(Contact, invoice.contact_id)
+        # Per-customer overrides (F2): opt out of invoice chases and/or cap
+        # the recurrence count below the (unbounded) tenant cadence.
+        if not _chase_enabled(contact, "invoice"):
+            continue
+        contact_max = _contact_max_reminders(contact)
+
         count, last_sent = await _reminder_state(db, "invoice", invoice.id)
+        if contact_max is not None and count >= contact_max:
+            continue
         # First reminder fires one interval after the due date (falling back
         # to the issue date when no due date was set); subsequent ones recur
         # every interval after the previous reminder, indefinitely.
@@ -293,7 +426,6 @@ async def _process_invoice_reminders(
         if anchor is None or now - anchor < interval:
             continue
 
-        contact = await db.get(Contact, invoice.contact_id)
         sequence = count + 1
         # Same magic-link rule as quote reminders: a portal sign-in link
         # replaces the document token so the emailed view link stays valid.
@@ -307,6 +439,24 @@ async def _process_invoice_reminders(
                 db, "invoice", invoice.id, tenant.id, contact.email if contact else None
             )
         )
+        if invoice.due_date is not None:
+            overdue_days = max(0, (now.date() - invoice.due_date.date()).days)
+            status_line = f"due {overdue_days} day(s) ago and still unpaid"
+        elif invoice.issue_date is not None:
+            issued_days = max(0, (now.date() - invoice.issue_date.date()).days)
+            status_line = f"issued {issued_days} day(s) ago and still unpaid"
+        else:
+            status_line = "still unpaid"
+        personal_message = await _reminder_personal_message(
+            db,
+            tenant,
+            contact,
+            kind="invoice",
+            entity_id=invoice.id,
+            document_label=invoice.invoice_number,
+            total=f"£{invoice.total}",
+            status_line=status_line,
+        )
         subject, html, text = invoice_reminder_template(
             customer_name=contact.name.split()[0]
             if contact is not None and contact.name
@@ -319,6 +469,7 @@ async def _process_invoice_reminders(
             ),
             view_url=view_url,
             portal_url=portal_url,
+            personal_message=personal_message,
         )
         delivered = await send_customer_email(
             db,
@@ -338,6 +489,13 @@ async def _process_invoice_reminders(
         if not delivered:
             continue
 
+        reminder_payload: dict[str, Any] = {
+            "invoice_id": str(invoice.id),
+            "invoice_number": invoice.invoice_number,
+            "total": str(invoice.total),
+        }
+        if personal_message:
+            reminder_payload["ai_draft"] = personal_message
         db.add(
             Reminder(
                 tenant_id=tenant.id,
@@ -345,11 +503,7 @@ async def _process_invoice_reminders(
                 entity_id=invoice.id,
                 channel="email",
                 sequence=sequence,
-                payload={
-                    "invoice_id": str(invoice.id),
-                    "invoice_number": invoice.invoice_number,
-                    "total": str(invoice.total),
-                },
+                payload=reminder_payload,
             )
         )
         await notify_staff(

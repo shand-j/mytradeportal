@@ -50,6 +50,7 @@ logger = structlog.get_logger("api.ai_telemetry")
 FEATURE_QUOTE_DRAFT = "quote_draft"
 FEATURE_QUOTE_REFINE = "quote_refine"
 FEATURE_TRIAGE_FOLLOWUP = "triage_followup"
+FEATURE_REMINDER_DRAFT = "reminder_draft"
 FEATURE_EMBEDDING = "embedding"
 FEATURE_DEMO_QUOTE = "demo_quote"
 FEATURE_OUTCOME = "outcome"
@@ -484,6 +485,7 @@ __all__ = [
     "FEATURE_OUTCOME",
     "FEATURE_QUOTE_DRAFT",
     "FEATURE_QUOTE_REFINE",
+    "FEATURE_REMINDER_DRAFT",
     "FEATURE_TRIAGE_FOLLOWUP",
     "STATUS_ABANDONED",
     "STATUS_ERROR",

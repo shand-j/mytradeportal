@@ -227,6 +227,7 @@ def quote_reminder(
     quote_total: str,
     view_url: str | None = None,
     portal_url: str | None = None,
+    personal_message: str | None = None,
 ) -> tuple[str, str, str]:
     """Follow-up email for a sent-but-unanswered quote. (subject, html, text).
 
@@ -234,6 +235,10 @@ def quote_reminder(
     CTA and ``view_url`` (the view-only document page, when also given) drops
     to a secondary "view without signing in" link. When neither is present
     the email falls back to the app-only copy.
+
+    ``personal_message`` is an optional AI-drafted personalised paragraph
+    (F2); when present it is shown directly under the greeting, ahead of the
+    standard copy. The static template stays the skeleton either way.
     """
     subject = f"Reminder: your quote from {business_name}"
     if portal_url:
@@ -255,8 +260,11 @@ def quote_reminder(
         text_cta = "Open the app to view and accept the quote.\n\n"
         html_cta = "    <p>Open the app to view and accept the quote.</p>\n"
         text_secondary, html_secondary = "", ""
+    text_personal = f"{personal_message}\n\n" if personal_message else ""
+    html_personal = f"    <p>{personal_message}</p>\n" if personal_message else ""
     text = (
         f"Hi {customer_name},\n\n"
+        f"{text_personal}"
         f"Just a friendly reminder that {business_name} sent you a quote for "
         f"'{quote_title}'.\n"
         f"Total: {quote_total}\n\n"
@@ -271,6 +279,7 @@ def quote_reminder(
   <body style="font-family:-apple-system,Segoe UI,Roboto,sans-serif;color:#0f172a;max-width:560px;margin:0 auto;padding:24px;">
     <h1 style="font-size:22px;margin:0 0 12px;">Your quote is waiting</h1>
     <p>Hi {customer_name},</p>
+{html_personal}\
     <p>Just a friendly reminder that <strong>{business_name}</strong> sent you a quote for <strong>{quote_title}</strong>.</p>
     <p style="font-size:20px;font-weight:700;margin:16px 0;">Total: {quote_total}</p>
 {html_cta}\
@@ -292,6 +301,7 @@ def invoice_reminder(
     payment_details: dict[str, str] | None = None,
     view_url: str | None = None,
     portal_url: str | None = None,
+    personal_message: str | None = None,
 ) -> tuple[str, str, str]:
     """Payment-chasing email for an unpaid sent invoice. (subject, html, text).
 
@@ -301,6 +311,10 @@ def invoice_reminder(
     CTA and ``view_url`` (the secure web invoice page, when also given) drops
     to a secondary "view without signing in" link. When neither is present
     the email falls back to the app-only copy.
+
+    ``personal_message`` is an optional AI-drafted personalised paragraph
+    (F2); when present it is shown directly under the greeting, ahead of the
+    standard copy.
     """
     subject = f"Reminder: invoice {invoice_number} from {business_name}"
     payment_text, payment_html = _payment_details_block(payment_details)
@@ -322,8 +336,11 @@ def invoice_reminder(
         action_text = "Open the app to view and pay.\n\n"
         action_html = "    <p>Open the app to view and pay.</p>"
         text_secondary, html_secondary = "", ""
+    text_personal = f"{personal_message}\n\n" if personal_message else ""
+    html_personal = f"    <p>{personal_message}</p>\n" if personal_message else ""
     text = (
         f"Hi {customer_name},\n\n"
+        f"{text_personal}"
         f"This is a reminder that invoice {invoice_number} from {business_name} "
         f"is still awaiting payment.\n"
         f"Total due: {invoice_total}\n\n"
@@ -339,6 +356,7 @@ def invoice_reminder(
   <body style="font-family:-apple-system,Segoe UI,Roboto,sans-serif;color:#0f172a;max-width:560px;margin:0 auto;padding:24px;">
     <h1 style="font-size:22px;margin:0 0 12px;">Payment reminder — invoice {invoice_number}</h1>
     <p>Hi {customer_name},</p>
+{html_personal}\
     <p>This is a reminder that invoice <strong>{invoice_number}</strong> from <strong>{business_name}</strong> is still awaiting payment.</p>
     <p style="font-size:20px;font-weight:700;margin:16px 0;">Total due: {invoice_total}</p>
 {payment_html}\

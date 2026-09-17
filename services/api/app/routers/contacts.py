@@ -27,6 +27,19 @@ NON_PAYER_BADGE = "non_payer"
 TIME_WASTER_BADGE = "time_waster"
 KNOWN_BADGES = (LATE_PAYER_BADGE, NON_PAYER_BADGE, TIME_WASTER_BADGE)
 
+# --- Reminder (chase) preferences (F2) ---------------------------------------
+# Per-customer overrides for the reminder scheduler, stored on
+# ``Contact.reminder_preferences`` (NULL = tenant defaults). Merged key-by-key
+# on PATCH, mirroring ``badge_overrides``.
+REMINDER_PREF_QUOTE_CHASE = "quote_chase_enabled"
+REMINDER_PREF_INVOICE_CHASE = "invoice_chase_enabled"
+REMINDER_PREF_MAX_REMINDERS = "max_reminders"
+KNOWN_REMINDER_PREFS = (
+    REMINDER_PREF_QUOTE_CHASE,
+    REMINDER_PREF_INVOICE_CHASE,
+    REMINDER_PREF_MAX_REMINDERS,
+)
+
 # Rule thresholds (documented defaults):
 # - Late Payer: paid after the due date more than once (>= 2 late payments).
 # - Non-payer: any issued invoice still unpaid > 30 days past its due date.
@@ -288,6 +301,11 @@ async def update_contact(
     ``false`` forces it off and ``null`` clears the override so the auto rule
     decides again. Unknown badge slugs are rejected so typos cannot silently
     create dead overrides.
+
+    ``reminder_preferences`` is merged the same way: booleans toggle chasing
+    for quotes/invoices, ``max_reminders`` (int >= 1) caps the tenant reminder
+    cadence downward, ``null`` clears a key back to the tenant default and an
+    empty result stores NULL (tenant defaults). Unknown keys are rejected.
     """
     contact = await _get_contact(db, tenant.id, contact_id)
     changed = data.model_dump(exclude_unset=True)
@@ -307,6 +325,32 @@ async def update_contact(
                 overrides[badge] = bool(value)
         contact.badge_overrides = overrides
         changed["badge_overrides"] = overrides
+    pref_changes = changed.pop("reminder_preferences", None)
+    if pref_changes:
+        unknown = sorted(set(pref_changes) - set(KNOWN_REMINDER_PREFS))
+        if unknown:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"unknown_reminder_preference: unknown key(s): {', '.join(unknown)}",
+            )
+        prefs = dict(contact.reminder_preferences or {})
+        for key, value in pref_changes.items():
+            if value is None:
+                prefs.pop(key, None)
+            elif key == REMINDER_PREF_MAX_REMINDERS:
+                try:
+                    prefs[key] = max(1, int(str(value)))
+                except (TypeError, ValueError):
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail=f"invalid_reminder_preference: {key} must be an integer",
+                    ) from None
+            else:
+                prefs[key] = bool(value)
+        # Empty dict collapses back to NULL so "no overrides" reads cleanly
+        # and the scheduler treats the contact as on tenant defaults.
+        contact.reminder_preferences = prefs or None
+        changed["reminder_preferences"] = contact.reminder_preferences
     for key, value in changed.items():
         if key == "badge_overrides":
             continue
