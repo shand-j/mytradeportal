@@ -78,10 +78,11 @@ async def send_alert(subject: str, text: str) -> dict[str, bool]:
 async def fetch_usd_gbp_rate() -> float | None:
     """Fetch the current USD→GBP rate from a free endpoint. Never raises.
 
-    Uses the open exchangerate.host latest endpoint with a short timeout;
-    returns ``None`` on any failure so the caller keeps the last-known rate.
+    Uses the open er-api latest endpoint (exchangerate.host no longer returns
+    rates without an API key); returns ``None`` on any failure so the caller
+    keeps the last-known rate.
     """
-    url = "https://api.exchangerate.host/latest?base=USD&symbols=GBP"
+    url = "https://open.er-api.com/v6/latest/USD"
     try:
         async with httpx.AsyncClient(timeout=_SLACK_TIMEOUT_SECONDS) as client:
             response = await client.get(url)
@@ -89,6 +90,11 @@ async def fetch_usd_gbp_rate() -> float | None:
             logger.warning("fx_refresh_failed", status_code=response.status_code)
             return None
         data = response.json()
+        if data.get("result") != "success":
+            logger.warning(
+                "fx_refresh_failed", reason="provider_error", detail=str(data.get("error-type"))
+            )
+            return None
         rate = data.get("rates", {}).get("GBP")
         if rate is None:
             logger.warning("fx_refresh_failed", reason="no_gbp_in_response")
