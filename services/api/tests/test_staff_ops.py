@@ -145,7 +145,7 @@ async def test_ai_costs_leaderboard_for_platform_staff(
     assert big_entry["users_active"] == 3  # sum of daily distinct users
     assert big_entry["generations"] == 12
     assert big_entry["retries"] == 1
-    assert big_entry["tokens_input"] == 400  # 2 days × 200 tokens
+    assert big_entry["tokens_input"] == 400  # 2 days x 200 tokens
     assert big_entry["quotes_sent"] == 4  # 3 + 1 default on the second day
     assert big_entry["cost_gbp"] == pytest.approx(30.0)
     assert big_entry["est_cost_usd"] == pytest.approx(37.0)
