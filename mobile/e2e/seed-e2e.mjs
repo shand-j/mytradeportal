@@ -158,7 +158,7 @@ export async function seedBusinessServices(
  */
 export async function seedLead(
   tenant,
-  { title, category, contact, urgency = "this_week", structuredData = {} }
+  { title, category, contact, urgency = "this_week", structuredData = {}, preferredDates = [] }
 ) {
   if (!tenant.slug) {
     throw new Error("seedLead requires tenant.slug");
@@ -178,7 +178,8 @@ export async function seedLead(
       raw_text: structuredData.notes ?? null,
       structured_data: structuredData,
       urgency,
-      preferred_dates: [],
+      // The intake schema expects the portal shape: a list of `{date}` dicts.
+      preferred_dates: preferredDates.map((d) => ({ date: d })),
       safety_review_required: false,
       marketing_consent: false,
     },

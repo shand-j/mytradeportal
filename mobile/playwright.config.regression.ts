@@ -15,7 +15,7 @@ const WORKERS = Number(process.env.E2E_WORKERS ?? (process.env.CI ? 2 : 3));
 
 export default defineConfig({
   testDir: "./e2e",
-  testMatch: /(regression|jobs|crm|settings|dashboard|messages|notifications|emails|rounding|branding|blocked|ai-metadata|customer-invoices)\.spec\.ts/,
+  testMatch: /(regression|jobs|crm|settings|dashboard|messages|notifications|emails|rounding|branding|blocked|ai-metadata|customer-invoices|multi-day-jobs|acceptance)\.spec\.ts/,
   fullyParallel: true,
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 1 : 0,
