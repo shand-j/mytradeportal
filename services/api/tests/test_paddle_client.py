@@ -48,6 +48,11 @@ class _FakeAsyncClient:
         self.urls.append(url)
         return self.queue.pop(0)
 
+    async def patch(self, url: str, json: Any = None) -> _FakeResponse:
+        self.requests.append(("PATCH", json))
+        self.urls.append(url)
+        return self.queue.pop(0)
+
 
 @pytest.fixture
 def fake_client(monkeypatch: pytest.MonkeyPatch) -> _FakeAsyncClient:
@@ -126,3 +131,35 @@ async def test_subscription_transaction_sends_single_flat_unit(
     assert result == {"transaction_id": "txn_1", "checkout_url": "https://pay.x/1"}
     _, payload = fake_client.requests[0]
     assert payload["items"] == [{"price_id": "pri_x", "quantity": 1}]
+
+
+async def test_update_subscription_sends_prorated_immediately(
+    fake_client: _FakeAsyncClient,
+) -> None:
+    """A plan change PATCHes the subscription with a single-item replace and
+    proration billed immediately (flat pricing: no seats, no quantity beyond
+    the one unit of the tier price)."""
+    fake_client.queue.append(_FakeResponse(200, {"data": {"id": "sub_1", "status": "active"}}))
+
+    result = await paddle_client.update_subscription("sub_1", "pri_pro_month")
+
+    assert result == {"id": "sub_1", "status": "active"}
+    assert fake_client.urls == ["/subscriptions/sub_1"]
+    method, payload = fake_client.requests[0]
+    assert method == "PATCH"
+    # Exact contract with Paddle: full item replacement + immediate proration.
+    assert payload == {
+        "items": [{"price_id": "pri_pro_month", "quantity": 1}],
+        "proration_billing_mode": "prorated_immediately",
+    }
+
+
+async def test_update_subscription_raises_without_api_key(
+    fake_client: _FakeAsyncClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr("app.paddle_client.settings.paddle_api_key", "")
+
+    with pytest.raises(RuntimeError, match="not configured"):
+        await paddle_client.update_subscription("sub_1", "pri_pro_month")
+
+    assert fake_client.requests == []

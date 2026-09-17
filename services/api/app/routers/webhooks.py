@@ -23,6 +23,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.ai_telemetry import record_quote_outcome
 from app.config import settings
 from app.database import engine
+from app.dunning import maybe_start_dunning
 from app.models import Invoice, Payment, ProcessedWebhook, Quote, Subscription
 from app.paddle_client import parse_webhook_event, verify_webhook_signature
 from app.plans import PLAN_CATALOG, resolve_plan_key
@@ -257,6 +258,15 @@ async def paddle_webhook(
 
     if event_type in _SUBSCRIPTION_EVENTS:
         await _upsert_subscription(event_type, event_data)
+        if event_type == "subscription.past_due":
+            # Paddle is now dunning this subscription: open the customer-comms
+            # episode (idempotent — replays and extra failed retries never
+            # double-email).
+            await maybe_start_dunning(event_data.get("id"))
+    elif event_type == "transaction.payment_failed":
+        # Each failed Paddle retry fires this for the subscription's renewal
+        # transaction. The episode guard keeps it to one email per episode.
+        await maybe_start_dunning(event_data.get("subscription_id"))
     elif event_type in {"transaction.completed", "transaction.paid"}:
         custom_data = event_data.get("custom_data") or {}
         invoice_id = custom_data.get("invoice_id")

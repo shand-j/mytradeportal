@@ -9,7 +9,7 @@ subscription read model; state mutations happen exclusively via webhooks
 """
 
 import os
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Annotated, Any
 from uuid import UUID
 
@@ -27,10 +27,17 @@ from app.paddle_client import (
     create_customer_portal_session,
     create_subscription_transaction,
     get_or_create_customer,
+    update_subscription,
 )
 from app.plans import PLAN_CATALOG, get_plan, plan_to_public_dict
 from app.rls import set_tenant_in_session
-from app.schemas import BillingCheckoutCreate, BillingCheckoutRead, SubscriptionRead
+from app.routers.webhooks import _upsert_subscription
+from app.schemas import (
+    BillingCheckoutCreate,
+    BillingCheckoutRead,
+    BillingPlanChangeCreate,
+    SubscriptionRead,
+)
 
 router = APIRouter(prefix="/billing", tags=["Billing"])
 DbDep = Annotated[AsyncSession, Depends(get_db)]
@@ -254,6 +261,78 @@ async def create_checkout(
     )
 
 
+@router.post("/plan-change")
+async def change_plan(
+    data: BillingPlanChangeCreate,
+    tenant: TenantDep,
+    current_user: CurrentUserDep,
+    db: DbDep,
+) -> SubscriptionRead:
+    """Change the tenant's plan mid-cycle with immediate proration.
+
+    One flat subscription per business, so a plan change is a single-item
+    replace on the Paddle subscription (the new tier's price at the chosen
+    interval), billed ``prorated_immediately``: Paddle charges or credits the
+    difference for the rest of the current period and the new plan applies
+    now. The response entity is mirrored through the same
+    :func:`app.routers.webhooks._upsert_subscription` path the webhooks use,
+    so the plan key / tier entitlements re-derive from the new price id and
+    stay consistent with the paywall gate. If the prorated charge fails
+    Paddle keeps the old plan (``prevent_change``) and this surfaces as 502.
+    """
+    if current_user is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authentication required",
+        )
+    tenant_id = tenant.id  # capture before any rollback expires the ORM object
+    await set_tenant_in_session(db, tenant_id)
+    sub = await db.scalar(select(Subscription).where(Subscription.tenant_id == tenant_id))
+    if sub is None or not sub.paddle_subscription_id:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="No active Paddle subscription for this business",
+        )
+    price_id = _price_id_for_plan(data.plan_key, data.interval)
+
+    try:
+        updated = await update_subscription(sub.paddle_subscription_id, price_id)
+    except Exception as exc:
+        logger.error(
+            "billing_plan_change_failed",
+            tenant_id=str(tenant.id),
+            plan_key=data.plan_key,
+            paddle_subscription_id=sub.paddle_subscription_id,
+            error_type=type(exc).__name__,
+            error=str(exc)[:300],
+        )
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Payment provider is unavailable. Try again shortly.",
+        ) from exc
+
+    # Mirror through the webhook upsert so plan/status/period re-derive from
+    # the price id exactly as they do for a subscription.updated event.
+    await _upsert_subscription("subscription.updated", updated)
+
+    # The upsert commits on its own engine session; this request session's
+    # snapshot predates it. Roll back (nothing of ours to keep) and re-read.
+    await db.rollback()
+    sub = await db.scalar(select(Subscription).where(Subscription.tenant_id == tenant_id))
+    if sub is None:  # pragma: no cover - defensive; the upsert just wrote it
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Subscription failed to sync. Try again shortly.",
+        )
+    logger.info(
+        "billing_plan_change_applied",
+        tenant_id=str(tenant_id),
+        plan_key=sub.plan_key,
+        paddle_subscription_id=sub.paddle_subscription_id,
+    )
+    return SubscriptionRead.model_validate(sub)
+
+
 @router.get("/subscription")
 async def get_subscription(
     tenant: TenantDep,
@@ -311,18 +390,33 @@ async def create_portal_session(
 # Re-exported for tests / other modules that want the same "still-good" gate.
 ACTIVE_STATUSES = frozenset({"trialing", "active", "past_due"})
 
+# Past-due grace: while a failed payment is in dunning (Paddle retrying in
+# the background, our dunning emails going out) the tenant keeps app access.
+# The grace is anchored on the failed period's end (the date the payment came
+# due) and after it expires the C22 paywall re-engages (402 until resolved).
+PAST_DUE_GRACE_DAYS = 7
+
 
 def is_subscription_active(subscription: Subscription | None) -> bool:
     """Beta gate: any status where we still let the tenant use the app.
 
-    Excludes ``paused`` and ``canceled``. Past-due gets grace so we don't kick
-    tenants during Paddle's dunning window. Not currently enforced anywhere
-    because beta = track only.
+    Excludes ``paused`` and ``canceled``. ``past_due`` passes only within
+    :data:`PAST_DUE_GRACE_DAYS` of the failed period's end date — grace while
+    Paddle/our dunning chases the payment, then the paywall re-engages. A
+    past-due row with no known period end keeps the permissive beta default
+    (access allowed) rather than kicking a tenant on incomplete data. Not
+    currently enforced anywhere because beta = track only.
     """
     if subscription is None:
         return False
     if subscription.status not in ACTIVE_STATUSES:
         return False
+    if subscription.status == "past_due":
+        if subscription.current_period_end is None:
+            return True
+        return datetime.utcnow() <= subscription.current_period_end + timedelta(
+            days=PAST_DUE_GRACE_DAYS
+        )
     if subscription.trial_ends_at is not None and subscription.status == "trialing":
         return subscription.trial_ends_at > datetime.utcnow()
     return True

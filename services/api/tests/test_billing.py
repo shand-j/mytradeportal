@@ -495,3 +495,224 @@ async def test_portal_session_bubbles_paddle_failure_as_502(
     with patch("app.routers.billing.create_customer_portal_session", new=fake):
         response = await admin_client.post("/billing/portal-session")
     assert response.status_code == 502
+
+
+# --- Mid-cycle plan change with proration (#82) -------------------------------
+
+
+def _paddle_subscription_entity(
+    *,
+    subscription_id: str,
+    tenant_id: str,
+    price_id: str,
+    product_id: str = "pro_test",
+    status: str = "active",
+) -> dict[str, Any]:
+    """Subscription entity in the shape Paddle's update-subscription API returns."""
+    return {
+        "id": subscription_id,
+        "status": status,
+        "customer_id": "ctm_test_1",
+        "custom_data": {"tenant_id": tenant_id},
+        "items": [{"price": {"id": price_id, "product_id": product_id}, "quantity": 1}],
+        "current_billing_period": {
+            "starts_at": "2026-09-01T00:00:00Z",
+            "ends_at": "2026-10-01T00:00:00Z",
+        },
+    }
+
+
+async def test_plan_change_prorates_and_mirrors_new_plan(
+    admin_client: AsyncClient,
+    db: AsyncSession,
+    clean_price_env: pytest.MonkeyPatch,
+) -> None:
+    """POST /billing/plan-change calls Paddle with the new tier price and
+    mirrors the response through the webhook upsert path, so the tenant's
+    plan/tier re-derive immediately."""
+    clean_price_env.setenv("PADDLE_PRICE_ID_TEAM_MONTH", "pri_new_team_m")
+
+    from uuid import UUID
+
+    tenant_id = UUID(admin_client.headers["X-Tenant-ID"])
+    db.add(
+        Subscription(
+            tenant_id=tenant_id,
+            plan_key="pro",
+            status="active",
+            paddle_subscription_id="sub_plan_1",
+            paddle_customer_id="ctm_test_1",
+        )
+    )
+    await db.commit()
+
+    fake = AsyncMock(
+        return_value=_paddle_subscription_entity(
+            subscription_id="sub_plan_1",
+            tenant_id=str(tenant_id),
+            price_id="pri_new_team_m",
+            product_id="pro_team",
+        )
+    )
+
+    # The real mirror upsert runs on its own engine session, which cannot see
+    # this test's uncommitted rows; apply the same mirror inline. The real
+    # upsert against this exact Paddle response shape is covered in
+    # test_webhooks.py::test_plan_change_response_shape_upserts_plan.
+    async def fake_upsert(event_type: str, event_data: dict[str, Any]) -> None:
+        assert event_type == "subscription.updated"
+        row = await db.scalar(select(Subscription).where(Subscription.tenant_id == tenant_id))
+        assert row is not None
+        row.paddle_price_id = event_data["items"][0]["price"]["id"]
+        row.plan_key = "team"
+        await db.commit()
+
+    with (
+        patch("app.routers.billing.update_subscription", new=fake),
+        patch("app.routers.billing._upsert_subscription", new=fake_upsert),
+    ):
+        response = await admin_client.post("/billing/plan-change", json={"plan_key": "team"})
+
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["plan_key"] == "team"  # re-derived from the mirrored price id
+    assert body["status"] == "active"
+    # The Paddle call carries the resolved price for the requested tier.
+    fake.assert_awaited_once_with("sub_plan_1", "pri_new_team_m")
+
+    # The local mirror agrees (read model used by the paywall / entitlements).
+    sub = await db.scalar(select(Subscription).where(Subscription.tenant_id == tenant_id))
+    assert sub is not None
+    assert sub.plan_key == "team"
+    assert sub.paddle_price_id == "pri_new_team_m"
+
+
+async def test_plan_change_404_without_subscription(admin_client: AsyncClient) -> None:
+    response = await admin_client.post("/billing/plan-change", json={"plan_key": "pro"})
+    assert response.status_code == 404
+
+
+async def test_plan_change_404_without_paddle_subscription(
+    admin_client: AsyncClient, db: AsyncSession
+) -> None:
+    """A trial/incomplete row that never checked out has nothing to update."""
+    from uuid import UUID
+
+    tenant_id = UUID(admin_client.headers["X-Tenant-ID"])
+    db.add(Subscription(tenant_id=tenant_id, plan_key="pro", status="trialing"))
+    await db.commit()
+
+    response = await admin_client.post("/billing/plan-change", json={"plan_key": "team"})
+    assert response.status_code == 404
+
+
+async def test_plan_change_bubbles_paddle_failure_as_502(
+    admin_client: AsyncClient,
+    db: AsyncSession,
+    clean_price_env: pytest.MonkeyPatch,
+) -> None:
+    """A declined proration charge (Paddle prevent_change) surfaces as 502 and
+    the stored plan is untouched."""
+    clean_price_env.setenv("PADDLE_PRICE_ID_TEAM_MONTH", "pri_new_team_m")
+
+    from uuid import UUID
+
+    tenant_id = UUID(admin_client.headers["X-Tenant-ID"])
+    db.add(
+        Subscription(
+            tenant_id=tenant_id,
+            plan_key="pro",
+            status="active",
+            paddle_subscription_id="sub_plan_2",
+        )
+    )
+    await db.commit()
+
+    fake = AsyncMock(side_effect=RuntimeError("paddle 402 payment_failed"))
+    with patch("app.routers.billing.update_subscription", new=fake):
+        response = await admin_client.post("/billing/plan-change", json={"plan_key": "team"})
+
+    assert response.status_code == 502
+    sub = await db.scalar(select(Subscription).where(Subscription.tenant_id == tenant_id))
+    assert sub is not None
+    assert sub.plan_key == "pro"
+
+
+async def test_plan_change_rejects_unknown_plan(
+    admin_client: AsyncClient, db: AsyncSession
+) -> None:
+    from uuid import UUID
+
+    tenant_id = UUID(admin_client.headers["X-Tenant-ID"])
+    db.add(
+        Subscription(
+            tenant_id=tenant_id,
+            plan_key="pro",
+            status="active",
+            paddle_subscription_id="sub_plan_3",
+        )
+    )
+    await db.commit()
+
+    response = await admin_client.post("/billing/plan-change", json={"plan_key": "enterprise"})
+    assert response.status_code == 400
+
+
+# --- Past-due grace: bounded window before the C22 paywall re-engages (#84) ---
+
+
+async def test_past_due_within_grace_passes_paywall(
+    admin_client: AsyncClient, db: AsyncSession
+) -> None:
+    """A recent past-due (inside the grace window) still gets app access."""
+    from datetime import datetime, timedelta
+    from uuid import UUID
+
+    tenant_id = UUID(admin_client.headers["X-Tenant-ID"])
+    db.add(
+        Subscription(
+            tenant_id=tenant_id,
+            plan_key="pro",
+            status="past_due",
+            current_period_end=datetime.utcnow() - timedelta(days=5),
+        )
+    )
+    await db.commit()
+
+    assert (await admin_client.get("/quotes")).status_code == 200
+
+
+async def test_past_due_past_grace_hits_paywall(
+    admin_client: AsyncClient, db: AsyncSession
+) -> None:
+    """Past the grace window the C22 paywall re-engages (402)."""
+    from datetime import datetime, timedelta
+    from uuid import UUID
+
+    tenant_id = UUID(admin_client.headers["X-Tenant-ID"])
+    db.add(
+        Subscription(
+            tenant_id=tenant_id,
+            plan_key="pro",
+            status="past_due",
+            current_period_end=datetime.utcnow() - timedelta(days=10),
+        )
+    )
+    await db.commit()
+
+    response = await admin_client.get("/quotes")
+    assert response.status_code == 402
+    assert response.json()["detail"] == "subscription_required"
+
+
+async def test_past_due_without_period_end_keeps_beta_access(
+    admin_client: AsyncClient, db: AsyncSession
+) -> None:
+    """No known period end → permissive default (C22 past_due passes)."""
+    from uuid import UUID
+
+    tenant_id = UUID(admin_client.headers["X-Tenant-ID"])
+    db.add(Subscription(tenant_id=tenant_id, plan_key="pro", status="past_due"))
+    await db.commit()
+
+    assert (await admin_client.get("/quotes")).status_code == 200

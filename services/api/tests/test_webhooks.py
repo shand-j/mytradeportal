@@ -880,3 +880,37 @@ async def test_tampered_payload_rejected_despite_valid_signature_format(
         )
 
     assert response.status_code == 401
+
+
+async def test_plan_change_response_shape_upserts_plan(
+    clean_price_env: pytest.MonkeyPatch,
+) -> None:
+    """The entity shape returned by Paddle's update-subscription API (what
+    POST /billing/plan-change mirrors) flows through _upsert_subscription and
+    re-derives the plan from the new price id."""
+    from app.routers.webhooks import _upsert_subscription
+
+    clean_price_env.setenv("PADDLE_PRICE_ID_TEAM_MONTH", "pri_pc_team_m")
+    tenant_id = await _make_tenant_with_subscription(plan_key="pro", status="active")
+
+    await _upsert_subscription(
+        "subscription.updated",
+        {
+            "id": f"sub_{uuid4().hex[:24]}",
+            "status": "active",
+            "customer_id": "ctm_pc_1",
+            "custom_data": {"tenant_id": tenant_id},
+            "items": [{"price": {"id": "pri_pc_team_m", "product_id": "pro_pc_team"}}],
+            "current_billing_period": {
+                "starts_at": "2026-09-01T00:00:00.000000Z",
+                "ends_at": "2026-10-01T00:00:00.000000Z",
+            },
+        },
+    )
+
+    row = await _fetch_subscription_by_tenant(tenant_id)
+    assert row["status"] == "active"
+    assert row["plan_key"] == "team"
+    assert row["paddle_price_id"] == "pri_pc_team_m"
+    assert row["paddle_customer_id"] == "ctm_pc_1"
+    assert row["current_period_end"].isoformat().startswith("2026-10-01")

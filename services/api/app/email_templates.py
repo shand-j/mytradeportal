@@ -685,3 +685,85 @@ def chat_message(
 </html>
 """
     return subject, html, text
+
+
+def payment_failed(
+    *,
+    business_name: str,
+    portal_url: str | None,
+    attempt: int,
+    max_attempts: int,
+) -> tuple[str, str, str]:
+    """Dunning email to the tenant owner when their subscription payment fails.
+
+    (subject, html, text). ``portal_url`` is a short-lived Paddle customer
+    portal session URL (update payment method / download invoices) — the
+    primary CTA. ``attempt``/``max_attempts`` render the "reminder N of M"
+    framing; attempt 1 is the notice, later attempts are follow-ups on the
+    dunning cadence. The email goes to the account email that pays for the
+    business's subscription, not to one of their customers.
+    """
+    subject = "Action needed: your My Trade Portal payment failed"
+    if portal_url:
+        action_text = (
+            "Update your payment method here (takes a minute):\n"
+            f"{portal_url}\n\n"
+            "The link opens your secure Paddle billing page.\n\n"
+        )
+        action_html = f"""\
+    <p style="margin:24px 0;">
+      <a href="{portal_url}" style="background:#0F1E26;color:#FFC107;padding:12px 24px;text-decoration:none;font-weight:700;">Update payment method</a>
+    </p>
+    <p style="color:#64748b;font-size:13px;">The link opens your secure Paddle billing page. If the button doesn't work, copy and paste it:<br><a href="{portal_url}" style="color:#4F46E5;">{portal_url}</a></p>
+"""
+    else:
+        action_text = (
+            "Open the app → Settings → Manage subscription to update your payment method.\n\n"
+        )
+        action_html = (
+            "    <p>Open the app → Settings → Manage subscription to update your method.</p>\n"
+        )
+    if attempt == 1:
+        lead_text = (
+            f"We tried to collect payment for {business_name}'s My Trade Portal "
+            "subscription and it failed — most often an expired or replaced card."
+        )
+        lead_html = (
+            f"<p>We tried to collect payment for <strong>{business_name}</strong>'s "
+            "My Trade Portal subscription and it failed — most often an expired or "
+            "replaced card.</p>"
+        )
+    else:
+        lead_text = (
+            f"Reminder {attempt} of {max_attempts}: payment for {business_name}'s "
+            "My Trade Portal subscription is still failing."
+        )
+        lead_html = (
+            f"<p><strong>Reminder {attempt} of {max_attempts}:</strong> payment for "
+            f"<strong>{business_name}</strong>'s My Trade Portal subscription is "
+            "still failing.</p>"
+        )
+    text = (
+        f"Hello,\n\n"
+        f"{lead_text}\n\n"
+        f"{action_text}"
+        "Your account stays active while we retry the payment, but access is "
+        "paused if it keeps failing — updating your payment method now is the "
+        "quickest fix.\n\n"
+        "Once the payment succeeds this notice stops automatically.\n\n"
+        "— My Trade Portal"
+    )
+    html = f"""\
+<!doctype html>
+<html>
+  <body style="font-family:-apple-system,Segoe UI,Roboto,sans-serif;color:#0f172a;max-width:560px;margin:0 auto;padding:24px;">
+    <h1 style="font-size:22px;margin:0 0 12px;">Your payment failed</h1>
+    {lead_html}
+{action_html}\
+    <p>Your account stays active while we retry the payment, but access is paused if it keeps failing — updating your payment method now is the quickest fix.</p>
+    <p style="color:#64748b;font-size:13px;">Once the payment succeeds this notice stops automatically.</p>
+    <p style="color:#64748b;font-size:13px;margin-top:32px;">— My Trade Portal</p>
+  </body>
+</html>
+"""
+    return subject, html, text

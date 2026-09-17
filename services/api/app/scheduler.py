@@ -9,6 +9,9 @@ Runs as an asyncio task started from the FastAPI lifespan — no extra infra
   configurable per tenant via settings keys (see below).
 * **Invoice reminders** — for unpaid invoices in ``sent`` status. Recur
   indefinitely until the invoice is paid/cancelled. Cadence is configurable.
+* **Subscription dunning follow-ups** — for Paddle subscriptions in
+  ``past_due``: a reminder email every few days until payment recovers or
+  the subscription is cancelled (see :mod:`app.dunning`).
 
 Dispatch state lives in the ``reminders`` table (:class:`app.models.Reminder`):
 one row per sent email. The row count per entity is the "how many have gone
@@ -53,6 +56,7 @@ from app.config import (
     ROLLUP_TICK_SECONDS,
 )
 from app.database import AsyncSessionLocal
+from app.dunning import run_dunning_followups
 from app.email import resolve_customer_magic_link, send_customer_email
 from app.email_templates import invoice_reminder as invoice_reminder_template
 from app.email_templates import quote_reminder as quote_reminder_template
@@ -381,16 +385,23 @@ async def _process_tenant(db: AsyncSession, tenant: Tenant, now: datetime) -> di
     ).scalar()
     if not locked:
         logger.info("reminder_tenant_locked_elsewhere", tenant_id=str(tenant.id))
-        return {"quote_reminders": 0, "invoice_reminders": 0, "skipped_locked": 1}
+        return {
+            "quote_reminders": 0,
+            "invoice_reminders": 0,
+            "dunning_reminders": 0,
+            "skipped_locked": 1,
+        }
 
     await set_tenant_in_session(db, tenant.id)
     config = _ReminderConfig(tenant.settings)
     quote_sent = await _process_quote_reminders(db, tenant, config, now)
     invoice_sent = await _process_invoice_reminders(db, tenant, config, now)
+    dunning_sent = await run_dunning_followups(db, tenant, now)
     await db.commit()
     return {
         "quote_reminders": quote_sent,
         "invoice_reminders": invoice_sent,
+        "dunning_reminders": dunning_sent,
         "skipped_locked": 0,
     }
 
@@ -400,6 +411,7 @@ async def _run_tick(db: AsyncSession, now: datetime) -> dict[str, int]:
         "tenants": 0,
         "quote_reminders": 0,
         "invoice_reminders": 0,
+        "dunning_reminders": 0,
         "skipped_locked": 0,
         "errors": 0,
     }
@@ -422,6 +434,7 @@ async def _run_tick(db: AsyncSession, now: datetime) -> dict[str, int]:
             continue
         summary["quote_reminders"] += result["quote_reminders"]
         summary["invoice_reminders"] += result["invoice_reminders"]
+        summary["dunning_reminders"] += result["dunning_reminders"]
         summary["skipped_locked"] += result["skipped_locked"]
     return summary
 
