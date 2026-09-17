@@ -1,5 +1,7 @@
 """Tests for the ops alerting module (Slack + email dispatch guards)."""
 
+from typing import Any
+
 import httpx
 import pytest
 from app import alerting
@@ -71,7 +73,7 @@ async def test_fetch_usd_gbp_rate_success(monkeypatch: pytest.MonkeyPatch) -> No
     class _Response:
         status_code = 200
 
-        def json(self) -> dict:
+        def json(self) -> dict[str, Any]:
             return {"result": "success", "rates": {"GBP": 0.7449}}
 
     class _Client:
@@ -87,7 +89,7 @@ async def test_fetch_usd_gbp_rate_success(monkeypatch: pytest.MonkeyPatch) -> No
         async def get(self, url: str) -> _Response:
             return _Response()
 
-    monkeypatch.setattr(alerting.httpx, "AsyncClient", _Client)
+    monkeypatch.setattr(httpx, "AsyncClient", _Client)
     assert await alerting.fetch_usd_gbp_rate() == pytest.approx(0.7449)
 
 
@@ -98,7 +100,7 @@ async def test_fetch_usd_gbp_rate_provider_error_returns_none(
     class _Response:
         status_code = 200
 
-        def json(self) -> dict:
+        def json(self) -> dict[str, Any]:
             return {"result": "error", "error-type": "unsupported-code"}
 
     class _Client:
@@ -114,5 +116,5 @@ async def test_fetch_usd_gbp_rate_provider_error_returns_none(
         async def get(self, url: str) -> _Response:
             return _Response()
 
-    monkeypatch.setattr(alerting.httpx, "AsyncClient", _Client)
+    monkeypatch.setattr(httpx, "AsyncClient", _Client)
     assert await alerting.fetch_usd_gbp_rate() is None
