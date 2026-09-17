@@ -27,6 +27,8 @@ export default function Footer() {
             <a href="/blog" className="underline-offset-4 transition-colors duration-[length:var(--dur-micro)] hover:text-[var(--paper-on-dark)] hover:underline">Blog</a>
             <span className="mx-[var(--space-sm)] text-[var(--rule-on-dark)]" aria-hidden>·</span>
             <a href={TESTFLIGHT_URL} target="_blank" rel="noopener noreferrer" className="underline-offset-4 transition-colors duration-[length:var(--dur-micro)] hover:text-[var(--paper-on-dark)] hover:underline">Join the beta</a>
+            <span className="mx-[var(--space-sm)] text-[var(--rule-on-dark)]" aria-hidden>·</span>
+            <a href="/fair-use" className="underline-offset-4 transition-colors duration-[length:var(--dur-micro)] hover:text-[var(--paper-on-dark)] hover:underline">Fair use</a>
           </p>
         </div>
         <div className="mt-[var(--space-xl)] flex flex-wrap items-baseline justify-between gap-[var(--space-sm)] border-t border-[var(--rule-on-dark)] pt-[var(--space-lg)] text-[12px] text-[var(--paper-on-dark-muted)]">
