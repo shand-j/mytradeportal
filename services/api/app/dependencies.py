@@ -240,6 +240,35 @@ RequireAdminDep = Annotated[User, Depends(RoleChecker({"admin"}))]
 RequireManagerDep = Annotated[User, Depends(RoleChecker({"admin", "manager"}))]
 
 
+async def get_current_platform_staff(user: ActiveUserDep) -> User:
+    """Require an authenticated platform-staff (founder/ops) caller.
+
+    Every other staff gate in the API is tenant-scoped (``RoleChecker`` on
+    the caller's tenant role), but ops endpoints such as the per-org AI cost
+    leaderboard are cross-tenant by definition and a tenant role can never
+    authorise them. The back-office (Django admin) gates on Django
+    superusers, which the API cannot reuse, so platform staff are identified
+    by the ``PLATFORM_STAFF_EMAILS`` env allowlist instead: the caller must
+    be an authenticated active user AND their email must be listed. An empty
+    allowlist rejects everyone. Rejections mirror ``RoleChecker`` (403
+    "Insufficient permissions") so the staff-gate contract is uniform.
+    """
+    allowed = {
+        email.strip().lower()
+        for email in app_config.PLATFORM_STAFF_EMAILS.split(",")
+        if email.strip()
+    }
+    if user.email.lower() not in allowed:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Insufficient permissions",
+        )
+    return user
+
+
+PlatformStaffDep = Annotated[User, Depends(get_current_platform_staff)]
+
+
 async def _tenant_plan(tenant: Tenant, db: AsyncSession) -> Plan:
     """Resolve the tenant's subscription plan; no subscription → sole_trader."""
     sub = await db.scalar(select(Subscription).where(Subscription.tenant_id == tenant.id))
