@@ -3,12 +3,16 @@
 from collections.abc import AsyncGenerator
 from datetime import datetime, timedelta
 from decimal import Decimal
+from types import SimpleNamespace
 from typing import Any
+from unittest.mock import AsyncMock
 from uuid import UUID, uuid4
 
+import httpx
 import pytest
 import pytest_asyncio
-from app.models import Contact, Invoice, Notification, Quote, Reminder, Tenant
+from app.config import settings
+from app.models import AiCallEvent, Contact, Invoice, Notification, Quote, Reminder, Tenant
 from app.rls import set_tenant_in_session
 from app.scheduler import run_reminder_tick
 from httpx import AsyncClient
@@ -345,3 +349,309 @@ async def test_tick_isolates_failing_tenant(
     assert summary["tenants"] == 2
     assert summary["quote_reminders"] == 2
     assert summary["errors"] == 0
+
+
+# ---------------------------------------------------------------------------
+# F2: per-customer reminder (chase) overrides + AI-drafted reminder copy
+# ---------------------------------------------------------------------------
+
+
+async def test_contact_reminder_preferences_patch_merge_and_validation(
+    admin_client: AsyncClient,
+) -> None:
+    """Known keys merge key-by-key; unknown keys and bad values are rejected."""
+    response = await admin_client.post(
+        "/contacts", json={"name": "Amy Homeowner", "email": "amy@example.com"}
+    )
+    assert response.status_code == 201
+    contact_id = response.json()["id"]
+    assert response.json()["reminder_preferences"] is None
+
+    response = await admin_client.patch(
+        f"/contacts/{contact_id}",
+        json={"reminder_preferences": {"quote_chase_enabled": False, "max_reminders": 2}},
+    )
+    assert response.status_code == 200
+    assert response.json()["reminder_preferences"] == {
+        "quote_chase_enabled": False,
+        "max_reminders": 2,
+    }
+
+    # Unknown keys are rejected so typos cannot silently create dead prefs.
+    response = await admin_client.patch(
+        f"/contacts/{contact_id}",
+        json={"reminder_preferences": {"email_me_daily": True}},
+    )
+    assert response.status_code == 400
+    assert "unknown_reminder_preference" in response.json()["detail"]
+
+    # Non-integer max_reminders is rejected (a string fails Pydantic
+    # validation at the schema layer; a bool reaches the router and is
+    # rejected there).
+    response = await admin_client.patch(
+        f"/contacts/{contact_id}",
+        json={"reminder_preferences": {"max_reminders": "lots"}},
+    )
+    assert response.status_code == 422
+    response = await admin_client.patch(
+        f"/contacts/{contact_id}",
+        json={"reminder_preferences": {"max_reminders": True}},
+    )
+    assert response.status_code == 400
+    assert "invalid_reminder_preference" in response.json()["detail"]
+
+    # Clearing every key collapses back to NULL (tenant defaults).
+    response = await admin_client.patch(
+        f"/contacts/{contact_id}",
+        json={"reminder_preferences": {"quote_chase_enabled": None, "max_reminders": None}},
+    )
+    assert response.status_code == 200
+    assert response.json()["reminder_preferences"] is None
+
+
+async def test_quote_reminder_skipped_when_contact_chase_disabled(
+    admin_client: AsyncClient,
+    db: AsyncSession,
+    email_recorder: _EmailRecorder,
+) -> None:
+    tenant_id = _tenant_id(admin_client)
+    contact = await _make_contact(db, tenant_id)
+    contact.reminder_preferences = {"quote_chase_enabled": False}
+    db.add(_make_quote(tenant_id, contact.id))
+    await db.commit()
+
+    summary = await run_reminder_tick(db)
+    assert summary["quote_reminders"] == 0
+    assert email_recorder.calls == []
+    assert (await db.execute(select(Reminder))).scalars().all() == []
+
+
+async def test_invoice_reminder_skipped_when_contact_chase_disabled(
+    admin_client: AsyncClient,
+    db: AsyncSession,
+    email_recorder: _EmailRecorder,
+) -> None:
+    tenant_id = _tenant_id(admin_client)
+    contact = await _make_contact(db, tenant_id)
+    contact.reminder_preferences = {"invoice_chase_enabled": False}
+    db.add(_make_invoice(tenant_id, contact.id))
+    await db.commit()
+
+    summary = await run_reminder_tick(db)
+    assert summary["invoice_reminders"] == 0
+    assert email_recorder.calls == []
+
+
+async def test_quote_reminder_capped_by_contact_max_reminders(
+    admin_client: AsyncClient,
+    db: AsyncSession,
+    email_recorder: _EmailRecorder,
+) -> None:
+    """Contact max_reminders caps the tenant cadence downward only."""
+    tenant_id = _tenant_id(admin_client)
+    tenant = await db.get(Tenant, tenant_id)
+    assert tenant is not None
+    tenant.settings = {
+        **tenant.settings,
+        "quote_reminder_max": 3,
+        "quote_reminder_interval_days": 1,
+    }
+    contact = await _make_contact(db, tenant_id)
+    contact.reminder_preferences = {"max_reminders": 1}
+    db.add(_make_quote(tenant_id, contact.id, sent_days_ago=10))
+    await db.commit()
+
+    assert (await run_reminder_tick(db))["quote_reminders"] == 1
+
+    # Backdate the reminder so cadence would allow another — the contact cap
+    # must still stop the sequence at one.
+    reminder = (
+        await db.execute(select(Reminder).where(Reminder.entity_type == "quote"))
+    ).scalar_one()
+    reminder.created_at = datetime.utcnow() - timedelta(days=2)
+    await db.commit()
+
+    assert (await run_reminder_tick(db))["quote_reminders"] == 0
+    assert len(email_recorder.calls) == 1
+
+
+def _fake_draft_response(content: str) -> SimpleNamespace:
+    return SimpleNamespace(
+        choices=[
+            SimpleNamespace(
+                message=SimpleNamespace(content=content),
+                finish_reason="stop",
+            )
+        ],
+        usage=SimpleNamespace(
+            prompt_tokens=200,
+            completion_tokens=60,
+            prompt_tokens_details=None,
+        ),
+    )
+
+
+async def _reminder_draft_events(db: AsyncSession, tenant_id: UUID) -> list[AiCallEvent]:
+    rows = await db.execute(
+        select(AiCallEvent).where(
+            AiCallEvent.feature == "reminder_draft",
+            AiCallEvent.tenant_id == tenant_id,
+        )
+    )
+    return list(rows.scalars().all())
+
+
+async def test_quote_reminder_uses_ai_draft_and_logs_event(
+    admin_client: AsyncClient,
+    db: AsyncSession,
+    email_recorder: _EmailRecorder,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Fake LLM success → drafted copy rendered, cached on the row, event logged."""
+    monkeypatch.setattr(settings, "llm_api_key", "sk-test-llm")
+    draft = "Hi Amy, just a gentle nudge about your consumer unit quote — it only takes a moment to accept."
+    fake_llm = AsyncMock(return_value=_fake_draft_response(draft))
+    monkeypatch.setattr("app.reminder_draft.acompletion", fake_llm)
+
+    tenant_id = _tenant_id(admin_client)
+    contact = await _make_contact(db, tenant_id)
+    quote = _make_quote(tenant_id, contact.id)
+    db.add(quote)
+    await db.commit()
+
+    summary = await run_reminder_tick(db)
+    assert summary["quote_reminders"] == 1
+    assert fake_llm.await_count == 1
+
+    call = email_recorder.calls[0]
+    assert draft in call["html_body"]
+    assert draft in call["text_body"]
+
+    reminder = (
+        (await db.execute(select(Reminder).where(Reminder.entity_id == quote.id))).scalars().one()
+    )
+    assert reminder.payload["ai_draft"] == draft
+
+    events = await _reminder_draft_events(db, tenant_id)
+    assert len(events) == 1
+    assert events[0].status == "success"
+    assert events[0].actor_type == "system"
+    assert events[0].gen_ai_usage_input_tokens == 200
+
+
+async def test_reminder_reuses_cached_draft_without_recalling_llm(
+    admin_client: AsyncClient,
+    db: AsyncSession,
+    email_recorder: _EmailRecorder,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Later episodes of a chase reuse the cached draft — the LLM is paid once."""
+    monkeypatch.setattr(settings, "llm_api_key", "sk-test-llm")
+    draft = "Hi Amy, your quote is still waiting for a quick look when you have a moment."
+    fake_llm = AsyncMock(return_value=_fake_draft_response(draft))
+    monkeypatch.setattr("app.reminder_draft.acompletion", fake_llm)
+
+    tenant_id = _tenant_id(admin_client)
+    tenant = await db.get(Tenant, tenant_id)
+    assert tenant is not None
+    tenant.settings = {**tenant.settings, "quote_reminder_interval_days": 1}
+    contact = await _make_contact(db, tenant_id)
+    db.add(_make_quote(tenant_id, contact.id))
+    await db.commit()
+
+    assert (await run_reminder_tick(db))["quote_reminders"] == 1
+    reminder = (
+        await db.execute(select(Reminder).where(Reminder.entity_type == "quote"))
+    ).scalar_one()
+    reminder.created_at = datetime.utcnow() - timedelta(days=2)
+    await db.commit()
+
+    # Second episode: cadence due, cache hit — no second LLM call.
+    assert (await run_reminder_tick(db))["quote_reminders"] == 1
+    assert fake_llm.await_count == 1
+    assert len(email_recorder.calls) == 2
+    assert draft in email_recorder.calls[1]["html_body"]
+    reminders = (await db.execute(select(Reminder).order_by(Reminder.sequence))).scalars().all()
+    assert [r.payload["ai_draft"] for r in reminders] == [draft, draft]
+    # Still only one ai_call_events row for the whole chase.
+    assert len(await _reminder_draft_events(db, tenant_id)) == 1
+
+
+async def test_quote_reminder_falls_back_to_static_template_when_llm_fails(
+    admin_client: AsyncClient,
+    db: AsyncSession,
+    email_recorder: _EmailRecorder,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Fake LLM timeout/error → static template still sent, failure recorded."""
+    monkeypatch.setattr(settings, "llm_api_key", "sk-test-llm")
+    fake_llm = AsyncMock(side_effect=httpx.ConnectError("connection refused"))
+    monkeypatch.setattr("app.reminder_draft.acompletion", fake_llm)
+
+    tenant_id = _tenant_id(admin_client)
+    contact = await _make_contact(db, tenant_id)
+    quote = _make_quote(tenant_id, contact.id)
+    db.add(quote)
+    await db.commit()
+
+    summary = await run_reminder_tick(db)  # must not raise
+    assert summary["quote_reminders"] == 1
+
+    call = email_recorder.calls[0]
+    assert "Just a friendly reminder" in call["text_body"]
+    reminder = (
+        (await db.execute(select(Reminder).where(Reminder.entity_id == quote.id))).scalars().one()
+    )
+    assert "ai_draft" not in reminder.payload
+
+    events = await _reminder_draft_events(db, tenant_id)
+    assert len(events) == 1
+    assert events[0].status == "error"
+
+
+async def test_quote_reminder_sanity_gate_rejects_garbage_draft(
+    admin_client: AsyncClient,
+    db: AsyncSession,
+    email_recorder: _EmailRecorder,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A markdown-broken/oversized draft falls back to the static template."""
+    monkeypatch.setattr(settings, "llm_api_key", "sk-test-llm")
+    garbage = "```json\n{#broken markdown}\n```"
+    fake_llm = AsyncMock(return_value=_fake_draft_response(garbage))
+    monkeypatch.setattr("app.reminder_draft.acompletion", fake_llm)
+
+    tenant_id = _tenant_id(admin_client)
+    contact = await _make_contact(db, tenant_id)
+    db.add(_make_quote(tenant_id, contact.id))
+    await db.commit()
+
+    summary = await run_reminder_tick(db)
+    assert summary["quote_reminders"] == 1
+    call = email_recorder.calls[0]
+    assert "```json" not in call["html_body"]
+    assert "Just a friendly reminder" in call["text_body"]
+
+
+async def test_quote_reminder_skips_llm_when_no_api_key(
+    admin_client: AsyncClient,
+    db: AsyncSession,
+    email_recorder: _EmailRecorder,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """No API key → static template, and no ai_call_events row is attempted."""
+    monkeypatch.setattr(settings, "llm_api_key", "")
+    monkeypatch.setattr(settings, "openai_api_key", "")
+    fake_llm = AsyncMock()
+    monkeypatch.setattr("app.reminder_draft.acompletion", fake_llm)
+
+    tenant_id = _tenant_id(admin_client)
+    contact = await _make_contact(db, tenant_id)
+    db.add(_make_quote(tenant_id, contact.id))
+    await db.commit()
+
+    summary = await run_reminder_tick(db)
+    assert summary["quote_reminders"] == 1
+    assert "Just a friendly reminder" in email_recorder.calls[0]["text_body"]
+    fake_llm.assert_not_awaited()
+    assert await _reminder_draft_events(db, tenant_id) == []

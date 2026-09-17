@@ -230,6 +230,10 @@ class Contact(TenantScopedBase):
     # keep tracking reality. A blocked contact's customer account cannot log
     # in, request quotes or message the business.
     badge_overrides: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict, nullable=False)
+    # Per-customer reminder (chase) overrides (F2). NULL = tenant defaults.
+    # Supported keys: quote_chase_enabled / invoice_chase_enabled (bool) and
+    # max_reminders (int, caps the tenant cadence downward only).
+    reminder_preferences: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
     is_blocked: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     blocked_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     blocked_reason: Mapped[str | None] = mapped_column(Text, nullable=True)

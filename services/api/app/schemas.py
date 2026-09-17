@@ -166,6 +166,11 @@ class ContactUpdate(BaseModel):
     # {badge: false} forces it off, {badge: null} clears the override so the
     # auto rule decides again. Keys must be known badge slugs.
     badge_overrides: dict[str, bool | None] | None = None
+    # Per-customer reminder (chase) overrides (F2), merged key-by-key: a bool
+    # enables/disables chasing for that document type, an int caps the number
+    # of reminders (downward of the tenant cadence only), null clears the
+    # override back to the tenant default. Keys must be known preference keys.
+    reminder_preferences: dict[str, bool | int | None] | None = None
 
 
 class ContactBlockRequest(BaseModel):
@@ -202,6 +207,8 @@ class ContactRead(BaseModel):
     badges: list[str] = Field(default_factory=list)
     auto_badges: list[str] = Field(default_factory=list)
     badge_overrides: dict[str, bool] = Field(default_factory=dict)
+    # Per-customer reminder (chase) overrides; null = tenant defaults.
+    reminder_preferences: dict[str, Any] | None = None
     is_blocked: bool = False
     blocked_at: datetime | None = None
     blocked_reason: str | None = None
