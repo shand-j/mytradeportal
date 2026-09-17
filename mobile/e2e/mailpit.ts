@@ -47,6 +47,10 @@ export interface CapturedEmail {
   html: string;
   /** Sender address from the From header (e.g. quotes@mytradeportal.co.uk). */
   from: string;
+  /** Display name from the From header (tenant business name for branded
+   *  mail, the platform name for transactional mail). Empty when the header
+   *  carries a bare address. */
+  fromName: string;
 }
 
 async function listMessages(
@@ -87,6 +91,7 @@ export async function waitForEmails(
             text: message.Text ?? "",
             html: message.HTML ?? "",
             from: message.From?.Address ?? "",
+            fromName: message.From?.Name ?? "",
           };
         }),
       );

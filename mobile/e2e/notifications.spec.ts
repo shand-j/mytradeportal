@@ -157,7 +157,10 @@ test.describe.serial("O2 — Mark-all-read & bell deep-links", () => {
   let customerChatMessage: { id: string };
   let customerToken: string;
 
-  test.beforeAll(async () => {
+  test.beforeAll("O2 setup (drives AI triage to closure on staging)", async ({}, testInfo) => {
+    // Driving triage to closure can take up to ~5 real LLM calls on staging
+    // (1-2 min each), so give the hook a generous budget.
+    testInfo.setTimeout(20 * 60_000);
     tenant = await createTestTenant("notif-links");
     customer = { email: "notif2-customer@e2e.example.com", fullName: "E2E Notif2 Customer" };
 
@@ -171,6 +174,15 @@ test.describe.serial("O2 — Mark-all-read & bell deep-links", () => {
         postcode: "SK8 3NJ",
       },
       urgency: "this_week",
+      // Rich property profile (mirrors regression F) so a single detailed
+      // answer can push LLM confidence past the 80 closure threshold —
+      // otherwise every extra turn is another 1-2 minute LLM call. Circuits
+      // are deliberately omitted so the AI has its obvious gap to ask about.
+      structuredData: {
+        property: { type: "detached", age: "post_2000", bedrooms: 3, parking: true, tenure: "owner" },
+        questionnaire: { consumer_unit: { reason: "old_fuse_wire", known_faults: "none", occupied: "yes" } },
+        notes: "Want to upgrade to a modern RCBO board.",
+      },
     });
     leadId = lead.id as string;
     const registration = await seedCustomer(tenant, {
@@ -215,15 +227,45 @@ test.describe.serial("O2 — Mark-all-read & bell deep-links", () => {
 
     // The staff chat_reply bell row is gated on AI triage having CLOSED the
     // thread (an AI message with ai_metadata.complete=true), and only the
-    // FIRST message of a customer burst rings the bell. With an LLM
-    // configured (staging) we close triage for real and reply again; without
-    // one (local dev) triage can never close, so we lock in the documented
-    // quiet rule instead: a customer reply on a non-triage thread must NOT
-    // create a staff chat_reply notification.
+    // FIRST message of a customer burst rings the bell. One ai-followup call
+    // usually yields a clarifying QUESTION, not closure — the endpoint only
+    // emits its closure message (complete=true, forced at the turn cap of
+    // max_followup_turns) once the LLM is confident or out of turns. So when
+    // an LLM is configured (staging) we drive the conversation to closure:
+    // answer each AI question until the returned AI message is complete,
+    // then post the first post-closure customer message, which must ring the
+    // bell. Without an LLM (local dev) triage can never close, so we lock in
+    // the documented quiet rule instead: a customer reply on a non-triage
+    // thread must NOT create a staff chat_reply notification.
     const triage = await apiRaw(tenant, `/communications/${leadId}/ai-followup`, {
       method: "POST",
     });
     if (triage.status === 200) {
+      let closure = triage.json as { ai_metadata?: { complete?: boolean } | null };
+      // max_followup_turns (default 5) FORCES a closure message on the final
+      // allowed turn, so the conversation always closes within 5 AI calls
+      // (the first call above + at most 4 loop turns).
+      for (let turn = 0; turn < 4 && closure.ai_metadata?.complete !== true; turn++) {
+        await api(customerApi, "/communications", {
+          method: "POST",
+          body: {
+            quote_request_id: leadId,
+            channel: "in_app_chat",
+            body: `E2E triage answer ${turn + 1}: it has 8 circuits including the main switch, owner-occupied detached house, upgrading an old fuse-wire board to a modern RCBO consumer unit`,
+          },
+        });
+        const next = await apiRaw(tenant, `/communications/${leadId}/ai-followup`, {
+          method: "POST",
+        });
+        expect(next.status, "ai-followup keeps returning 200 once the LLM is up").toBe(200);
+        closure = next.json as { ai_metadata?: { complete?: boolean } | null };
+      }
+      expect(
+        closure.ai_metadata?.complete,
+        "AI triage must reach its closure message (complete=true)"
+      ).toBe(true);
+      // Closure exists and the last message is AI → this reply is the first
+      // of a new burst → the staff bell must ring.
       await api(customerApi, "/communications", {
         method: "POST",
         body: { quote_request_id: leadId, channel: "in_app_chat", body: "E2E customer reply" },
@@ -256,7 +298,6 @@ test.describe.serial("O2 — Mark-all-read & bell deep-links", () => {
     };
     expect(staffUnread.unread_count ?? staffUnread.count ?? 0).toBeGreaterThan(0);
   });
-
   test("G30: mark-all-read clears the staff badge via POST /notifications/read-all", async ({
     page,
   }) => {

@@ -1,5 +1,5 @@
 import { test } from "@playwright/test";
-import { mailpitConfigured, waitForEmail, waitForEmails } from "./mailpit";
+import { CapturedEmail, mailpitConfigured, waitForEmail, waitForEmails } from "./mailpit";
 import {
   api,
   createTestTenant,
@@ -20,17 +20,31 @@ const CUSTOMER_PASSWORD = "E2E-Customer-1";
 // Every message is asserted in the shared Mailpit mailbox; staging/PR apis
 // route outbound email there instead of Resend (docs/ci-pr-environments.md).
 //
-// Sender conventions: quote/invoice/booking mail is tenant-branded from the
-// shared quotes@ sender; account/security mail (magic sign-in links) is
-// platform-branded from the no-reply sender. The no-reply distinction only
-// exists on the Resend transport — the local SMTP fallback sends everything
-// from smtp_from_email — so the transactional assert is environment-aware.
+// Sender conventions (verified against staging Mailpit, 2026-09-17): all
+// outbound mail shares one sender ADDRESS — RESEND_FROM_EMAIL on staging
+// (quotes@mytradeportal.co.uk), smtp_from_email locally (quotes@mytradeportal.
+// local). What distinguishes the categories is the From DISPLAY NAME:
+//   * branded customer-facing mail (quote/invoice/booking/payment/chat) goes
+//     out as "<Tenant Name> <quotes@…>" so replies reach the business;
+//   * transactional account/security mail (magic sign-in, account ready,
+//     password resets) goes out under the PLATFORM name ("My Trade Portal")
+//     and never impersonates the tenant. It uses no-reply@… when
+//     RESEND_NO_REPLY_EMAIL is configured, else the documented fallback to
+//     the shared quotes@ address (app/email.py::_resend_from). Staging does
+//     NOT set RESEND_NO_REPLY_EMAIL today, so the fallback path is the live
+//     contract asserted here.
 
 const runId = Date.now();
 const CUSTOMER_A = { email: `emails-a-${runId}@e2e.example.com`, fullName: "E2E Lifecycle Customer A" };
 const CUSTOMER_B = { email: `emails-b-${runId}@e2e.example.com`, fullName: "E2E Lifecycle Customer B" };
 const QUOTE_TITLE = "E2E Lifecycle consumer unit";
 const JOB_A_TITLE = "E2E Calendar booking job";
+// createTenant names the business `E2E ${prefix} tenant` — the branded From
+// display name is exactly that name (staging-verified).
+const BUSINESS_NAME = "E2E emails tenant";
+// smtp_from_name default (mtp_shared.config) — the platform identity used on
+// transactional mail when no dedicated no-reply address is configured.
+const PLATFORM_NAME = "My Trade Portal";
 
 function tomorrowAt(hour: number): string {
   const d = new Date();
@@ -39,16 +53,26 @@ function tomorrowAt(hour: number): string {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(hour)}:00:00`;
 }
 
-/** The local SMTP fallback collapses the no-reply distinction; assert the
- *  documented platform sender for whichever transport the target api uses. */
-function expectTransactionalSender(from: string) {
-  if (from.endsWith("mytradeportal.co.uk")) {
-    expect(from).toBe("no-reply@mytradeportal.co.uk");
-  } else {
-    // Dev SMTP transport: _send_via_smtp always uses smtp_from_email
-    // (default quotes@mytradeportal.local) — see services/api/app/email.py.
-    expect(from).toBe("quotes@mytradeportal.local");
-  }
+/** Branded customer-facing mail: the tenant's business name on the shared
+ *  quotes@ sender (staging verified: `"E2E emails tenant" <quotes@…>`). */
+function expectBrandedSender(email: CapturedEmail) {
+  expect(email.from).toMatch(/^quotes@/);
+  expect(email.fromName).toBe(BUSINESS_NAME);
+}
+
+/** Transactional account/security mail: the platform display name — never
+ *  the tenant's — on no-reply@ when configured, else the documented shared
+ *  sender fallback (app/email.py::_resend_from falls back to
+ *  RESEND_FROM_EMAIL when RESEND_NO_REPLY_EMAIL is unset, which is staging's
+ *  current configuration). */
+function expectTransactionalSender(email: CapturedEmail) {
+  expect(email.fromName, "transactional mail must not impersonate the tenant").not.toBe(
+    BUSINESS_NAME
+  );
+  if (email.from.startsWith("no-reply@")) return;
+  // Fallback path: shared branded address, but still the platform name.
+  expect(email.from).toMatch(/^quotes@/);
+  expect(email.fromName).toBe(PLATFORM_NAME);
 }
 
 test.describe.serial("P — Email lifecycle sequence (Mailpit)", () => {
@@ -160,7 +184,7 @@ test.describe.serial("P — Email lifecycle sequence (Mailpit)", () => {
       subjectIncludes: "Your quote from",
       timeoutMs: 30_000,
     });
-    expect(email.from).toMatch(/^quotes@/);
+    expectBrandedSender(email);
     // Registered customers get the portal magic-link CTA as the primary button.
     expect(email.html).toContain("View and accept your quote");
     expect(email.html).toMatch(/https:\/\//);
@@ -172,7 +196,10 @@ test.describe.serial("P — Email lifecycle sequence (Mailpit)", () => {
       subjectIncludes: "Quote accepted",
       timeoutMs: 30_000,
     });
-    expect(email.from).toMatch(/^quotes@/);
+    // The acceptance confirmation is intentionally PLATFORM-branded
+    // (no-reply class): no response is expected, so it must not invite a
+    // reply or impersonate the tenant (quote_acceptance.py).
+    expectTransactionalSender(email);
     expect(email.html + email.text).toContain(QUOTE_TITLE);
   });
 
@@ -182,7 +209,7 @@ test.describe.serial("P — Email lifecycle sequence (Mailpit)", () => {
       timeoutMs: 30_000,
     });
     const email = emails[0];
-    expect(email.from).toMatch(/^quotes@/);
+    expectBrandedSender(email);
     // The converted job inherits the QUOTE title (convert-to-job takes no
     // title) and the booking email names the job by that title.
     expect(email.html + email.text).toContain(QUOTE_TITLE);
@@ -194,7 +221,7 @@ test.describe.serial("P — Email lifecycle sequence (Mailpit)", () => {
       subjectIncludes: "Booking confirmed",
       timeoutMs: 30_000,
     });
-    expect(email.from).toMatch(/^quotes@/);
+    expectBrandedSender(email);
     expect(email.html + email.text).toContain(JOB_A_TITLE);
     // Passwordless customers get the one-shot account-claim magic-link CTA.
     expect(email.html).toContain("Create your account");
@@ -206,7 +233,7 @@ test.describe.serial("P — Email lifecycle sequence (Mailpit)", () => {
       subjectIncludes: "Invoice",
       timeoutMs: 30_000,
     });
-    expect(invoice.from).toMatch(/^quotes@/);
+    expectBrandedSender(invoice);
     expect(invoice.subject).toMatch(/^Invoice \S+ from /);
     // 1 × £500 + 20% VAT = £600.
     expect(invoice.html + invoice.text).toContain("600");
@@ -216,7 +243,7 @@ test.describe.serial("P — Email lifecycle sequence (Mailpit)", () => {
       subjectIncludes: "Payment received",
       timeoutMs: 30_000,
     });
-    expect(payment.from).toMatch(/^quotes@/);
+    expectBrandedSender(payment);
     expect(payment.subject).toContain(invoiceNumber);
     // Manual mark-paid must use the non-card copy variant (D3): it must not
     // claim a card receipt was emailed (that copy only ships on the Stripe path).
@@ -229,6 +256,6 @@ test.describe.serial("P — Email lifecycle sequence (Mailpit)", () => {
       timeoutMs: 30_000,
     });
     expect(email.html + email.text).toMatch(/https:\/\//);
-    expectTransactionalSender(email.from);
+    expectTransactionalSender(email);
   });
 });
