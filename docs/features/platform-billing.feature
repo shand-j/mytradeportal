@@ -7,7 +7,8 @@ Feature: Billing, trials, tier gates and fair-use guardrails
   subscription state in sync.
 
   Endpoints: POST /tenants, GET /billing/plans, POST /billing/checkout,
-  POST /webhooks/paddle, GET /billing/subscription, POST /billing/portal-session.
+  POST /billing/plan-change, POST /webhooks/paddle, GET /billing/subscription,
+  POST /billing/portal-session.
 
   @automated-integration
   Scenario: Bootstrap a tenant with reserved-slug protection
@@ -53,6 +54,33 @@ Feature: Billing, trials, tier gates and fair-use guardrails
       replay, and mirrors status (trialing/active/past_due/paused/canceled)
       into the tenant record
     # services/api/tests/test_webhooks.py (22), test_paddle_client.py (5).
+
+  @automated-integration
+  Scenario: Mid-cycle plan change with proration
+    When a tradesperson changes plan mid-cycle via POST /billing/plan-change
+    Then Paddle updates the subscription with proration billed immediately
+      (single-item replace — flat pricing, no seats)
+    And the mirrored subscription re-derives the tier from the new price id
+      immediately (no waiting for the webhook)
+    And Paddle failures surface loudly (404 without a subscription, 502
+      upstream) without moving the stored plan
+    # services/api/tests/test_billing.py (plan-change block),
+    # test_paddle_client.py (request shape).
+
+  @automated-integration
+  Scenario: Payment failure and dunning recovery
+    When Paddle delivers subscription.past_due or transaction.payment_failed
+    Then one "payment failed — update your payment method" email goes to the
+      account email with a Paddle customer-portal link, and replays or extra
+      failed retries never double-email (idempotent per subscription per
+      billing period)
+    And the reminder scheduler sends up to 2 follow-ups at a fixed cadence
+      while the subscription stays past_due
+    And payment recovery (subscription back to active) or cancellation stops
+      the sequence; a later failure in a new billing period opens a fresh one
+    And past_due subscriptions keep app access for a bounded grace period
+      after the failed period's end, then the C22 paywall re-engages
+    # services/api/tests/test_dunning.py.
 
   @automated-integration
   Scenario: Tenant-status gate reflects subscription state

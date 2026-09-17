@@ -139,6 +139,35 @@ async def create_subscription_transaction(
     }
 
 
+async def update_subscription(
+    subscription_id: str,
+    price_id: str,
+    proration_billing_mode: str = "prorated_immediately",
+) -> dict[str, Any]:
+    """Move a subscription to a new flat-tier price, prorating immediately.
+
+    ``PATCH /subscriptions/{id}`` with an items array that *replaces* the
+    subscription's line items (Paddle semantics: never append — appending
+    bills the business for both plans at once). ``prorated_immediately``
+    charges/credits the difference for the remainder of the current period
+    now, so a mid-cycle plan change takes effect right away; the resulting
+    ``subscription.updated`` webhook re-syncs the mirror (the plan key is
+    re-derived from the new price id). If the prorated charge fails Paddle
+    defaults to ``prevent_change``: the plan is NOT moved, the API errors,
+    and the caller surfaces that to the user.
+    """
+    if not settings.paddle_api_key:
+        raise RuntimeError("Paddle API key is not configured")
+    payload: dict[str, Any] = {
+        "items": [{"price_id": price_id, "quantity": 1}],
+        "proration_billing_mode": proration_billing_mode,
+    }
+    async with httpx.AsyncClient(base_url=_paddle_base_url(), headers=_headers()) as client:
+        response = await client.patch(f"/subscriptions/{subscription_id}", json=payload)
+        response.raise_for_status()
+        return response.json()["data"]  # type: ignore[no-any-return]
+
+
 def verify_webhook_signature(
     body: bytes,
     signature_header: str,

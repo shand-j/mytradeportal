@@ -924,6 +924,11 @@ class BillingCheckoutRead(BaseModel):
     checkout_url: str
 
 
+class BillingPlanChangeCreate(BaseModel):
+    plan_key: str  # sole_trader | pro | team (legacy: starter | pro | business)
+    interval: Literal["month", "year"] = "month"
+
+
 class SubscriptionRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
