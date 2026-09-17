@@ -19,6 +19,13 @@ concurrency:
 env:
   RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
   RAILWAY_PROJECT_ID: ${{ vars.RAILWAY_PROJECT_ID }}
+  # wait_for_deploy.py ignores deployments older than its start time, which
+  # makes reruns unpassable (no new deploy is triggered for the same commit).
+  # Anchor the window at the head commit's timestamp instead: the deploy the
+  # push triggers is always created after it, a stale previous deployment is
+  # always older, and a rerun of the same commit accepts the deployment that
+  # commit already produced. Empty on workflow_dispatch (falls back to "now").
+  DEPLOY_SINCE: ${{ github.event.head_commit.timestamp }}
 
 jobs:
   staging-verify:
