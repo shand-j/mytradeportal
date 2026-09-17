@@ -534,6 +534,20 @@ class QuoteUpdate(BaseModel):
     line_items: list[QuoteLineItemCreate] | None = None
     # Explicit null clears the estimate; omitting the key leaves it untouched.
     estimated_hours: Decimal | None = None
+    # Per-quote VAT override (zero-rated jobs such as new builds): a fraction
+    # between 0 and 1 (0.20 = 20%). Omitting the key leaves the rate untouched;
+    # the router rejects values above the tenant's registered rate.
+    vat_rate: Decimal | None = Field(default=None, ge=0, le=1)
+
+    @model_validator(mode="after")
+    def _vat_rate_not_null(self) -> "QuoteUpdate":
+        # Unlike estimated_hours, a null VAT rate has no defined meaning —
+        # calculate_quote_totals would fall back to 20% — so reject it outright.
+        if "vat_rate" in self.model_fields_set and self.vat_rate is None:
+            raise ValueError(
+                "vat_rate must be a number between 0 and 1; omit the field to leave it unchanged"
+            )
+        return self
 
 
 class QuoteGenerateRequest(BaseModel):
@@ -829,11 +843,25 @@ class InvoiceUpdate(BaseModel):
     due_date: datetime | None = None
     notes: str | None = None
     status: str | None = None
+    # Per-invoice VAT override (zero-rated jobs such as new builds): a fraction
+    # between 0 and 1 (0.20 = 20%). Omitting the key leaves the rate untouched;
+    # the router rejects values above the tenant's registered rate.
+    vat_rate: Decimal | None = Field(default=None, ge=0, le=1)
     # Per-invoice card-payment override; explicit null restores tenant-default
     # inheritance (see app.routers.payments.invoice_accepts_card).
     accept_card_payments: bool | None = None
     # Full replacement when provided (same semantics as QuoteUpdate).
     line_items: list[InvoiceLineItemCreate] | None = None
+
+    @model_validator(mode="after")
+    def _vat_rate_not_null(self) -> "InvoiceUpdate":
+        # A null VAT rate would silently fall back to 20% in
+        # calculate_invoice_totals, so reject it outright.
+        if "vat_rate" in self.model_fields_set and self.vat_rate is None:
+            raise ValueError(
+                "vat_rate must be a number between 0 and 1; omit the field to leave it unchanged"
+            )
+        return self
 
 
 class QuoteConvertToInvoice(BaseModel):

@@ -38,6 +38,7 @@ from app.calculations import (
     build_invoice_from_quote,
     calculate_quote_totals,
     tenant_vat_rate,
+    vat_rate_within_tenant_limit,
 )
 from app.config import settings
 from app.database import get_db
@@ -276,11 +277,32 @@ async def update_quote(
     # Snapshot before mutating so the training event keeps the pre-edit state.
     lines_before = _line_items_snapshot(quote) if "line_items" in update_data else None
 
+    totals_dirty = False
+    if "vat_rate" in data.model_fields_set:
+        new_rate = update_data.pop("vat_rate")
+        if new_rate is None or not vat_rate_within_tenant_limit(tenant, new_rate):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=(
+                    f"vat_rate {new_rate} is above the tenant's registered VAT rate "
+                    f"({tenant_vat_rate(tenant)}); per-quote VAT overrides may only "
+                    "lower or remove VAT (e.g. 0 for zero-rated jobs)"
+                ),
+            )
+        quote.vat_rate = new_rate
+        totals_dirty = True
+
     if "line_items" in update_data:
         new_items = update_data.pop("line_items")
         for item in list(quote.line_items):
             await db.delete(item)
         quote.line_items = [QuoteLineItem(tenant_id=tenant.id, **item) for item in new_items]
+        totals_dirty = True
+
+    if totals_dirty:
+        # Mirror the create-time math exactly: rebuild subtotal/VAT/total from
+        # the line items, then re-apply the tenant's rounding increment so the
+        # rounding adjustment reflects the new VAT-inclusive total.
         calculate_quote_totals(quote)
         apply_quote_rounding(quote, tenant.settings)
 

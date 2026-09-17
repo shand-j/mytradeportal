@@ -183,3 +183,67 @@ async def test_rounding_persists_via_mobile_follow_up_payload(admin_client: Asyn
     created = await admin_client.post("/quotes", json=_quote_payload(contact_id))
     assert created.status_code == 201
     assert Decimal(created.json()["total"]) == Decimal("870.00")
+
+
+async def _set_vat_registered(admin_client: AsyncClient) -> None:
+    response = await admin_client.patch(
+        "/onboarding/step/tax",
+        json={"step": "tax", "value": {"vat_registered": True}},
+    )
+    assert response.status_code == 200, response.text
+
+
+async def test_vat_opt_out_reapplies_rounding_to_new_total(admin_client: AsyncClient) -> None:
+    """Zero-rating a rounded quote re-runs create-time math: totals rebuild
+    from the line items at 0% VAT, then the £10 increment re-rounds the new
+    VAT-inclusive total (issue #110)."""
+    await _set_rounding(admin_client, 10)
+    await _set_vat_registered(admin_client)
+    contact_id = await _create_contact(admin_client)
+    created = await admin_client.post("/quotes", json=_quote_payload(contact_id))
+    quote_id = created.json()["id"]
+    # £863.00 + 20% VAT = £1035.60 → £1040.00
+    assert Decimal(created.json()["total"]) == Decimal("1040.00")
+    adjustment = created.json().get("roundingAdjustment", created.json().get("rounding_adjustment"))
+    assert Decimal(adjustment) == Decimal("4.40")
+
+    response = await admin_client.patch(f"/quotes/{quote_id}", json={"vat_rate": "0"})
+    assert response.status_code == 200, response.text
+    data = response.json()
+    # £863.00 ex VAT → £870.00; stored totals re-fetch identically.
+    assert Decimal(data["total"]) == Decimal("870.00")
+    adjustment = data.get("roundingAdjustment", data.get("rounding_adjustment"))
+    assert Decimal(adjustment) == Decimal("7.00")
+
+    fetched = await admin_client.get(f"/quotes/{quote_id}")
+    assert fetched.status_code == 200
+    assert Decimal(fetched.json()["total"]) == Decimal("870.00")
+    adjustment = fetched.json().get("roundingAdjustment", fetched.json().get("rounding_adjustment"))
+    assert Decimal(adjustment) == Decimal("7.00")
+
+
+async def test_vat_opt_out_combined_with_line_item_update(admin_client: AsyncClient) -> None:
+    """One PATCH carrying both line_items and vat_rate applies both before
+    the totals recompute, exactly like create-time math."""
+    await _set_vat_registered(admin_client)
+    contact_id = await _create_contact(admin_client)
+    created = await admin_client.post("/quotes", json=_quote_payload(contact_id))
+    quote_id = created.json()["id"]
+    assert Decimal(created.json()["total"]) == Decimal("1035.60")
+
+    response = await admin_client.patch(
+        f"/quotes/{quote_id}",
+        json={
+            "vat_rate": "0",
+            "line_items": [
+                {"description": "Consumer unit", "quantity": "1", "unit_price": "863.00"},
+                {"description": "Extra socket", "quantity": "1", "unit_price": "95.00"},
+            ],
+        },
+    )
+    assert response.status_code == 200, response.text
+    data = response.json()
+    # £958.00 ex VAT at 0% → no rounding configured → £958.00.
+    assert Decimal(data["subtotal"]) == Decimal("958.00")
+    assert Decimal(data["vat_amount"]) == Decimal("0.00")
+    assert Decimal(data["total"]) == Decimal("958.00")
