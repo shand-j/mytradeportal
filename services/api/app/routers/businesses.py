@@ -30,6 +30,7 @@ from app.limiter import limiter
 from app.models import BusinessService, Communication, Contact, Customer, QuoteRequest, Tenant
 from app.quote_automation import auto_draft_quote_for_request
 from app.rls import bypass_rls_for_transaction, set_tenant_in_session
+from app.routers.contacts import BLOCKED_CUSTOMER_DETAIL, contact_is_blocked
 from app.schemas import (
     BusinessPublicConfig,
     PublicIntakeCheck,
@@ -222,6 +223,10 @@ async def submit_public_quote_request(
                 Contact.email == str(data.contact.email),
             )
         )
+    # Blocked customers (N26) cannot submit via the public form either. Only a
+    # reused contact can be blocked — a brand-new one is created below.
+    if contact is not None and await contact_is_blocked(db, tenant.id, contact.id):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=BLOCKED_CUSTOMER_DETAIL)
     if contact is None:
         contact = Contact(
             tenant_id=tenant.id,

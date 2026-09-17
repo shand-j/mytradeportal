@@ -2,7 +2,7 @@
 
 from uuid import uuid4
 
-from app.models import Tenant
+from app.models import Contact, Tenant
 from app.rls import bypass_rls_in_session
 from app.utils.tenant_code import generate_unique_tenant_code
 from httpx import AsyncClient
@@ -85,6 +85,61 @@ async def test_public_submission_reuses_contact_by_email(
     assert len(rows) == 2
     contact_ids = {row["contact_id"] for row in rows}
     assert len(contact_ids) == 1
+
+
+async def test_public_submission_blocked_contact_is_rejected(
+    client: AsyncClient, db: AsyncSession
+) -> None:
+    slug = f"pub-{uuid4().hex[:8]}"
+    tenant = await _create_tenant(db, slug)
+    db.add(
+        Contact(
+            tenant_id=tenant.id,
+            name="Blocked Homeowner",
+            email="blocked@example.com",
+            is_blocked=True,
+        )
+    )
+    await db.flush()
+
+    response = await client.post(
+        f"/businesses/{slug}/quote-requests",
+        json={
+            "contact": {"name": "Blocked Homeowner", "email": "blocked@example.com"},
+            "category": "consumer_unit",
+        },
+    )
+    assert response.status_code == 403
+    assert response.json()["detail"].startswith("customer_blocked:")
+
+    # No quote request was created for the blocked contact.
+    listing = await client.get("/quote-requests", headers={"X-Tenant-ID": str(tenant.id)})
+    assert listing.json() == []
+
+
+async def test_public_submission_unblocked_contact_still_works(
+    client: AsyncClient, db: AsyncSession
+) -> None:
+    slug = f"pub-{uuid4().hex[:8]}"
+    tenant = await _create_tenant(db, slug)
+    db.add(
+        Contact(
+            tenant_id=tenant.id,
+            name="Unblocked Homeowner",
+            email="unblocked@example.com",
+            is_blocked=False,
+        )
+    )
+    await db.flush()
+
+    response = await client.post(
+        f"/businesses/{slug}/quote-requests",
+        json={
+            "contact": {"name": "Unblocked Homeowner", "email": "unblocked@example.com"},
+            "category": "consumer_unit",
+        },
+    )
+    assert response.status_code == 201, response.text
 
 
 async def test_public_submission_unknown_business_is_404(client: AsyncClient) -> None:
