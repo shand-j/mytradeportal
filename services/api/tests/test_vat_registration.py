@@ -147,3 +147,119 @@ async def test_explicit_vat_rate_is_still_honoured(admin_client: AsyncClient) ->
 
     assert _rate(quote) == Decimal("0.05")
     assert Decimal(str(quote["total"])) == Decimal("105.00")
+
+
+# --- Per-quote/per-invoice VAT opt-out (issue #110) -------------------------
+
+
+async def test_vat_registered_quote_opt_out_to_zero(admin_client: AsyncClient) -> None:
+    """A VAT-registered tenant can zero-rate a quote (e.g. a new build):
+    totals drop to the ex-VAT base, persist, and re-fetch stays consistent."""
+    await _set_vat_registered(admin_client, True)
+    contact_id = await _create_contact(admin_client)
+    quote = await _create_quote(admin_client, contact_id)
+    assert _rate(quote) == STANDARD_VAT
+    assert Decimal(str(quote["vat_amount"])) == Decimal("20.00")
+    assert Decimal(str(quote["total"])) == Decimal("120.00")
+
+    response = await admin_client.patch(f"/quotes/{quote['id']}", json={"vat_rate": "0"})
+    assert response.status_code == 200, response.text
+    data = response.json()
+    assert _rate(data) == ZERO_VAT
+    assert Decimal(str(data["subtotal"])) == Decimal("100.00")
+    assert Decimal(str(data["vat_amount"])) == Decimal("0.00")
+    assert Decimal(str(data["total"])) == Decimal("100.00")
+
+    # Re-fetch what a fresh GET returns — stored totals must match.
+    fetched = await admin_client.get(f"/quotes/{quote['id']}")
+    assert fetched.status_code == 200
+    assert _rate(fetched.json()) == ZERO_VAT
+    assert Decimal(str(fetched.json()["total"])) == Decimal("100.00")
+
+
+async def test_vat_registered_quote_opt_out_is_reversible(admin_client: AsyncClient) -> None:
+    """Setting exactly the tenant rate back is a no-op-safe restore."""
+    await _set_vat_registered(admin_client, True)
+    contact_id = await _create_contact(admin_client)
+    quote = await _create_quote(admin_client, contact_id)
+
+    response = await admin_client.patch(f"/quotes/{quote['id']}", json={"vat_rate": "0"})
+    assert response.status_code == 200
+    response = await admin_client.patch(f"/quotes/{quote['id']}", json={"vat_rate": "0.20"})
+    assert response.status_code == 200, response.text
+    data = response.json()
+    assert _rate(data) == STANDARD_VAT
+    assert Decimal(str(data["vat_amount"])) == Decimal("20.00")
+    assert Decimal(str(data["total"])) == Decimal("120.00")
+
+
+async def test_quote_vat_rate_above_tenant_rate_rejected(admin_client: AsyncClient) -> None:
+    """A quote must never charge MORE VAT than the tenant's registered rate."""
+    await _set_vat_registered(admin_client, True)
+    contact_id = await _create_contact(admin_client)
+    quote = await _create_quote(admin_client, contact_id)
+
+    response = await admin_client.patch(f"/quotes/{quote['id']}", json={"vat_rate": "0.25"})
+    assert response.status_code == 400
+    assert "registered VAT rate" in response.json()["detail"]
+
+    # The rejected write must not have touched the quote.
+    fetched = await admin_client.get(f"/quotes/{quote['id']}")
+    assert _rate(fetched.json()) == STANDARD_VAT
+    assert Decimal(str(fetched.json()["total"])) == Decimal("120.00")
+
+
+async def test_vat_registered_invoice_opt_out_to_zero(admin_client: AsyncClient) -> None:
+    await _set_vat_registered(admin_client, True)
+    contact_id = await _create_contact(admin_client)
+    invoice = await _create_invoice(admin_client, contact_id)
+    assert _rate(invoice) == STANDARD_VAT
+    assert Decimal(str(invoice["total"])) == Decimal("120.00")
+
+    response = await admin_client.patch(f"/invoices/{invoice['id']}", json={"vat_rate": "0"})
+    assert response.status_code == 200, response.text
+    data = response.json()
+    assert _rate(data) == ZERO_VAT
+    assert Decimal(str(data["vat_amount"])) == Decimal("0.00")
+    assert Decimal(str(data["total"])) == Decimal("100.00")
+
+    fetched = await admin_client.get(f"/invoices/{invoice['id']}")
+    assert fetched.status_code == 200
+    assert Decimal(str(fetched.json()["total"])) == Decimal("100.00")
+
+
+async def test_invoice_vat_rate_above_tenant_rate_rejected(admin_client: AsyncClient) -> None:
+    await _set_vat_registered(admin_client, True)
+    contact_id = await _create_contact(admin_client)
+    invoice = await _create_invoice(admin_client, contact_id)
+
+    response = await admin_client.patch(f"/invoices/{invoice['id']}", json={"vat_rate": "0.25"})
+    assert response.status_code == 400
+    assert "registered VAT rate" in response.json()["detail"]
+
+    fetched = await admin_client.get(f"/invoices/{invoice['id']}")
+    assert _rate(fetched.json()) == STANDARD_VAT
+
+
+async def test_non_vat_registered_tenant_cannot_raise_vat_on_update(
+    admin_client: AsyncClient,
+) -> None:
+    """A non-registered tenant's registered rate is 0%, so any positive
+    per-document override is above the limit; their existing behaviour
+    (no vat_rate sent → nothing changes) is untouched."""
+    await _set_vat_registered(admin_client, False)
+    contact_id = await _create_contact(admin_client)
+    quote = await _create_quote(admin_client, contact_id)
+    assert _rate(quote) == ZERO_VAT
+
+    response = await admin_client.patch(f"/quotes/{quote['id']}", json={"vat_rate": "0.20"})
+    assert response.status_code == 400
+
+    invoice = await _create_invoice(admin_client, contact_id)
+    response = await admin_client.patch(f"/invoices/{invoice['id']}", json={"vat_rate": "0.05"})
+    assert response.status_code == 400
+
+    # Omitting vat_rate keeps the update path unchanged.
+    response = await admin_client.patch(f"/quotes/{quote['id']}", json={"title": "No VAT change"})
+    assert response.status_code == 200
+    assert _rate(response.json()) == ZERO_VAT

@@ -100,6 +100,16 @@ retro-changes the invoice. `POST /invoices` resolves the quote from
 `job.quote_id` when only `job_id` is sent, so the invoice-from-job flow always
 prefills the accepted quote lines (editable before send from the mobile
 create-invoice page).
+Per-document VAT opt-out (issue #110): `QuoteUpdate` and `InvoiceUpdate` accept
+an optional `vat_rate` (a fraction, 0–1) so VAT-registered tenants can drop VAT
+to 0 for zero-rated jobs (e.g. new builds), fulfilling the onboarding TaxVatStep
+"you'll confirm per quote" promise. The override may only lower or remove VAT —
+`vat_rate_within_tenant_limit` in `app/calculations.py` rejects (400) any rate
+above the tenant's registered rate; for a non-registered tenant that means any
+positive rate. Setting a rate re-runs the create-time totals math: quotes are
+re-rounded via `apply_quote_rounding`, invoices keep their fixed creation-time
+`rounding_adjustment`. The mobile QuoteEditScreen exposes this as a
+"VAT x% / Zero-rated 0%" chip selector, shown only for VAT-registered tenants.
 Electrician quote edits are captured as `quote_lines_edited` / `quote_refined`
 rows in `events` (before/after snapshots) for AI fine-tuning; export via
 `GET /quotes/training-events` or the SQL in that endpoint's docstring.

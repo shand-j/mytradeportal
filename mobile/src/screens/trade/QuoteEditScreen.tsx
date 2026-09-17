@@ -7,6 +7,7 @@ import { Header } from "../../components/ui/Header";
 import { Icon } from "../../components/ui/Icon";
 import { IconButton } from "../../components/ui/IconButton";
 import { Screen } from "../../components/ui/Screen";
+import { SelectableChip } from "../../components/ui/SelectableChip";
 import { Text } from "../../components/ui/Text";
 import { ContactCustomerCard } from "../../components/trade/ContactCustomerCard";
 import { Lead, Quote, QuoteLineItem } from "../../types";
@@ -145,11 +146,20 @@ export function QuoteEditScreen({
   // Snapshot of what the backend last saw. Null until the initial seed has
   // been recorded so mount never triggers a save.
   const lastSavedRef = useRef<QuoteLineItem[] | null>(null);
-  const pendingSaveRef = useRef<QuoteLineItem[] | null>(null);
+  // Next payload to persist: line items plus the VAT rate in effect when the
+  // edit was made, so a VAT toggle queued mid-debounce is never lost.
+  const pendingSaveRef = useRef<{ items: QuoteLineItem[]; vatRate: number } | null>(null);
   // Serialises saves so an auto-save never overlaps one already in flight.
   const saveChainRef = useRef<Promise<void>>(Promise.resolve());
 
-  const vatRate = seedQuote?.vatRate ?? 0.2;
+  // The tenant's registered rate, as captured on the quote at creation. A
+  // per-quote override may only lower/remove VAT (0), never raise it.
+  const tenantVatRate = seedQuote?.vatRate ?? 0.2;
+  const [vatRate, setVatRate] = useState(tenantVatRate);
+  // Show the VAT selector whenever the tenant is VAT-registered (either the
+  // quote still carries the tenant rate, or it was previously zero-rated and
+  // can be restored).
+  const isVatRegistered = tenantVatRate > 0 || vatRate > 0;
 
   const runPendingSave = () => {
     if (!seedQuote || !isRealQuote || readOnly) return;
@@ -159,8 +169,8 @@ export function QuoteEditScreen({
       if (!current) return;
       setSaveState("saving");
       try {
-        await updateQuote(seedQuote.id, current, vatRate);
-        lastSavedRef.current = current;
+        await updateQuote(seedQuote.id, current.items, current.vatRate);
+        lastSavedRef.current = current.items;
         pendingSaveRef.current = null;
         setSaveState("saved");
         queryClient.invalidateQueries({ queryKey: ["quotes"] });
@@ -178,11 +188,25 @@ export function QuoteEditScreen({
       return;
     }
     if (items === lastSavedRef.current) return;
-    pendingSaveRef.current = items;
+    pendingSaveRef.current = { items, vatRate };
     const timer = setTimeout(runPendingSave, AUTOSAVE_DELAY_MS);
     return () => clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [items, isRealQuote]);
+  }, [items, vatRate, isRealQuote]);
+
+  /**
+   * Switch between the tenant's registered rate and zero-rating (issue #110 —
+   * fulfils the onboarding TaxVatStep "you'll confirm per quote" promise).
+   * Persists immediately: a VAT toggle is a deliberate edit, not a keystroke,
+   * so it must not wait for the line-item debounce.
+   */
+  const applyVatRate = (next: number) => {
+    if (next === vatRate) return;
+    setVatRate(next);
+    if (!isRealQuote || readOnly) return;
+    pendingSaveRef.current = { items, vatRate: next };
+    runPendingSave();
+  };
 
   /** Persist the current line items; cancels any queued auto-save of older edits. */
   const saveNow = async (): Promise<void> => {
@@ -591,6 +615,27 @@ export function QuoteEditScreen({
                 onPress={runPendingSave}
               />
             )}
+          </View>
+        )}
+        {isVatRegistered && !readOnly && (
+          <View className="flex-row items-center justify-between gap-2">
+            <Text variant="caption" color="secondary">
+              VAT treatment
+            </Text>
+            <View className="flex-row gap-2">
+              <SelectableChip
+                testID="quote-vat-standard"
+                label={`VAT ${(tenantVatRate * 100).toFixed(0)}%`}
+                selected={vatRate !== 0}
+                onPress={() => applyVatRate(tenantVatRate)}
+              />
+              <SelectableChip
+                testID="quote-vat-zero-rated"
+                label="Zero-rated 0%"
+                selected={vatRate === 0}
+                onPress={() => applyVatRate(0)}
+              />
+            </View>
           </View>
         )}
         <View className="flex-row items-end justify-between gap-3">

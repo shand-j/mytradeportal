@@ -21,6 +21,7 @@ from app.calculations import (
     build_invoice_from_quote,
     calculate_invoice_totals,
     tenant_vat_rate,
+    vat_rate_within_tenant_limit,
 )
 from app.database import get_db
 from app.dependencies import CurrentUserDep, TenantDep
@@ -245,9 +246,24 @@ async def update_invoice(
     current_user: CurrentUserDep,
     db: DbDep,
 ) -> InvoiceRead:
-    """Update due date, notes, status, card-payment override, or line items."""
+    """Update due date, notes, status, VAT rate, card-payment override, or line items."""
     invoice = await _get_invoice(db, tenant.id, invoice_id)
     changed = data.model_dump(exclude_unset=True)
+
+    totals_dirty = False
+    if "vat_rate" in data.model_fields_set:
+        new_rate = changed.pop("vat_rate")
+        if new_rate is None or not vat_rate_within_tenant_limit(tenant, new_rate):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=(
+                    f"vat_rate {new_rate} is above the tenant's registered VAT rate "
+                    f"({tenant_vat_rate(tenant)}); per-invoice VAT overrides may only "
+                    "lower or remove VAT (e.g. 0 for zero-rated jobs)"
+                ),
+            )
+        invoice.vat_rate = new_rate
+        totals_dirty = True
 
     if "line_items" in changed:
         # Full replacement, mirroring update_quote; totals recalculated.
@@ -255,11 +271,14 @@ async def update_invoice(
         for item in list(invoice.line_items):
             await db.delete(item)
         invoice.line_items = [InvoiceLineItem(tenant_id=tenant.id, **item) for item in new_items]
+        totals_dirty = True
+
+    if totals_dirty:
         calculate_invoice_totals(invoice)
         # The rounding uplift is a fixed amount set at creation (inherited
-        # from the quote, or applied to scratch invoices). Line edits keep it
-        # so subtotal + VAT + adjustment stays consistent with the total; the
-        # invoice is never re-rounded after creation.
+        # from the quote, or applied to scratch invoices). Line edits and VAT
+        # overrides keep it so subtotal + VAT + adjustment stays consistent
+        # with the total; the invoice is never re-rounded after creation.
         adjustment = invoice.rounding_adjustment or Decimal("0.00")
         if adjustment:
             invoice.total = invoice.total + adjustment
