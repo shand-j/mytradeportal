@@ -588,3 +588,40 @@ class AiRollupUserDay(models.Model):
 
     def __str__(self) -> str:
         return f"{self.date} {self.feature} £{self.cost_gbp}"
+
+
+class AiRollupOrgDay(models.Model):
+    """Mirror of the FastAPI ``ai_rollup_org_day`` nightly rollup table."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    date = models.DateField()
+    # Plain FK-by-value (no DB constraint): every org-day row is tenant-attributed.
+    tenant = models.ForeignKey(
+        Tenant,
+        db_column="tenant_id",
+        on_delete=models.DO_NOTHING,
+        related_name="+",
+    )
+    users_active = models.IntegerField(default=0)
+    generations = models.IntegerField(default=0)
+    retries = models.IntegerField(default=0)
+    tokens_input = models.IntegerField(default=0)
+    tokens_output = models.IntegerField(default=0)
+    tokens_cached = models.IntegerField(default=0)
+    est_cost_usd = models.DecimalField(max_digits=12, decimal_places=6, default=0)
+    cost_gbp = models.DecimalField(max_digits=12, decimal_places=4, default=0)
+    latency_p50 = models.FloatField(null=True, blank=True)
+    latency_p95 = models.FloatField(null=True, blank=True)
+    latency_p99 = models.FloatField(null=True, blank=True)
+    avg_keep_rate = models.DecimalField(max_digits=4, decimal_places=3, null=True, blank=True)
+    quotes_sent = models.IntegerField(default=0)
+    created_at = models.DateTimeField()
+    updated_at = models.DateTimeField()
+
+    class Meta:
+        managed = False
+        db_table = "ai_rollup_org_day"
+        ordering = ["-date", "-cost_gbp"]
+
+    def __str__(self) -> str:
+        return f"{self.date} {self.tenant_id} £{self.cost_gbp}"

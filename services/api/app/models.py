@@ -1290,11 +1290,11 @@ class FxRate(Base):
 
 # ---------------------------------------------------------------------------
 # W1-C AI ROLLUPS + ALERT STATE — ai_rollup_user_day / ai_rollup_feature_day /
-# ai_alert_state (owned by the rollups/alerts/ops workstream). All three are
-# plain ``Base`` tables, NOT tenant-scoped (same rationale as
-# ``AiCallEvent``: cross-tenant ops/BI queries over AI spend must work without
-# an RLS context; ``tenant_id`` is a plain indexed column, not an RLS key).
-# Do NOT add any of these tables to ``app.rls.TENANT_SCOPED_TABLES``.
+# ai_rollup_org_day / ai_alert_state (owned by the rollups/alerts/ops
+# workstream). All four are plain ``Base`` tables, NOT tenant-scoped (same
+# rationale as ``AiCallEvent``: cross-tenant ops/BI queries over AI spend must
+# work without an RLS context; ``tenant_id`` is a plain indexed column, not an
+# RLS key). Do NOT add any of these tables to ``app.rls.TENANT_SCOPED_TABLES``.
 # ---------------------------------------------------------------------------
 
 
@@ -1385,6 +1385,51 @@ class AiRollupFeatureDay(Base):
     )
 
     __table_args__ = (UniqueConstraint("date", "feature", name="uq_ai_rollup_feature_day"),)
+
+
+class AiRollupOrgDay(Base):
+    """Per-day, per-tenant AI usage rollup across all features.
+
+    Same measures as :class:`AiRollupUserDay` but grouped only by
+    ``(date, tenant_id)`` — the granularity behind the staff ops cost
+    leaderboard. Adds ``users_active`` (distinct non-NULL ``user_id`` s with
+    spend events that day) and ``latency_p99`` (the user/feature rollups stop
+    at p95; the org table carries p99 for cohort p99 stats). Events with
+    ``tenant_id=None`` (demo/embedding) are platform-level and never fold
+    here.
+    """
+
+    __tablename__ = "ai_rollup_org_day"
+
+    id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
+    date: Mapped[date] = mapped_column(Date, nullable=False, index=True)
+    # Plain column (no FK, no RLS): every row is tenant-attributed by
+    # definition — the fold skips tenant-NULL events.
+    tenant_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), nullable=False)
+    users_active: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    generations: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    retries: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    tokens_input: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    tokens_output: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    tokens_cached: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    est_cost_usd: Mapped[Decimal] = mapped_column(
+        Numeric(12, 6), default=Decimal("0"), nullable=False
+    )
+    cost_gbp: Mapped[Decimal] = mapped_column(Numeric(12, 4), default=Decimal("0"), nullable=False)
+    latency_p50: Mapped[float | None] = mapped_column(Float, nullable=True)
+    latency_p95: Mapped[float | None] = mapped_column(Float, nullable=True)
+    latency_p99: Mapped[float | None] = mapped_column(Float, nullable=True)
+    avg_keep_rate: Mapped[Decimal | None] = mapped_column(Numeric(4, 3), nullable=True)
+    quotes_sent: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False
+    )
+
+    __table_args__ = (
+        UniqueConstraint("date", "tenant_id", name="uq_ai_rollup_org_day"),
+        Index("ix_ai_rollup_org_day_tenant_date", "tenant_id", "date"),
+    )
 
 
 class AiAlertState(Base):

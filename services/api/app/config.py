@@ -72,6 +72,14 @@ AI_MONTHLY_INVOICE_USD: str = os.environ.get("AI_MONTHLY_INVOICE_USD", "").strip
 ALERT_EMAIL_TO: str = os.environ.get("ALERT_EMAIL_TO", "").strip()
 SLACK_ALERT_WEBHOOK_URL: str = os.environ.get("SLACK_ALERT_WEBHOOK_URL", "").strip()
 
+# --- Staff ops endpoints (platform-level, cross-tenant) ----------------------
+# Comma-separated email allowlist identifying platform staff (founders/ops)
+# for cross-tenant endpoints such as GET /staff/ops/ai-costs. There is no
+# platform-tenant staff account: the caller must be an authenticated active
+# user AND their email must appear here. Empty = the gate rejects everyone
+# (endpoint answers 403), so an unconfigured environment exposes nothing.
+PLATFORM_STAFF_EMAILS: str = os.environ.get("PLATFORM_STAFF_EMAILS", "").strip()
+
 # --- Stripe Connect (customer → tradie invoice card payments) --------------
 # Destination charges on Express connected accounts, no platform application
 # fee. Paddle remains for OUR SaaS subscription only — tradie receivables

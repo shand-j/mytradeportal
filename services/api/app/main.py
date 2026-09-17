@@ -50,6 +50,7 @@ from app.routers import (
     quotes,
     resend_webhooks,
     reviews,
+    staff_ops,
     stripe_webhooks,
     tenants,
     users,
@@ -205,3 +206,4 @@ app.include_router(communications.router)
 app.include_router(files.router)
 app.include_router(notifications.router)
 app.include_router(data_export.router)
+app.include_router(staff_ops.router)

@@ -75,6 +75,7 @@ from app.models import (
     AiAlertState,
     AiCallEvent,
     AiRollupFeatureDay,
+    AiRollupOrgDay,
     AiRollupUserDay,
     Contact,
     FxRate,
@@ -642,8 +643,10 @@ async def reminder_loop(stop: asyncio.Event) -> None:
 # ``reminder_loop``. Once per UTC day (default 02:30) it:
 #
 # 1. Re-folds the previous UTC day from ``ai_call_events`` into
-#    ``ai_rollup_user_day`` (tenant/user/feature) and ``ai_rollup_feature_day``
-#    (platform-wide). The fold deletes and re-inserts that day's rows inside
+#    ``ai_rollup_user_day`` (tenant/user/feature), ``ai_rollup_feature_day``
+#    (platform-wide) and ``ai_rollup_org_day`` (tenant totals across all
+#    features, incl. p99 + active-user counts for the staff ops leaderboard).
+#    The fold deletes and re-inserts that day's rows inside
 #    a global advisory lock, so it is idempotent and safe to re-run.
 # 2. Refreshes the USD→GBP rate when the newest ``fx_rates`` row is older
 #    than ``FX_REFRESH_MAX_AGE_DAYS`` (weekly cadence; failures keep the
@@ -691,7 +694,7 @@ _ANOMALY_MIN_TRAILING_DAYS = 3
 
 
 class _Measures:
-    """Accumulator for one rollup group (user-day or feature-day)."""
+    """Accumulator for one rollup group (user-day, feature-day or org-day)."""
 
     __slots__ = (
         "cost_gbp",
@@ -703,6 +706,7 @@ class _Measures:
         "tokens_cached",
         "tokens_input",
         "tokens_output",
+        "user_ids",
     )
 
     def __init__(self) -> None:
@@ -715,6 +719,8 @@ class _Measures:
         self.cost_gbp = Decimal("0")
         self.latencies: list[float] = []
         self.quotes_sent = 0
+        # Distinct non-NULL user ids behind spend events (org-day fold only).
+        self.user_ids: set[UUID] = set()
 
     def add(self, event: AiCallEvent) -> None:
         if event.feature == _OUTCOME_FEATURE:
@@ -732,6 +738,8 @@ class _Measures:
         self.cost_gbp += event.cost_gbp or Decimal("0")
         if event.latency_seconds is not None:
             self.latencies.append(event.latency_seconds)
+        if event.user_id is not None:
+            self.user_ids.add(event.user_id)
 
 
 def _percentile(sorted_values: list[float], pct: int) -> float | None:
@@ -772,6 +780,21 @@ def fold_events_platform(events: list[AiCallEvent]) -> dict[str, _Measures]:
     return groups
 
 
+def fold_events_org(events: list[AiCallEvent]) -> dict[UUID, _Measures]:
+    """Group raw events into per-tenant measures keyed by tenant_id.
+
+    One group per org per day (all features combined) — the staff ops
+    leaderboard granularity. Events with ``tenant_id=None`` (demo/embedding)
+    carry no org attribution and are excluded.
+    """
+    groups: dict[UUID, _Measures] = {}
+    for event in events:
+        if event.tenant_id is None:
+            continue
+        groups.setdefault(event.tenant_id, _Measures()).add(event)
+    return groups
+
+
 async def _table_exists(db: AsyncSession, table_name: str) -> bool:
     """True when ``table_name`` exists in the public schema.
 
@@ -785,17 +808,17 @@ async def _table_exists(db: AsyncSession, table_name: str) -> bool:
 
 async def _load_keep_rates(
     db: AsyncSession, day_start: datetime, day_end: datetime
-) -> tuple[dict[tuple[Any, ...], Decimal], dict[str, Decimal]]:
+) -> tuple[dict[tuple[Any, ...], Decimal], dict[str, Decimal], dict[UUID, Decimal]]:
     """Average keep_rate per group from ai_draft_feedback, when that table exists.
 
     Feedback rows are attributed to the tenant/user/feature of the generation
     event they reference (``generation_event_id`` → ``ai_call_events``). Raw
     SQL because the ORM model lives in a different workstream's tree.
-    Returns (user_day_rates, feature_day_rates); both empty when the table is
-    absent.
+    Returns (user_day_rates, feature_day_rates, org_day_rates); all empty when
+    the table is absent.
     """
     if not await _table_exists(db, "ai_draft_feedback"):
-        return {}, {}
+        return {}, {}, {}
     rows = (
         await db.execute(
             text(
@@ -821,7 +844,27 @@ async def _load_keep_rates(
         feature: _mean_decimal(rates).quantize(Decimal("0.001"))
         for feature, rates in feature_day.items()
     }
-    return user_day, feature_rates
+    # Org-day rates: a separate tenant-only grouping — averaging the
+    # per-user rates above would weight a 1-draft user like a 20-draft user.
+    org_rows = (
+        await db.execute(
+            text(
+                "SELECT e.tenant_id, AVG(f.keep_rate) "
+                "FROM ai_draft_feedback f "
+                "JOIN ai_call_events e ON e.id = f.generation_event_id "
+                "WHERE f.created_at >= :start AND f.created_at < :end "
+                "AND e.tenant_id IS NOT NULL "
+                "GROUP BY e.tenant_id"
+            ),
+            {"start": day_start, "end": day_end},
+        )
+    ).all()
+    org_rates = {
+        tenant_id: Decimal(str(avg_keep)).quantize(Decimal("0.001"))
+        for tenant_id, avg_keep in org_rows
+        if avg_keep is not None
+    }
+    return user_day, feature_rates, org_rates
 
 
 async def _events_for_day(
@@ -886,8 +929,31 @@ def _feature_day_row(
     )
 
 
+def _org_day_row(
+    day: date, tenant_id: UUID, measures: _Measures, keep_rates: dict[UUID, Decimal]
+) -> AiRollupOrgDay:
+    ordered = sorted(measures.latencies)
+    return AiRollupOrgDay(
+        date=day,
+        tenant_id=tenant_id,
+        users_active=len(measures.user_ids),
+        generations=measures.generations,
+        retries=measures.retries,
+        tokens_input=measures.tokens_input,
+        tokens_output=measures.tokens_output,
+        tokens_cached=measures.tokens_cached,
+        est_cost_usd=measures.est_cost_usd.quantize(Decimal("0.000001")),
+        cost_gbp=measures.cost_gbp.quantize(Decimal("0.0001")),
+        latency_p50=_percentile(ordered, 50),
+        latency_p95=_percentile(ordered, 95),
+        latency_p99=_percentile(ordered, 99),
+        avg_keep_rate=keep_rates.get(tenant_id),
+        quotes_sent=measures.quotes_sent,
+    )
+
+
 async def run_rollup_for_day(db: AsyncSession, day: date) -> dict[str, int]:
-    """Idempotently re-fold one UTC day of ai_call_events into both rollup tables.
+    """Idempotently re-fold one UTC day of ai_call_events into all rollup tables.
 
     Takes the global rollup advisory lock for the transaction; a concurrent
     replica folds nothing and reports ``locked=1``. Deletes + re-inserts the
@@ -901,15 +967,18 @@ async def run_rollup_for_day(db: AsyncSession, day: date) -> dict[str, int]:
     ).scalar()
     if not locked:
         logger.info("rollup_locked_elsewhere", date=str(day))
-        return {"user_day_rows": 0, "feature_day_rows": 0, "locked": 1}
+        return {"user_day_rows": 0, "feature_day_rows": 0, "org_day_rows": 0, "locked": 1}
 
     day_start = datetime(day.year, day.month, day.day)
     day_end = day_start + timedelta(days=1)
     events = await _events_for_day(db, day_start, day_end)
-    user_keep_rates, feature_keep_rates = await _load_keep_rates(db, day_start, day_end)
+    user_keep_rates, feature_keep_rates, org_keep_rates = await _load_keep_rates(
+        db, day_start, day_end
+    )
 
     await db.execute(delete(AiRollupUserDay).where(AiRollupUserDay.date == day))
     await db.execute(delete(AiRollupFeatureDay).where(AiRollupFeatureDay.date == day))
+    await db.execute(delete(AiRollupOrgDay).where(AiRollupOrgDay.date == day))
 
     user_rows = [
         _user_day_row(day, key, measures, user_keep_rates)
@@ -919,12 +988,18 @@ async def run_rollup_for_day(db: AsyncSession, day: date) -> dict[str, int]:
         _feature_day_row(day, feature, measures, feature_keep_rates)
         for feature, measures in fold_events_platform(events).items()
     ]
+    org_rows = [
+        _org_day_row(day, tenant_id, measures, org_keep_rates)
+        for tenant_id, measures in fold_events_org(events).items()
+    ]
     db.add_all(user_rows)
     db.add_all(feature_rows)
+    db.add_all(org_rows)
     await db.commit()
     return {
         "user_day_rows": len(user_rows),
         "feature_day_rows": len(feature_rows),
+        "org_day_rows": len(org_rows),
         "locked": 0,
     }
 

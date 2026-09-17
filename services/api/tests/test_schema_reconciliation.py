@@ -243,3 +243,37 @@ def test_create_metabase_role_is_read_only_bypassrls_and_idempotent() -> None:
         with engine.begin() as conn:
             conn.exec_driver_sql("DROP TABLE IF EXISTS _recon_metabase_probe")
         engine.dispose()
+
+
+@pytest.mark.usefixtures("test_database_url")
+def test_ai_rollup_org_day_table_matches_metadata() -> None:
+    """The org rollup ships via ``Base.metadata.create_all`` + column reconcile.
+
+    ``AiRollupOrgDay`` (#61) is created from the model metadata exactly as
+    declared — including the p99 columns — and must NOT carry RLS (it is a
+    cross-tenant ops table, like the other ``ai_rollup_*`` tables). The table
+    is created with ``checkfirst=True`` here (the same call init_db makes) so
+    the assertion runs identically on a fresh or an already-migrated database.
+    """
+    from app.models import Base
+
+    table = Base.metadata.tables["ai_rollup_org_day"]
+    engine = _sync_engine()
+    try:
+        with engine.begin() as conn:
+            table.create(conn, checkfirst=True)
+
+        with engine.connect() as conn:
+            live_columns = {c["name"] for c in inspect(conn).get_columns("ai_rollup_org_day")}
+            assert {c.name for c in table.columns} <= live_columns
+
+            rls_enabled = conn.execute(
+                text(
+                    "SELECT c.relrowsecurity FROM pg_class c "
+                    "JOIN pg_namespace n ON c.relnamespace = n.oid "
+                    "WHERE n.nspname = 'public' AND c.relname = 'ai_rollup_org_day'"
+                )
+            ).scalar_one()
+            assert rls_enabled is False
+    finally:
+        engine.dispose()
