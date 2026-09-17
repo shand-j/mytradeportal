@@ -10,8 +10,16 @@ import {
 
 // AI metadata contract (G34): a generated quote exposes ai_confidence,
 // ai_warnings, ai_assumptions and retrieval_status, and every AI-drafted line
-// uses a catalogue unit (ea/m/hr) — NEVER unit="job" (repeat regression: a
-// user saw "1.5mm twin and earth cable, qty 200, unit=job").
+// uses a real billing unit — NEVER unit="job" (repeat regression: a user saw
+// "1.5mm twin and earth cable, qty 200, unit=job").
+//
+// Unit vocabulary, mirroring the backend contract:
+//   * labour lines bill in HOUR units — the canonical unit is "hour"
+//     (services/api/app/rag/validation.py defaults labour to "hour" and keys
+//     its price clamp on it); work_blocks.py / quotes.py recognise the
+//     aliases h/hr/hrs/hours as hours.
+//   * material lines carry catalogue units (ea, m, …) taken verbatim from
+//     the retrieved cost item.
 //
 // The unit contract is asserted without an LLM: POST /quotes accepts
 // ai_generated line items directly (same seeding technique as the deployed
@@ -20,13 +28,17 @@ import {
 // POST /quotes/generate and skips cleanly when the target api has no LLM
 // configured (the local dev api answers 503).
 
-const CATALOGUE_UNITS = ["ea", "m", "hr"];
+const HOUR_UNITS = ["h", "hr", "hrs", "hour", "hours"];
+const MATERIAL_UNITS = ["ea", "m"];
+const KNOWN_UNITS = [...HOUR_UNITS, ...MATERIAL_UNITS];
 
 // The exact repeat-regression shape: bulk cable must be metre-priced, not
 // quoted as a single "job".
 const AI_LINES = [
   { description: "1.5mm twin and earth cable", quantity: 200, unit_price: 0.85, unit: "m", ai_generated: true },
   { description: "20A RCBO consumer unit", quantity: 1, unit_price: 120, unit: "ea", ai_generated: true },
+  // "hr" exercises the hour-unit alias tolerance; generation emits the
+  // canonical "hour" (asserted in the live-LLM test below).
   { description: "Labour — installation", quantity: 4, unit_price: 65, unit: "hr", ai_generated: true },
 ];
 
@@ -51,7 +63,7 @@ test.describe.serial("T — AI metadata contract", () => {
     expect(quote.ai_generated).toBe(true);
     const units = (quote.line_items as Array<{ unit: string }>).map((li) => li.unit);
     for (const unit of units) {
-      expect(CATALOGUE_UNITS).toContain(unit);
+      expect(KNOWN_UNITS).toContain(unit);
       expect(unit).not.toBe("job");
     }
 
@@ -101,7 +113,7 @@ test.describe.serial("T — AI metadata contract", () => {
     expect(Array.isArray(quote.ai_assumptions)).toBe(true);
     expect(["grounded", "weak_match", "no_index"]).toContain(quote.retrieval_status);
     for (const li of quote.line_items) {
-      expect(CATALOGUE_UNITS).toContain(li.unit);
+      expect(KNOWN_UNITS).toContain(li.unit);
       expect(li.unit).not.toBe("job");
     }
   });
