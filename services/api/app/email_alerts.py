@@ -27,7 +27,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.email import send_event_email
-from app.models import Contact, EmailFailureAlert, User
+from app.models import Contact, EmailFailureAlert, Tenant, User
 from app.push import notify_staff
 from app.rls import set_tenant_in_session
 
@@ -132,6 +132,14 @@ async def alert_staff_email_failure(
     the caller's work.
     """
     try:
+        # Bounce webhooks arrive from every environment sharing the Resend
+        # account; a tag stamped by another environment references a tenant
+        # UUID that does not exist here, and the notifications tenant FK
+        # would reject the insert. Verify before doing anything else (#147).
+        tenant_exists = await db.scalar(select(Tenant.id).where(Tenant.id == tenant_id))
+        if tenant_exists is None:
+            logger.info("email_failure_unknown_tenant", tenant_id=str(tenant_id), source=source)
+            return False
         # The session may carry no tenant GUC (bounce webhooks, post-commit
         # portal flows) — scope it so the RLS-forced notifications write and
         # the contact lookup pass.
