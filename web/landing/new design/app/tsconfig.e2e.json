@@ -1,0 +1,18 @@
+{
+  // Typecheck project for the portal e2e specs (playwright.portal.config.ts +
+  // e2e/). Kept separate from tsconfig.app.json (src/) — specs run under
+  // Node/Playwright, not the Vite app, and must not leak into the app build.
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2022", "DOM"],
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "types": ["node"],
+    "skipLibCheck": true,
+    "strict": true,
+    "noEmit": true,
+    "esModuleInterop": true,
+    "forceConsistentCasingInFileNames": true
+  },
+  "include": ["e2e/**/*.ts", "playwright.portal.config.ts"]
+}
