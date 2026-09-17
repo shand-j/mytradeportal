@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Alert, Animated, ActionSheetIOS, Platform, ScrollView, StyleProp, TextInput, View, ViewStyle } from "react-native";
+import { Alert, Animated, ActionSheetIOS, KeyboardAvoidingView, Platform, ScrollView, StyleProp, TextInput, View, ViewStyle } from "react-native";
 import { useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "expo-router";
 import { Button } from "../../components/ui/Button";
@@ -391,6 +391,10 @@ export function QuoteEditScreen({
     <Screen>
       <Header testID="quote-edit-back" title="Review quote" onBack={onClose} />
 
+      <KeyboardAvoidingView
+        style={{ flex: 1 }}
+        behavior={Platform.OS === "ios" ? "padding" : undefined}
+      >
       <ScrollView
         className="flex-1"
         style={{ minHeight: 0 }}
@@ -708,6 +712,7 @@ export function QuoteEditScreen({
           )
         )}
       </View>
+      </KeyboardAvoidingView>
     </Screen>
   );
 }
