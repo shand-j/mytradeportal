@@ -63,6 +63,12 @@ FX_REFRESH_MAX_AGE_DAYS: int = int(os.environ.get("FX_REFRESH_MAX_AGE_DAYS", "7"
 # Anomaly alerts always evaluate but only dispatch when at least one channel
 # (email or Slack) is configured; both are no-ops when unset.
 AI_MONTHLY_BUDGET_GBP: str = os.environ.get("AI_MONTHLY_BUDGET_GBP", "").strip()
+# Monthly cost-drift reconciliation (#60): the provider's invoiced USD total
+# for the month just closed, compared on the month-boundary rollup tick
+# against the platform-estimated spend summed from ai_rollup_feature_day
+# (converted at the stored USD→GBP rate). Empty = drift check off; the manual
+# scripts/reconcile_ai_costs.py run remains the fallback.
+AI_MONTHLY_INVOICE_USD: str = os.environ.get("AI_MONTHLY_INVOICE_USD", "").strip()
 ALERT_EMAIL_TO: str = os.environ.get("ALERT_EMAIL_TO", "").strip()
 SLACK_ALERT_WEBHOOK_URL: str = os.environ.get("SLACK_ALERT_WEBHOOK_URL", "").strip()
 
