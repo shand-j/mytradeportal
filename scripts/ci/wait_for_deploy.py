@@ -6,7 +6,8 @@ deployed suite would otherwise assert against the *previous* deployment while
 the new image is still building (observed 2026-09-16 — three write-suite
 failures that all passed against a PR env running the same commit). This
 script polls the service's deployments until one created after the workflow
-started reaches SUCCESS, or exits non-zero if it FAILS/CRASHES.
+started reaches SUCCESS (or Railway dedupes the push to SKIPPED — the live
+deployment already serves it), or exits non-zero if it FAILS/CRASHES.
 
 Usage: scripts/ci/wait_for_deploy.py <environment-name> <service-name> [timeout-seconds]
 
@@ -16,7 +17,7 @@ Env:
                  Defaults to roughly "now" at script start.
   POLL_SECONDS   Polling interval (default 20).
 
-Exit codes: 0 = fresh deployment live, 1 = deployment failed/crashed,
+Exit codes: 0 = fresh (or dedup-skipped) deployment live, 1 = deployment failed/crashed,
             3 = environment/service not found, 4 = timed out.
 """
 
@@ -150,13 +151,20 @@ def main() -> None:
                 f"[wait_for_deploy] latest deployment {node['id'][:8]} "
                 f"status={status} created={node['createdAt']} fresh={fresh}"
             )
-            if fresh and status in TERMINAL_GOOD:
+            # SKIPPED needs no freshness: Railway only emits a SKIPPED record
+            # when a push arrives and dedupes against the *live* deployment,
+            # so that record IS the marker that current main is already
+            # serving. Requiring created >= since breaks when a run queues
+            # behind another (staging-e2e concurrency) and the SKIPPED
+            # record lands before this job starts (observed 2026-09-17:
+            # docs-only merge → both jobs polled 20 min and timed out).
+            if status == "SKIPPED" or (fresh and status in TERMINAL_GOOD):
                 note = (
                     "build skipped — live deployment already serves this commit"
                     if status == "SKIPPED"
                     else "is live"
                 )
-                print(f"[wait_for_deploy] fresh deployment {node['id']} {note}")
+                print(f"[wait_for_deploy] deployment {node['id']} {note}")
                 return
             if fresh and status in TERMINAL_BAD:
                 fail(f"fresh deployment {node['id']} terminated with status {status}", 1)
