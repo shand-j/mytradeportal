@@ -8,6 +8,7 @@ from typing import Any
 import httpx
 import structlog
 from litellm import aembedding
+from mtp_shared.embeddings import get_embedding_dimension as _shared_embedding_dimension
 from openai import APIError
 from qdrant_client import AsyncQdrantClient
 from qdrant_client.models import (
@@ -259,12 +260,7 @@ def get_embedding_dimension() -> int:
     """Return the vector dimension for the configured embedding model."""
     if settings.embedding_dimensions:
         return int(settings.embedding_dimensions)
-
-    known_dimensions: dict[str, int] = {
-        "text-embedding-3-small": 1536,
-        "text-embedding-3-large": 3072,
-    }
-    return known_dimensions.get(settings.embedding_model, 1536)
+    return _shared_embedding_dimension(settings.embedding_model)
 
 
 async def _verify_query_collection(

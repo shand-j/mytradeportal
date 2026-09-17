@@ -197,8 +197,8 @@ async def test_healthy_collection_returns_grounded_without_mutation(
 def test_get_embedding_dimension_prefers_explicit_override(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """EMBEDDING_DIMENSIONS (pinned identically for api + data-pipeline in
-    Railway IaC) wins over the model lookup table."""
+    """An explicit EMBEDDING_DIMENSIONS override wins over the shared
+    model→dimension lookup table (mtp_shared.embeddings)."""
     monkeypatch.setattr(generation_config.settings, "embedding_dimensions", 3072)
     monkeypatch.setattr(generation_config.settings, "embedding_model", "text-embedding-3-small")
     assert get_embedding_dimension() == 3072
