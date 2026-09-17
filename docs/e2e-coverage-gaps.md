@@ -1,6 +1,7 @@
 # E2E coverage gaps & proposed test plan (beta)
 
-**Date:** 2026-09-16 · **Status:** analysis complete, tests not yet written
+**Date:** 2026-09-16 · **Status:** EXECUTED 2026-09-17 — all waves landed except
+G1/G2/G9/G10/G11/G12 (see Execution status); 6 product bugs filed (#135–#137, #141–#143)
 **Sources:** `docs/features/*.feature` (17 journey specs), `docs/mytradeportal-research/`
 (PRDs + Delivery Plan), `docs/beta-backlog.md`, git diff 2026-09-07→09-16, full
 read of `mobile/e2e/`, `web/app/e2e/`, `services/api/tests_deployed/`.
@@ -178,25 +179,37 @@ fallback applies here too.
 | G33 | **`GET /export/my-data`** | Tenant owner exports → streamed JSON contains their tenants/quotes/invoices; RLS-scoped (no other tenant's data); secrets excluded | `data_export.py`, PRD-Observability | P1 | deployed-smoke | |
 | G34 | **AI metadata contract** | Generated quote exposes `ai_confidence`, `ai_warnings`, `ai_assumptions`, `retrieval_status`; grounded lines use catalogue units (ea/m/hr) — **never `unit="job"`** (repeat regression) | trade-ai-quotes @p0 | **P0** | mobile-staging (extend C/H) | Cheap assert on existing flows. |
 
-## Proposed execution order
+## Execution status (updated 2026-09-17)
 
-**Wave 1 — harness + beta blockers (payments spine):** staging Stripe webhook
-endpoint (user dashboard action, see above); G1/G2
-(portal Stripe sandbox card + decline/retry), G4 refund idempotency, G6 trial,
-G8 paywall gate (server-side first), G5 Paddle sandbox checkout +
-webhook. These need new seeding helpers (Stripe-connected tenant, subscription
-states) in `mobile/e2e/seed-e2e.mjs`.
+**Wave 1 — harness + beta blockers (payments spine): PARTIAL.** G4/G5/G6/G8
+shipped in the `deployed_write` suite (#127) and are green on main staging.
+**G1/G2 remain open** — the Stripe-connected seed and portal sandbox card path
+are deliberately fixme'd pending a Stripe-connected tenant seed in
+`mobile/e2e/seed-e2e.mjs`; also still needs the real Stripe→staging webhook
+endpoint registered in the Stripe dashboard (suite currently forges signatures).
 
-**Wave 2 — email spine:** G11/G12 chasing (scheduler drive + Mailpit), G16 email
-sequence (all lifecycle mails incl. D3/D5 regression guards), G13 review CTA,
-G17 follow-the-magic-link, G15 bounce alert. Mostly extends existing specs +
-`mailpit.ts`.
+**Wave 2 — email spine: MOSTLY DONE.** G13/G15/G16/G17 shipped (#127, #134,
+#139 hotfix). **G11/G12 chasing (reminders scheduler) BLOCKED** on a product
+decision: testing the time-based scheduler needs a SETUP_TOKEN-gated force-run
+endpoint (or another deterministic drive); flagged to the user, not built.
 
-**Wave 3 — portal suite (new):** G18–G25 as a new `web/landing` Playwright suite
-against staging (subdomain strategy B5), reusing Mailpit + setup-token seeding.
+**Wave 3 — portal suite: DONE.** G18–G25 shipped (#140) as the new
+`web/landing` Playwright suite against staging (`?slug=` strategy B5): 24
+passed / 4 fixme vs staging. Fixmes file as product bugs: #141 (entry_channel
+never persisted), #142 (booking-email claim chain broken), #143 (portal contact
+chips never render). Deliberate fixme: Stripe card path (G1/G2 overlap).
 
-**Wave 4 — app depth:** G26–G31, G34 rounding/VAT/AI-metadata hardening.
-G33 export, G9/G10 billing self-serve when decisions land.
+**Wave 4 — app depth: DONE.** G26–G31, G33, G34 shipped (#134, #138, #139).
+Fixmes filed as product bugs: #135 (blocked customer can still submit intake),
+#136 (pre-block bearer tokens stay valid), #137 (`/customer/invoices/{id}/pay`
+always 410 while the app shows Pay now). G9/G10 billing self-serve remain
+deferred until the pricing/Paddle decisions land.
+
+**Staging hardening during execution:** #128 (init_db advisory lock + retry,
+wait-for-deploy gate), #129 (token-free superuser rotation), #130 (SKIPPED
+builds gate), #131 (70% coverage floor), #139 (batch-1 specs hardened against
+live staging — email sender contract, canonical `hour` unit, multi-turn AI
+triage closure).
 
 ## What stays manual / out of CI
 
