@@ -10,7 +10,7 @@ from uuid import UUID
 import httpx
 import structlog
 from fastapi import APIRouter, HTTPException, Query, Request, Response, status
-from sqlalchemy import select, update
+from sqlalchemy import func, select, update
 
 from app.dependencies import (
     ActiveUserDep,
@@ -137,8 +137,14 @@ async def _resolve_login_tenant(
     # still has to present a valid password. Duplicates (repeat onboarding
     # attempts) resolve to the newest account.
     await bypass_rls_for_transaction(db)
+    # Case-insensitive on func.lower: legacy rows were stored with the casing
+    # the user typed (EmailStr preserves local-part case), and email casing is
+    # not significant for any credential provider we authenticate against.
+    normalized_email = data.email.strip().lower()
     user_result = await db.execute(
-        select(User).where(User.email == data.email).order_by(User.created_at.desc())
+        select(User)
+        .where(func.lower(User.email) == normalized_email)
+        .order_by(User.created_at.desc())
     )
     user = user_result.scalars().first()
     if user is not None:
@@ -162,7 +168,10 @@ async def _authenticate(request: Request, data: UserLogin, db: DbDep) -> tuple[T
 
     if user is None:
         user_result = await db.execute(
-            select(User).where(User.email == data.email, User.tenant_id == tenant.id)
+            select(User).where(
+                func.lower(User.email) == data.email.strip().lower(),
+                User.tenant_id == tenant.id,
+            )
         )
         user = user_result.scalar_one_or_none()
 

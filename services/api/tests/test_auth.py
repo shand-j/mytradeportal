@@ -163,6 +163,56 @@ async def test_token_bare_domain_with_no_tenant_context(
     assert response.json()["tenant_slug"] == tenant.slug
 
 
+async def test_onboarding_created_admin_can_login_without_tenant_slug(
+    client: AsyncClient,
+) -> None:
+    """Regression (beta-blocker): onboarding stores ``admin_email`` via Pydantic
+    EmailStr, which lowercases the DOMAIN but preserves the LOCAL-PART case as
+    typed in the wizard (``Owner@Example.com`` -> ``Owner@example.com``), while
+    the login lookups were exact, case-sensitive matches. A fresh-device
+    ``POST /auth/token`` (no tenant slug, bare Railway host) with the exact
+    wizard-typed email — or any other case — 401'd with "Invalid credentials";
+    seeded lowercase accounts kept working, which hid the bug.
+    """
+    response = await client.post(
+        "/tenants",
+        json={
+            "slug": "onboarding-login-1",
+            "name": "Onboarding Login Electrical",
+            "admin_email": "Owner@Example.com",
+            "admin_password": "supersecret123",
+            "admin_name": "Owner Person",
+        },
+    )
+    assert response.status_code == 201, response.text
+
+    # Stored verbatim-by-EmailStr form (capitalised local part, lowercased domain).
+    response = await client.post(
+        "/auth/token",
+        headers={"host": "api-production-1234.up.railway.app"},
+        json={"email": "Owner@example.com", "password": "supersecret123"},
+    )
+    assert response.status_code == 200, response.text
+    assert response.json()["tenant_slug"] == "onboarding-login-1"
+
+    # The exact string the user typed into the wizard.
+    response = await client.post(
+        "/auth/token",
+        headers={"host": "api-production-1234.up.railway.app"},
+        json={"email": "Owner@Example.com", "password": "supersecret123"},
+    )
+    assert response.status_code == 200, response.text
+
+    # And the all-lowercase form a user naturally types on a fresh device.
+    response = await client.post(
+        "/auth/token",
+        headers={"host": "api-production-1234.up.railway.app"},
+        json={"email": "owner@example.com", "password": "supersecret123"},
+    )
+    assert response.status_code == 200, response.text
+    assert response.json()["user"]["email"] == "owner@example.com"
+
+
 async def test_login_with_explicit_tenant_slug(client: AsyncClient, db: AsyncSession) -> None:
     """An explicit tenant_slug authenticates a non-default tenant's user even
     when the Host header carries no tenant subdomain (bare domain)."""

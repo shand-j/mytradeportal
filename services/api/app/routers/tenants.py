@@ -7,7 +7,7 @@ from uuid import UUID
 import httpx
 from fastapi import APIRouter, Depends, Header, HTTPException, status
 from mtp_shared import get_settings
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.audit import Actions, write_audit_log
@@ -111,9 +111,13 @@ async def create_tenant(
     # One account per staff email: onboarding retries used to mint a fresh
     # tenant per attempt (random slug), stacking duplicate businesses for the
     # same person. The app guides the user to log in + resume instead.
+    # Case-insensitive: the same person typing their email with different
+    # casing must hit the same guard (and the same account on login).
     if data.admin_email:
         await bypass_rls_for_transaction(db)
-        existing_user = await db.scalar(select(User).where(User.email == data.admin_email))
+        existing_user = await db.scalar(
+            select(User).where(func.lower(User.email) == str(data.admin_email).lower())
+        )
         if existing_user is not None:
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
