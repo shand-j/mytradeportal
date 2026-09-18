@@ -324,6 +324,11 @@ export function JobDetailScreen({
       Alert.alert("Cannot place call", "No dialler is available on this device.")
     );
 
+  const textCustomer = () =>
+    Linking.openURL(`sms:${job.phone.replace(/\s/g, "")}`).catch(() =>
+      Alert.alert("Cannot send message", "No messaging app is available on this device.")
+    );
+
   const emailCustomer = () =>
     Linking.openURL(`mailto:${contactEmail}`).catch(() =>
       Alert.alert("Cannot send email", "No mail app is available on this device.")
@@ -343,14 +348,14 @@ export function JobDetailScreen({
 
   /**
    * N5: the message button honours the customer's preferred contact method.
-   * in_app_chat → the in-app conversation; email → mailto:; phone → tel:.
+   * in_app_chat → the in-app conversation; email → mailto:; phone → sms:.
    * Unset preference falls back to in-app chat (registered customers), then
    * email; each preference degrades the same way when its channel is missing.
    */
   const messageCustomer = async () => {
     const preference = preferredContactMethod ?? "";
     if (preference === "phone") {
-      callCustomer();
+      textCustomer();
       return;
     }
     if (preference === "email" && contactEmail) {
