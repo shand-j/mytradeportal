@@ -62,7 +62,10 @@ export default function ViewInvoice() {
 
   const heading = doc?.invoice_number ? `Invoice ${doc.invoice_number}` : 'Invoice'
   const unpaid = doc != null && doc.status !== 'paid' && doc.status !== 'cancelled'
-  const canPay = unpaid && doc.payment_url
+  // Returning from the Stripe checkout while the webhook is still settling:
+  // the pay CTA must be hidden — offering it again invites a double payment.
+  const paymentInFlight = paymentReturning && unpaid
+  const canPay = unpaid && doc.payment_url && !paymentInFlight
 
   return (
     <main className="relative flex min-h-screen flex-col">
