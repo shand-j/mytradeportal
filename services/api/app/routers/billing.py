@@ -87,7 +87,11 @@ _CHECKOUT_PAGE = """<!doctype html>
     // initializing v1-style leaves the checkout session half-initialized, the
     // transaction-checkout request 403s, and cardless-trial transactions are
     // rejected with "only supported by one-page checkout variant" even though
-    // settings.variant is one-page).
+    // settings.variant is one-page). The sandbox switch is Paddle.Environment.set
+    // BEFORE Initialize — passing environment inside Initialize is rejected by
+    // the sandbox build ("Unknown option parameter 'environment'") and poisons
+    // the whole initialization.
+    if (PADDLE_ENV === "sandbox") { Paddle.Environment.set("sandbox"); }
     var init = {
       token: PADDLE_TOKEN,
       eventCallback: function (event) {
@@ -104,7 +108,6 @@ _CHECKOUT_PAGE = """<!doctype html>
         }
       }
     };
-    if (PADDLE_ENV === "sandbox") { init.environment = "sandbox"; }
     Paddle.Initialize(init);
     Paddle.Checkout.open({ transactionId: txn, settings: { variant: "one-page" } });
   }
