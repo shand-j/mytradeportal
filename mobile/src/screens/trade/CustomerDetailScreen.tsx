@@ -3,6 +3,7 @@ import { Alert, KeyboardAvoidingView, Platform, ScrollView, TextInput, View } fr
 import { useQueryClient } from "@tanstack/react-query";
 import { Button } from "../../components/ui/Button";
 import { Header } from "../../components/ui/Header";
+import { OptionChips } from "../../components/ui/OptionChips";
 import { Screen } from "../../components/ui/Screen";
 import { Text } from "../../components/ui/Text";
 import { CustomerBadges } from "../../components/trade/CustomerBadges";
@@ -17,6 +18,7 @@ import {
 } from "../../api/contacts";
 import { ApiError } from "../../lib/apiClient";
 import { formatDateUK } from "../../lib/format";
+import { BEDROOMS, PROPERTY_TYPES, matchBedrooms } from "../../lib/property";
 
 const CONTACT_METHODS = [
   { key: "in_app_chat", label: "Online chat" },
@@ -43,7 +45,7 @@ export function CustomerDetailScreen({ contact, onBack, onCreateQuote }: Custome
   const [address, setAddress] = useState(contact.address ?? "");
   const [postcode, setPostcode] = useState(contact.postcode ?? "");
   const [propertyType, setPropertyType] = useState(contact.propertyType ?? "");
-  const [bedrooms, setBedrooms] = useState(contact.bedrooms != null ? String(contact.bedrooms) : "");
+  const [bedrooms, setBedrooms] = useState(matchBedrooms(contact.bedrooms));
   const [parkingNotes, setParkingNotes] = useState(contact.parkingNotes ?? "");
   const [accessNotes, setAccessNotes] = useState(contact.accessNotes ?? "");
   const [contactMethod, setContactMethod] = useState(contact.preferredContactMethod ?? "");
@@ -62,7 +64,7 @@ export function CustomerDetailScreen({ contact, onBack, onCreateQuote }: Custome
     setAddress(contact.address ?? "");
     setPostcode(contact.postcode ?? "");
     setPropertyType(contact.propertyType ?? "");
-    setBedrooms(contact.bedrooms != null ? String(contact.bedrooms) : "");
+    setBedrooms(matchBedrooms(contact.bedrooms));
     setParkingNotes(contact.parkingNotes ?? "");
     setAccessNotes(contact.accessNotes ?? "");
     setContactMethod(contact.preferredContactMethod ?? "");
@@ -70,9 +72,15 @@ export function CustomerDetailScreen({ contact, onBack, onCreateQuote }: Custome
   }, [contact]);
 
   const orNull = (value: string) => (value.trim() === "" ? null : value.trim());
-  const parsedBedrooms = bedrooms.trim() === "" ? null : parseInt(bedrooms.trim(), 10);
-  const bedroomsValid = parsedBedrooms === null || Number.isFinite(parsedBedrooms);
-  const canSave = name.trim().length > 0 && bedroomsValid && !saving;
+  // The backend stores bedrooms as an integer, so "5+" saves as 5.
+  const parsedBedrooms = bedrooms === "" ? null : bedrooms === "5+" ? 5 : parseInt(bedrooms, 10);
+  const canSave = name.trim().length > 0 && !saving;
+  // Legacy free-text property types that predate the chips stay visible (and
+  // selected) until the user picks one of the standard options.
+  const propertyTypeOptions =
+    propertyType.trim() !== "" && !PROPERTY_TYPES.includes(propertyType)
+      ? [...PROPERTY_TYPES, propertyType]
+      : PROPERTY_TYPES;
 
   const handleSave = async () => {
     if (!canSave) return;
@@ -275,26 +283,28 @@ export function CustomerDetailScreen({ contact, onBack, onCreateQuote }: Custome
             <Text variant="body" weight="semibold">
               Property details
             </Text>
-            <TextInput
-              testID="customer-edit-property-type"
-              className="h-12 rounded-xl border border-slate-200 bg-white px-4 text-base text-slate-900"
-              value={propertyType}
-              onChangeText={setPropertyType}
-              placeholder="Property type — e.g. Semi-detached house"
-            />
-            <TextInput
-              testID="customer-edit-bedrooms"
-              className="h-12 rounded-xl border border-slate-200 bg-white px-4 text-base text-slate-900"
-              value={bedrooms}
-              onChangeText={setBedrooms}
-              placeholder="Bedrooms"
-              keyboardType="number-pad"
-            />
-            {!bedroomsValid && (
-              <Text variant="caption" color="warning">
-                Bedrooms must be a whole number.
+            <View className="gap-1">
+              <Text variant="caption" weight="semibold" color="secondary">
+                Property type
               </Text>
-            )}
+              <OptionChips
+                testIDPrefix="customer-edit-property-type"
+                options={propertyTypeOptions}
+                selected={propertyType}
+                onSelect={setPropertyType}
+              />
+            </View>
+            <View className="gap-1">
+              <Text variant="caption" weight="semibold" color="secondary">
+                Bedrooms
+              </Text>
+              <OptionChips
+                testIDPrefix="customer-edit-bedrooms"
+                options={BEDROOMS}
+                selected={bedrooms}
+                onSelect={setBedrooms}
+              />
+            </View>
           </View>
 
           <View className="rounded-2xl bg-slate-100 p-4 gap-3">

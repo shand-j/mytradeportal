@@ -2,31 +2,15 @@ import { useMemo, useState } from "react";
 import { KeyboardAvoidingView, Platform, ScrollView, TextInput, View } from "react-native";
 import { Button } from "../../components/ui/Button";
 import { Header } from "../../components/ui/Header";
+import { OptionChips } from "../../components/ui/OptionChips";
 import { PhotoAsset, PhotoPicker } from "../../components/ui/PhotoPicker";
 import { Screen } from "../../components/ui/Screen";
 import { Text } from "../../components/ui/Text";
 import { Lead } from "../../types";
 import { formatUrgency } from "../../lib/format";
+import { BEDROOMS, PROPERTY_TYPES, matchBedrooms, matchPropertyType } from "../../lib/property";
 
-const PROPERTY_TYPES = ["House", "Flat", "Bungalow", "Commercial"];
-const BEDROOMS = ["1", "2", "3", "4", "5+"];
 const CU_LOCATIONS = ["Hallway", "Kitchen", "Garage", "Utility", "Under stairs", "Other"];
-
-/** Customer-facing property types (quote-request wizard) -> intake chips. */
-const PROPERTY_TYPE_MAP: Record<string, string> = {
-  house: "House",
-  detached: "House",
-  semi: "House",
-  "semi-detached": "House",
-  semi_detached: "House",
-  terrace: "House",
-  terraced: "House",
-  flat: "Flat",
-  apartment: "Flat",
-  maisonette: "Flat",
-  bungalow: "Bungalow",
-  commercial: "Commercial",
-};
 
 export type QuoteIntakeData = {
   propertyType: string;
@@ -72,26 +56,6 @@ function asRecord(value: unknown): Record<string, unknown> {
 
 function asString(value: unknown): string {
   return typeof value === "string" ? value : "";
-}
-
-/** Normalise a free-form property type onto the intake chips. */
-function matchPropertyType(value: unknown): string {
-  const raw = asString(value).trim().toLowerCase();
-  if (!raw) return "";
-  return PROPERTY_TYPE_MAP[raw] ?? (PROPERTY_TYPES.includes(asString(value)) ? asString(value) : "");
-}
-
-/** Normalise a bedroom count onto the intake chips. */
-function matchBedrooms(value: unknown): string {
-  if (typeof value === "number" && Number.isFinite(value)) {
-    return value >= 5 ? "5+" : BEDROOMS.includes(String(value)) ? String(value) : "";
-  }
-  const raw = asString(value).trim();
-  if (!raw) return "";
-  if (BEDROOMS.includes(raw)) return raw;
-  const parsed = parseInt(raw, 10);
-  if (Number.isNaN(parsed)) return "";
-  return parsed >= 5 ? "5+" : BEDROOMS.includes(String(parsed)) ? String(parsed) : "";
 }
 
 /** Normalise a consumer-unit location onto the intake chips. */
@@ -239,31 +203,6 @@ export function QuoteIntakeScreen({ lead, contact, onBack, onComplete }: QuoteIn
     }
   };
 
-  const renderChipGroup = (
-    label: string,
-    options: string[],
-    selected: string,
-    onSelect: (value: string) => void
-  ) => (
-    <View className="flex-row flex-wrap gap-2">
-      {options.map((option) => (
-        <Button
-          key={option}
-          testID={`intake-${label.replace(/\s+/g, "-").toLowerCase()}-${option.toLowerCase().replace(/\+/g, "plus")}`}
-          title={option}
-          variant={selected === option ? "primary" : "outline"}
-          onPress={() => onSelect(option)}
-        />
-      ))}
-      <Button
-        testID={`intake-${label.replace(/\s+/g, "-").toLowerCase()}-not-sure`}
-        title="Not sure"
-        variant={selected === "" ? "primary" : "outline"}
-        onPress={() => onSelect("")}
-      />
-    </View>
-  );
-
   return (
     <Screen>
       <Header testID="intake-back" title="Quote intake" onBack={onBack} />
@@ -329,21 +268,36 @@ export function QuoteIntakeScreen({ lead, contact, onBack, onComplete }: QuoteIn
           <Text variant="body" weight="semibold">
             Property type
           </Text>
-          {renderChipGroup("Property type", PROPERTY_TYPES, propertyType, setPropertyType)}
+          <OptionChips
+            testIDPrefix="intake-property-type"
+            options={PROPERTY_TYPES}
+            selected={propertyType}
+            onSelect={setPropertyType}
+          />
         </View>
 
         <View className="rounded-2xl bg-slate-100 p-4 gap-3">
           <Text variant="body" weight="semibold">
             Bedrooms
           </Text>
-          {renderChipGroup("Bedrooms", BEDROOMS, bedrooms, setBedrooms)}
+          <OptionChips
+            testIDPrefix="intake-bedrooms"
+            options={BEDROOMS}
+            selected={bedrooms}
+            onSelect={setBedrooms}
+          />
         </View>
 
         <View className="rounded-2xl bg-slate-100 p-4 gap-3">
           <Text variant="body" weight="semibold">
             Consumer unit location
           </Text>
-          {renderChipGroup("CU location", CU_LOCATIONS, cuLocation, setCuLocation)}
+          <OptionChips
+            testIDPrefix="intake-cu-location"
+            options={CU_LOCATIONS}
+            selected={cuLocation}
+            onSelect={setCuLocation}
+          />
         </View>
 
         <View className="rounded-2xl bg-slate-100 p-4 gap-2">
