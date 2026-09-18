@@ -556,7 +556,8 @@ async def _card_enabled_invoice(
         },
     )
     assert create.status_code == 201, create.text
-    return create.json()
+    body: dict[str, Any] = create.json()
+    return body
 
 
 async def test_invoice_send_email_includes_pay_now_link(
