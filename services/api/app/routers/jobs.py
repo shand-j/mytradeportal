@@ -98,6 +98,25 @@ async def _validate_assignee(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid assignee")
 
 
+def merge_contact_notes(notes: str | None, contact_notes: str | None) -> str | None:
+    """Merge the CRM contact's notes into a new quote/job's notes.
+
+    Notes typed on the creation screen win and stay first; the contact's
+    notes are appended under a "Customer notes:" heading unless they are
+    already present (e.g. the caller pre-filled them). Returns ``notes``
+    unchanged when the contact has none.
+    """
+    customer = (contact_notes or "").strip()
+    if not customer:
+        return notes
+    typed = (notes or "").strip()
+    if not typed:
+        return f"Customer notes: {customer}"
+    if customer in typed:
+        return notes
+    return f"{typed}\n\nCustomer notes: {customer}"
+
+
 def plan_job_blocks(
     settings: dict[str, Any] | None, start: datetime, end: datetime
 ) -> list[WorkBlock]:
@@ -182,7 +201,7 @@ async def create_job(data: JobCreate, tenant: TenantDep, db: DbDep) -> JobRead:
         # lat/lng stay null (no geocoding yet).
         address=contact.address,
         postcode=contact.postcode,
-        **data.model_dump(),
+        **{**data.model_dump(), "notes": merge_contact_notes(data.notes, contact.notes)},
     )
     # Multi-day split: a duration beyond the tenant's daily working hours is
     # capped at day 1 here; the remaining blocks become appointments below.

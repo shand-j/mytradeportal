@@ -102,6 +102,42 @@ async def test_create_job_with_notes_and_assignee(client: AsyncClient, db: Async
     assert fetched.json()["assigned_to"] == "Spark One"
 
 
+async def test_create_job_merges_contact_notes(client: AsyncClient) -> None:
+    """The CRM contact's notes are appended to the job notes at creation,
+    keeping whatever the user typed on the create screen first."""
+    tenant = await _create_tenant(client, f"job-{uuid4().hex[:8]}")
+    contact_response = await client.post(
+        "/contacts",
+        headers={"X-Tenant-ID": tenant["id"]},
+        json={"name": "Notes Carrier", "notes": "Gate code 4521; dog on site"},
+    )
+    assert contact_response.status_code == 201
+    contact = contact_response.json()
+
+    response = await client.post(
+        "/jobs",
+        headers={"X-Tenant-ID": tenant["id"]},
+        json={
+            "contact_id": contact["id"],
+            "title": "Rewire kitchen",
+            "notes": "Parking on driveway",
+        },
+    )
+    assert response.status_code == 201, response.text
+    job = response.json()
+    assert job["notes"].startswith("Parking on driveway")
+    assert "Gate code 4521; dog on site" in job["notes"]
+
+    # No notes typed → the contact's notes alone seed the job notes.
+    bare = await client.post(
+        "/jobs",
+        headers={"X-Tenant-ID": tenant["id"]},
+        json={"contact_id": contact["id"], "title": "EICR"},
+    )
+    assert bare.status_code == 201, bare.text
+    assert "Gate code 4521; dog on site" in bare.json()["notes"]
+
+
 async def test_create_job_rejects_unknown_assignee(client: AsyncClient) -> None:
     tenant = await _create_tenant(client, f"job-{uuid4().hex[:8]}")
     contact = await _create_contact(client, tenant["id"], "Bad Assignee")
