@@ -457,3 +457,66 @@ async def test_convert_approved_quote_to_job(client: AsyncClient, db: AsyncSessi
         f"/quotes/{quote['id']}/convert-to-job", headers={"X-Tenant-ID": tenant["id"]}
     )
     assert again.status_code == 409
+
+
+async def test_convert_quote_to_job_carries_quote_request_photos(
+    client: AsyncClient, db: AsyncSession
+) -> None:
+    """quote → job: photos from the quote request land on the job record.
+
+    Covers both storage shapes: ``MediaAsset`` rows (customer-app uploads) and
+    the intake form's ``media_urls`` JSONB, which previously never made it onto
+    the job. A URL present in both is carried once.
+    """
+    tenant = await _create_tenant(client, f"quote-{uuid4().hex[:8]}")
+    headers = {"X-Tenant-ID": tenant["id"]}
+    contact = await _create_contact(client, tenant["id"], "Photo Convert")
+
+    from app.models import Quote as QuoteModel
+    from sqlalchemy import update as sa_update
+
+    intake_url = f"/files/download?key=tenants/{tenant['id']}/intake/{uuid4().hex}/site.jpg"
+    shared_url = f"https://api.example.com/files/download?key=tenants/{tenant['id']}/shared.jpg"
+    app_url = f"https://api.example.com/files/download?key=tenants/{tenant['id']}/app.jpg"
+
+    lead = await client.post(
+        "/quote-requests",
+        headers=headers,
+        json={
+            "contact_id": contact["id"],
+            "raw_text": "Fuse board upgrade",
+            "media_urls": [intake_url, shared_url],
+        },
+    )
+    assert lead.status_code == 201, lead.text
+    lead_id = lead.json()["id"]
+
+    # Customer-app style upload: one asset duplicating a media_url, one unique.
+    for url in (shared_url, app_url):
+        attached = await client.post(
+            f"/quote-requests/{lead_id}/media",
+            headers=headers,
+            json={"file_url": url, "source": "customer_app"},
+        )
+        assert attached.status_code == 201, attached.text
+
+    quote = await _create_quote(client, tenant["id"], contact["id"])
+    await db.execute(
+        sa_update(QuoteModel)
+        .where(QuoteModel.id == UUID(quote["id"]))
+        .values(quote_request_id=UUID(lead_id))
+    )
+    await db.commit()
+
+    approved = await client.post(f"/quotes/{quote['id']}/approve", headers=headers, json={})
+    assert approved.status_code == 200, approved.text
+
+    converted = await client.post(f"/quotes/{quote['id']}/convert-to-job", headers=headers)
+    assert converted.status_code == 201, converted.text
+    job = converted.json()
+    assert sorted(job["photos"]) == sorted([intake_url, shared_url, app_url])
+
+    # The photos survive on a fresh read of the job record.
+    fetched = await client.get(f"/jobs/{job['id']}", headers=headers)
+    assert fetched.status_code == 200
+    assert sorted(fetched.json()["photos"]) == sorted([intake_url, shared_url, app_url])

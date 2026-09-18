@@ -6,6 +6,7 @@ from datetime import date, datetime, timedelta
 from decimal import Decimal
 from io import BytesIO
 from typing import Annotated, Any
+from urllib.parse import parse_qs, urlparse
 from uuid import UUID, uuid4
 
 import structlog
@@ -1536,6 +1537,52 @@ def _earliest_accepted_date(accepted_dates: list[str]) -> date | None:
     return min(parsed) if parsed else None
 
 
+def _file_key_from_url(url: str) -> str | None:
+    """Storage key inside an API-proxied download URL, when the URL carries one."""
+    keys = parse_qs(urlparse(url).query).get("key")
+    return keys[0] if keys else None
+
+
+async def _carry_intake_photos_to_job(
+    db: AsyncSession, tenant_id: UUID, quote: Quote, job: Job
+) -> None:
+    """Promote the quote request's ``media_urls`` photos onto the job.
+
+    The public intake form and staff quote-request create store photos only in
+    the quote request's ``media_urls`` JSONB — never as ``MediaAsset`` rows —
+    so the re-point above cannot see them and they vanish from the job record.
+    URLs already attached as media assets (customer-app uploads) are skipped.
+    """
+    if quote.quote_request_id is None:
+        return
+    quote_request = await db.get(QuoteRequest, quote.quote_request_id)
+    if quote_request is None:
+        return
+    urls = [url for url in (quote_request.media_urls or []) if url]
+    if not urls:
+        return
+    existing = await db.scalars(
+        select(MediaAsset.file_url).where(
+            MediaAsset.tenant_id == tenant_id, MediaAsset.job_id == job.id
+        )
+    )
+    seen = set(existing.all())
+    for url in urls:
+        if url in seen:
+            continue
+        seen.add(url)
+        db.add(
+            MediaAsset(
+                tenant_id=tenant_id,
+                quote_request_id=quote_request.id,
+                job_id=job.id,
+                file_url=url,
+                file_key=_file_key_from_url(url),
+                source="intake",
+            )
+        )
+
+
 @router.post("/{quote_id}/convert-to-job", status_code=status.HTTP_201_CREATED)
 async def convert_quote_to_job(
     quote_id: UUID,
@@ -1558,7 +1605,9 @@ async def convert_quote_to_job(
     the job. The job's address and postcode are denormalised from the contact
     at this point — a later contact edit does not rewrite the job. When the
     conversion lands on a schedule the customer gets the ``booking_confirmed``
-    email, same as job create and reschedules.
+    email, same as job create and reschedules. Photos attached to the quote or
+    its quote request (``MediaAsset`` rows and the intake form's ``media_urls``)
+    move onto the job record.
     """
     quote = await _get_quote(db, tenant.id, quote_id)
     if quote.status != "approved":
@@ -1671,6 +1720,9 @@ async def convert_quote_to_job(
         .where(MediaAsset.tenant_id == tenant.id, or_(*media_conditions))
         .values(job_id=job.id)
     )
+    # Intake photos live only in the quote request's media_urls JSONB; promote
+    # them to media assets on the job or they would be lost here.
+    await _carry_intake_photos_to_job(db, tenant.id, quote, job)
 
     await write_audit_log(
         db,
