@@ -43,7 +43,7 @@ from app.calculations import (
 from app.config import settings
 from app.database import get_db
 from app.dependencies import AiAllowanceDep, CurrentUserDep, TenantDep
-from app.email import resolve_customer_magic_link, send_customer_email
+from app.email import resolve_customer_magic_link, send_customer_email, tenant_reply_to
 from app.email_templates import quote_ready as quote_ready_template
 from app.limiter import limiter, tenant_key
 from app.models import (
@@ -421,7 +421,7 @@ async def send_quote(
         event="quote_sent",
         template="quote_ready",
         from_name=business_name,
-        reply_to=(tenant_row.email if tenant_row is not None and tenant_row.email else None),
+        reply_to=tenant_reply_to(tenant_row, quote_id=str(quote.id)),
         context={
             "quote_id": str(quote.id),
             "contact_id": str(quote.contact_id),

@@ -67,7 +67,7 @@ from app.config import (
 )
 from app.database import AsyncSessionLocal
 from app.dunning import run_dunning_followups
-from app.email import resolve_customer_magic_link, send_customer_email
+from app.email import resolve_customer_magic_link, send_customer_email, tenant_reply_to
 from app.email_templates import invoice_reminder as invoice_reminder_template
 from app.email_templates import quote_reminder as quote_reminder_template
 from app.fx import get_usd_gbp_rate, store_fx_rate
@@ -339,7 +339,7 @@ async def _process_quote_reminders(
             event="quote_reminder",
             template="quote_reminder",
             from_name=tenant.name,
-            reply_to=tenant.email or None,
+            reply_to=tenant_reply_to(tenant, quote_id=str(quote.id)),
             context={"quote_id": str(quote.id), "tenant_id": str(tenant.id)},
         )
         if not delivered:
@@ -484,7 +484,7 @@ async def _process_invoice_reminders(
             event="invoice_reminder",
             template="invoice_reminder",
             from_name=tenant.name,
-            reply_to=tenant.email or None,
+            reply_to=tenant_reply_to(tenant, invoice_id=str(invoice.id)),
             context={"invoice_id": str(invoice.id), "tenant_id": str(tenant.id)},
         )
         if not delivered:

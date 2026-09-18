@@ -200,7 +200,7 @@ async def email_triage_question(
     email address.
     """
     from app.config import settings
-    from app.email import send_customer_email
+    from app.email import send_customer_email, tenant_reply_to
     from app.email_templates import triage_question as triage_question_template
     from app.models import Contact
 
@@ -229,7 +229,7 @@ async def email_triage_question(
         event="ai_followup_needed",
         template="triage_question",
         from_name=tenant.name,
-        reply_to=tenant.email if tenant.email else None,
+        reply_to=tenant_reply_to(tenant, quote_request_id=str(quote_request.id)),
         context={
             "quote_request_id": str(quote_request.id),
             "contact_id": str(quote_request.contact_id),

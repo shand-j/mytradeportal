@@ -25,14 +25,18 @@ from app.calculations import (
 )
 from app.database import get_db
 from app.dependencies import CurrentUserDep, TenantDep
-from app.email import resolve_customer_magic_link, send_customer_email
+from app.email import resolve_customer_magic_link, send_customer_email, tenant_reply_to
 from app.email_templates import invoice_sent as invoice_sent_template
 from app.models import Contact, Invoice, InvoiceLineItem, Job, Quote, QuoteRequest, Tenant
 from app.payment_details import tenant_payment_details
 from app.payment_notifications import send_payment_received_email
 from app.push import notify_customer, notify_staff
 from app.rls import set_tenant_in_session
-from app.routers.public_docs import issue_document_token, public_document_url
+from app.routers.public_docs import (
+    _invoice_payment_url,
+    issue_document_token,
+    public_document_url,
+)
 from app.schemas import InvoiceCreate, InvoiceRead, InvoiceUpdate
 
 router = APIRouter(prefix="/invoices", tags=["Invoices"])
@@ -384,6 +388,16 @@ async def send_invoice(
         portal_url = await resolve_customer_magic_link(
             db, tenant_row, contact, f"/invoices/{invoice.id}"
         )
+        # Prominent "Pay now" CTA straight to the secure /pay page — customers
+        # should not have to hunt through the view-only page to pay. Best-
+        # effort: without Stripe/card opt-in this is None and the template
+        # falls back to the view/sign-in CTAs. The caller's commit persists
+        # the freshly created PaymentIntent reference.
+        pay_url = (
+            await _invoice_payment_url(db, invoice, tenant_row, raw_token, persist=False)
+            if tenant_row is not None
+            else None
+        )
         subject, html, text = invoice_sent_template(
             customer_name=contact.name.split()[0] if contact.name else "there",
             business_name=business_name,
@@ -392,6 +406,7 @@ async def send_invoice(
             payment_details=payment_details,
             view_url=view_url,
             portal_url=portal_url,
+            pay_url=pay_url,
         )
         await send_customer_email(
             db,
@@ -405,7 +420,7 @@ async def send_invoice(
             event="invoice_sent",
             template="invoice_sent",
             from_name=business_name,
-            reply_to=tenant_row.email if tenant_row is not None and tenant_row.email else None,
+            reply_to=tenant_reply_to(tenant_row, invoice_id=str(invoice.id)),
             context={"invoice_id": str(invoice.id), "tenant_id": str(tenant.id)},
         )
 

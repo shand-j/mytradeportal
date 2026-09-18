@@ -44,7 +44,7 @@ from sqlalchemy.orm import selectinload
 
 from app.database import get_db
 from app.dependencies import TenantDep
-from app.email import send_customer_email
+from app.email import send_customer_email, tenant_reply_to
 from app.email_templates import booking_confirmed as booking_confirmed_template
 from app.models import Appointment, Contact, Customer, Job, Quote, QuoteLineItem, Tenant, User
 from app.portal_links import magic_link_url
@@ -325,7 +325,7 @@ async def _email_booking_confirmed(db: AsyncSession, tenant_id: UUID, job: Job) 
             event="booking_confirmed",
             template="booking_confirmed",
             from_name=business_name,
-            reply_to=(tenant_row.email if tenant_row is not None and tenant_row.email else None),
+            reply_to=tenant_reply_to(tenant_row, job_id=str(job.id)),
             context={"job_id": str(job.id), "tenant_id": str(tenant_id)},
         )
     except Exception as exc:

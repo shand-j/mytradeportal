@@ -419,7 +419,9 @@ async def test_payment_url_null_when_tenant_default_on_but_invoice_override_off(
     response = await client.get(f"/public/invoice/{raw}")
     assert response.status_code == 200
     assert response.json()["payment_url"] is None
-    create_intent.assert_not_called()
+    # The send minted the intent while the tenant default was still on; the
+    # override-off view must not mint another one.
+    create_intent.assert_called_once()
 
 
 async def test_payment_url_present_when_tenant_default_off_but_invoice_override_on(
@@ -464,7 +466,9 @@ async def test_payment_url_null_when_invoice_cancelled(
     data = response.json()
     assert data["status"] == "cancelled"
     assert data["payment_url"] is None
-    create_intent.assert_not_called()
+    # The send minted the intent while the invoice was still payable; the
+    # cancelled view must not mint another one.
+    create_intent.assert_called_once()
 
 
 async def test_payment_url_null_when_invoice_refunded(
@@ -486,7 +490,9 @@ async def test_payment_url_null_when_invoice_refunded(
     data = response.json()
     assert data["status"] == "refunded"
     assert data["payment_url"] is None
-    create_intent.assert_not_called()
+    # The send minted the intent while the invoice was still payable; the
+    # refunded view must not mint another one.
+    create_intent.assert_called_once()
 
 
 async def test_payment_url_null_not_500_when_stripe_client_raises(
@@ -508,8 +514,8 @@ async def test_payment_url_null_not_500_when_stripe_client_raises(
 async def test_payment_url_reuses_open_intent_on_second_fetch(
     client: AsyncClient, db: AsyncSession, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The first view creates the PaymentIntent; later views reuse the open
-    one — no duplicate intents for the same unpaid invoice."""
+    """The send creates the PaymentIntent; later views reuse the open one —
+    no duplicate intents for the same unpaid invoice."""
     monkeypatch.setattr("app.config.STRIPE_SECRET_KEY", "sk_test_x")
     create_intent = AsyncMock(return_value={"id": "pi_reuse", "client_secret": "cs_reuse"})
     retrieve_intent = AsyncMock(
@@ -533,7 +539,9 @@ async def test_payment_url_reuses_open_intent_on_second_fetch(
     assert first.json()["payment_url"] == expected
     assert second.json()["payment_url"] == expected
     create_intent.assert_awaited_once()
-    retrieve_intent.assert_awaited_once_with("pi_reuse")
+    # Both views reuse the open intent minted at send time.
+    assert retrieve_intent.await_count == 2
+    retrieve_intent.assert_awaited_with("pi_reuse")
 
 
 async def test_payment_url_creates_fresh_intent_when_existing_one_abandoned(
@@ -566,4 +574,5 @@ async def test_payment_url_creates_fresh_intent_when_existing_one_abandoned(
     assert response.json()["payment_url"] == (
         f"https://www.mytradeportal.co.uk/pay/{raw}?pi=pi_fresh&cs=cs_fresh"
     )
-    create_intent.assert_awaited_once()
+    # One mint at send, a second when the stored intent turned out to be dead.
+    assert create_intent.await_count == 2
