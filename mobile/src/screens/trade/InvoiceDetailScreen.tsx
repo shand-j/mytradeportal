@@ -56,6 +56,12 @@ export type InvoiceDetailScreenProps = {
   paidVia?: string | null;
   /** Per-invoice card-payment override; null inherits the tenant default. */
   acceptCardPayments?: boolean | null;
+  /**
+   * True only when the tenant's Stripe account is connected and able to take
+   * card payments. The per-invoice override card is hidden entirely otherwise —
+   * without Stripe the toggle can never take effect, so it must not render.
+   */
+  stripeEnabled?: boolean;
   /** When provided (connected mode), PATCHes the card-payment override. */
   onSetCardPayments?: (value: boolean | null) => Promise<void>;
   savingCardPayments?: boolean;
@@ -78,6 +84,7 @@ export function InvoiceDetailScreen({
   savingLineItems,
   paidVia = null,
   acceptCardPayments = null,
+  stripeEnabled = false,
   onSetCardPayments,
   savingCardPayments,
   onRefund,
@@ -394,7 +401,7 @@ export function InvoiceDetailScreen({
           )}
         </View>
 
-        {!isPaid && status !== "refunded" && onSetCardPayments && (
+        {stripeEnabled && !isPaid && status !== "refunded" && onSetCardPayments && (
           <View style={styles.card}>
             <Text variant="body" weight="semibold">
               Card payments

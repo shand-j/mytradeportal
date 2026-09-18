@@ -39,6 +39,10 @@ export function PaymentsSettingsScreen({ onClose }: PaymentsSettingsScreenProps)
   const [error, setError] = useState<string | null>(null);
 
   const status = statusQuery.data;
+  // The default toggle is the primary control for card payments and must only
+  // be toggleable when Stripe is connected AND able to take card payments —
+  // a connected-but-restricted account still can't accept charges.
+  const cardsLive = Boolean(status?.connected && status.chargesEnabled);
 
   const openStripeOnboarding = async () => {
     setError(null);
@@ -138,13 +142,15 @@ export function PaymentsSettingsScreen({ onClose }: PaymentsSettingsScreenProps)
             New invoices
           </Text>
           <Text variant="caption" color="secondary">
-            New invoices offer online card payment by default. You can override this per invoice.
+            {cardsLive
+              ? "New invoices offer online card payment by default. You can override this per invoice."
+              : "Connect Stripe above to let customers pay invoices online by card."}
           </Text>
           <Toggle
             testID="payments-accept-card-default"
             label="Accept card payments on new invoices"
-            value={status?.acceptCardDefault ?? false}
-            disabled={!status || settingsMutation.isPending}
+            value={cardsLive ? (status?.acceptCardDefault ?? false) : false}
+            disabled={!cardsLive || settingsMutation.isPending}
             onChange={toggleDefault}
           />
         </View>
