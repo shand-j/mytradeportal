@@ -41,12 +41,17 @@ def password_reset(*, name: str | None, reset_url: str) -> tuple[str, str, str]:
     return subject, html, text
 
 
-def _magic_link_cta(url: str, label: str) -> tuple[str, str]:
-    """Primary sign-in CTA block for a magic portal link, as (text, html)."""
+def _magic_link_cta(url: str, label: str, brand_color: str | None = None) -> tuple[str, str]:
+    """Primary sign-in CTA block for a magic portal link, as (text, html).
+
+    ``brand_color`` tints the button with the tenant's brand; the indigo
+    fallback is the platform default for tenants without branding.
+    """
+    button_bg = brand_color or "#4F46E5"
     text = f"{label}:\n{url}\n\n"
     html = f"""\
     <p style="margin:24px 0;">
-      <a href="{url}" style="background:#4F46E5;color:#fff;padding:12px 20px;border-radius:8px;text-decoration:none;font-weight:600;">{label}</a>
+      <a href="{url}" style="background:{button_bg};color:#fff;padding:12px 20px;border-radius:8px;text-decoration:none;font-weight:600;">{label}</a>
     </p>
     <p style="color:#64748b;font-size:13px;">This link signs you in — no password needed. If the button doesn't work, copy and paste it:<br><a href="{url}" style="color:#4F46E5;">{url}</a></p>
 """
@@ -70,22 +75,24 @@ def quote_ready(
     quote_total: str,
     view_url: str,
     portal_url: str | None = None,
+    brand_color: str | None = None,
 ) -> tuple[str, str, str]:
     """Quote-issued email. (subject, html, text).
 
     ``portal_url`` is the magic sign-in link to the customer portal; when
     present it becomes the primary CTA and ``view_url`` (the view-only
     document page) drops to a secondary "view without signing in" link.
+    ``brand_color`` tints the CTA button with the tenant's brand.
     """
     subject = f"Your quote from {business_name}"
     if portal_url:
-        text_cta, html_cta = _magic_link_cta(portal_url, "View and accept your quote")
+        text_cta, html_cta = _magic_link_cta(portal_url, "View and accept your quote", brand_color)
         text_secondary, html_secondary = _view_only_secondary(view_url)
     else:
         text_cta = f"View and accept the quote here:\n{view_url}\n\n"
         html_cta = f"""\
     <p style="margin:24px 0;">
-      <a href="{view_url}" style="background:#4F46E5;color:#fff;padding:12px 20px;border-radius:8px;text-decoration:none;font-weight:600;">View quote</a>
+      <a href="{view_url}" style="background:{brand_color or "#4F46E5"};color:#fff;padding:12px 20px;border-radius:8px;text-decoration:none;font-weight:600;">View quote</a>
     </p>
     <p style="color:#64748b;font-size:13px;">If the button doesn't work, copy and paste this link:<br><a href="{view_url}" style="color:#4F46E5;">{view_url}</a></p>
 """
@@ -161,6 +168,7 @@ def invoice_sent(
     view_url: str | None = None,
     portal_url: str | None = None,
     pay_url: str | None = None,
+    brand_color: str | None = None,
 ) -> tuple[str, str, str]:
     """Invoice-issued email. (subject, html, text).
 
@@ -173,22 +181,26 @@ def invoice_sent(
     sign-in link to the customer portal; when present it becomes the
     secondary CTA and ``view_url`` (the view-only document/pay page) drops to
     a "view without signing in" link. When none of the three is present the
-    email falls back to the app-only copy.
+    email falls back to the app-only copy. ``brand_color`` tints the CTA
+    buttons with the tenant's brand (white button text; the unbranded
+    fallback keeps the platform dark/gold).
     """
     subject = f"Invoice {invoice_number} from {business_name}"
     payment_text, payment_html = _payment_details_block(payment_details)
+    button_bg = brand_color or "#0F1E26"
+    button_fg = "#fff" if brand_color else "#FFC107"
     if pay_url:
         text_pay = f"Pay now — it only takes a minute:\n{pay_url}\n\n"
         html_pay = f"""\
     <p style="margin:24px 0;">
-      <a href="{pay_url}" style="display:inline-block;background:#0F1E26;color:#FFC107;padding:12px 24px;text-decoration:none;font-weight:700;border-radius:8px;">Pay now</a>
+      <a href="{pay_url}" style="display:inline-block;background:{button_bg};color:{button_fg};padding:12px 24px;text-decoration:none;font-weight:700;border-radius:8px;">Pay now</a>
     </p>
     <p style="color:#64748b;font-size:13px;">Secure card payment. If the button doesn't work, copy and paste this link:<br><a href="{pay_url}" style="color:#4F46E5;">{pay_url}</a></p>
 """
     else:
         text_pay, html_pay = "", ""
     if portal_url:
-        text_cta, html_cta = _magic_link_cta(portal_url, "View and pay your invoice")
+        text_cta, html_cta = _magic_link_cta(portal_url, "View and pay your invoice", brand_color)
         if view_url:
             text_secondary, html_secondary = _view_only_secondary(view_url)
         else:
@@ -197,7 +209,7 @@ def invoice_sent(
         text_cta = f"View your invoice online here:\n{view_url}\n\n"
         html_cta = f"""\
     <p style="margin:24px 0;">
-      <a href="{view_url}" style="background:#4F46E5;color:#fff;padding:12px 20px;border-radius:8px;text-decoration:none;font-weight:600;">View invoice</a>
+      <a href="{view_url}" style="background:{button_bg};color:{button_fg};padding:12px 20px;border-radius:8px;text-decoration:none;font-weight:600;">View invoice</a>
     </p>
     <p style="color:#64748b;font-size:13px;">If the button doesn't work, copy and paste this link:<br><a href="{view_url}" style="color:#4F46E5;">{view_url}</a></p>
 """

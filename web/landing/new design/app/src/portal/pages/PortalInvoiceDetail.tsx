@@ -57,7 +57,10 @@ function InvoiceDetail({ id }: { id: string }) {
   const unpaid = invoice.status !== 'paid' && invoice.status !== 'cancelled'
 
   return (
-    <section className="border-2 border-[var(--ink)] bg-[var(--paper)]">
+    <section
+      className="border-2 border-[var(--ink)] bg-[var(--paper)]"
+      style={{ '--brand': brandColor } as React.CSSProperties}
+    >
       <div className="px-6 py-[var(--space-lg)] md:px-10">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div className="min-w-0">

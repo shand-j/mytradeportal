@@ -407,6 +407,7 @@ async def send_invoice(
             view_url=view_url,
             portal_url=portal_url,
             pay_url=pay_url,
+            brand_color=tenant_row.primary_color if tenant_row is not None else None,
         )
         await send_customer_email(
             db,
