@@ -11,6 +11,13 @@ Phone numbers are free text in the CRM (``Contact.phone`` / ``User.phone``,
 no validation anywhere), so every send goes through :func:`normalize_phone`
 to get a UK-aware E.164 number; un-normalisable numbers are skipped by the
 caller (customer → email fallback, staff → push only).
+
+Sender identity: the tenant's business name is preferred, sent as a Telnyx
+alphanumeric sender ID (see :func:`normalize_sender`); it falls back to the
+configured ``TELNYX_FROM_NUMBER`` / messaging profile. Cost model note: the
+fair-use guardrail assumes exactly ONE SMS segment per reminder, so callers
+must keep bodies within :func:`sms_segment_limit` — the reminder sweep
+truncates to a word boundary when needed.
 """
 
 from __future__ import annotations
@@ -31,6 +38,30 @@ logger = structlog.get_logger("api.sms")
 TELNYX_MESSAGES_ENDPOINT = "https://api.telnyx.com/v2/messages"
 
 _STRIP_CHARS = re.compile(r"[\s\-\.\(\)]")
+_SENDER_STRIP = re.compile(r"[^A-Z0-9]")
+
+# GSM 03.38 basic character table + the extension table (escaped) chars.
+# Extension chars (e.g. £ ^ { } [ ] ~ | €) still encode as GSM-7, so they
+# keep the 160-char segment budget; any character outside this set forces
+# UCS-2 and the 70-char limit.
+_GSM7_BASIC = (
+    "@£$¥èéùìòÇ\nØø\rÅåΔ_ΦΓΛΩΠΨΣΘΞÆæßÉ"
+    " !\"#¤%&'()*+,-./0123456789:;<=>?¡"
+    "ABCDEFGHIJKLMNOPQRSTUVWXYZÄÖÑÜ§¿"
+    "abcdefghijklmnopqrstuvwxyzäöñüà"
+)
+_GSM7_EXTENSION = "^{}\\[~]|€"
+GSM7_CHARSET: frozenset[str] = frozenset(_GSM7_BASIC + _GSM7_EXTENSION)
+
+
+def sms_segment_limit(text: str) -> int:
+    """Max characters of ``text`` that fit one SMS segment.
+
+    160 for GSM-7-encodable text, 70 when any character needs UCS-2.
+    Concatenated multi-segment messages are never acceptable here — the
+    fair-use cost model assumes one segment per reminder.
+    """
+    return 160 if all(c in GSM7_CHARSET for c in text) else 70
 
 
 def normalize_phone(raw: str | None) -> str | None:
@@ -69,6 +100,22 @@ def normalize_phone(raw: str | None) -> str | None:
     return None
 
 
+def normalize_sender(name: str | None) -> str | None:
+    """Tenant business name → Telnyx alphanumeric sender id.
+
+    Uppercased, everything outside A-Z0-9 stripped, truncated to 11 chars
+    (the alphanumeric-sender limit). Returns ``None`` when nothing usable
+    remains or the result is all digits — a digit string would be read as a
+    phone number, not a sender name.
+    """
+    if not name:
+        return None
+    cleaned = _SENDER_STRIP.sub("", name.upper())[:11]
+    if not cleaned or not any(c.isalpha() for c in cleaned):
+        return None
+    return cleaned
+
+
 def sms_configured() -> bool:
     """True when Telnyx credentials are present enough to attempt a send.
 
@@ -81,19 +128,31 @@ def sms_configured() -> bool:
     )
 
 
-async def send_sms(*, to_phone: str, text: str, tenant_id: UUID | None = None) -> str | None:
+async def send_sms(
+    *,
+    to_phone: str,
+    text: str,
+    tenant_name: str | None = None,
+    tenant_id: UUID | None = None,
+) -> str | None:
     """Send one SMS via Telnyx. Never raises.
 
     ``to_phone`` is normalised here; an un-normalisable number is a loud
     warning and ``None`` (the caller then degrades to its fallback channel).
-    Returns the Telnyx message id on success, ``None`` on any failure.
+    The sender is resolved per message: the tenant's business name as an
+    alphanumeric sender ID when it normalises, else the configured
+    ``TELNYX_FROM_NUMBER`` / messaging profile. Returns the Telnyx message
+    id on success, ``None`` on any failure.
     """
     to = normalize_phone(to_phone)
     if to is None:
         logger.warning("sms_skipped_unusable_number", raw=to_phone, tenant_id=str(tenant_id or ""))
         return None
     payload: dict[str, Any] = {"to": to, "text": text}
-    if settings.telnyx_from_number:
+    sender = normalize_sender(tenant_name)
+    if sender:
+        payload["from"] = sender
+    elif settings.telnyx_from_number:
         payload["from"] = settings.telnyx_from_number
     if settings.telnyx_messaging_profile_id:
         payload["messaging_profile_id"] = settings.telnyx_messaging_profile_id

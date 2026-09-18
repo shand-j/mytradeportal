@@ -11,6 +11,21 @@ sides of the booking:
 * **Assigned electrician** — SMS to ``User.phone`` when present; staff always
   get the free in-app/push notification regardless.
 
+Sender identity is the tenant's business name, sent as a Telnyx alphanumeric
+sender ID (falling back to the configured from-number / messaging profile).
+
+Messages always fit ONE SMS segment (the fair-use cost model assumes one
+segment per reminder): bodies are built compactly — address line and greeting
+dropped first if over budget — then hard-truncated at a word boundary, and
+the limit is 70 chars rather than 160 whenever the text contains a
+non-GSM-7 character (see :func:`app.sms.sms_segment_limit`).
+
+STOP opt-out trade-off: "Reply STOP to opt out" is only appended when the
+resolved sender is a NUMBER. When the tenant's name is used as an
+alphanumeric sender ID, customer replies cannot reach us (and UK STOP
+handling is not wired), so promising an opt-out mechanism would be
+misleading — the line is omitted rather than lied about.
+
 Dispatch state lives in the same ``reminders`` table as the other chases:
 one row per actually-delivered reminder, keyed
 ``(entity_type="appointment", entity_id, payload.window_hours, payload.role)``
@@ -57,7 +72,7 @@ from app.models import (
 )
 from app.plans import DEFAULT_PLAN_KEY, current_period, get_plan
 from app.push import notify_staff
-from app.sms import normalize_phone, send_sms, sms_configured
+from app.sms import normalize_phone, normalize_sender, send_sms, sms_configured, sms_segment_limit
 
 if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncSession
@@ -85,17 +100,69 @@ def _windows() -> list[int]:
     return sorted(windows or [24, 2])
 
 
-def _sms_body(*, tenant_name: str, first_name: str, appointment: Appointment) -> str:
-    """Terse GSM-7-safe customer reminder text (well under one SMS segment
-    beyond the opt-out line, and under the 480-char ceiling)."""
+def _fit_single_segment(text: str) -> str:
+    """Hard-truncate ``text`` to one SMS segment at a word boundary.
+
+    Last resort after the compact body forms have been tried: cut at the
+    last word boundary that fits (with an ellipsis), verifying the result
+    against the limit for the characters actually used — "…" is not GSM-7,
+    so a GSM-7 body fitted with "…" drops to the 70-char UCS-2 budget.
+    """
+    if len(text) <= sms_segment_limit(text):
+        return text
+    for ellipsis in ("…", "..."):
+        limit = sms_segment_limit(ellipsis)
+        body = text[: limit - len(ellipsis)].rstrip()
+        space = body.rfind(" ")
+        if space > 0:
+            body = body[:space].rstrip()
+        if not body:
+            continue
+        fitted = f"{body}{ellipsis}"
+        if len(fitted) <= sms_segment_limit(fitted):
+            return fitted
+    return text[:70]
+
+
+def _customer_sms_text(
+    *, tenant_name: str, first_name: str, appointment: Appointment, include_stop: bool
+) -> str:
+    """Customer reminder text, guaranteed to fit one SMS segment.
+
+    Builds the fullest form first (greeting + title + address) and drops
+    the address line, then the greeting, then the business name if over
+    budget; anything still over limit is word-boundary truncated by
+    :func:`_fit_single_segment`.
+    """
     start = appointment.start_at
+    when = f"{start:%a %d %b at %H:%M}"
+    title = (appointment.title or "").strip() or "your appointment"
     address = (appointment.address or "").strip()
-    address_part = f" At: {address}." if address else ""
-    return (
-        f"Hi {first_name}, reminder from {tenant_name}: "
-        f'"{appointment.title}" on {start:%a %d %b at %H:%M}.'
-        f"{address_part} Reply STOP to opt out."
+    stop = " Reply STOP to opt out." if include_stop else ""
+    greeting = f"Hi {first_name}, " if first_name else ""
+    forms = [
+        f'{greeting}reminder from {tenant_name}: "{title}" on {when}.'
+        + (f" At: {address}." if address else "")
+        + stop,
+        f'{greeting}reminder from {tenant_name}: "{title}" on {when}.{stop}',
+        f'Reminder from {tenant_name}: "{title}" on {when}.{stop}',
+        f'Reminder: "{title}" on {when}.{stop}',
+    ]
+    for form in forms:
+        if len(form) <= sms_segment_limit(form):
+            return form
+    return _fit_single_segment(forms[-1])
+
+
+def _staff_sms_text(*, tenant_name: str, appointment: Appointment) -> str:
+    """Staff reminder text, fitted to one SMS segment."""
+    body = (
+        f"Reminder from {tenant_name}: '{appointment.title}' on "
+        f"{appointment.start_at:%a %d %b at %H:%M}. Open the app for details."
     )
+    if len(body) > sms_segment_limit(body):
+        return _fit_single_segment(body)
+    return body
 
 
 async def _sms_fair_use_paused(db: AsyncSession, tenant: Tenant, now: datetime) -> bool:
@@ -249,6 +316,9 @@ async def process_appointment_reminders(
                 error=str(exc)[:300],
             )
     sms_allowed = sms_allowed and not sms_paused
+    # STOP opt-out only makes sense when replies can reach us: an
+    # alphanumeric sender ID (tenant business name) cannot receive texts.
+    numeric_sender = normalize_sender(tenant.name) is None
 
     for appointment in appointments:
         delta = appointment.start_at - now
@@ -270,7 +340,7 @@ async def process_appointment_reminders(
                     continue
                 if role == "customer":
                     delivered = await _remind_customer(
-                        db, tenant, appointment, contact, window, sms_allowed
+                        db, tenant, appointment, contact, window, sms_allowed, numeric_sender
                     )
                 else:
                     if staff is None:
@@ -341,6 +411,7 @@ async def _remind_customer(
     contact: Contact | None,
     window: int,
     sms_allowed: bool,
+    numeric_sender: bool,
 ) -> str | None:
     """Customer reminder: SMS when allowed, else the email fallback.
 
@@ -351,12 +422,18 @@ async def _remind_customer(
     if contact is None:
         return None
     if sms_allowed and contact.phone and normalize_phone(contact.phone):
-        body = _sms_body(
+        body = _customer_sms_text(
             tenant_name=tenant.name,
-            first_name=(contact.name.split()[0] if contact.name else "there"),
+            first_name=(contact.name.split()[0] if contact.name else ""),
             appointment=appointment,
+            include_stop=numeric_sender,
         )
-        message_id = await send_sms(to_phone=contact.phone, text=body, tenant_id=tenant.id)
+        message_id = await send_sms(
+            to_phone=contact.phone,
+            text=body,
+            tenant_name=tenant.name,
+            tenant_id=tenant.id,
+        )
         if message_id:
             return "sms"
         # Telnyx failure → degrade to email for this window rather than
@@ -409,12 +486,13 @@ async def _remind_staff(
     """
     channel = "push"
     if sms_allowed and staff.phone and normalize_phone(staff.phone):
-        body = (
-            f"Reminder from {tenant.name}: '{appointment.title}' on "
-            f"{appointment.start_at:%a %d %b at %H:%M}. "
-            "Open the app for details."
+        body = _staff_sms_text(tenant_name=tenant.name, appointment=appointment)
+        message_id = await send_sms(
+            to_phone=staff.phone,
+            text=body,
+            tenant_name=tenant.name,
+            tenant_id=tenant.id,
         )
-        message_id = await send_sms(to_phone=staff.phone, text=body, tenant_id=tenant.id)
         if message_id:
             channel = "sms"
     return channel
