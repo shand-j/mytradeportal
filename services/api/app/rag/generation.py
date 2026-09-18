@@ -32,7 +32,7 @@ logger = structlog.get_logger("api.rag")
 # Prompt versions recorded on every ai_call_events row. Bump whenever the
 # prompts above change materially so quality/cost can be compared across
 # prompt iterations.
-QUOTE_DRAFT_PROMPT_VERSION = "quote-draft.v9"
+QUOTE_DRAFT_PROMPT_VERSION = "quote-draft.v10"
 TRIAGE_FOLLOWUP_PROMPT_VERSION = "triage-followup.v3"
 
 
@@ -114,6 +114,10 @@ return your best-effort minimal draft and record what you assumed.
 - Always set ``estimated_hours``: your best estimate of the TOTAL on-site \
 working hours the whole job will take one electrician (a number, e.g. 6.5). \
 It drives scheduling, so be realistic rather than optimistic.
+- When "Observations from customer photos" are provided below, treat them as \
+confirmed site facts: never record an assumption that contradicts something \
+the photos show, and reference what was observed in your ``notes`` so the \
+electrician can see the photos informed the quote.
 
 Respond with valid JSON in exactly this shape:
 {
@@ -140,6 +144,7 @@ def _build_user_prompt(
     tenant_settings: dict[str, Any],
     site_survey: dict[str, Any] | None = None,
     knowledge_chunks: list[dict[str, Any]] | None = None,
+    image_observations: list[str] | None = None,
 ) -> str:
     lines = [
         "Customer job description:",
@@ -159,6 +164,16 @@ def _build_user_prompt(
                 "",
             ]
         )
+    if image_observations:
+        # Vision captions of the customer's photos. These are observed facts,
+        # not guesses — the model must not contradict them in its assumptions.
+        lines.append(
+            "Observations from customer photos (confirmed facts identified in "
+            "the photos the customer attached — do not contradict these in your "
+            "assumptions, and reference what was observed in your notes):"
+        )
+        lines.extend(f"- {observation}" for observation in image_observations)
+        lines.append("")
 
     min_charge = tenant_settings.get("minimum_charge", "not set")
     markup = tenant_settings.get("markup_percent", "not set")
@@ -603,6 +618,7 @@ async def generate_quote_from_prompt(
     property_type: str | None = None,
     site_survey: dict[str, Any] | None = None,
     knowledge_chunks: list[dict[str, Any]] | None = None,
+    image_observations: list[str] | None = None,
     model: str | None = None,
     api_base: str | None = None,
     api_key: str | None = None,
@@ -615,6 +631,11 @@ async def generate_quote_from_prompt(
     knowledge-collection lookup so this stays a one-line wiring for the
     existing quote router while the eval harness / tests can pass an empty
     list to skip retrieval.
+
+    ``image_observations`` are factual captions of the customer's photos
+    produced by :func:`app.rag.vision.caption_images`; when supplied they are
+    rendered into the prompt as confirmed site facts so the draft (and its
+    assumptions) is conditioned on what the photos actually show.
 
     ``model`` / ``api_base`` / ``api_key`` optionally override the configured
     provider for a single call (the public demo uses them to route to a fast,
@@ -646,6 +667,7 @@ async def generate_quote_from_prompt(
         tenant_settings,
         site_survey,
         knowledge_chunks=knowledge_chunks,
+        image_observations=image_observations,
     )
     completion_kwargs: dict[str, Any] = {
         "model": resolved_model,
