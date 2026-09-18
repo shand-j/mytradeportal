@@ -136,6 +136,71 @@ async def test_bootstrap_rejects_duplicate_slug(client: AsyncClient) -> None:
     assert second.status_code == 409
 
 
+async def test_email_availability_reports_available_for_unknown_email(
+    client: AsyncClient,
+) -> None:
+    email = f"free-{uuid4().hex[:8]}@example.com"
+    response = await client.get("/tenants/email-availability", params={"email": email})
+    assert response.status_code == 200
+    assert response.json() == {"email": email, "available": True}
+
+
+async def test_email_availability_reports_taken_for_existing_account(
+    client: AsyncClient,
+) -> None:
+    email = f"taken-{uuid4().hex[:8]}@example.com"
+    payload = _bootstrap_payload(f"taken-{uuid4().hex[:6]}")
+    payload["admin_email"] = email
+    created = await client.post("/tenants", json=payload)
+    assert created.status_code == 201, created.text
+
+    response = await client.get("/tenants/email-availability", params={"email": email})
+    assert response.status_code == 200
+    assert response.json() == {"email": email, "available": False}
+
+
+async def test_email_availability_lookup_is_case_insensitive(client: AsyncClient) -> None:
+    email = f"case-{uuid4().hex[:8]}@example.com"
+    payload = _bootstrap_payload(f"case-{uuid4().hex[:6]}")
+    payload["admin_email"] = email
+    created = await client.post("/tenants", json=payload)
+    assert created.status_code == 201, created.text
+
+    response = await client.get("/tenants/email-availability", params={"email": email.upper()})
+    assert response.status_code == 200
+    assert response.json()["available"] is False
+
+
+async def test_email_availability_rejects_invalid_email(client: AsyncClient) -> None:
+    response = await client.get("/tenants/email-availability", params={"email": "not-an-email"})
+    assert response.status_code == 422
+
+
+async def test_email_availability_requires_setup_token_when_configured(
+    client: AsyncClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr("app.routers.tenants._settings.setup_token", "expected-token")
+    email = f"tok-{uuid4().hex[:8]}@example.com"
+
+    missing = await client.get("/tenants/email-availability", params={"email": email})
+    assert missing.status_code == 401
+
+    wrong = await client.get(
+        "/tenants/email-availability",
+        params={"email": email},
+        headers={"X-Setup-Token": "wrong-token"},
+    )
+    assert wrong.status_code == 401
+
+    valid = await client.get(
+        "/tenants/email-availability",
+        params={"email": email},
+        headers={"X-Setup-Token": "expected-token"},
+    )
+    assert valid.status_code == 200
+    assert valid.json()["available"] is True
+
+
 async def test_bootstrap_supabase_rejection_returns_502_not_500(
     client: AsyncClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:

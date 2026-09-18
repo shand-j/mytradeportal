@@ -16,6 +16,7 @@ export type FormFieldProps = {
     | "decimal-pad";
   secureTextEntry?: boolean;
   autoCapitalize?: "none" | "sentences" | "words" | "characters";
+  onBlur?: () => void;
   maxLength?: number;
   multiline?: boolean;
   testID?: string;
