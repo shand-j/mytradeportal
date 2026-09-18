@@ -211,6 +211,162 @@ async def test_onboarding_return_syncs_flags(
 
 
 # ---------------------------------------------------------------------------
+# POST /payments/connect/session (embedded onboarding AccountSession)
+# ---------------------------------------------------------------------------
+
+
+async def test_connect_session_503_when_stripe_unconfigured(
+    admin_client: AsyncClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr("app.config.STRIPE_SECRET_KEY", "")
+    response = await admin_client.post("/payments/connect/session")
+    assert response.status_code == 503
+    assert response.json()["detail"] == "payments_not_configured"
+
+
+async def test_connect_session_creates_account_and_returns_client_secret(
+    admin_client: AsyncClient, db: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr("app.config.STRIPE_SECRET_KEY", "sk_test_x")
+    monkeypatch.setattr("app.config.STRIPE_PUBLISHABLE_KEY", "pk_test_x")
+    create_account = AsyncMock(return_value={"id": "acct_sess_1"})
+    account_session = AsyncMock(
+        return_value={"client_secret": "accs_secret_1", "expires_at": 1730000000}
+    )
+    monkeypatch.setattr("app.stripe_client.create_connected_account_v2", create_account)
+    monkeypatch.setattr("app.stripe_client.create_account_session", account_session)
+
+    response = await admin_client.post("/payments/connect/session")
+    assert response.status_code == 200
+    data = response.json()
+    assert data["client_secret"] == "accs_secret_1"
+    assert data["expires_at"] == 1730000000
+    assert data["stripe_account_id"] == "acct_sess_1"
+    assert data["publishable_key"] == "pk_test_x"
+
+    tenant_id = _tenant_id(admin_client)
+    await set_tenant_in_session(db, tenant_id)
+    account = await db.scalar(select(StripeAccount).where(StripeAccount.tenant_id == tenant_id))
+    assert account is not None
+    assert account.stripe_account_id == "acct_sess_1"
+
+    # A second call reuses the existing account and only mints a new session.
+    response = await admin_client.post("/payments/connect/session")
+    assert response.status_code == 200
+    create_account.assert_awaited_once()
+    assert account_session.await_count == 2
+
+
+async def test_connect_session_503_payments_unavailable_when_stripe_rejects(
+    admin_client: AsyncClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from app import stripe_client
+
+    monkeypatch.setattr("app.config.STRIPE_SECRET_KEY", "sk_test_x")
+    create_session = AsyncMock(
+        side_effect=stripe_client.StripeV2Error(400, "unknown", "stripe blew up")
+    )
+    monkeypatch.setattr(
+        "app.stripe_client.create_connected_account_v2",
+        AsyncMock(return_value={"id": "acct_sess_2"}),
+    )
+    monkeypatch.setattr("app.stripe_client.create_account_session", create_session)
+
+    response = await admin_client.post("/payments/connect/session")
+    assert response.status_code == 503
+    assert response.json()["detail"] == "payments_unavailable"
+
+
+async def test_connect_prefills_known_business_fields(
+    admin_client: AsyncClient, db: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Account creation pre-fills what onboarding already captured (#188)."""
+    monkeypatch.setattr("app.config.STRIPE_SECRET_KEY", "sk_test_x")
+    create_account = AsyncMock(return_value={"id": "acct_prefill_1"})
+    monkeypatch.setattr("app.stripe_client.create_connected_account_v2", create_account)
+    monkeypatch.setattr(
+        "app.stripe_client.create_account_link",
+        AsyncMock(return_value="https://connect.stripe.com/setup/s/prefill"),
+    )
+
+    tenant_id = _tenant_id(admin_client)
+    await set_tenant_in_session(db, tenant_id)
+    tenant = await db.get(Tenant, tenant_id)
+    assert tenant is not None
+    tenant.structure = "sole_trader"
+    tenant.settings = {"phone": "+447700900123", "postcode": "SK8 3NJ"}
+    await db.commit()
+
+    payload = {"return_url": "https://app.example/ok", "refresh_url": "https://app.example/re"}
+    response = await admin_client.post("/payments/connect", json=payload)
+    assert response.status_code == 200
+
+    assert create_account.await_args is not None
+    kwargs = create_account.await_args.kwargs
+    assert kwargs["email"] == "admin@test.local"
+    assert kwargs["display_name"] == "Test Electrical"
+    assert kwargs["phone"] == "+447700900123"
+    assert kwargs["postcode"] == "SK8 3NJ"
+    assert kwargs["entity_type"] == "individual"
+
+
+# ---------------------------------------------------------------------------
+# GET /payments/status syncs mirrored flags from Stripe
+# ---------------------------------------------------------------------------
+
+
+async def test_status_syncs_flags_from_stripe(
+    admin_client: AsyncClient, db: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr("app.config.STRIPE_SECRET_KEY", "sk_test_x")
+    retrieve = AsyncMock(
+        return_value={
+            "id": "acct_sync_1",
+            "details_submitted": True,
+            "charges_enabled": True,
+            "payouts_enabled": True,
+        }
+    )
+    monkeypatch.setattr("app.stripe_client.retrieve_account", retrieve)
+
+    tenant_id = _tenant_id(admin_client)
+    await set_tenant_in_session(db, tenant_id)
+    db.add(StripeAccount(tenant_id=tenant_id, stripe_account_id="acct_sync_1"))
+    await db.commit()
+
+    response = await admin_client.get("/payments/status")
+    assert response.status_code == 200
+    data = response.json()
+    assert data["connected"] is True
+    assert data["charges_enabled"] is True
+    assert data["onboarding_complete"] is True
+
+    account = await db.scalar(select(StripeAccount).where(StripeAccount.tenant_id == tenant_id))
+    assert account is not None
+    assert account.charges_enabled is True
+    assert account.onboarding_complete is True
+
+
+async def test_status_tolerates_stripe_sync_failure(
+    admin_client: AsyncClient, db: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A Stripe outage degrades to the mirrored flags instead of failing."""
+    monkeypatch.setattr("app.config.STRIPE_SECRET_KEY", "sk_test_x")
+    retrieve = AsyncMock(side_effect=RuntimeError("stripe api down"))
+    monkeypatch.setattr("app.stripe_client.retrieve_account", retrieve)
+
+    tenant_id = _tenant_id(admin_client)
+    await set_tenant_in_session(db, tenant_id)
+    db.add(StripeAccount(tenant_id=tenant_id, stripe_account_id="acct_sync_2"))
+    await db.commit()
+
+    response = await admin_client.get("/payments/status")
+    assert response.status_code == 200
+    assert response.json()["connected"] is True
+    assert response.json()["charges_enabled"] is False
+
+
+# ---------------------------------------------------------------------------
 # POST /invoices/{id}/refund
 # ---------------------------------------------------------------------------
 

@@ -583,6 +583,18 @@ test.describe.serial("G — Fresh business signup", () => {
     await waitText(page, "Review & launch");
     await tap(page, "onboarding-choose-plan");
 
+    // Bank details — required for every invoice (#189).
+    await waitText(page, "Where should customers pay you?", 60000);
+    await page.getByPlaceholder("e.g. J Smith Electrical Ltd").fill("E2E Signup Electrical");
+    await page.getByPlaceholder("12-34-56").fill("12-34-56");
+    await page.getByPlaceholder("12345678").fill("12345678");
+    await tap(page, "onboarding-payment-details-save");
+
+    // Card-payments gate (#188) — skip Stripe; it stays activatable in Settings.
+    await waitText(page, "Will you take card payments?", 60000);
+    await tap(page, "onboarding-card-payments-no");
+    await tap(page, "onboarding-card-payments-continue");
+
     // The plan step must render the plan options with no internal-error
     // surface. Paddle checkout itself stays manual (device checklist).
     await waitText(page, "Choose your plan", 60000);
