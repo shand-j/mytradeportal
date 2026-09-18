@@ -262,6 +262,9 @@ class Quote(TenantScopedBase):
     )
     title: Mapped[str] = mapped_column(String(255), nullable=False)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Internal staff notes (never customer-facing). Creation merges the CRM
+    # contact's notes in, and quote → job conversion carries them onto the job.
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
     status: Mapped[str] = mapped_column(String(50), default="draft", nullable=False)
     subtotal: Mapped[Decimal] = mapped_column(Numeric(12, 2), default=Decimal("0.00"))
     vat_rate: Mapped[Decimal] = mapped_column(Numeric(5, 2), default=Decimal("0.20"))

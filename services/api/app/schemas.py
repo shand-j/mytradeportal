@@ -442,6 +442,8 @@ class QuoteCreate(BaseModel):
     contact_id: UUID
     title: str = Field(..., min_length=1, max_length=255)
     description: str | None = None
+    # Staff notes; the router merges the contact's CRM notes in at creation.
+    notes: str | None = None
     line_items: list[QuoteLineItemCreate] = Field(default_factory=list)
     vat_rate: Decimal = Decimal("0.20")
     valid_until: datetime | None = None
@@ -456,6 +458,7 @@ class QuoteRead(BaseModel):
     contact_id: UUID
     title: str
     description: str | None
+    notes: str | None = None
     status: str
     subtotal: Decimal
     vat_rate: Decimal
@@ -548,6 +551,8 @@ class QuoteApprove(BaseModel):
 class QuoteUpdate(BaseModel):
     title: str | None = Field(default=None, min_length=1, max_length=255)
     description: str | None = None
+    # Explicit null clears the notes; omitting the key leaves them untouched.
+    notes: str | None = None
     valid_until: datetime | None = None
     status: str | None = None
     line_items: list[QuoteLineItemCreate] | None = None

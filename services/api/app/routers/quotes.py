@@ -80,7 +80,12 @@ from app.rag.vision import (
 from app.rls import set_tenant_in_session
 from app.routers.files import s3_client
 from app.routers.invoices import _get_invoice, generate_invoice_number
-from app.routers.jobs import _email_booking_confirmed, create_block_appointments, plan_job_blocks
+from app.routers.jobs import (
+    _email_booking_confirmed,
+    create_block_appointments,
+    merge_contact_notes,
+    plan_job_blocks,
+)
 from app.routers.public_docs import issue_document_token, public_document_url
 from app.schemas import (
     InvoiceRead,
@@ -202,6 +207,7 @@ async def create_quote(
         contact_id=data.contact_id,
         title=data.title,
         description=data.description,
+        notes=merge_contact_notes(data.notes, contact.notes),
         # QuoteCreate.vat_rate defaults to 0.20, so "not sent" is only
         # detectable via model_fields_set — otherwise non-VAT-registered
         # tenants would never fall through to their 0% rate.
@@ -1412,6 +1418,7 @@ async def _generate_quote_impl(
         contact_id=contact.id,
         title=str(lead_title or data.description)[:80].strip() or "AI-drafted quote",
         description=data.description,
+        notes=merge_contact_notes(None, contact.notes),
         vat_rate=tenant_vat_rate(tenant),
     )
     # Assign the id up-front (the column default would only fire at INSERT) so
@@ -1753,7 +1760,7 @@ async def convert_quote_to_job(
     dates_note = ""
     if quote.accepted_dates:
         dates_note = "Customer confirmed preferred dates: " + ", ".join(quote.accepted_dates)
-    notes_parts = [p for p in [schedule.notes, dates_note] if p]
+    notes_parts = [p for p in [schedule.notes, quote.notes, dates_note] if p]
 
     # Carry the AI quote's assumptions/footnotes into the job notes so the
     # electrician sees on-site what the estimator assumed.
@@ -1816,7 +1823,10 @@ async def convert_quote_to_job(
         # lat/lng stay null (no geocoding yet).
         address=quote.contact.address,
         postcode=quote.contact.postcode,
-        notes="\n\n".join(notes_parts) or None,
+        # quote.notes already carries the contact's CRM notes for quotes
+        # created after they were merged at creation; the merge also covers
+        # older quotes and is a no-op when the notes are already present.
+        notes=merge_contact_notes("\n\n".join(notes_parts) or None, quote.contact.notes),
     )
     db.add(job)
     await db.flush()

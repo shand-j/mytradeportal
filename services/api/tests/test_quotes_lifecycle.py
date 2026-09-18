@@ -50,6 +50,53 @@ async def _create_quote(client: AsyncClient, tenant_id: str, contact_id: str) ->
     return data
 
 
+async def test_contact_notes_flow_to_quote_and_job(client: AsyncClient) -> None:
+    """CRM contact notes merge into the quote's notes at creation (without
+    overwriting notes typed on the creation screen) and survive the
+    quote → job conversion."""
+    tenant = await _create_tenant(client, f"quote-{uuid4().hex[:8]}")
+    headers = {"X-Tenant-ID": tenant["id"]}
+    contact_response = await client.post(
+        "/contacts",
+        headers=headers,
+        json={"name": "Notes Carrier", "notes": "Gate code 4521; dog on site"},
+    )
+    assert contact_response.status_code == 201
+    contact = contact_response.json()
+
+    quote_response = await client.post(
+        "/quotes",
+        headers=headers,
+        json={
+            "contact_id": contact["id"],
+            "title": "Fuse board upgrade",
+            "notes": "Customer wants a Saturday visit",
+            "line_items": [
+                {"description": "Labour", "quantity": "1", "unit_price": "100.00"},
+            ],
+        },
+    )
+    assert quote_response.status_code == 201, quote_response.text
+    quote = quote_response.json()
+    assert quote["notes"] is not None
+    assert "Customer wants a Saturday visit" in quote["notes"]
+    assert "Gate code 4521; dog on site" in quote["notes"]
+
+    approve = await client.post(f"/quotes/{quote['id']}/approve", headers=headers, json={})
+    assert approve.status_code == 200, approve.text
+
+    convert = await client.post(
+        f"/quotes/{quote['id']}/convert-to-job",
+        headers=headers,
+        json={"notes": "Bring the long ladder"},
+    )
+    assert convert.status_code == 201, convert.text
+    job = convert.json()
+    assert "Bring the long ladder" in (job["notes"] or "")
+    assert "Customer wants a Saturday visit" in (job["notes"] or "")
+    assert "Gate code 4521; dog on site" in (job["notes"] or "")
+
+
 async def test_update_quote(client: AsyncClient) -> None:
     tenant = await _create_tenant(client, f"quote-{uuid4().hex[:8]}")
     contact = await _create_contact(client, tenant["id"], "Quote Updater")
