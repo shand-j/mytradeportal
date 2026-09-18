@@ -344,7 +344,17 @@ async def test_public_invoice_payment_url_when_connected_and_enabled(
 ) -> None:
     monkeypatch.setattr("app.config.STRIPE_SECRET_KEY", "sk_test_x")
     create_intent = AsyncMock(return_value={"id": "pi_123", "client_secret": "pi_123_secret_abc"})
+    # The send mints the intent; the view retrieves and reuses it.
+    retrieve_intent = AsyncMock(
+        return_value={
+            "id": "pi_123",
+            "client_secret": "pi_123_secret_abc",
+            "status": "requires_payment_method",
+            "amount": 60000,
+        }
+    )
     monkeypatch.setattr("app.stripe_client.create_payment_intent", create_intent)
+    monkeypatch.setattr("app.stripe_client.retrieve_payment_intent", retrieve_intent)
 
     tenant, invoice, raw = await _setup_public_invoice(client, db, monkeypatch)
 

@@ -109,11 +109,20 @@ async def test_full_stripe_payment_lifecycle(
     create_account = AsyncMock(return_value={"id": "acct_lc_1"})
     account_link = AsyncMock(return_value="https://connect.stripe.com/setup/s/lc")
     create_intent = AsyncMock(return_value={"id": "pi_lc_1", "client_secret": "pi_lc_1_secret"})
+    retrieve_intent = AsyncMock(
+        return_value={
+            "id": "pi_lc_1",
+            "client_secret": "pi_lc_1_secret",
+            "status": "requires_payment_method",
+            "amount": 60000,
+        }
+    )
     create_refund = AsyncMock(return_value={"id": "re_lc_1", "status": "succeeded"})
     send_email = AsyncMock(return_value=True)
     monkeypatch.setattr("app.stripe_client.create_connected_account_v2", create_account)
     monkeypatch.setattr("app.stripe_client.create_account_link", account_link)
     monkeypatch.setattr("app.stripe_client.create_payment_intent", create_intent)
+    monkeypatch.setattr("app.stripe_client.retrieve_payment_intent", retrieve_intent)
     monkeypatch.setattr("app.stripe_client.create_refund", create_refund)
     monkeypatch.setattr("app.routers.invoices.send_customer_email", send_email)
 
@@ -233,12 +242,17 @@ async def test_full_stripe_payment_lifecycle(
         assert match is not None
         raw_token = match.group(1)
 
-        # 4. Public document issues the payment_url (PaymentIntent created).
+        # 4. Public document issues the payment_url. The send-time mint (step 3)
+        # already persisted pi_lc_1, so the view reuses it via retrieve rather
+        # than creating a second intent.
         public = await http.get(f"/public/invoice/{raw_token}")
         assert public.status_code == 200
         assert public.json()["payment_url"] == (
             f"https://www.mytradeportal.co.uk/pay/{raw_token}?pi=pi_lc_1&cs=pi_lc_1_secret"
         )
+        assert retrieve_intent.await_args is not None
+        assert retrieve_intent.await_args.args[0] == "pi_lc_1"
+        assert create_intent.await_count == 1
         assert create_intent.await_args is not None
         intent_kwargs = create_intent.await_args.kwargs
         assert intent_kwargs["amount_pence"] == 60000

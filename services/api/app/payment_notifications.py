@@ -19,7 +19,7 @@ from datetime import datetime
 import structlog
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.email import send_customer_email
+from app.email import send_customer_email, tenant_reply_to
 from app.email_templates import payment_received as payment_received_template
 from app.models import Contact, Invoice, Tenant
 
@@ -75,7 +75,7 @@ async def send_payment_received_email(
             event="payment_received",
             template="payment_received",
             from_name=business_name,
-            reply_to=(tenant.email if tenant is not None and tenant.email else None),
+            reply_to=tenant_reply_to(tenant, invoice_id=str(invoice.id)),
             context={
                 "invoice_id": str(invoice.id),
                 "tenant_id": str(invoice.tenant_id),

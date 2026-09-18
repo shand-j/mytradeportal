@@ -65,6 +65,31 @@ async def resolve_customer_magic_link(
         return None
 
 
+def tenant_reply_to(tenant: Tenant | None, **context: Any) -> str | None:
+    """Reply-To address for customer-facing mail to a tenant's customer.
+
+    Customer-facing emails (quote/invoice sent, booking confirmations,
+    reminders, chat, ...) go out on the shared branded sender — typically
+    ``quotes@mytradeportal.co.uk`` under the tenant's display name — so the
+    ``Reply-To`` must be the tenant's own address (``tenant.email``, sourced
+    from the tenant's ``settings.email``). Otherwise a customer hitting
+    "reply" lands in the platform inbox instead of reaching the electrician.
+
+    When the tenant has no email configured we keep the previous behaviour
+    (the reply falls back to the shared sender) and log a warning with the
+    caller's ``context`` so the unbranded gap is visible rather than silent.
+    """
+    email = tenant.email if tenant is not None else ""
+    if email:
+        return email
+    logger.warning(
+        "tenant_reply_to_missing",
+        tenant_id=str(tenant.id) if tenant is not None else None,
+        **context,
+    )
+    return None
+
+
 def _resend_from(display_name: str | None = None) -> str:
     """Build the ``From`` header for Resend.
 

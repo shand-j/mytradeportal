@@ -160,19 +160,33 @@ def invoice_sent(
     payment_details: dict[str, str] | None = None,
     view_url: str | None = None,
     portal_url: str | None = None,
+    pay_url: str | None = None,
 ) -> tuple[str, str, str]:
     """Invoice-issued email. (subject, html, text).
 
     ``payment_details`` carries the tenant's bank-transfer details (keys:
     ``account_name``, ``sort_code``, ``account_number``, ``reference``); the
     block is omitted entirely when the tenant has not configured them.
-    ``portal_url`` is the magic sign-in link to the customer portal; when
-    present it becomes the primary CTA and ``view_url`` (the view-only
-    document/pay page) drops to a secondary "view without signing in" link.
-    When neither is present the email falls back to the app-only copy.
+    ``pay_url`` is the absolute Stripe Connect ``/pay/<token>`` link; when
+    present it renders as the primary "Pay now" CTA, ahead of the bank
+    transfer block and the sign-in/view links. ``portal_url`` is the magic
+    sign-in link to the customer portal; when present it becomes the
+    secondary CTA and ``view_url`` (the view-only document/pay page) drops to
+    a "view without signing in" link. When none of the three is present the
+    email falls back to the app-only copy.
     """
     subject = f"Invoice {invoice_number} from {business_name}"
     payment_text, payment_html = _payment_details_block(payment_details)
+    if pay_url:
+        text_pay = f"Pay now — it only takes a minute:\n{pay_url}\n\n"
+        html_pay = f"""\
+    <p style="margin:24px 0;">
+      <a href="{pay_url}" style="display:inline-block;background:#0F1E26;color:#FFC107;padding:12px 24px;text-decoration:none;font-weight:700;border-radius:8px;">Pay now</a>
+    </p>
+    <p style="color:#64748b;font-size:13px;">Secure card payment. If the button doesn't work, copy and paste this link:<br><a href="{pay_url}" style="color:#4F46E5;">{pay_url}</a></p>
+"""
+    else:
+        text_pay, html_pay = "", ""
     if portal_url:
         text_cta, html_cta = _magic_link_cta(portal_url, "View and pay your invoice")
         if view_url:
@@ -196,6 +210,7 @@ def invoice_sent(
         f"Hi {customer_name},\n\n"
         f"{business_name} has sent you invoice {invoice_number}.\n"
         f"Total due: {invoice_total}\n\n"
+        f"{text_pay}"
         f"{payment_text}"
         f"{text_cta}"
         f"{text_secondary}"
@@ -209,6 +224,7 @@ def invoice_sent(
     <p>Hi {customer_name},</p>
     <p><strong>{business_name}</strong> has sent you an invoice.</p>
     <p style="font-size:20px;font-weight:700;margin:16px 0;">Total due: {invoice_total}</p>
+{html_pay}\
 {payment_html}\
 {html_cta}\
 {html_secondary}\

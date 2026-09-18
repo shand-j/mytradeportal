@@ -1,15 +1,21 @@
 """Tests for the customer email sequence with per-tenant magic links.
 
 Sequence under test: quote ready (magic link) → acceptance confirmation →
-booking confirmed on scheduling → invoice sent (magic link) → payment
-received + review prompt. All sends are mocked — send_customer_email/send_email
-calls are captured, never delivered.
+booking confirmed on scheduling → invoice sent (magic link + Pay-now CTA) →
+payment received + review prompt. All sends are mocked —
+send_customer_email/send_email calls are captured, never delivered.
 
 The magic-link helper (``app.email.resolve_customer_magic_link``) wraps
 ``app.portal_links.magic_link_url``; tests stub that issuer so the helper's
 Customer-row lookup runs for real without minting portal tokens.
+
+Tenant Reply-To: every customer-facing send must carry the tenant's own
+address (``tenant.email`` from tenant settings) as ``reply_to`` so customer
+replies reach the electrician, not the platform inbox — and must warn +
+fall back when the tenant has no email configured (issue #163).
 """
 
+import re
 from datetime import datetime, timedelta
 from decimal import Decimal
 from typing import Any
@@ -18,6 +24,7 @@ from uuid import UUID, uuid4
 
 import pytest
 from app import email as email_module
+from app.config import PUBLIC_DOCS_BASE_URL
 from app.database import engine
 from app.email_templates import (
     booking_confirmed as booking_confirmed_template,
@@ -37,7 +44,17 @@ from app.email_templates import (
 from app.email_templates import (
     quote_ready as quote_ready_template,
 )
-from app.models import Contact, Customer, Invoice, PushToken, Quote, QuoteRequest, Tenant
+from app.logging import configure_logging
+from app.models import (
+    Contact,
+    Customer,
+    Invoice,
+    PushToken,
+    Quote,
+    QuoteRequest,
+    StripeAccount,
+    Tenant,
+)
 from app.rls import bypass_rls_in_session, set_tenant_in_session
 from app.scheduler import run_reminder_tick
 from app.security import get_password_hash
@@ -51,10 +68,20 @@ from tests.test_stripe_webhooks import (
     payment_intent_succeeded_event,
 )
 
+# Route structlog through stdlib so caplog can assert the tenant reply-to
+# fallback warning (the app only configures logging in its lifespan, which
+# test transports never enter).
+configure_logging("INFO")
+
 pytestmark = pytest.mark.asyncio
 
 MAGIC_URL = "https://acme.mytradeportal.co.uk/auth/magic?token=tok-abc123&next=/quotes/x"
 DOC_URL_MARKER = "/quote/"  # PUBLIC_DOCS_BASE_URL + kind + raw token
+TENANT_EMAIL = "sparks@example.com"
+_PAY_RE = re.compile(
+    re.escape(PUBLIC_DOCS_BASE_URL) + r"/pay/([A-Za-z0-9_-]+)\?pi=([^&\s\"]+)&cs=([^&\s\"]+)"
+)
+_DOC_TOKEN_RE = re.compile(re.escape(PUBLIC_DOCS_BASE_URL) + r"/(quote|invoice)/([A-Za-z0-9_-]+)")
 
 
 class _EmailRecorder:
@@ -191,6 +218,39 @@ async def test_invoice_sent_without_magic_link_unchanged() -> None:
     assert "read-only copy" not in html
 
 
+async def test_invoice_sent_pay_now_cta_is_primary() -> None:
+    """A pay_url renders a prominent Pay-now CTA ahead of the view link,
+    in both the HTML and text parts (issue #163)."""
+    pay_url = "https://www.mytradeportal.co.uk/pay/paytoken?pi=pi_1&cs=cs_1"
+    _, html, text = invoice_sent_template(
+        customer_name="Amy",
+        business_name="Acme Electrical",
+        invoice_number="INV-001",
+        invoice_total="£600.00",
+        view_url="https://www.mytradeportal.co.uk/invoice/doctoken",
+        pay_url=pay_url,
+    )
+    assert "Pay now" in html
+    assert "Pay now" in text
+    assert pay_url in html
+    assert pay_url in text
+    # The pay CTA leads; the view link stays as the secondary fallback.
+    assert html.index(pay_url) < html.index("https://www.mytradeportal.co.uk/invoice/doctoken")
+    assert text.index("Pay now") < text.index("https://www.mytradeportal.co.uk/invoice/doctoken")
+
+
+async def test_invoice_sent_without_pay_url_has_no_pay_cta() -> None:
+    _, html, text = invoice_sent_template(
+        customer_name="Amy",
+        business_name="Acme Electrical",
+        invoice_number="INV-001",
+        invoice_total="£600.00",
+        view_url="https://mytradeportal.co.uk/invoice/doctoken",
+    )
+    assert "/pay/" not in html
+    assert "/pay/" not in text
+
+
 async def test_quote_accepted_pending_booking_copy_and_magic_link() -> None:
     _, html, text = quote_accepted_template(
         customer_name="Amy",
@@ -277,7 +337,7 @@ async def test_payment_received_without_review_url_has_no_review_block() -> None
 async def test_quote_send_email_contains_magic_link_when_customer_exists(
     client: AsyncClient, db: AsyncSession, monkeypatch: MonkeyPatch
 ) -> None:
-    tenant = await _create_tenant(db, f"qmail-{uuid4().hex[:8]}")
+    tenant = await _create_tenant(db, f"qmail-{uuid4().hex[:8]}", settings={"email": TENANT_EMAIL})
     contact = await _create_contact(db, tenant)
     await _create_customer(db, tenant, contact)
     quote = await _create_quote_via_api(client, str(tenant.id), str(contact.id))
@@ -295,6 +355,8 @@ async def test_quote_send_email_contains_magic_link_when_customer_exists(
     call = recorder.calls[0]
     assert call["template"] == "quote_ready"
     assert MAGIC_URL in call["html_body"]
+    # Customer replies must reach the electrician, not the platform inbox.
+    assert call["reply_to"] == TENANT_EMAIL
     # The doc token is still minted and offered as the view-only fallback.
     assert DOC_URL_MARKER in call["html_body"]
     assert "read-only copy" in call["html_body"]
@@ -306,7 +368,7 @@ async def test_quote_send_email_contains_magic_link_when_customer_exists(
 async def test_quote_send_email_falls_back_to_doc_link_without_customer(
     client: AsyncClient, db: AsyncSession, monkeypatch: MonkeyPatch
 ) -> None:
-    tenant = await _create_tenant(db, f"qmail-{uuid4().hex[:8]}")
+    tenant = await _create_tenant(db, f"qmail-{uuid4().hex[:8]}", settings={"email": TENANT_EMAIL})
     contact = await _create_contact(db, tenant)
     quote = await _create_quote_via_api(client, str(tenant.id), str(contact.id))
 
@@ -323,12 +385,39 @@ async def test_quote_send_email_falls_back_to_doc_link_without_customer(
     assert DOC_URL_MARKER in call["html_body"]
     assert "auth/magic" not in call["html_body"]
     assert "read-only copy" not in call["html_body"]
+    assert call["reply_to"] == TENANT_EMAIL
+
+
+async def test_quote_send_email_warns_and_omits_reply_to_without_tenant_email(
+    client: AsyncClient,
+    db: AsyncSession,
+    monkeypatch: MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """No tenant email: the send still goes out (reply falls back to the
+    platform sender) but the gap is logged, never silent (issue #163)."""
+    tenant = await _create_tenant(db, f"qmail-{uuid4().hex[:8]}")
+    contact = await _create_contact(db, tenant)
+    quote = await _create_quote_via_api(client, str(tenant.id), str(contact.id))
+
+    recorder = _EmailRecorder()
+    monkeypatch.setattr("app.routers.quotes.send_customer_email", recorder)
+
+    with caplog.at_level("WARNING", logger="api.email"):
+        response = await client.post(
+            f"/quotes/{quote['id']}/send", headers={"X-Tenant-ID": str(tenant.id)}
+        )
+
+    assert response.status_code == 200, response.text
+    assert len(recorder.calls) == 1
+    assert recorder.calls[0]["reply_to"] is None
+    assert any("tenant_reply_to_missing" in record.getMessage() for record in caplog.records)
 
 
 async def test_invoice_send_email_contains_magic_link_when_customer_exists(
     client: AsyncClient, db: AsyncSession, monkeypatch: MonkeyPatch
 ) -> None:
-    tenant = await _create_tenant(db, f"imail-{uuid4().hex[:8]}")
+    tenant = await _create_tenant(db, f"imail-{uuid4().hex[:8]}", settings={"email": TENANT_EMAIL})
     contact = await _create_contact(db, tenant)
     await _create_customer(db, tenant, contact)
     create = await client.post(
@@ -358,6 +447,8 @@ async def test_invoice_send_email_contains_magic_link_when_customer_exists(
     assert MAGIC_URL in call["html_body"]
     assert "/invoice/" in call["html_body"]
     assert "read-only copy" in call["html_body"]
+    # Customer replies must reach the electrician, not the platform inbox.
+    assert call["reply_to"] == TENANT_EMAIL
     magic_link_url.assert_awaited_once()
     assert magic_link_url.await_args is not None
     assert magic_link_url.await_args.args[3] == f"/invoices/{invoice['id']}"
@@ -366,7 +457,7 @@ async def test_invoice_send_email_contains_magic_link_when_customer_exists(
 async def test_invoice_send_email_falls_back_to_doc_link_without_customer(
     client: AsyncClient, db: AsyncSession, monkeypatch: MonkeyPatch
 ) -> None:
-    tenant = await _create_tenant(db, f"imail-{uuid4().hex[:8]}")
+    tenant = await _create_tenant(db, f"imail-{uuid4().hex[:8]}", settings={"email": TENANT_EMAIL})
     contact = await _create_contact(db, tenant)
     create = await client.post(
         "/invoices",
@@ -394,6 +485,159 @@ async def test_invoice_send_email_falls_back_to_doc_link_without_customer(
     assert "/invoice/" in call["html_body"]
     assert "auth/magic" not in call["html_body"]
     assert "read-only copy" not in call["html_body"]
+    assert call["reply_to"] == TENANT_EMAIL
+
+
+async def test_invoice_send_email_warns_and_omits_reply_to_without_tenant_email(
+    client: AsyncClient,
+    db: AsyncSession,
+    monkeypatch: MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    tenant = await _create_tenant(db, f"imail-{uuid4().hex[:8]}")
+    contact = await _create_contact(db, tenant)
+    create = await client.post(
+        "/invoices",
+        headers={"X-Tenant-ID": str(tenant.id)},
+        json={
+            "contact_id": str(contact.id),
+            "line_items": [
+                {"description": "Labour", "quantity": "2", "unit_price": "50.00"},
+            ],
+        },
+    )
+    assert create.status_code == 201, create.text
+    invoice = create.json()
+
+    recorder = _EmailRecorder()
+    monkeypatch.setattr("app.routers.invoices.send_customer_email", recorder)
+
+    with caplog.at_level("WARNING", logger="api.email"):
+        response = await client.post(
+            f"/invoices/{invoice['id']}/send", headers={"X-Tenant-ID": str(tenant.id)}
+        )
+
+    assert response.status_code == 200, response.text
+    assert len(recorder.calls) == 1
+    assert recorder.calls[0]["reply_to"] is None
+    assert any("tenant_reply_to_missing" in record.getMessage() for record in caplog.records)
+
+
+async def _card_enabled_invoice(
+    client: AsyncClient, db: AsyncSession, tenant: Tenant
+) -> dict[str, Any]:
+    """Tenant with a charges-enabled Stripe account + card opt-in + invoice."""
+    await set_tenant_in_session(db, tenant.id)
+    tenant_row = await db.get(Tenant, tenant.id)
+    assert tenant_row is not None
+    settings = dict(tenant_row.settings or {})
+    settings["payments"] = {"accept_card_default": True}
+    tenant_row.settings = settings
+    db.add(
+        StripeAccount(
+            tenant_id=tenant.id,
+            stripe_account_id="acct_email_1",
+            details_submitted=True,
+            charges_enabled=True,
+            payouts_enabled=True,
+            onboarding_complete=True,
+        )
+    )
+    await db.flush()
+    contact = await _create_contact(db, tenant)
+    create = await client.post(
+        "/invoices",
+        headers={"X-Tenant-ID": str(tenant.id)},
+        json={
+            "contact_id": str(contact.id),
+            "line_items": [
+                {"description": "Labour", "quantity": "2", "unit_price": "50.00"},
+            ],
+        },
+    )
+    assert create.status_code == 201, create.text
+    body: dict[str, Any] = create.json()
+    return body
+
+
+async def test_invoice_send_email_includes_pay_now_link(
+    client: AsyncClient, db: AsyncSession, monkeypatch: MonkeyPatch
+) -> None:
+    """The invoice email carries a prominent Pay-now CTA to the secure /pay
+    page, with a valid document token + PaymentIntent params (issue #163)."""
+    monkeypatch.setattr("app.config.STRIPE_SECRET_KEY", "sk_test_x")
+    create_intent = AsyncMock(return_value={"id": "pi_email", "client_secret": "cs_email"})
+    monkeypatch.setattr("app.stripe_client.create_payment_intent", create_intent)
+
+    tenant = await _create_tenant(db, f"ipay-{uuid4().hex[:8]}", settings={"email": TENANT_EMAIL})
+    invoice = await _card_enabled_invoice(client, db, tenant)
+
+    recorder = _EmailRecorder()
+    monkeypatch.setattr("app.routers.invoices.send_customer_email", recorder)
+
+    response = await client.post(
+        f"/invoices/{invoice['id']}/send", headers={"X-Tenant-ID": str(tenant.id)}
+    )
+
+    assert response.status_code == 200, response.text
+    assert len(recorder.calls) == 1
+    call = recorder.calls[0]
+    html = call["html_body"]
+    text = call["text_body"]
+    # Prominent CTA in both parts.
+    assert "Pay now" in html
+    assert "Pay now" in text
+    # Absolute /pay/<token> link with PaymentIntent id + client secret.
+    match = _PAY_RE.search(html)
+    assert match is not None, "no /pay link found in invoice email html"
+    assert "pi=pi_email&cs=cs_email" in match.group(0)
+    assert match.group(0) in text
+    # The pay link reuses the same document token as the view link.
+    doc_match = _DOC_TOKEN_RE.search(html)
+    assert doc_match is not None, "no /invoice view link found in invoice email html"
+    assert doc_match.group(1) == "invoice"
+    assert match.group(1) == doc_match.group(2)
+    # The pay CTA is the primary action: it appears ahead of the view link.
+    assert html.index(match.group(0)) < html.index(doc_match.group(0))
+    # The created intent is persisted on the invoice by the send commit.
+    invoice_row = await db.get(Invoice, UUID(invoice["id"]))
+    assert invoice_row is not None
+    assert invoice_row.stripe_payment_intent_id == "pi_email"
+
+
+async def test_invoice_send_email_omits_pay_link_without_card_payments(
+    client: AsyncClient, db: AsyncSession, monkeypatch: MonkeyPatch
+) -> None:
+    """Tenants without card payments configured keep the current email."""
+    monkeypatch.setattr("app.config.STRIPE_SECRET_KEY", "sk_test_x")
+    tenant = await _create_tenant(db, f"ipay-{uuid4().hex[:8]}")
+    contact = await _create_contact(db, tenant)
+    create = await client.post(
+        "/invoices",
+        headers={"X-Tenant-ID": str(tenant.id)},
+        json={
+            "contact_id": str(contact.id),
+            "line_items": [
+                {"description": "Labour", "quantity": "2", "unit_price": "50.00"},
+            ],
+        },
+    )
+    assert create.status_code == 201, create.text
+    invoice = create.json()
+
+    recorder = _EmailRecorder()
+    monkeypatch.setattr("app.routers.invoices.send_customer_email", recorder)
+
+    response = await client.post(
+        f"/invoices/{invoice['id']}/send", headers={"X-Tenant-ID": str(tenant.id)}
+    )
+
+    assert response.status_code == 200, response.text
+    assert len(recorder.calls) == 1
+    call = recorder.calls[0]
+    assert "/pay/" not in call["html_body"]
+    assert "/pay/" not in call["text_body"]
+    assert "/invoice/" in call["html_body"]
 
 
 # ---------------------------------------------------------------------------
@@ -1119,6 +1363,13 @@ async def test_staff_chat_message_to_app_preference_sends_push_and_email(
     admin_client: AsyncClient, db: AsyncSession, monkeypatch: MonkeyPatch
 ) -> None:
     tenant_id = UUID(admin_client.headers["X-Tenant-ID"])
+    await set_tenant_in_session(db, tenant_id)
+    tenant_row = await db.get(Tenant, tenant_id)
+    assert tenant_row is not None
+    settings = dict(tenant_row.settings or {})
+    settings["email"] = TENANT_EMAIL
+    tenant_row.settings = settings
+    await db.flush()
     ids = await _seed_chat_thread(db, tenant_id, preferred="app")
 
     push = AsyncMock()
@@ -1143,6 +1394,9 @@ async def test_staff_chat_message_to_app_preference_sends_push_and_email(
     assert "Tuesday" in call["html_body"]
     assert MAGIC_URL in call["html_body"]
     assert "Reply in the portal" in call["html_body"]
+    # Tenant-branded: customer replies land with the tradesperson.
+    assert call["from_name"] == tenant_row.name
+    assert call["reply_to"] == TENANT_EMAIL
     magic_link_url.assert_awaited_once()
     assert magic_link_url.await_args is not None
     # No quote linked to the thread: the magic link lands on the quotes list.

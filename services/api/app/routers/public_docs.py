@@ -223,7 +223,7 @@ def _invoice_accepts_card(invoice: Invoice, tenant: Tenant) -> bool:
 
 
 async def _invoice_payment_url(
-    db: AsyncSession, invoice: Invoice, tenant: Tenant, raw_token: str
+    db: AsyncSession, invoice: Invoice, tenant: Tenant, raw_token: str, *, persist: bool = True
 ) -> str | None:
     """Stripe /pay URL for an unpaid invoice, or None.
 
@@ -239,6 +239,10 @@ async def _invoice_payment_url(
     ``{PUBLIC_DOCS_BASE_URL}/pay/{doc_token}?pi={payment_intent_id}
     &cs={payment_intent_client_secret}`` — the page confirms the intent with
     Stripe.js using the client secret; no card data touches our servers.
+
+    ``persist=False`` skips the internal commit (the caller's transaction
+    owns persistence — used by the invoice-send email path, which commits at
+    the end of the request).
     """
     if invoice.status in {"paid", "cancelled", "refunded"}:
         return None
@@ -266,7 +270,10 @@ async def _invoice_payment_url(
                 tenant_id=str(tenant.id),
             )
             invoice.stripe_payment_intent_id = str(intent["id"])
-            await db.commit()
+            if persist:
+                await db.commit()
+            else:
+                await db.flush()
 
         query = urlencode({"pi": str(intent["id"]), "cs": str(intent["client_secret"])})
         return f"{PUBLIC_DOCS_BASE_URL}/pay/{raw_token}?{query}"
