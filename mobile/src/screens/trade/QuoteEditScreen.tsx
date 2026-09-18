@@ -14,7 +14,7 @@ import { Lead, Quote, QuoteLineItem } from "../../types";
 import { updateQuote, useRefineQuote, useSendQuote, useUpdateQuote } from "../../api/quotes";
 import { useLead } from "../../api/quoteRequests";
 import { startDirectThread } from "../../api/communications";
-import { ApiError } from "../../lib/apiClient";
+import { ApiError, NetworkError } from "../../lib/apiClient";
 import { formatMoneyGBP } from "../../lib/format";
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -60,6 +60,13 @@ function PulseBlock({ style }: { style?: StyleProp<ViewStyle> }) {
 
 /** Skeleton rows shown in place of the line items while an AI refine runs. */
 function RefineSkeleton() {
+  // Refine is a live LLM round-trip: when it runs long, say so explicitly so
+  // the screen reads as "working" rather than hung.
+  const [isSlow, setIsSlow] = useState(false);
+  useEffect(() => {
+    const timer = setTimeout(() => setIsSlow(true), 30_000);
+    return () => clearTimeout(timer);
+  }, []);
   return (
     <View testID="refine-skeleton" className="gap-3">
       <View
@@ -67,7 +74,9 @@ function RefineSkeleton() {
         className="rounded-xl border border-primary-100 bg-primary-50 p-3"
       >
         <Text variant="caption" color="secondary" align="center">
-          Regenerating… You can leave this page — you'll get a notification when the quote is ready.
+          {isSlow
+            ? "Still working — the AI service is slow right now. This can take up to a couple of minutes."
+            : "Regenerating… You can leave this page — you'll get a notification when the quote is ready."}
         </Text>
       </View>
 
@@ -307,10 +316,10 @@ export function QuoteEditScreen({
       setRefineInstructions("");
     } catch (err) {
       const message =
-        err instanceof ApiError
-          ? err.detail
-          : err instanceof Error
-            ? err.message
+        err instanceof NetworkError
+          ? "Refining took too long or the connection dropped. Your quote is unchanged — please try again."
+          : err instanceof ApiError
+            ? err.detail
             : "Couldn't refine the quote. Please try again.";
       setRefineError(message);
     }
