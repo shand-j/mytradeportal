@@ -751,7 +751,7 @@ export function JobCreateScreen({ onClose, initialQuoteId }: JobCreateScreenProp
             </View>
           )}
 
-          {DATE_RE.test(date.trim()) && (
+          {!scheduleSuggestion && DATE_RE.test(date.trim()) && (
             <View className="gap-1">
               {availabilityLoading ? (
                 <Text variant="caption" color="secondary">
