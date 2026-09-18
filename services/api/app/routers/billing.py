@@ -82,8 +82,13 @@ _CHECKOUT_PAGE = """<!doctype html>
   if (!txn) {
     fail("Missing checkout transaction.");
   } else {
-    if (PADDLE_ENV === "sandbox") { Paddle.Environment.set("sandbox"); }
-    Paddle.Setup({
+    // paddle.js v2 initialization: the page loads /paddle/v2/paddle.js, whose
+    // entry point is Paddle.Initialize (Paddle.Setup is the retired v1 API —
+    // initializing v1-style leaves the checkout session half-initialized, the
+    // transaction-checkout request 403s, and cardless-trial transactions are
+    // rejected with "only supported by one-page checkout variant" even though
+    // settings.variant is one-page).
+    var init = {
       token: PADDLE_TOKEN,
       eventCallback: function (event) {
         if (event.name === "checkout.completed") {
@@ -98,7 +103,9 @@ _CHECKOUT_PAGE = """<!doctype html>
           fail("Checkout couldn't load. Please try again.");
         }
       }
-    });
+    };
+    if (PADDLE_ENV === "sandbox") { init.environment = "sandbox"; }
+    Paddle.Initialize(init);
     Paddle.Checkout.open({ transactionId: txn, settings: { variant: "one-page" } });
   }
 </script>
