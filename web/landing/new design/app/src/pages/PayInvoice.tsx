@@ -21,6 +21,7 @@ export default function PayInvoice() {
   const [searchParams] = useSearchParams()
   const paymentIntentId = searchParams.get('pi')
   const clientSecret = searchParams.get('cs')
+  const paymentReturning = searchParams.get('paid') === '1'
   const { status, error, doc } = usePublicDocument('invoice')
 
   const linkParamsValid = Boolean(token && paymentIntentId && clientSecret)
@@ -75,9 +76,29 @@ export default function PayInvoice() {
             </div>
           </PayShell>
         )}
+        {!showInvalid && status === 'loaded' && doc && shellProps && paymentReturning && doc.status !== 'paid' && (
+          <PayShell {...shellProps}>
+            <p
+              role="status"
+              className="mt-[var(--space-lg)] border-2 border-[var(--ink)] p-4 text-[14px] font-semibold leading-relaxed text-white"
+              style={{ backgroundColor: 'var(--brand)' }}
+            >
+              Thank you — your payment is being confirmed. This page will show the invoice as
+              paid shortly.
+            </p>
+            <p className="mt-[var(--space-md)] text-[13.5px] text-[var(--muted)]">
+              <Link to={`/invoice/${token}`} className="link-arrow">
+                View your invoice
+              </Link>
+            </p>
+          </PayShell>
+        )}
         {!showInvalid && status === 'loaded' && doc && shellProps && PUBLISHABLE_KEY && doc.status === 'paid' && (
           <PayShell {...shellProps}>
-            <p className="mt-[var(--space-lg)] border-2 border-[var(--ink)] bg-[var(--accent)] p-4 text-[14px] font-semibold leading-relaxed text-[var(--ink-deep)]">
+            <p
+              className="mt-[var(--space-lg)] border-2 border-[var(--ink)] p-4 text-[14px] font-semibold leading-relaxed text-white"
+              style={{ backgroundColor: 'var(--brand)' }}
+            >
               This invoice is already paid — thank you.
             </p>
             <p className="mt-[var(--space-md)] text-[13.5px] text-[var(--muted)]">
@@ -93,6 +114,7 @@ export default function PayInvoice() {
           shellProps &&
           PUBLISHABLE_KEY &&
           doc.status !== 'paid' &&
+          !paymentReturning &&
           elementsOptions && (
             <PayShell {...shellProps}>
               <Elements stripe={getStripe(PUBLISHABLE_KEY)} options={elementsOptions}>
