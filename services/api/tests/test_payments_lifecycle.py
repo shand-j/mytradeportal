@@ -253,6 +253,7 @@ async def test_full_stripe_payment_lifecycle(
         assert retrieve_intent.await_args is not None
         assert retrieve_intent.await_args.args[0] == "pi_lc_1"
         assert create_intent.await_count == 1
+        assert create_intent.await_args is not None
         intent_kwargs = create_intent.await_args.kwargs
         assert intent_kwargs["amount_pence"] == 60000
         assert intent_kwargs["connected_account_id"] == "acct_lc_1"
