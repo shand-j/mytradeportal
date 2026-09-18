@@ -37,6 +37,14 @@ class TenantCreate(BaseModel):
     admin_password: str | None = Field(default=None, min_length=8, max_length=128)
     admin_name: str | None = Field(default=None, min_length=1, max_length=255)
 
+    @field_validator("admin_email")
+    @classmethod
+    def _normalize_admin_email(cls, v: EmailStr | None) -> str | None:
+        """Store lowercase: EmailStr lowercases the domain but preserves the
+        local-part case as typed, and every login lookup is (now) case-insensitive
+        on lowercase — mixed-case storage is what locked onboarding admins out."""
+        return str(v).strip().lower() if v is not None else None
+
     @model_validator(mode="after")
     def _admin_fields_all_or_none(self) -> "TenantCreate":
         provided = (self.admin_email, self.admin_password, self.admin_name)
@@ -1232,6 +1240,15 @@ class UserLogin(BaseModel):
     # Host-subdomain resolution so login works on bare domains (e.g.
     # Railway's *.up.railway.app) where every tenant shares one hostname.
     tenant_slug: str | None = Field(default=None, min_length=2, max_length=63)
+
+    @field_validator("email")
+    @classmethod
+    def _normalize_email(cls, v: str) -> str:
+        """Normalize to lowercase+stripped before any lookup: email casing is
+        not significant to any provider we authenticate against, and exact
+        case-sensitive matching is what locked out onboarding-created admins
+        (stored via EmailStr, which preserves local-part case)."""
+        return v.strip().lower()
 
 
 class PasswordResetRequest(BaseModel):
