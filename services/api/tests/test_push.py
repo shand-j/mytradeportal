@@ -1,11 +1,13 @@
 """Tests for the Expo push send path and notification-trigger push coverage.
 
 The Expo push HTTP call is stubbed (a fake ``httpx.AsyncClient``) so payload
-shape, ticket-error handling, invalid-token cleanup and per-event trigger
-coverage are verified without network access.
+shape, ticket-error handling, invalid-token cleanup, receipt follow-up and
+per-event trigger coverage are verified without network access.
 """
 
 import json
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from datetime import datetime
 from decimal import Decimal
 from typing import Any
@@ -13,7 +15,7 @@ from uuid import UUID, uuid4
 
 import pytest
 from app.models import Customer, Notification, PushToken, QuoteRequest
-from app.push import notify_customer, notify_staff, send_expo_push
+from app.push import _check_push_receipts, notify_customer, notify_staff, send_expo_push
 from app.quote_automation import _notify_quote_failed, _notify_quote_ready
 from app.rls import set_tenant_in_session
 from app.schemas import QuoteRead
@@ -47,9 +49,39 @@ class _FakeExpoClient:
     async def __aexit__(self, *args: object) -> None:
         return None
 
-    async def post(self, url: str, json: object = None) -> _FakeExpoResponse:
-        self._calls.append({"url": url, "json": json})
+    async def post(
+        self, url: str, json: object = None, headers: object = None
+    ) -> _FakeExpoResponse:
+        self._calls.append({"url": url, "json": json, "headers": headers})
         return self._response
+
+
+class _FakeExpoRouter:
+    """Fake httpx client that answers per Expo endpoint (send vs receipts)."""
+
+    def __init__(
+        self,
+        calls: list[dict[str, Any]],
+        send_payload: dict[str, Any],
+        receipts_payload: dict[str, Any],
+    ):
+        self._calls = calls
+        self._send = _FakeExpoResponse(payload=send_payload)
+        self._receipts = _FakeExpoResponse(payload=receipts_payload)
+
+    async def __aenter__(self) -> "_FakeExpoRouter":
+        return self
+
+    async def __aexit__(self, *args: object) -> None:
+        return None
+
+    async def post(
+        self, url: str, json: object = None, headers: object = None
+    ) -> _FakeExpoResponse:
+        self._calls.append({"url": url, "json": json, "headers": headers})
+        if url.endswith("/getReceipts"):
+            return self._receipts
+        return self._send
 
 
 def _stub_expo(
@@ -200,6 +232,8 @@ async def test_send_expo_push_removes_device_not_registered_tokens(
         }
     )
     _stub_expo(monkeypatch, response)
+    # The surviving ok ticket would otherwise spawn the detached receipt check.
+    monkeypatch.setattr("app.push._schedule_receipt_check", lambda *args: None)
 
     await send_expo_push(["ExponentPushToken[live]", "ExponentPushToken[dead]"], "T", "B", db=db)
     await db.flush()
@@ -361,3 +395,109 @@ async def test_notify_quote_failed_sends_push(
     )
     assert row is not None
     assert row.link is None
+
+
+async def test_send_expo_push_schedules_receipt_check_for_ok_tickets(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Ok tickets carry receipt ids that the detached receipt check follows up."""
+    calls = _stub_expo(
+        monkeypatch,
+        _FakeExpoResponse(payload={"data": [{"status": "ok", "id": "ticket-1"}]}),
+    )
+    scheduled: list[tuple[dict[str, str], UUID | None]] = []
+    monkeypatch.setattr(
+        "app.push._schedule_receipt_check",
+        lambda receipt_tokens, tenant_id: scheduled.append((receipt_tokens, tenant_id)),
+    )
+    tenant_id = uuid4()
+
+    await send_expo_push(["ExponentPushToken[device1]"], "T", "B", tenant_id=tenant_id)
+
+    assert len(calls) == 1
+    assert scheduled == [({"ticket-1": "ExponentPushToken[device1]"}, tenant_id)]
+
+
+async def test_check_push_receipts_removes_dead_tokens(
+    admin_client: AsyncClient, db: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Receipt-level DeviceNotRegistered deletes the token via a fresh session."""
+    tenant_id = UUID(admin_client.headers["X-Tenant-ID"])
+    await _seed_push_token(db, tenant_id, "staff", uuid4(), "ExponentPushToken[live]")
+    await _seed_push_token(db, tenant_id, "staff", uuid4(), "ExponentPushToken[dead]")
+    calls: list[dict[str, Any]] = []
+    monkeypatch.setattr(
+        "app.push.httpx.AsyncClient",
+        lambda **kwargs: _FakeExpoRouter(
+            calls,
+            send_payload={"data": []},
+            receipts_payload={
+                "data": {
+                    "rid-live": {"status": "ok"},
+                    "rid-dead": {
+                        "status": "error",
+                        "message": "The device cannot receive push notifications anymore",
+                        "details": {"error": "DeviceNotRegistered"},
+                    },
+                }
+            },
+        ),
+    )
+    monkeypatch.setattr("app.push.PUSH_RECEIPT_CHECK_DELAY_SECONDS", 0)
+
+    @asynccontextmanager
+    async def _test_session() -> AsyncIterator[AsyncSession]:
+        yield db
+
+    monkeypatch.setattr("app.database.get_db_session", _test_session)
+
+    await _check_push_receipts(
+        {"rid-live": "ExponentPushToken[live]", "rid-dead": "ExponentPushToken[dead]"},
+        tenant_id,
+    )
+
+    assert [c["url"] for c in calls] == ["https://exp.host/--/api/v2/push/getReceipts"]
+    assert calls[0]["json"] == {"ids": ["rid-live", "rid-dead"]}
+    await set_tenant_in_session(db, tenant_id)
+    remaining = (
+        (await db.execute(select(PushToken.token).where(PushToken.tenant_id == tenant_id)))
+        .scalars()
+        .all()
+    )
+    assert list(remaining) == ["ExponentPushToken[live]"]
+
+
+async def test_check_push_receipts_invalid_credentials_keeps_tokens(
+    admin_client: AsyncClient, db: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """InvalidCredentials means the APNs leg is broken — log loudly, keep tokens."""
+    tenant_id = UUID(admin_client.headers["X-Tenant-ID"])
+    await _seed_push_token(db, tenant_id, "staff", uuid4(), "ExponentPushToken[device1]")
+    calls: list[dict[str, Any]] = []
+    monkeypatch.setattr(
+        "app.push.httpx.AsyncClient",
+        lambda **kwargs: _FakeExpoRouter(
+            calls,
+            send_payload={"data": []},
+            receipts_payload={
+                "data": {
+                    "rid-1": {
+                        "status": "error",
+                        "message": "Invalid credentials",
+                        "details": {"error": "InvalidCredentials"},
+                    }
+                }
+            },
+        ),
+    )
+    monkeypatch.setattr("app.push.PUSH_RECEIPT_CHECK_DELAY_SECONDS", 0)
+
+    await _check_push_receipts({"rid-1": "ExponentPushToken[device1]"}, tenant_id)
+
+    await set_tenant_in_session(db, tenant_id)
+    remaining = (
+        (await db.execute(select(PushToken.token).where(PushToken.tenant_id == tenant_id)))
+        .scalars()
+        .all()
+    )
+    assert list(remaining) == ["ExponentPushToken[device1]"]

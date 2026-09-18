@@ -118,3 +118,16 @@ PORTAL_MAGIC_TTL_DAYS: int = int(os.environ.get("PORTAL_MAGIC_TTL_DAYS", "30"))
 # Svix signing secret (whsec_...) for POST /webhooks/resend. Empty disables
 # the endpoint: it answers 503 so Resend keeps retrying until configured.
 RESEND_WEBHOOK_SECRET: str = os.environ.get("RESEND_WEBHOOK_SECRET", "").strip()
+
+# --- Expo push delivery (app.push) --------------------------------------------
+# Optional Expo access token, sent as a Bearer header on push/receipt API
+# calls. Only required when the EAS project has enhanced push security
+# enabled; empty sends unauthenticated (the default).
+EXPO_ACCESS_TOKEN: str = os.environ.get("EXPO_ACCESS_TOKEN", "").strip()
+# Delay before the detached receipt checker asks Expo for delivery receipts —
+# they are not ready immediately after a send. APNs-side failures
+# (InvalidCredentials, DeviceNotRegistered) surface only in receipts, not in
+# the per-message tickets inspected at send time.
+PUSH_RECEIPT_CHECK_DELAY_SECONDS: float = float(
+    os.environ.get("PUSH_RECEIPT_CHECK_DELAY_SECONDS", "300")
+)
