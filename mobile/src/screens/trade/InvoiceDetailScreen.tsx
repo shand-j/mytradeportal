@@ -47,6 +47,9 @@ export type InvoiceDetailScreenProps = {
   lineItems?: ApiInvoiceLineItem[];
   /** VAT rate applied to the invoice (derived from the API amounts). */
   vatRate?: number;
+  /** Fixed rounding uplift set at creation; the backend keeps it across line
+   * edits, so the edit preview must include it in the total. */
+  roundingAdjustment?: number;
   /** When provided (connected mode), PATCHes the replacement line items. */
   onSaveLineItems?: (
     lineItems: NonNullable<UpdateInvoiceInput["lineItems"]>
@@ -80,6 +83,7 @@ export function InvoiceDetailScreen({
   sendingInvoice,
   lineItems,
   vatRate = 0.2,
+  roundingAdjustment = 0,
   onSaveLineItems,
   savingLineItems,
   paidVia = null,
@@ -116,8 +120,8 @@ export function InvoiceDetailScreen({
       return sum + qty * price;
     }, 0);
     const vat = subtotal * vatRate;
-    return { subtotal, vat, total: subtotal + vat };
-  }, [editItems, vatRate]);
+    return { subtotal, vat, total: subtotal + vat + roundingAdjustment };
+  }, [editItems, vatRate, roundingAdjustment]);
 
   const markPaid = async () => {
     if (onMarkPaid) {
@@ -352,6 +356,16 @@ export function InvoiceDetailScreen({
                   {formatMoneyGBP(editTotals.vat)}
                 </Text>
               </View>
+              {roundingAdjustment > 0 && (
+                <View>
+                  <Text variant="caption" color="secondary">
+                    Rounded up
+                  </Text>
+                  <Text variant="caption" color="secondary">
+                    +{formatMoneyGBP(roundingAdjustment)}
+                  </Text>
+                </View>
+              )}
               <View className="items-end">
                 <Text variant="caption" color="secondary">
                   Total

@@ -132,6 +132,63 @@ async def test_invoice_from_scratch_is_rounded_per_setting(admin_client: AsyncCl
     assert Decimal(adjustment) == Decimal("7.00")
 
 
+async def test_read_endpoints_return_rounded_totals(admin_client: AsyncClient) -> None:
+    """Quote/invoice read endpoints return the rounded total (issue #173).
+
+    The rounding uplift is baked into the stored ``total``; every read surface
+    (detail + list, quote + invoice) must return the same rounded value so no
+    UI ever shows the unrounded amount.
+    """
+    await _set_rounding(admin_client, 5)
+    contact_id = await _create_contact(admin_client)
+    created = await admin_client.post("/quotes", json=_quote_payload(contact_id))
+    quote_id = created.json()["id"]
+    assert Decimal(created.json()["total"]) == Decimal("865.00")
+
+    quote_detail = await admin_client.get(f"/quotes/{quote_id}")
+    assert quote_detail.status_code == 200
+    assert Decimal(quote_detail.json()["total"]) == Decimal("865.00")
+    adjustment = quote_detail.json().get(
+        "roundingAdjustment", quote_detail.json().get("rounding_adjustment")
+    )
+    assert Decimal(adjustment) == Decimal("2.00")
+
+    quote_list = await admin_client.get("/quotes")
+    assert quote_list.status_code == 200
+    listed_quote = next(q for q in quote_list.json() if q["id"] == quote_id)
+    assert Decimal(listed_quote["total"]) == Decimal("865.00")
+
+    converted = await admin_client.post(f"/quotes/{quote_id}/convert-to-invoice", json={})
+    assert converted.status_code == 201
+    invoice_id = converted.json()["id"]
+
+    invoice_detail = await admin_client.get(f"/invoices/{invoice_id}")
+    assert invoice_detail.status_code == 200
+    assert Decimal(invoice_detail.json()["total"]) == Decimal("865.00")
+    adjustment = invoice_detail.json().get(
+        "roundingAdjustment", invoice_detail.json().get("rounding_adjustment")
+    )
+    assert Decimal(adjustment) == Decimal("2.00")
+
+    invoice_list = await admin_client.get("/invoices")
+    assert invoice_list.status_code == 200
+    listed_invoice = next(i for i in invoice_list.json() if i["id"] == invoice_id)
+    assert Decimal(listed_invoice["total"]) == Decimal("865.00")
+
+    scratch = await admin_client.post(
+        "/invoices",
+        json={
+            "contact_id": contact_id,
+            "line_items": [
+                {"description": "Call-out", "quantity": "1", "unit_price": "863.00"},
+            ],
+        },
+    )
+    assert scratch.status_code == 201
+    scratch_detail = await admin_client.get(f"/invoices/{scratch.json()['id']}")
+    assert Decimal(scratch_detail.json()["total"]) == Decimal("865.00")
+
+
 async def test_unrounded_legacy_quote_is_mirrored_not_rerounded(
     admin_client: AsyncClient,
 ) -> None:

@@ -1,3 +1,4 @@
+import { useQuery } from "@tanstack/react-query";
 import { api } from "../lib/apiClient";
 import { BusinessConfig } from "../types";
 
@@ -213,6 +214,16 @@ export async function updateFollowUpSettings(input: FollowUpSettings): Promise<F
     },
   });
   return input;
+}
+
+/**
+ * The tenant's quote-total rounding increment (£5 or £10; 0 = off). Screens
+ * that preview a total the backend will round (quote totals, scratch-invoice
+ * totals) use this so the preview matches the stored value.
+ */
+export function useQuoteRoundingIncrement(): number {
+  const query = useQuery({ queryKey: ["follow-up-settings"], queryFn: fetchFollowUpSettings });
+  return query.data?.quoteRounding ?? 0;
 }
 
 export type WorkingHours = {

@@ -269,14 +269,15 @@ export function QuotesScreen(_props: QuotesScreenProps) {
 }
 
 function QuoteCard({ quote, onPress, testID }: { quote: Quote; onPress: () => void; testID?: string }) {
-  const totals = useMemo(() => {
+  const displayTotal = useMemo(() => {
+    // Prefer the server total — it includes the tenant's rounding uplift.
+    if (quote.total !== undefined) return quote.total;
     const subtotal = quote.lineItems.reduce((sum, item) => {
       const qty = parseFloat(item.qty) || 0;
       const price = parseFloat(item.unitPrice) || 0;
       return sum + qty * price;
     }, 0);
-    const vat = subtotal * quote.vatRate;
-    return { subtotal, vat, total: subtotal + vat };
+    return subtotal * (1 + quote.vatRate);
   }, [quote]);
 
   return (
@@ -296,7 +297,7 @@ function QuoteCard({ quote, onPress, testID }: { quote: Quote; onPress: () => vo
           {quote.customerName} · {quote.postcode}
         </Text>
         <Text variant="body" weight="semibold">
-          £{totals.total.toFixed(2)} inc VAT
+          £{displayTotal.toFixed(2)} inc VAT
         </Text>
       </View>
     </Pressable>

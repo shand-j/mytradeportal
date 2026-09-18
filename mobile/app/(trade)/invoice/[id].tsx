@@ -44,6 +44,7 @@ export default function InvoiceDetailRoute() {
       sendingInvoice={sendInvoice.isPending}
       lineItems={apiInvoice?.lineItems ?? []}
       vatRate={vatRate}
+      roundingAdjustment={parseFloat(apiInvoice?.roundingAdjustment ?? "") || 0}
       onSaveLineItems={(lineItems: NonNullable<UpdateInvoiceInput["lineItems"]>) =>
         updateInvoice.mutateAsync({ id: realInvoice.id, input: { lineItems } })
       }

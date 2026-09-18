@@ -8,8 +8,9 @@ import { Header } from "../../components/ui/Header";
 import { Text } from "../../components/ui/Text";
 import { Screen } from "../../components/ui/Screen";
 import { fetchQuote } from "../../api/quotes";
+import { useQuoteRoundingIncrement } from "../../api/businesses";
 import { ApiError } from "../../lib/apiClient";
-import { formatMoneyGBP } from "../../lib/format";
+import { formatMoneyGBP, roundUpToIncrement } from "../../lib/format";
 import { Job, JobStatus } from "../../types";
 
 function pad(n: number): string {
@@ -159,11 +160,16 @@ export function JobDetailScreen({
   });
   const sourceQuote = sourceQuoteQuery.data;
 
+  // Quote-less invoices are scratch invoices: the backend rounds the total up
+  // once at creation per the tenant setting, so the preview must round too.
+  const roundingIncrement = useQuoteRoundingIncrement();
   const totals = useMemo(() => {
     const subtotal = items.reduce((sum, i) => sum + i.amount, 0);
     const vat = subtotal * (vatRate ?? 0.2);
-    return { subtotal, vat, total: subtotal + vat };
-  }, [items, vatRate]);
+    const rawTotal = subtotal + vat;
+    const total = roundUpToIncrement(rawTotal, roundingIncrement);
+    return { subtotal, vat, uplift: total - rawTotal, total };
+  }, [items, vatRate, roundingIncrement]);
 
   const handleStart = async () => {
     try {
@@ -688,6 +694,16 @@ export function JobDetailScreen({
                   £{totals.vat.toFixed(2)}
                 </Text>
               </View>
+              {totals.uplift > 0.004 && (
+                <View className="flex-row justify-between">
+                  <Text variant="caption" color="secondary">
+                    Rounded up
+                  </Text>
+                  <Text variant="caption" color="secondary">
+                    +£{totals.uplift.toFixed(2)}
+                  </Text>
+                </View>
+              )}
               <View className="flex-row justify-between">
                 <Text variant="body" weight="bold">
                   Total
