@@ -41,6 +41,64 @@ def password_reset(*, name: str | None, reset_url: str) -> tuple[str, str, str]:
     return subject, html, text
 
 
+def staff_invite(
+    *,
+    business_name: str,
+    invitee_name: str | None,
+    invite_url: str,
+    testflight_url: str | None,
+    ttl_days: int,
+) -> tuple[str, str, str]:
+    """Team-member invite: set-password link plus the app download pointer."""
+    greeting = f"Hi {invitee_name}," if invitee_name else "Hi,"
+    subject = f"{business_name} has invited you to My Trade Portal"
+    if testflight_url:
+        app_step_text = f"1. Get the app (beta) via TestFlight: {testflight_url}\n"
+        app_step_html = (
+            f'<li>Get the app (beta) via <a href="{testflight_url}" '
+            f'style="color:#CC8F00;">TestFlight</a>.</li>'
+        )
+    else:
+        app_step_text = "1. Install the My Trade Portal app (ask the person who invited you for the beta link).\n"
+        app_step_html = (
+            "<li>Install the My Trade Portal app (ask the person who invited you "
+            "for the beta link).</li>"
+        )
+    text = (
+        f"{greeting}\n\n"
+        f"{business_name} has invited you to join their team on My Trade Portal — "
+        "the app they use for quotes, jobs and invoicing.\n\n"
+        "To get started:\n"
+        f"{app_step_text}"
+        f"2. Set your password (link expires in {ttl_days} days):\n   {invite_url}\n"
+        "3. Open the app and log in with this email address and your new password.\n\n"
+        "If you weren't expecting this invite, you can safely ignore this email.\n\n"
+        "— My Trade Portal"
+    )
+    html = f"""\
+<!doctype html>
+<html>
+  <body style="font-family:-apple-system,Segoe UI,Roboto,sans-serif;color:#0f172a;max-width:560px;margin:0 auto;padding:24px;">
+    <h1 style="font-size:22px;margin:0 0 12px;">You're invited</h1>
+    <p>{escape(greeting)}</p>
+    <p><strong>{escape(business_name)}</strong> has invited you to join their team on My Trade Portal — the app they use for quotes, jobs and invoicing.</p>
+    <ol style="padding-left:20px;line-height:1.6;">
+      {app_step_html}
+      <li>Set your password with the button below (expires in {ttl_days} days).</li>
+      <li>Open the app and log in with this email address and your new password.</li>
+    </ol>
+    <p style="margin:24px 0;">
+      <a href="{invite_url}" style="background:#FFC107;color:#0F1E26;padding:12px 20px;border-radius:8px;text-decoration:none;font-weight:700;">Set your password</a>
+    </p>
+    <p style="color:#64748b;font-size:13px;">If the button doesn't work, copy and paste this link:<br><a href="{invite_url}" style="color:#CC8F00;">{invite_url}</a></p>
+    <p style="color:#64748b;font-size:13px;">If you weren't expecting this invite, you can safely ignore this email.</p>
+    <p style="color:#64748b;font-size:13px;margin-top:32px;">— My Trade Portal</p>
+  </body>
+</html>
+"""
+    return subject, html, text
+
+
 def _magic_link_cta(url: str, label: str, brand_color: str | None = None) -> tuple[str, str]:
     """Primary sign-in CTA block for a magic portal link, as (text, html).
 

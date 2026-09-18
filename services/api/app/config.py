@@ -114,6 +114,14 @@ PORTAL_BASE_DOMAIN: str = os.environ.get("PORTAL_BASE_DOMAIN", "mytradeportal.co
 # customer's earlier tokens so only the newest emailed link works.
 PORTAL_MAGIC_TTL_DAYS: int = int(os.environ.get("PORTAL_MAGIC_TTL_DAYS", "30"))
 
+# --- Staff team invites (POST /users/invite) -----------------------------------
+# Days an invite token stays valid; re-issuing (fresh invite magic link)
+# revokes the user's earlier tokens so only the newest emailed link works.
+INVITE_TOKEN_TTL_DAYS: int = int(os.environ.get("INVITE_TOKEN_TTL_DAYS", "7"))
+# Public TestFlight beta link embedded in invite emails so new team members
+# can install the app. Empty omits the link from the email body.
+TESTFLIGHT_URL: str = os.environ.get("TESTFLIGHT_URL", "").strip()
+
 # --- Resend inbound webhooks (bounce/delivery-failure alerts) -----------------
 # Svix signing secret (whsec_...) for POST /webhooks/resend. Empty disables
 # the endpoint: it answers 503 so Resend keeps retrying until configured.

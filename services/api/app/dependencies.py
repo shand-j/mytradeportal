@@ -278,8 +278,9 @@ async def _tenant_plan(tenant: Tenant, db: AsyncSession) -> Plan:
 def require_tier_feature(feature: str) -> Callable[[Tenant, AsyncSession], Awaitable[Tenant]]:
     """Dependency factory gating an endpoint on a plan capability.
 
-    Tiers differ by capability only (flat pricing, unlimited users, unmetered
-    AI), so this is the only enforcement dependency. A tenant without a
+    Tiers differ by capability and seat count (flat pricing, unmetered AI),
+    so this is the only capability enforcement dependency (seats are enforced
+    by ``POST /users/invite``). A tenant without a
     subscription row defaults to ``sole_trader``. Missing capability → HTTP
     403 with a structured ``feature_not_in_plan`` payload and an upgrade hint
     naming the cheapest tier that unlocks the feature. Wire in as::

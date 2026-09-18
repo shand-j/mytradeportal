@@ -1233,8 +1233,33 @@ class UserRead(BaseModel):
     role: str
     is_active: bool
     phone: str | None
+    # True while the user was invited but has not yet set a password.
+    invite_pending: bool = False
     created_at: datetime
     updated_at: datetime
+
+
+class UserInviteCreate(BaseModel):
+    """Invite a team member: creates an unactivated user and emails a link."""
+
+    email: str = Field(..., min_length=3, max_length=255)
+    full_name: str = Field(..., min_length=1, max_length=255)
+    role: str = Field(default="engineer", max_length=50)
+    phone: str | None = Field(default=None, max_length=50)
+
+
+class UserInviteLinkRequest(BaseModel):
+    """Ask for a fresh invite magic link (pending invites only)."""
+
+    email: str = Field(..., min_length=3, max_length=255)
+
+
+class UserInviteAccept(BaseModel):
+    """Accept an invite: set a password and activate the account."""
+
+    token: str = Field(..., min_length=32, max_length=128)
+    password: str = Field(..., min_length=8, max_length=128)
+    full_name: str | None = Field(default=None, min_length=1, max_length=255)
 
 
 class UserLogin(BaseModel):

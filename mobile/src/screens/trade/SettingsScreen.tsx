@@ -179,11 +179,16 @@ export function SettingsScreen() {
       onPress: () => router.push("/(trade)/invoices"),
     },
     // Business profile and Branding share the same underlying edit screen for
-    // beta; Team is deferred to post-beta (sole-owner-operator centric).
+    // beta.
     {
       title: "Business profile & branding",
       subtitle: business?.name ?? "Name, logo, colour, quote PDF",
       onPress: () => router.push("/(trade)/branding"),
+    },
+    {
+      title: "Team",
+      subtitle: "Invite users, see pending invites",
+      onPress: () => router.push("/(trade)/team"),
     },
     {
       title: "Payment details",
