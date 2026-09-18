@@ -1103,3 +1103,78 @@ async def test_generate_records_unpriced_usage_when_model_unknown(
         "completion_tokens": 50,
         "est_cost_usd": None,
     }
+
+
+@pytest.mark.asyncio
+async def test_generate_quote_from_lead_surfaces_photo_observations(client: AsyncClient) -> None:
+    """A lead with photos: the vision captions reach the generation call and
+    the observations are exposed on the quote as ai_observations."""
+    tenant = await _create_tenant(client, f"sparky-{uuid4().hex[:8]}")
+
+    submit = await client.post(
+        f"/businesses/{tenant['slug']}/quote-requests",
+        json={
+            "contact": {
+                "name": "Photo Lead",
+                "email": "photo.lead@example.com",
+                "postcode": "M1 1AA",
+            },
+            "category": "consumer_unit",
+            "title": "Consumer unit upgrade",
+            "raw_text": "Old fuse board keeps tripping",
+        },
+    )
+    assert submit.status_code == 201, submit.text
+    lead_id = submit.json()["id"]
+
+    attach = await client.post(
+        f"/quote-requests/{lead_id}/media",
+        headers={"X-Tenant-ID": tenant["id"]},
+        json={
+            "file_url": "https://photos.example.com/consumer-unit.jpg",
+            "mime_type": "image/jpeg",
+        },
+    )
+    assert attach.status_code == 201, attach.text
+
+    retrieved = [
+        {
+            "code": "ELEC-CU-UPGRADE",
+            "description": "Upgrade consumer unit",
+            "unit": "each",
+            "unit_price": "480.00",
+            "category": "Consumer Units",
+        }
+    ]
+    generated = {"line_items": [{"code": "ELEC-CU-UPGRADE", "quantity": 1}], "notes": ""}
+    observations = ["The photo shows a rewireable-fuse consumer unit with no RCD protection."]
+
+    captured: dict[str, Any] = {}
+
+    async def _fake_generate(**kwargs: Any) -> dict[str, Any]:
+        captured.update(kwargs)
+        return generated
+
+    with (
+        patch(
+            "app.routers.quotes.search_cost_items_with_status",
+            new=AsyncMock(return_value=(retrieved, "grounded")),
+        ),
+        patch("app.routers.quotes.caption_images", new=AsyncMock(return_value=observations)),
+        patch(
+            "app.routers.quotes.generate_quote_from_prompt",
+            new=AsyncMock(side_effect=_fake_generate),
+        ),
+    ):
+        response = await client.post(
+            "/quotes/generate",
+            headers={"X-Tenant-ID": tenant["id"]},
+            json={"quote_request_id": lead_id, "use_ocerp": False},
+        )
+
+    assert response.status_code == 201, response.text
+    quote = response.json()
+    # The vision observations conditioned the generation call...
+    assert captured["image_observations"] == observations
+    # ...and are visible on the quote as evidence the photo was used.
+    assert quote["ai_observations"] == observations

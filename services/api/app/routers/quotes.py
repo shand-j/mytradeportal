@@ -2,6 +2,7 @@
 
 import asyncio
 import time
+from dataclasses import replace
 from datetime import date, datetime, timedelta
 from decimal import Decimal
 from io import BytesIO
@@ -23,6 +24,7 @@ from app.ai_quality import (
     finalize_draft_feedback,
 )
 from app.ai_telemetry import (
+    FEATURE_MEDIA_OBSERVATION,
     FEATURE_QUOTE_DRAFT,
     FEATURE_QUOTE_REFINE,
     AiCallContext,
@@ -68,7 +70,14 @@ from app.rag import (
     validate_generated_quote,
 )
 from app.rag.validation import build_quote_from_validation
+from app.rag.vision import (
+    MAX_OBSERVED_IMAGES,
+    ImageRef,
+    build_data_url,
+    caption_images,
+)
 from app.rls import set_tenant_in_session
+from app.routers.files import s3_client
 from app.routers.invoices import _get_invoice, generate_invoice_number
 from app.routers.jobs import _email_booking_confirmed, create_block_appointments, plan_job_blocks
 from app.routers.public_docs import issue_document_token, public_document_url
@@ -654,6 +663,10 @@ async def refine_quote(
             "generation_seconds": round(time.perf_counter() - started, 2),
         },
     }
+    # Photo observations belong to the lead, not to a single generation, so
+    # carry them across the refine that replaces the rest of the rag record.
+    if isinstance(previous_rag, dict) and previous_rag.get("observations"):
+        quote.extra_data["rag"]["observations"] = previous_rag["observations"]
     llm_usage = _accumulate_llm_usage(
         previous_rag if isinstance(previous_rag, dict) else {},
         generated.get("usage"),
@@ -1088,6 +1101,91 @@ def _accumulate_llm_usage(
     }
 
 
+_IMAGE_URL_EXTENSIONS = (".jpg", ".jpeg", ".png", ".webp", ".heic", ".heif")
+
+
+def _is_image_asset(asset: MediaAsset) -> bool:
+    """Filter media rows down to photos the vision step can caption."""
+    if asset.mime_type:
+        return asset.mime_type.lower().startswith("image/")
+    return asset.file_url.lower().split("?")[0].endswith(_IMAGE_URL_EXTENSIONS)
+
+
+def _fetch_object_bytes(file_key: str) -> bytes:
+    obj = s3_client().get_object(Bucket=settings.minio_bucket, Key=file_key)
+    return obj["Body"].read()  # type: ignore[no-any-return]
+
+
+async def _load_quote_request_image_refs(
+    db: AsyncSession, tenant_id: UUID, quote_request_id: UUID
+) -> list[ImageRef]:
+    """Resolve a lead's photos to image references the LLM provider can read.
+
+    MinIO is private-network-only, so objects stored there are fetched
+    server-side and inlined as base64 data URLs; absolute http(s) URLs pass
+    through for the provider to fetch. Fail-open per asset: anything
+    unreadable is logged and skipped so quote generation is never blocked by
+    a bad photo.
+    """
+    await set_tenant_in_session(db, tenant_id)
+    result = await db.execute(
+        select(MediaAsset)
+        .where(
+            MediaAsset.tenant_id == tenant_id,
+            MediaAsset.quote_request_id == quote_request_id,
+        )
+        .order_by(MediaAsset.created_at.asc())
+    )
+    refs: list[ImageRef] = []
+    for asset in result.scalars():
+        if len(refs) >= MAX_OBSERVED_IMAGES:
+            break
+        if not _is_image_asset(asset):
+            continue
+        try:
+            if asset.file_key:
+                content = await asyncio.to_thread(_fetch_object_bytes, asset.file_key)
+                mime_type = asset.mime_type or "image/jpeg"
+                data_url = build_data_url(content, mime_type)
+                if data_url:
+                    refs.append(ImageRef(url=data_url, mime_type=mime_type))
+            elif asset.file_url.lower().startswith(("http://", "https://")):
+                refs.append(ImageRef(url=asset.file_url, mime_type=asset.mime_type or "image/jpeg"))
+        except Exception as exc:
+            logger.warning(
+                "media_observation_fetch_failed",
+                media_asset_id=str(asset.id),
+                error_type=type(exc).__name__,
+            )
+    return refs
+
+
+async def _caption_quote_request_media(
+    db: AsyncSession,
+    tenant_id: UUID,
+    quote_request: QuoteRequest | None,
+    telemetry: AiCallContext | None,
+) -> list[str]:
+    """Caption the lead's photos so generation is conditioned on what they show.
+
+    Returns the vision-step observations (empty when the lead has no photos or
+    captioning failed — generation then proceeds exactly as before). Caption
+    calls are tracked under the ``media_observation`` feature so their cost is
+    attributable separately from the draft generation itself.
+    """
+    if quote_request is None:
+        return []
+    image_refs = await _load_quote_request_image_refs(db, tenant_id, quote_request.id)
+    if not image_refs:
+        return []
+    caption_context = (
+        replace(telemetry, feature=FEATURE_MEDIA_OBSERVATION, parent_event_id=None)
+        if telemetry is not None
+        else None
+    )
+    return await caption_images(image_refs, telemetry=caption_context)
+
+
 async def _generate_rag_quote(
     db: AsyncSession,
     quote: Quote,
@@ -1099,12 +1197,14 @@ async def _generate_rag_quote(
     """Populate a quote using the faster RAG path (retrieval + LLM)."""
     started = time.perf_counter()
     retrieved, retrieval_status = await search_cost_items_with_status(data.description)
+    image_observations = await _caption_quote_request_media(db, tenant.id, quote_request, telemetry)
     generated = await generate_quote_from_prompt(
         job_description=data.description,
         cost_items=retrieved,
         tenant_settings=tenant.settings,
         property_type=data.property_type,
         site_survey=data.site_survey,
+        image_observations=image_observations,
         telemetry=telemetry,
     )
     generation_seconds = round(time.perf_counter() - started, 2)
@@ -1146,6 +1246,10 @@ async def _generate_rag_quote(
     quote.extra_data = {**(quote.extra_data or {})}
     quote.extra_data["rag"]["generation_seconds"] = generation_seconds
     quote.extra_data["rag"]["completeness"] = completeness
+    if image_observations:
+        # Surfaced on QuoteRead as ai_observations — the visible evidence that
+        # the customer's photos informed the draft.
+        quote.extra_data["rag"]["observations"] = image_observations
     llm_usage = _accumulate_llm_usage(
         quote.extra_data["rag"], generated.get("usage"), generated.get("model")
     )

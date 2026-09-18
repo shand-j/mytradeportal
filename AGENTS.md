@@ -59,6 +59,14 @@ endpoint (Kimi/Moonshot via `LLM_API_BASE`). Recent additions:
 - `QuoteRead` now exposes AI metadata: `ai_generated`, `ai_confidence`,
 `ai_warnings`, `ai_assumptions`, `ai_notes`, and `retrieval_status`
 (derived from the per-line flag and `quote.extra_data["rag"]`).
+- Photo observations (issue #186): photos attached to a quote request
+(`MediaAsset`) are captioned by a vision call in `services/api/app/rag/vision.py`
+(fail-open, model = `LLM_VISION_MODEL` or `LLM_MODEL`; MinIO objects are fetched
+server-side and inlined as base64 data URLs since MinIO is private-network-only).
+The captions are rendered into the generation prompt as confirmed site facts —
+so the draft's assumptions must not contradict them — and stored on
+`quote.extra_data["rag"]["observations"]`, surfaced on `QuoteRead` as
+`ai_observations`.
 - `POST /quotes/{id}/refine` accepts electrician instructions and regenerates the
 AI-drafted line items, preserving any manually added/edited lines. Rate limited
 like `/generate`.

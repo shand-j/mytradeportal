@@ -478,6 +478,9 @@ class QuoteRead(BaseModel):
     ai_confidence: float | None = None
     ai_warnings: list[str] = Field(default_factory=list)
     ai_assumptions: list[str] = Field(default_factory=list)
+    # Factual observations captioned from the customer's photos by the vision
+    # step (empty when no photos were attached or captioning failed).
+    ai_observations: list[str] = Field(default_factory=list)
     ai_notes: str | None = None
     retrieval_status: str | None = None
     # Uplift from the tenant's quote-rounding setting (0 when off). ``total``
@@ -525,6 +528,7 @@ class QuoteRead(BaseModel):
             "ai_confidence": rag.get("confidence"),
             "ai_warnings": rag.get("warnings") or [],
             "ai_assumptions": rag.get("assumptions") or [],
+            "ai_observations": rag.get("observations") or [],
             "ai_notes": rag.get("notes"),
             "retrieval_status": rag.get("retrieval_status"),
             "is_multi_day": multi_day,

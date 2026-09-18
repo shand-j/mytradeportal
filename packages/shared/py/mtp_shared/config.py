@@ -69,6 +69,12 @@ class Settings(BaseSettings):
     embedding_model: str = Field(default="text-embedding-3-large")
     embedding_dimensions: int | None = Field(default=None)
     llm_model: str = Field(default="gpt-4o-mini")
+    # Optional vision-capable model override for the photo-observation step
+    # that captions customer photos attached to quote requests. Empty falls
+    # back to ``llm_model`` — set this when the configured chat model cannot
+    # accept image input. Routed through the same LiteLLM provider settings
+    # (``llm_api_base`` / ``llm_api_key``) as quote generation.
+    llm_vision_model: str = Field(default="")
     # Model for the public landing-page demo quote endpoints. The demo favours
     # speed and reliability over flagship quality, so it routes to OpenAI
     # (gpt-4o-mini by default) whenever ``openai_api_key`` is set, ignoring the

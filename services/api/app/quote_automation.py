@@ -587,10 +587,16 @@ async def requote_after_triage_close(tenant_id: UUID, quote_request_id: UUID) ->
             retrieved, retrieval_status = await quotes_router.search_cost_items_with_status(  # type: ignore[attr-defined]
                 description
             )
+            # Same photo conditioning as the initial draft: the lead's photos
+            # still apply to the regenerated quote.
+            image_observations = await quotes_router._caption_quote_request_media(
+                db, tenant_id, quote_request, requote_telemetry
+            )
             generated = await quotes_router.generate_quote_from_prompt(  # type: ignore[attr-defined]
                 job_description=description,
                 cost_items=retrieved,
                 tenant_settings=tenant.settings,
+                image_observations=image_observations,
                 telemetry=requote_telemetry,
             )
             completeness = quotes_router._intake_completeness(description, quote_request)
@@ -641,6 +647,8 @@ async def requote_after_triage_close(tenant_id: UUID, quote_request_id: UUID) ->
                     "requote_after_triage": True,
                 },
             }
+            if image_observations:
+                quote.extra_data["rag"]["observations"] = image_observations
             llm_usage = quotes_router._accumulate_llm_usage(
                 previous_rag if isinstance(previous_rag, dict) else {},
                 generated.get("usage"),
