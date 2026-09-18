@@ -8,6 +8,7 @@ import {
   useSendInvoice,
   useUpdateInvoice,
 } from "../../../src/api/invoices";
+import { usePaymentsStatus } from "../../../src/api/payments";
 
 export default function InvoiceDetailRoute() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -18,8 +19,15 @@ export default function InvoiceDetailRoute() {
   const sendInvoice = useSendInvoice();
   const updateInvoice = useUpdateInvoice();
   const refundInvoice = useRefundInvoice();
+  const paymentsStatus = usePaymentsStatus();
 
   if (!realInvoice) return null;
+
+  // The per-invoice card-payments override only renders when Stripe is
+  // connected and able to take card payments — otherwise it can never work.
+  const stripeEnabled = Boolean(
+    paymentsStatus.data?.connected && paymentsStatus.data?.chargesEnabled
+  );
 
   const subtotal = apiInvoice ? parseFloat(apiInvoice.subtotal) : 0;
   const vatRate =
@@ -42,6 +50,7 @@ export default function InvoiceDetailRoute() {
       savingLineItems={updateInvoice.isPending}
       paidVia={apiInvoice?.paidVia ?? null}
       acceptCardPayments={apiInvoice?.acceptCardPayments ?? null}
+      stripeEnabled={stripeEnabled}
       onSetCardPayments={(value: boolean | null) =>
         updateInvoice
           .mutateAsync({ id: realInvoice.id, input: { acceptCardPayments: value } })
