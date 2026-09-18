@@ -98,6 +98,12 @@ DbDep = Annotated[AsyncSession, Depends(get_db)]
 MONEY_QUANTIZE = Decimal("0.01")
 logger = structlog.get_logger("api.quotes")
 
+# Hard ceiling for the refine round-trip (catalogue retrieval + LLM generation).
+# Each LLM attempt already has its own timeout, but retries stack, so without an
+# overall budget a slow provider holds the request open long past the mobile
+# client's patience. Exceeding it returns a retryable 503.
+_REFINE_LLM_TIMEOUT_SECONDS = 120.0
+
 
 async def _get_quote(db: AsyncSession, tenant_id: UUID, quote_id: UUID) -> Quote:
     await set_tenant_in_session(db, tenant_id)
@@ -566,15 +572,24 @@ async def refine_quote(
         quote_request_id=quote.quote_request_id,
     )
     try:
-        retrieved, retrieval_status = await search_cost_items_with_status(
-            f"{quote.title} {data.instructions}"
-        )
-        generated = await generate_quote_from_prompt(
-            job_description=description,
-            cost_items=retrieved,
-            tenant_settings=tenant.settings,
-            telemetry=telemetry,
-        )
+        async with asyncio.timeout(_REFINE_LLM_TIMEOUT_SECONDS):
+            retrieved, retrieval_status = await search_cost_items_with_status(
+                f"{quote.title} {data.instructions}"
+            )
+            generated = await generate_quote_from_prompt(
+                job_description=description,
+                cost_items=retrieved,
+                tenant_settings=tenant.settings,
+                telemetry=telemetry,
+            )
+    except TimeoutError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=(
+                "The AI service took too long to respond — your quote is unchanged. "
+                "Please try again."
+            ),
+        ) from exc
     except RuntimeError as exc:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,

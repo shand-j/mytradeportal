@@ -1,5 +1,6 @@
 """Integration tests for AI quote generation endpoint."""
 
+import asyncio
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from decimal import Decimal
@@ -433,6 +434,48 @@ async def test_refine_quote_validates_instructions(client: AsyncClient, db: Asyn
         json={"instructions": ""},
     )
     assert response.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_refine_quote_times_out_with_retryable_503(
+    client: AsyncClient, db: AsyncSession
+) -> None:
+    """A hung LLM round-trip is bounded server-side: refine returns a clear
+    retryable 503 instead of holding the request open for many minutes."""
+    tenant = await _create_tenant(client, f"sparky-{uuid4().hex[:8]}")
+    await _mark_vat_registered(db, tenant["id"])
+    contact = await _create_contact(client, tenant["id"], "Refine Customer")
+    created = await client.post(
+        "/quotes",
+        headers={"X-Tenant-ID": tenant["id"]},
+        json={"contact_id": contact["id"], "title": "Manual quote"},
+    )
+    assert created.status_code == 201
+    quote_id = created.json()["id"]
+
+    async def _hanging_generate(**kwargs: Any) -> dict[str, Any]:
+        await asyncio.sleep(30)
+        return {"line_items": [], "notes": ""}
+
+    with (
+        patch("app.routers.quotes._REFINE_LLM_TIMEOUT_SECONDS", 0.05),
+        patch(
+            "app.routers.quotes.search_cost_items_with_status",
+            new=AsyncMock(return_value=([], "no_index")),
+        ),
+        patch(
+            "app.routers.quotes.generate_quote_from_prompt",
+            new=AsyncMock(side_effect=_hanging_generate),
+        ),
+    ):
+        response = await client.post(
+            f"/quotes/{quote_id}/refine",
+            headers={"X-Tenant-ID": tenant["id"]},
+            json={"instructions": "Add a second consumer unit"},
+        )
+
+    assert response.status_code == 503
+    assert "too long" in response.json()["detail"]
 
 
 @pytest.mark.skip(reason="OCERP/BoQ is parked for the mobile-pivot MVP")
