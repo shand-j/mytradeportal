@@ -53,6 +53,13 @@ class TenantCreate(BaseModel):
         return self
 
 
+class EmailAvailabilityRead(BaseModel):
+    """Result of the onboarding email-availability pre-flight check."""
+
+    email: str
+    available: bool
+
+
 class TenantUpdate(BaseModel):
     # Accept both snake_case (what the mobile app sends) and camelCase
     # aliases (legacy web client) for every field.

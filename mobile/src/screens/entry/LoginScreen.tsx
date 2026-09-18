@@ -16,6 +16,9 @@ export type LoginScreenMode = "login" | "register";
 export type LoginScreenProps = {
   role: AppRole;
   mode?: LoginScreenMode;
+  /** Pre-fill the email field (e.g. when sent here from onboarding after a
+   * duplicate-account conflict). */
+  initialEmail?: string;
   onBack: () => void;
 };
 
@@ -27,12 +30,12 @@ const PREFERRED_CONTACT_OPTIONS = [
   { key: "email", label: "Email" },
 ];
 
-export function LoginScreen({ role, mode = "login", onBack }: LoginScreenProps) {
+export function LoginScreen({ role, mode = "login", initialEmail, onBack }: LoginScreenProps) {
   const { login, registerCustomerAccount } = useAuth();
   const { business } = useBusiness();
   const router = useRouter();
   const [currentMode, setCurrentMode] = useState<LoginScreenMode>(mode);
-  const [email, setEmail] = useState("");
+  const [email, setEmail] = useState(initialEmail ?? "");
   const [password, setPassword] = useState("");
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");

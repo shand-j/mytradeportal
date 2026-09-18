@@ -5,18 +5,27 @@ from typing import Annotated, Any
 from uuid import UUID
 
 import httpx
-from fastapi import APIRouter, Depends, Header, HTTPException, status
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request, status
 from mtp_shared import get_settings
+from pydantic import EmailStr
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.audit import Actions, write_audit_log
 from app.database import get_db
 from app.dependencies import ActiveUserDep, TenantDep
+from app.limiter import limiter
 from app.models import Subscription, Tenant, User
 from app.plans import DEFAULT_PLAN_KEY, TRIAL_DAYS
 from app.rls import bypass_rls_for_transaction, set_tenant_in_session
-from app.schemas import TenantBootstrapRead, TenantCreate, TenantRead, TenantUpdate, UserRead
+from app.schemas import (
+    EmailAvailabilityRead,
+    TenantBootstrapRead,
+    TenantCreate,
+    TenantRead,
+    TenantUpdate,
+    UserRead,
+)
 from app.security import get_password_hash
 from app.supabase import admin_create_user, is_supabase_configured
 from app.utils.tenant_code import generate_unique_tenant_code
@@ -220,6 +229,30 @@ async def create_tenant(
     if admin_user is not None:
         result.admin_user = UserRead.model_validate(admin_user)
     return result
+
+
+@router.get("/email-availability")
+@limiter.limit("10/minute")
+async def check_email_availability(
+    request: Request,
+    db: DbDep,
+    email: Annotated[EmailStr, Query()],
+    x_setup_token: Annotated[str | None, Header(alias="X-Setup-Token")] = None,
+) -> EmailAvailabilityRead:
+    """Pre-flight check so onboarding's email step can flag a duplicate account
+    immediately instead of failing at the final registration step.
+
+    Carries the same setup-token guard as tenant creation so the endpoint is
+    not an open account-enumeration oracle, and is rate limited per source IP.
+    The lookup is case-insensitive, matching the login and tenant-creation
+    guards.
+    """
+    _require_setup_token(x_setup_token)
+    await bypass_rls_for_transaction(db)
+    existing_user = await db.scalar(
+        select(User).where(func.lower(User.email) == str(email).lower())
+    )
+    return EmailAvailabilityRead(email=str(email), available=existing_user is None)
 
 
 @router.get("/me")

@@ -63,6 +63,19 @@ export type OnboardingStatus = {
   pendingSteps: string[];
 };
 
+/**
+ * Pre-flight duplicate-account check for the wizard's email step, so a user
+ * who already has an account finds out while typing their email rather than
+ * at the final registration step. Returns true when the email is free.
+ */
+export async function checkEmailAvailability(email: string): Promise<boolean> {
+  const result = await api.get<{ email: string; available: boolean }>(
+    `/tenants/email-availability?email=${encodeURIComponent(email)}`,
+    { auth: false, headers: { "X-Setup-Token": config.setupToken } }
+  );
+  return result.available;
+}
+
 export async function getOnboardingStatus(): Promise<OnboardingStatus> {
   return api.get<OnboardingStatus>("/onboarding/status");
 }

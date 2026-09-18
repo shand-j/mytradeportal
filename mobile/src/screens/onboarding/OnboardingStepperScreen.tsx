@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { ComponentType, useEffect, useRef, useState } from "react";
 import { KeyboardAvoidingView, Platform, ScrollView, StyleSheet, View } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { Header } from "../../components/ui/Header";
@@ -23,7 +23,15 @@ import { ServicesStep } from "./steps/ServicesStep";
 import { TaxVatStep } from "./steps/TaxVatStep";
 import { WelcomeStep } from "./steps/WelcomeStep";
 
-const STEPS = [
+type WizardStepProps = {
+  data?: Record<string, unknown>;
+  onNext: (data?: Record<string, unknown>) => void;
+  /** Account step only: set when the final registration attempt hit a
+   * duplicate-email 409, so the conflict is shown inline under the field. */
+  emailTaken?: boolean;
+};
+
+const STEPS: { key: string; label: string; component: ComponentType<WizardStepProps> }[] = [
   { key: "welcome", label: "Welcome", component: WelcomeStep },
   { key: "account", label: "Account", component: AccountStep },
   { key: "identity", label: "Identity", component: BusinessIdentityStep },
@@ -81,6 +89,9 @@ export function OnboardingStepperScreen() {
   );
   const [data, setData] = useState<Record<string, unknown>>({});
   const [error, setError] = useState<string | null>(null);
+  // Set when the review-step registration 409'd on a duplicate email: the
+  // wizard jumps back to the account step, which shows the conflict inline.
+  const [emailConflict, setEmailConflict] = useState(false);
   // The tenant is registered when leaving the review step, so the plan step's
   // Paddle checkout call (/billing/checkout) runs with an authenticated tenant.
   const [registered, setRegistered] = useState(isResume);
@@ -131,6 +142,10 @@ export function OnboardingStepperScreen() {
     if (stepData) {
       setData(merged);
     }
+    if (STEPS[stepIndex].key === "account") {
+      // The user fixed (or re-confirmed) their email; drop any stale conflict.
+      setEmailConflict(false);
+    }
     if (STEPS[stepIndex].key === "review") {
       setError(null);
       try {
@@ -141,6 +156,19 @@ export function OnboardingStepperScreen() {
         }
         setRegistered(true);
       } catch (err) {
+        if (
+          err instanceof ApiError &&
+          err.status === 409 &&
+          err.detail.toLowerCase().includes("email")
+        ) {
+          // Duplicate account: back to the email step, shown inline there
+          // with a link to log in — not as a banner that trails the user
+          // through every screen.
+          setError(null);
+          setEmailConflict(true);
+          setStepIndex(STEPS.findIndex((s) => s.key === "account"));
+          return;
+        }
         const message =
           err instanceof ApiError && err.status === 409
             ? `${err.detail} Log in from the home screen instead — onboarding will resume where you left off.`
@@ -162,6 +190,8 @@ export function OnboardingStepperScreen() {
   };
 
   const goBack = () => {
+    // Errors belong to the step that raised them; don't trail them backwards.
+    setError(null);
     if (isFirst) {
       logout();
       router.replace("/");
@@ -225,6 +255,7 @@ export function OnboardingStepperScreen() {
                 ? data
                 : data[STEPS[stepIndex].key]) as Record<string, unknown>
             }
+            emailTaken={emailConflict}
             onNext={(stepData?: Record<string, unknown>) => {
               void goNext(stepData);
             }}
