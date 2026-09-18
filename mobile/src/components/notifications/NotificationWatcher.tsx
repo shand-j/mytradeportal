@@ -1,5 +1,5 @@
 import { useEffect } from "react";
-import { Platform } from "react-native";
+import { AppState, Platform } from "react-native";
 import { useRouter } from "expo-router";
 import { useQueryClient } from "@tanstack/react-query";
 import {
@@ -31,6 +31,14 @@ export function NotificationWatcher({ role }: { role: NotificationRole }) {
   useEffect(() => {
     void setupNotificationHandler();
     void requestFirstLaunchPermissions(role);
+    // Token registration is idempotent and retries on every call, so re-run
+    // it on each foregrounding: a registration that failed at cold start
+    // (backend unreachable, token churn after an OTA update) recovers without
+    // waiting for the next app launch.
+    const sub = AppState.addEventListener("change", (state) => {
+      if (state === "active") void requestFirstLaunchPermissions(role);
+    });
+    return () => sub.remove();
   }, [role]);
 
   // Deep-link taps on system push notifications (app backgrounded or killed).
