@@ -1,4 +1,4 @@
-"""In-process quote/invoice reminder scheduler.
+"""In-process quote/invoice/appointment reminder scheduler.
 
 Runs as an asyncio task started from the FastAPI lifespan — no extra infra
 (no Celery beat, no APScheduler dependency). A single sweep
@@ -12,11 +12,17 @@ Runs as an asyncio task started from the FastAPI lifespan — no extra infra
 * **Subscription dunning follow-ups** — for Paddle subscriptions in
   ``past_due``: a reminder email every few days until payment recovers or
   the subscription is cancelled (see :mod:`app.dunning`).
+* **Appointment reminders** — SMS to the customer AND the assigned
+  electrician before each appointment (default windows 24 h and 2 h before
+  ``start_at``), with email/push fallbacks. Plan-included on every tier with
+  an invisible monthly fair-use guardrail that degrades SMS to email/push
+  (see :mod:`app.appointment_reminders`).
 
 Dispatch state lives in the ``reminders`` table (:class:`app.models.Reminder`):
-one row per sent email. The row count per entity is the "how many have gone
-out" state and the latest row's timestamp anchors the next interval, so the
-scheduler is stateless and safe to restart at any point.
+one row per dispatched reminder (email, sms or push channel). The row count
+per entity is the "how many have gone out" state and the latest row's
+timestamp anchors the next interval, so the scheduler is stateless and safe
+to restart at any point.
 
 Concurrency: multiple API replicas each run this loop. Each tenant is
 processed inside a transaction that first takes a PostgreSQL transaction-level
@@ -30,6 +36,7 @@ Tenant settings keys (merged via ``PATCH /tenants/me``):
 * ``quote_reminder_interval_days`` (int, default 3)
 * ``invoice_reminders_enabled`` (bool, default true)
 * ``invoice_reminder_interval_days`` (int, default 7)
+* ``appointment_reminders_enabled`` (bool, default true)
 
 Per-customer overrides (F2) live on ``Contact.reminder_preferences``
 (``PATCH /contacts/{id}``, merged key-by-key): ``quote_chase_enabled`` /
@@ -54,6 +61,7 @@ import structlog
 from sqlalchemy import delete, func, select, text
 
 from app.alerting import fetch_usd_gbp_rate, send_alert
+from app.appointment_reminders import process_appointment_reminders
 from app.audit import Actions, write_audit_log
 from app.config import (
     AI_FAIR_USE_MONTHLY_THRESHOLD,
@@ -544,6 +552,9 @@ async def _process_tenant(db: AsyncSession, tenant: Tenant, now: datetime) -> di
             "quote_reminders": 0,
             "invoice_reminders": 0,
             "dunning_reminders": 0,
+            "appointment_customer_sms": 0,
+            "appointment_staff_sms": 0,
+            "appointment_email_fallbacks": 0,
             "skipped_locked": 1,
         }
 
@@ -552,11 +563,15 @@ async def _process_tenant(db: AsyncSession, tenant: Tenant, now: datetime) -> di
     quote_sent = await _process_quote_reminders(db, tenant, config, now)
     invoice_sent = await _process_invoice_reminders(db, tenant, config, now)
     dunning_sent = await run_dunning_followups(db, tenant, now)
+    appointment_counts = await process_appointment_reminders(db, tenant, now)
     await db.commit()
     return {
         "quote_reminders": quote_sent,
         "invoice_reminders": invoice_sent,
         "dunning_reminders": dunning_sent,
+        "appointment_customer_sms": appointment_counts["customer_sms"],
+        "appointment_staff_sms": appointment_counts["staff_sms"],
+        "appointment_email_fallbacks": appointment_counts["email_fallbacks"],
         "skipped_locked": 0,
     }
 
@@ -567,6 +582,9 @@ async def _run_tick(db: AsyncSession, now: datetime) -> dict[str, int]:
         "quote_reminders": 0,
         "invoice_reminders": 0,
         "dunning_reminders": 0,
+        "appointment_customer_sms": 0,
+        "appointment_staff_sms": 0,
+        "appointment_email_fallbacks": 0,
         "skipped_locked": 0,
         "errors": 0,
     }
@@ -590,6 +608,9 @@ async def _run_tick(db: AsyncSession, now: datetime) -> dict[str, int]:
         summary["quote_reminders"] += result["quote_reminders"]
         summary["invoice_reminders"] += result["invoice_reminders"]
         summary["dunning_reminders"] += result["dunning_reminders"]
+        summary["appointment_customer_sms"] += result["appointment_customer_sms"]
+        summary["appointment_staff_sms"] += result["appointment_staff_sms"]
+        summary["appointment_email_fallbacks"] += result["appointment_email_fallbacks"]
         summary["skipped_locked"] += result["skipped_locked"]
     return summary
 

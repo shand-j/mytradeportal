@@ -1079,20 +1079,24 @@ class Notification(TenantScopedBase):
 
 
 class Reminder(TenantScopedBase):
-    """One customer-facing reminder email sent for a quote or invoice.
+    """One dispatched reminder for a quote, invoice or appointment.
 
-    The reminder scheduler appends a row per dispatched email; the row count
-    per entity is the "how many reminders have gone out" state (quotes stop
-    after the configured count) and ``created_at`` of the latest row is the
-    anchor for the next cadence interval. Kept as a dedicated table (rather
-    than a counter on the quote/invoice) so there is a full audit trail of
-    what was chased and when.
+    The reminder scheduler appends a row per actually-delivered reminder
+    across the email/sms/push channels; the row count per entity is the "how
+    many reminders have gone out" state (quotes stop after the configured
+    count) and ``created_at`` of the latest row is the anchor for the next
+    cadence interval. Appointment reminders additionally dedupe on
+    ``payload.window_hours`` + ``payload.role`` so each window fires once per
+    recipient. Kept as a dedicated table (rather than a counter on the
+    entity) so there is a full audit trail of what was chased and when.
     """
 
     __tablename__ = "reminders"
 
-    entity_type: Mapped[str] = mapped_column(String(20), nullable=False)  # quote | invoice
-    # No FK: points at quotes.id or invoices.id depending on entity_type.
+    entity_type: Mapped[str] = mapped_column(
+        String(20), nullable=False
+    )  # quote | invoice | appointment
+    # No FK: points at quotes.id / invoices.id / appointments.id by entity_type.
     entity_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), nullable=False, index=True)
     channel: Mapped[str] = mapped_column(String(20), default="email", nullable=False)
     # 1-based sequence number of this reminder for the entity.

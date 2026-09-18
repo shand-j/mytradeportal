@@ -182,6 +182,15 @@ class Settings(BaseSettings):
     resend_from_email: str = Field(default="")
     resend_no_reply_email: str = Field(default="")
 
+    # SMS appointment reminders (Telnyx Messaging API). Plan-included feature:
+    # customers and the assigned electrician get a text before each appointment.
+    # ``telnyx_api_key`` plus at least one of ``telnyx_from_number`` /
+    # ``telnyx_messaging_profile_id`` must be set for SMS to be attempted;
+    # otherwise appointment reminders degrade to email/push.
+    telnyx_api_key: str = Field(default="")
+    telnyx_from_number: str = Field(default="")
+    telnyx_messaging_profile_id: str = Field(default="")
+
     # PostHog product analytics (optional passthrough from ``app.analytics``).
     # Empty ``posthog_api_key`` disables the integration entirely — events are
     # still written to the local ``events`` table.

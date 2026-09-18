@@ -47,6 +47,7 @@ SOLE_TRADER_FEATURES: frozenset[str] = frozenset(
         "data_export",
         "customer_portal",
         "intake_brief",
+        "sms_reminders",
     }
 )
 
