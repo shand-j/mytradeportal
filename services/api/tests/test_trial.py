@@ -140,6 +140,17 @@ async def test_checkout_after_trial_signup_updates_same_row(
     monkeypatch.setattr(
         "app.routers.billing.get_or_create_customer", AsyncMock(return_value="ctm_test_1")
     )
+    # Card-required trial price: this test exercises the standard rendered
+    # checkout path (the cardless-trial branch is covered in test_billing.py).
+    monkeypatch.setattr(
+        "app.routers.billing.get_price",
+        AsyncMock(
+            return_value={
+                "id": "pri_test_pro",
+                "trial_period": {"requires_payment_method": True},
+            }
+        ),
+    )
     fake = AsyncMock(
         return_value={"transaction_id": "txn_trial_1", "checkout_url": "https://pay.paddle.com/x"}
     )

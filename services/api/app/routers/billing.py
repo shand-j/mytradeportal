@@ -24,10 +24,16 @@ from app.database import get_db
 from app.dependencies import CurrentUserDep, TenantDep
 from app.models import Subscription, Tenant
 from app.paddle_client import (
+    await_transaction_subscription_id,
+    create_cardless_trial_transaction,
+    create_customer_address,
     create_customer_portal_session,
     create_subscription_transaction,
     get_or_create_customer,
+    get_payment_method_update_transaction,
+    get_price,
     update_subscription,
+    update_subscription_custom_data,
 )
 from app.plans import PLAN_CATALOG, get_plan, plan_to_public_dict
 from app.rls import set_tenant_in_session
@@ -173,6 +179,72 @@ async def _get_or_create_subscription(
     return existing
 
 
+async def _price_is_cardless_trial(price_id: str) -> bool:
+    """True when the Paddle price carries a trial that needs no payment method.
+
+    Paddle rejects a rendered checkout for such prices ("Cardless trial
+    transaction is not linked to a subscription"), so these go through the
+    server-side cardless-trial flow instead of a standard transaction.
+    """
+    price = await get_price(price_id)
+    trial_period = price.get("trial_period") or {}
+    return bool(trial_period) and trial_period.get("requires_payment_method") is False
+
+
+async def _cardless_trial_checkout(
+    *,
+    price_id: str,
+    tenant_id: UUID,
+    plan_key: str,
+    subscription: Subscription,
+    customer_id: str,
+    tenant_row: Tenant | None,
+) -> dict[str, str]:
+    """Hosted checkout for a cardless-trial plan.
+
+    Paddle never renders a signup checkout for a cardless-trial price. The
+    supported lifecycle (per Paddle's cardless-trials docs):
+
+    - A live-but-unpaid subscription already exists in Paddle (``trialing``, or
+      ``past_due`` while dunning) → hand the client the subscription-linked
+      payment-method-update transaction (zero-value; must be opened with the
+      one-page Paddle.js variant, which the checkout page does). The stored
+      payment method takes over billing at trial end.
+    - No usable Paddle subscription yet (local trial only, or a canceled one
+      being reactivated) → create the subscription server-side (a ``billed``
+      transaction auto-completes and Paddle creates the trialing subscription),
+      stamp it with our ``tenant_id`` custom_data so webhook events key onto
+      our mirror row, then build the payment-method-update checkout for it.
+
+    Returns the same ``{transaction_id, checkout_url}`` contract as a standard
+    checkout; the transaction id is the one the checkout page opens.
+    """
+    paddle_subscription_id = subscription.paddle_subscription_id
+    if paddle_subscription_id and subscription.status in ("trialing", "past_due"):
+        return await get_payment_method_update_transaction(paddle_subscription_id)
+
+    postcode = (tenant_row.settings or {}).get("postcode") if tenant_row else None
+    address_id = await create_customer_address(
+        customer_id,
+        postal_code=str(postcode) if postcode else None,
+    )
+    transaction_id = await create_cardless_trial_transaction(
+        price_id=price_id,
+        tenant_id=str(tenant_id),
+        plan_key=plan_key,
+        customer_id=customer_id,
+        address_id=address_id,
+    )
+    paddle_subscription_id = await await_transaction_subscription_id(transaction_id)
+    await update_subscription_custom_data(
+        paddle_subscription_id,
+        {"tenant_id": str(tenant_id), "plan_key": plan_key},
+    )
+    subscription.paddle_subscription_id = paddle_subscription_id
+    subscription.paddle_customer_id = customer_id
+    return await get_payment_method_update_transaction(paddle_subscription_id)
+
+
 @router.get("/plans")
 async def list_plans() -> list[dict[str, Any]]:
     """Return the subscription tier catalog for clients (mobile onboarding).
@@ -203,6 +275,12 @@ async def create_checkout(
     mobile app opens it in the system browser and Paddle bounces back to
     ``success_url`` (or the app default) on completion. Subscription state is
     written by the webhook, not here.
+
+    Prices with a cardless trial (``requires_payment_method: false``) cannot
+    use a rendered signup checkout — Paddle rejects it at render time. For
+    those, the subscription is created (or continued) server-side and the
+    returned URL is a subscription-linked payment-method-update checkout
+    (see :func:`_cardless_trial_checkout`).
     """
     price_id = _price_id_for_plan(data.plan_key, data.interval)
     if current_user is None:
@@ -223,15 +301,28 @@ async def create_checkout(
         customer_id = await get_or_create_customer(
             customer_email, name=current_user.full_name or None
         )
-        checkout = await create_subscription_transaction(
-            price_id=price_id,
-            tenant_id=str(tenant.id),
-            plan_key=data.plan_key,
-            customer_email=customer_email,
-            success_url=data.success_url,
-            discount_id=settings.paddle_beta_discount_id or None,
-            customer_id=customer_id,
-        )
+        if await _price_is_cardless_trial(price_id):
+            # Prices whose trial needs no card can't go through a rendered
+            # signup checkout at all — create/continue the subscription
+            # server-side and hand back the payment-method-update checkout.
+            checkout = await _cardless_trial_checkout(
+                price_id=price_id,
+                tenant_id=tenant.id,
+                plan_key=data.plan_key,
+                subscription=subscription,
+                customer_id=customer_id,
+                tenant_row=tenant_row,
+            )
+        else:
+            checkout = await create_subscription_transaction(
+                price_id=price_id,
+                tenant_id=str(tenant.id),
+                plan_key=data.plan_key,
+                customer_email=customer_email,
+                success_url=data.success_url,
+                discount_id=settings.paddle_beta_discount_id or None,
+                customer_id=customer_id,
+            )
     except Exception as exc:
         logger.error(
             "billing_checkout_failed",
