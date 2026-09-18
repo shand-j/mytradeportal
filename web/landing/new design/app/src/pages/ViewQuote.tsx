@@ -148,7 +148,10 @@ export function DocumentShell({
   const brand = doc.tenant.brand_color || '#0F1E26'
   const vatPercent = Math.round(Number(doc.vat_rate) * 100)
   return (
-    <section className="w-full max-w-[720px] border-2 border-[var(--ink)] bg-[var(--paper)]">
+    <section
+      className="w-full max-w-[720px] border-2 border-[var(--ink)] bg-[var(--paper)]"
+      style={{ '--brand': brand } as React.CSSProperties}
+    >
       <header
         className="flex flex-wrap items-center gap-[var(--space-md)] border-b-2 border-[var(--ink)] px-6 py-5 md:px-10"
         style={{ backgroundColor: brand }}
@@ -345,7 +348,7 @@ function AcceptQuotePanel({
           type="button"
           onClick={handleConfirm}
           disabled={submitting}
-          className="chip chip--fill justify-center disabled:opacity-50"
+          className="chip chip--fill chip--brand justify-center disabled:opacity-50"
         >
           {submitting ? 'Accepting…' : 'Confirm acceptance'}
         </button>
@@ -401,7 +404,7 @@ function QuoteActionBar({
         <button
           type="button"
           onClick={() => setPanel(panel === 'accept' ? 'none' : 'accept')}
-          className="chip chip--fill justify-center"
+          className="chip chip--fill chip--brand justify-center"
         >
           Accept quote
         </button>
@@ -488,7 +491,10 @@ export default function ViewQuote() {
               <QuoteActionBar doc={doc} token={token} onUpdate={setDoc} />
             )}
             {doc.status === 'approved' && (
-              <p className="mt-[var(--space-xl)] border-2 border-[var(--ink)] bg-[var(--accent)] p-4 text-[14px] font-semibold leading-relaxed text-[var(--ink-deep)]">
+              <p
+                className="mt-[var(--space-xl)] border-2 border-[var(--ink)] p-4 text-[14px] font-semibold leading-relaxed text-white"
+                style={{ backgroundColor: 'var(--brand)' }}
+              >
                 Booking request sent — {doc.tenant.name} will confirm your visit once it's
                 scheduled. We've emailed you a confirmation with a link to track the booking in
                 the customer portal.
