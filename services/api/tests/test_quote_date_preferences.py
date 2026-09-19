@@ -9,6 +9,7 @@ never emailing the customer), and convert-to-job adopting that draft.
 
 import re
 from datetime import date, datetime, timedelta
+from decimal import Decimal
 from typing import Any
 from unittest.mock import AsyncMock
 from uuid import UUID, uuid4
@@ -126,7 +127,8 @@ async def _create_appointment(
 
 async def _get_job_for_quote(db: AsyncSession, tenant_id: str, quote_id: str) -> Job | None:
     await set_tenant_in_session(db, UUID(tenant_id))
-    return await db.scalar(select(Job).where(Job.quote_id == UUID(quote_id)))
+    job: Job | None = await db.scalar(select(Job).where(Job.quote_id == UUID(quote_id)))
+    return job
 
 
 # ---------------------------------------------------------------------------
@@ -171,7 +173,7 @@ async def test_public_availability_reports_estimated_hours(
     await set_tenant_in_session(db, UUID(tenant["id"]))
     quote_row = await db.get(Quote, UUID(quote["id"]))
     assert quote_row is not None
-    quote_row.estimated_hours = 4.5
+    quote_row.estimated_hours = Decimal("4.5")
     await db.commit()
 
     response = await client.get(f"/public/quote/{raw}/availability?days=3")
