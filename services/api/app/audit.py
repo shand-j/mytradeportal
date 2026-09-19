@@ -56,6 +56,8 @@ class Actions:
     QUOTE_CONVERTED_TO_JOB = "quote.converted_to_job"
     QUOTE_REMINDER_SENT = "quote.reminder_sent"
 
+    APPOINTMENT_REMINDER_SENT = "appointment.reminder_sent"
+
     QUOTE_REQUEST_CREATED = "quote_request.created"
     QUOTE_REQUEST_UPDATED = "quote_request.updated"
     QUOTE_REQUEST_INTERPRETED = "quote_request.interpreted"

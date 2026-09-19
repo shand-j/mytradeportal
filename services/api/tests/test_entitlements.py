@@ -90,6 +90,7 @@ def test_plan_catalog_tiers_differ_by_capability_only() -> None:
         "data_export",
         "customer_portal",
         "intake_brief",
+        "sms_reminders",
     }
     assert sole.features == frozenset(base)
     assert pro.features == frozenset(

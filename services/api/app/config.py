@@ -29,6 +29,33 @@ REMINDER_SCHEDULER_ENABLED: bool = os.environ.get(
 # after startup so a fresh deploy never immediately blasts customers.
 REMINDER_TICK_SECONDS: int = int(os.environ.get("REMINDER_TICK_SECONDS", "3600"))
 
+# --- SMS appointment reminders (Telnyx Messaging API) ------------------------
+# Plan-included feature (``sms_reminders`` on every tier): the hourly reminder
+# sweep texts the customer AND the assigned electrician before each appointment
+# (windows below), falling back to the existing email/push channels when SMS is
+# unconfigured or paused. Fair use (flat pricing: the guardrail is invisible to
+# customers): when a tenant's current-UTC-month SMS reminder count reaches the
+# monthly threshold, SMS degrades to email/push for the rest of the month and
+# staff get ONE internal ops alert — never customer-visible.
+SMS_REMINDERS_ENABLED: bool = os.environ.get("SMS_REMINDERS_ENABLED", "true").strip().lower() in {
+    "1",
+    "true",
+    "yes",
+    "on",
+}
+# Comma-separated hours-before-start at which a reminder fires (e.g. "24,2" =
+# 24 hours and 2 hours before the appointment).
+APPOINTMENT_REMINDER_WINDOWS_HOURS: str = os.environ.get(
+    "APPOINTMENT_REMINDER_WINDOWS_HOURS", "24,2"
+)
+# A window fires when ``start_at - now`` is within this many minutes PAST the
+# window edge (the sweep runs hourly, so 90 minutes covers the tick interval
+# with margin without ever double-firing a window).
+APPOINTMENT_REMINDER_PAD_MINUTES: int = int(
+    os.environ.get("APPOINTMENT_REMINDER_PAD_MINUTES", "90")
+)
+SMS_FAIR_USE_MONTHLY_THRESHOLD: int = int(os.environ.get("SMS_FAIR_USE_MONTHLY_THRESHOLD", "500"))
+
 # Fair-use AI guardrails (flat pricing: AI is unmetered for customers, so
 # these protect cost without ever surfacing a usage meter). Per-org burst
 # limit: ai_call_events counted for the current UTC hour; HTTP 429 +

@@ -672,6 +672,64 @@ def booking_confirmed(
     return subject, html, text
 
 
+def appointment_reminder(
+    *,
+    customer_name: str,
+    business_name: str,
+    job_title: str,
+    visit_date: str,
+    time_window: str,
+    address: str | None = None,
+) -> tuple[str, str, str]:
+    """Pre-visit reminder email — the fallback when SMS is unavailable.
+
+    Sent by the reminder sweep (``app.appointment_reminders``) when the
+    customer's phone number is missing/unusable or SMS is paused for the
+    tenant. Deliberately plain: same details block as ``booking_confirmed``
+    and the same "reply to rearrange" instruction, no portal link (a reminder
+    needs no action). ``visit_date``/``time_window`` are pre-formatted
+    display strings owned by the caller.
+    """
+    subject = f"Reminder: {job_title} on {visit_date}"
+    details_text = f"Date: {visit_date}\nTime: {time_window}\n"
+    details_rows = (
+        f'<tr><td style="padding:4px 12px 4px 0;color:#64748b;">Date</td>'
+        f'<td style="padding:4px 0;font-weight:600;">{escape(visit_date)}</td></tr>'
+        f'<tr><td style="padding:4px 12px 4px 0;color:#64748b;">Time</td>'
+        f'<td style="padding:4px 0;font-weight:600;">{escape(time_window)}</td></tr>'
+    )
+    if address:
+        details_text += f"Address: {address}\n"
+        details_rows += (
+            '<tr><td style="padding:4px 12px 4px 0;color:#64748b;">Address</td>'
+            f'<td style="padding:4px 0;font-weight:600;">{escape(address)}</td></tr>'
+        )
+    text = (
+        f"Hi {customer_name},\n\n"
+        f"A quick reminder from {business_name} about your upcoming visit "
+        f"for '{job_title}'.\n\n"
+        f"{details_text}\n"
+        "Need to change it? Just reply to this email and we'll rearrange.\n\n"
+        "— My Trade Portal"
+    )
+    html = f"""\
+<!doctype html>
+<html>
+  <body style="font-family:-apple-system,Segoe UI,Roboto,sans-serif;color:#0f172a;max-width:560px;margin:0 auto;padding:24px;">
+    <h1 style="font-size:22px;margin:0 0 12px;">Your visit is coming up</h1>
+    <p>Hi {escape(customer_name)},</p>
+    <p>A quick reminder from <strong>{escape(business_name)}</strong> about your upcoming visit for <strong>{escape(job_title)}</strong>.</p>
+    <div style="background:#f1f5f9;border-radius:8px;padding:16px;margin:16px 0;">
+      <table style="border-collapse:collapse;font-size:14px;">{details_rows}</table>
+    </div>
+    <p>Need to change it? Just reply to this email and we'll rearrange.</p>
+    <p style="color:#64748b;font-size:13px;margin-top:32px;">— My Trade Portal</p>
+  </body>
+</html>
+"""
+    return subject, html, text
+
+
 def payment_received(
     *,
     customer_name: str,
