@@ -260,7 +260,10 @@ def get_embedding_dimension() -> int:
     """Return the vector dimension for the configured embedding model."""
     if settings.embedding_dimensions:
         return int(settings.embedding_dimensions)
-    return _shared_embedding_dimension(settings.embedding_model)
+    # mtp_shared is resolved as Any by mypy in some environments (the shared
+    # package is not always on the mypy path); coerce explicitly so the
+    # declared int return type holds.
+    return int(_shared_embedding_dimension(settings.embedding_model))
 
 
 async def _verify_query_collection(

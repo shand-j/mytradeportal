@@ -4,7 +4,7 @@
 # developer's root .env may set, and disables rate limiting so a suite's own
 # repeated logins don't trip the per-IP auth limit. This keeps the E2E
 # self-contained and matches CI, where no Supabase instance is running. Used by
-# services/pwa/e2e/start-stack.sh.
+# mobile/e2e/start-stack.sh.
 services:
   api:
     environment:

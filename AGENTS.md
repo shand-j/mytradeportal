@@ -403,9 +403,8 @@ declared in `mobile/package.json` (e.g. `babel-preset-expo`).
 
 ### Mobile app (`mobile/`)
 
-> **Note:** the app was recently moved from `services/pwa` to `mobile/`. Several
-> shell scripts inside `mobile/` still reference `services/pwa` paths and need to
-> be updated before they work.
+> **Note:** the app was moved from `services/pwa` to `mobile/`; the shell scripts
+> inside `mobile/` now resolve their paths from the new location.
 
 ```bash
 cd mobile
@@ -600,9 +599,6 @@ pnpm e2e:install
 pnpm test:e2e
 ```
 
-Known issue: `mobile/e2e/run.sh` and `mobile/e2e/start-stack.sh` still point to
-`services/pwa` and need path updates before the suite runs.
-
 ### Python tests
 
 The API test suite lives in `services/api/tests/` and runs against a local
@@ -703,12 +699,9 @@ Key variables (see `.env.example` for the full template):
 `.railway/railway.ts` (ocerp commented out), `.github/workflows/pwa-e2e.yml`,
 `conftest.py` (ocerp path), and `pyproject.toml` (`testpaths` still lists the
 old top-level `evals/`).
-2. **Mobile script paths.** `mobile/e2e/run.sh`, `mobile/e2e/start-stack.sh`, and
-`mobile/scripts/run-ios.sh` reference `services/pwa`.
-3. **Root README deleted.** The project currently has no root `README.md`.
-4. **CI workflows stale.** `ci.yml` and `pwa-e2e.yml` need updating to match the
+2. **CI workflows stale.** `ci.yml` and `pwa-e2e.yml` need updating to match the
 `mobile/` location.
-5. **Mobile TypeScript install.** `pnpm install` in the mobile workspace may leave
+3. **Mobile TypeScript install.** `pnpm install` in the mobile workspace may leave
 a broken `typescript` symlink on some machines; a clean `rm -rf mobile/node_modules`
 followed by `pnpm install` usually resolves it.
 

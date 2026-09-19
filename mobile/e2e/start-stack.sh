@@ -7,7 +7,7 @@ set -euo pipefail
 #
 # Idempotent: safe to run repeatedly. Intended for local runs and CI.
 
-REPO_ROOT="$(cd "$(dirname "$0")/../../.." && pwd)"
+REPO_ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 cd "$REPO_ROOT"
 
 API_BASE_URL="${E2E_API_BASE_URL:-http://localhost:8002}"

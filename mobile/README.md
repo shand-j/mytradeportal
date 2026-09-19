@@ -124,8 +124,6 @@ Notes:
   Chromium runs with web security disabled.
 - The trade and white-label suites use different `EXPO_PUBLIC_*` builds, so they
   run sequentially on the same port (never concurrently).
-- Known issue: `e2e/run.sh` and `e2e/start-stack.sh` still reference the old
-  `services/pwa` paths and need updating before the suite runs.
 
 ## Structure
 
