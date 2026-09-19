@@ -121,6 +121,12 @@ class CustomerInvoiceRead(BaseModel):
     payment_url: str | None = None
 
 
+class CustomerInvoicePayResponse(BaseModel):
+    """Stripe /pay page URL for a customer-initiated card payment."""
+
+    payment_url: str
+
+
 def _customer_invoice_read(invoice: Invoice, tenant: Tenant | None) -> CustomerInvoiceRead:
     return CustomerInvoiceRead(
         id=invoice.id,
@@ -1043,17 +1049,20 @@ async def _portal_invoice_payment_url(
     return await _invoice_payment_url(db, invoice, tenant, raw)
 
 
-@router.post("/invoices/{invoice_id}/pay")
+@router.post("/invoices/{invoice_id}/pay", response_model=CustomerInvoicePayResponse)
 async def pay_my_invoice(
     invoice_id: UUID,
     customer: CurrentCustomerDep,
     db: DbDep,
-) -> None:
-    """Online invoice payment moved to Stripe Connect (ADR-003).
+) -> CustomerInvoicePayResponse:
+    """Stripe /pay page URL for paying this invoice by card (ADR-003).
 
-    Tradie receivables never touch Paddle anymore; the customer pays by card
-    on the landing-site /pay page linked from the invoice email. This endpoint
-    remains only to give older app builds a clear signal instead of a 404.
+    Mints the same kind of document-token pay link the invoice email carries;
+    the app opens it so the customer pays on the landing-site /pay page. 409
+    when card payment is not offered for this invoice (Stripe not connected,
+    charges not enabled, or the invoice opted out) — the app hides the Pay
+    action whenever the detail payload's ``payment_url`` is null, so this is
+    the belt-and-braces signal for a stale UI.
     """
     invoice = await _get_customer_invoice(db, customer, invoice_id)
     if invoice.status == "paid":
@@ -1061,7 +1070,12 @@ async def pay_my_invoice(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Invoice is already paid",
         )
-    raise HTTPException(
-        status_code=status.HTTP_410_GONE,
-        detail="Online card payment has moved — use the pay link in the invoice email.",
-    )
+    tenant = await db.get(Tenant, customer.tenant_id)
+    payment_url = await _portal_invoice_payment_url(db, invoice, tenant)
+    if payment_url is None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Card payment isn't available for this invoice — "
+            "use the bank transfer details on the invoice instead.",
+        )
+    return CustomerInvoicePayResponse(payment_url=payment_url)
