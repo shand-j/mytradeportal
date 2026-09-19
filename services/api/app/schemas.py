@@ -1393,7 +1393,8 @@ class PublicQuoteRequestCreate(BaseModel):
     # fail-open) and may carry an inline follow-up question + guest thread
     # token. The background draft runs regardless.
     sync_check: bool = False
-    # How the customer arrived at the intake form; recorded on AI telemetry.
+    # How the customer arrived at the intake form; persisted on the lead
+    # (QuoteRequest.entry_channel) and recorded on AI telemetry.
     entry_channel: Literal["qr", "code", "widget", "direct", "app"] | None = None
 
 
@@ -1734,6 +1735,7 @@ class QuoteRequestRead(BaseModel):
     customer_id: UUID | None
     property_id: UUID | None
     source: str
+    entry_channel: str | None
     raw_text: str | None
     structured_data: dict[str, Any]
     ai_extracted_summary: str | None

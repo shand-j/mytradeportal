@@ -969,6 +969,9 @@ class QuoteRequest(TenantScopedBase):
     source: Mapped[str] = mapped_column(
         String(50), default="qr", nullable=False
     )  # qr | universal_link | web_form | app_store | sms_forward
+    # How the customer arrived at the intake surface (attribution):
+    # qr | code | widget | direct | app. NULL for staff-created leads.
+    entry_channel: Mapped[str | None] = mapped_column(String(50), nullable=True)
     raw_text: Mapped[str | None] = mapped_column(Text, nullable=True)
     structured_data: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict, nullable=False)
     ai_extracted_summary: Mapped[str | None] = mapped_column(Text, nullable=True)
