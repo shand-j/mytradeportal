@@ -178,6 +178,9 @@ async def test_update_job_notes_and_assignee(client: AsyncClient, db: AsyncSessi
     tenant = await _create_tenant(client, f"job-{uuid4().hex[:8]}")
     contact = await _create_contact(client, tenant["id"], "Job Editor")
     user = await _create_user(db, tenant["id"], "Spark Two")
+    # Second active user: with a single user the create would auto-assign
+    # them (team gating), leaving nothing to patch.
+    await _create_user(db, tenant["id"], "Spark Three")
 
     created = await client.post(
         "/jobs",

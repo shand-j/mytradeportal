@@ -101,13 +101,14 @@ test.describe.serial("J — Job create, convert & detail editing", () => {
     expect(job.customer.name).toBe("E2E Inline Customer");
   });
 
-  test("N11: assignee chips and notes are editable on job detail", async ({ page }) => {
+  test("N11: single-user plan auto-assigns the owner; notes stay editable", async ({ page }) => {
     await loginAsTradeOwner(page, tenant);
     await page.goto(`/(trade)/job/${detailJob.id}`, { waitUntil: "networkidle" });
     await waitText(page, "Job detail");
 
-    await tap(page, "job-assignee-edit");
-    await tap(page, `job-assignee-${ownerId}`);
+    // Team gating: a one-seat tenant has no assignee picker — the backend
+    // auto-assigned the seeded job to the sole user at creation.
+    await expect(page.locator('[data-testid="job-assignee-edit"]')).toHaveCount(0);
     await expect(page.locator('[data-testid="job-assignee-name"]')).toHaveText(tenant.adminName, {
       timeout: 20000,
     });
@@ -115,7 +116,7 @@ test.describe.serial("J — Job create, convert & detail editing", () => {
     await fill(page, "job-notes-input", "E2E notes — key safe 9988");
     await tap(page, "job-notes-save");
 
-    // Both edits persist server-side.
+    // The auto-assignment and the notes edit both persist server-side.
     const deadline = Date.now() + 30000;
     let saved: { assigned_user_id: string | null; notes: string | null } | undefined;
     while (Date.now() < deadline) {
@@ -131,7 +132,7 @@ test.describe.serial("J — Job create, convert & detail editing", () => {
       }
       await new Promise((resolve) => setTimeout(resolve, 500));
     }
-    expect(saved, "assignee + notes did not persist").toBeTruthy();
+    expect(saved, "auto-assigned owner + notes did not persist").toBeTruthy();
   });
 
   test("N15: job create from an approved quote prefills duration from labour hours", async ({

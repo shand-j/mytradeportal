@@ -45,7 +45,7 @@ from app.calculations import (
 )
 from app.config import settings
 from app.database import get_db
-from app.dependencies import AiAllowanceDep, CurrentUserDep, TenantDep
+from app.dependencies import AiAllowanceDep, CurrentUserDep, TenantDep, single_active_user
 from app.email import resolve_customer_magic_link, send_customer_email, tenant_reply_to
 from app.email_templates import quote_ready as quote_ready_template
 from app.limiter import limiter, tenant_key
@@ -1726,10 +1726,17 @@ async def convert_quote_to_job(
         )
 
     schedule = data or JobConvertRequest()
-    if schedule.assigned_user_id is not None:
-        assignee = await db.get(User, schedule.assigned_user_id)
+    assigned_user_id = schedule.assigned_user_id
+    if assigned_user_id is not None:
+        assignee = await db.get(User, assigned_user_id)
         if assignee is None or assignee.tenant_id != tenant.id or not assignee.is_active:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid assignee")
+    else:
+        # Same sole-staff default as POST /jobs: a single-seat tenant's only
+        # active user is the implicit assignee when none is supplied.
+        sole_user = await single_active_user(db, tenant.id)
+        if sole_user is not None:
+            assigned_user_id = sole_user.id
 
     dates_note = ""
     if quote.accepted_dates:
@@ -1792,7 +1799,7 @@ async def convert_quote_to_job(
         description=quote.description,
         scheduled_start=scheduled_start,
         scheduled_end=scheduled_end,
-        assigned_user_id=schedule.assigned_user_id,
+        assigned_user_id=assigned_user_id,
         # Denormalise the contact's current address for display stability;
         # lat/lng stay null (no geocoding yet).
         address=quote.contact.address,

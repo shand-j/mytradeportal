@@ -50,7 +50,7 @@ from sqlalchemy.orm import selectinload
 
 from app.availability import busy_periods, free_hours
 from app.database import get_db
-from app.dependencies import TenantDep
+from app.dependencies import TenantDep, single_active_user
 from app.email import send_customer_email, tenant_reply_to
 from app.email_templates import booking_confirmed as booking_confirmed_template
 from app.models import Appointment, Contact, Customer, Job, Quote, QuoteLineItem, Tenant, User
@@ -200,7 +200,15 @@ async def create_job(data: JobCreate, tenant: TenantDep, db: DbDep) -> JobRead:
         if quote is None or quote.tenant_id != tenant.id:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid quote")
 
-    await _validate_assignee(db, tenant.id, data.assigned_user_id)
+    # Sole-staff tenants never pick an assignee (single-seat plans have no
+    # assignment UI): default to the tenant's only active user so the job is
+    # never orphaned. Multi-staff tenants keep the explicit choice (or none).
+    assigned_user_id = data.assigned_user_id
+    if assigned_user_id is None:
+        sole_user = await single_active_user(db, tenant.id)
+        if sole_user is not None:
+            assigned_user_id = sole_user.id
+    await _validate_assignee(db, tenant.id, assigned_user_id)
 
     job = Job(
         tenant_id=tenant.id,
@@ -208,7 +216,11 @@ async def create_job(data: JobCreate, tenant: TenantDep, db: DbDep) -> JobRead:
         # lat/lng stay null (no geocoding yet).
         address=contact.address,
         postcode=contact.postcode,
-        **{**data.model_dump(), "notes": merge_contact_notes(data.notes, contact.notes)},
+        **{
+            **data.model_dump(),
+            "assigned_user_id": assigned_user_id,
+            "notes": merge_contact_notes(data.notes, contact.notes),
+        },
     )
     # Multi-day split: a duration beyond the tenant's daily working hours is
     # capped at day 1 here; the remaining blocks become appointments below.

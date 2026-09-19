@@ -484,7 +484,10 @@ export function JobDetailScreen({
             <Text variant="body" weight="semibold">
               Assigned to
             </Text>
-            {members && members.length > 0 && (
+            {/* Team gating: a tenant with one active user (every sole_trader
+                plan) has nothing to reassign — the API auto-assigns that user,
+                so the Change action only appears once there is real choice. */}
+            {members && members.length > 1 && (
               <Pressable
                 testID="job-assignee-edit"
                 onPress={() => setAssigneePickerOpen((open) => !open)}

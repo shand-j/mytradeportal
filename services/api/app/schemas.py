@@ -813,6 +813,7 @@ class AppointmentCreate(BaseModel):
     end_at: datetime
     address: str | None = None
     notes: str | None = None
+    assigned_user_id: UUID | None = None
 
 
 class AppointmentUpdate(BaseModel):
@@ -837,6 +838,7 @@ class AppointmentRead(BaseModel):
     status: str
     address: str | None
     notes: str | None
+    assigned_user_id: UUID | None
     created_at: datetime
     updated_at: datetime
 
@@ -1006,6 +1008,10 @@ class SubscriptionRead(BaseModel):
     canceled_at: datetime | None
     created_at: datetime
     updated_at: datetime
+    # Seat context resolved from the plan catalog (legacy plan keys mapped):
+    # clients gate team features (assignee pickers, invites) on these.
+    seats: int
+    seats_in_use: int
 
 
 # ---------------------------------------------------------------------------

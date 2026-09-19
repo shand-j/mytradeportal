@@ -10,9 +10,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.availability import NON_BLOCKING_JOB_STATUSES
 from app.database import get_db
-from app.dependencies import TenantDep
+from app.dependencies import TenantDep, single_active_user
 from app.models import Appointment, Contact, Job
 from app.rls import set_tenant_in_session
+from app.routers.jobs import _validate_assignee
 from app.schemas import AppointmentCreate, AppointmentRead, AppointmentUpdate
 from app.work_blocks import working_hours
 
@@ -71,7 +72,18 @@ async def create_appointment(
         if job is None or job.tenant_id != tenant.id:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid job")
 
-    appointment = Appointment(tenant_id=tenant.id, **data.model_dump())
+    # Same sole-staff default as job creation: a single-seat tenant's only
+    # active user is the implicit assignee when none is supplied.
+    assigned_user_id = data.assigned_user_id
+    if assigned_user_id is None:
+        sole_user = await single_active_user(db, tenant.id)
+        if sole_user is not None:
+            assigned_user_id = sole_user.id
+    await _validate_assignee(db, tenant.id, assigned_user_id)
+
+    appointment = Appointment(
+        tenant_id=tenant.id, **{**data.model_dump(), "assigned_user_id": assigned_user_id}
+    )
     db.add(appointment)
     await db.commit()
     await db.refresh(appointment)

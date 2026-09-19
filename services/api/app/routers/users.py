@@ -18,6 +18,7 @@ from app.dependencies import (
     RequireAdminDep,
     RequireManagerDep,
     _tenant_plan,
+    seats_in_use,
 )
 from app.email import send_event_email, tenant_reply_to
 from app.email_templates import staff_invite as staff_invite_template
@@ -259,18 +260,6 @@ async def _send_invite_email(request: Request, tenant: Tenant, user: User, raw_t
     )
 
 
-async def _seats_in_use(db: AsyncSession, tenant_id: UUID) -> int:
-    """Active users plus pending invites — the count the plan seat cap applies to."""
-    used = await db.scalar(
-        select(func.count(User.id)).where(
-            User.tenant_id == tenant_id,
-            # A pending invite holds a seat; a deactivated account does not.
-            (User.is_active.is_(True)) | (User.invited_at.isnot(None)),
-        )
-    )
-    return used or 0
-
-
 def _seat_limit_error(plan: Plan) -> HTTPException:
     """Structured 403 mirroring ``require_tier_feature``'s payload shape."""
     upgrade = next_plan_with_more_seats(plan)
@@ -321,7 +310,7 @@ async def invite_user(
         )
 
     plan = await _tenant_plan(tenant, db)
-    if await _seats_in_use(db, tenant.id) >= plan.seats:
+    if await seats_in_use(db, tenant.id) >= plan.seats:
         raise _seat_limit_error(plan)
 
     user = User(

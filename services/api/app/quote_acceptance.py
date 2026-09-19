@@ -26,6 +26,7 @@ from typing import TYPE_CHECKING, Any
 from sqlalchemy import select
 
 from app.ai_telemetry import record_quote_outcome
+from app.dependencies import single_active_user
 from app.email import send_customer_email
 from app.email_templates import quote_accepted as quote_accepted_template
 from app.models import Contact, Job, QuoteLineItem
@@ -205,6 +206,9 @@ async def ensure_draft_job(db: AsyncSession, *, quote: Quote) -> Job | None:
         return existing
 
     contact = await db.get(Contact, quote.contact_id)
+    # Same sole-staff default as job create: a single-seat tenant's only
+    # active user owns the auto-drafted job too.
+    sole_user = await single_active_user(db, quote.tenant_id)
     job = Job(
         tenant_id=quote.tenant_id,
         contact_id=quote.contact_id,
@@ -214,6 +218,7 @@ async def ensure_draft_job(db: AsyncSession, *, quote: Quote) -> Job | None:
         status="draft",
         scheduled_start=scheduled_start,
         scheduled_end=scheduled_start + duration,
+        assigned_user_id=sole_user.id if sole_user is not None else None,
         # Denormalise the contact's current address, same as job create.
         address=contact.address if contact is not None else None,
         postcode=contact.postcode if contact is not None else None,
