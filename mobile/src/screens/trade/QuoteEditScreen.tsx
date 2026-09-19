@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Alert, Animated, ActionSheetIOS, KeyboardAvoidingView, Platform, ScrollView, StyleProp, TextInput, View, ViewStyle } from "react-native";
+import { Alert, Animated, ActionSheetIOS, KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleProp, TextInput, View, ViewStyle } from "react-native";
 import { useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "expo-router";
 import { Button } from "../../components/ui/Button";
@@ -145,6 +145,10 @@ export function QuoteEditScreen({
   const refineQuoteMutation = useRefineQuote();
   const [refineInstructions, setRefineInstructions] = useState("");
   const [refineError, setRefineError] = useState<string | null>(null);
+  // AI assumptions/warnings and the secondary action buttons both start
+  // collapsed so the quote itself fills the screen (issue #221).
+  const [aiDetailsExpanded, setAiDetailsExpanded] = useState(false);
+  const [actionsExpanded, setActionsExpanded] = useState(false);
 
   const isRealQuote = !!seedQuote && UUID_RE.test(seedQuote.id);
   // A sent/paid invoice locks the quote server-side (409 quote_invoiced).
@@ -395,6 +399,29 @@ export function QuoteEditScreen({
   const canCreateJobFromQuote =
     !!onConvertToJob && !isTerminal && (isAccepted || isSent) && !existingJobId && !jobConvertFailed;
 
+  // Collapsed AI details badge: one per rendered line.
+  const aiDetailCount =
+    aiWarnings.length +
+    aiAssumptions.length +
+    (isCatalogueMiss ? 1 : 0) +
+    (aiNotes != null ? 1 : 0);
+
+  // Bottom bar: a single primary action (Send for drafts, Save once sent) with
+  // everything else behind a "More actions" disclosure, so the button cluster
+  // no longer fills half the screen — or covers it with the keyboard open.
+  const showSendPrimary = !readOnly && !isSent;
+  const showSavePrimary = !readOnly && isSent;
+  const showSaveSecondary = !readOnly && !isSent;
+  const hasConvertActions =
+    Platform.OS === "web"
+      ? showConvertToJob || showConvertToInvoice
+      : canCreateJobFromQuote || showConvertToInvoice;
+  const secondaryActionCount =
+    (showSaveSecondary ? 1 : 0) + 1 + (existingJobId ? 1 : 0) + (hasConvertActions ? 1 : 0);
+  const hasPrimaryAction = showSendPrimary || showSavePrimary;
+  const showMoreToggle = hasPrimaryAction || secondaryActionCount > 1;
+  const secondaryActionsVisible = actionsExpanded || !showMoreToggle;
+
   const quoteRequestId = seedQuote?.quoteRequestId ?? resolvedLead?.id;
   const isRefining = refineQuoteMutation.isPending;
 
@@ -487,25 +514,53 @@ export function QuoteEditScreen({
           <>
         {showAiDetails && (
           <View className="rounded-xl bg-amber-50 p-3 gap-2">
-            {aiWarnings.map((warning) => (
-              <Text key={warning} variant="caption" color="warning">
-                • {warning}
-              </Text>
-            ))}
-            {aiAssumptions.map((assumption) => (
-              <Text key={assumption} variant="caption" color="secondary">
-                • Assumed: {assumption}
-              </Text>
-            ))}
-            {isCatalogueMiss && (
-              <Text variant="caption" color="warning">
-                Priced from AI knowledge — no catalogue match
-              </Text>
-            )}
-            {aiNotes != null && (
-              <Text variant="caption" color="secondary">
-                {aiNotes}
-              </Text>
+            <Pressable
+              testID="quote-ai-details-toggle"
+              accessibilityRole="button"
+              accessibilityLabel="AI assumptions and notes"
+              onPress={() => setAiDetailsExpanded((prev) => !prev)}
+            >
+              <View className="flex-row items-center justify-between">
+                <View className="flex-row items-center gap-2">
+                  <Text variant="caption" weight="semibold" color="secondary">
+                    AI assumptions & notes
+                  </Text>
+                  <View className="rounded-full bg-amber-100 px-2 py-0.5">
+                    <Text testID="quote-ai-details-count" variant="label" color="secondary">
+                      {aiDetailCount}
+                    </Text>
+                  </View>
+                </View>
+                <Icon
+                  name={aiDetailsExpanded ? "chevron-up" : "chevron-down"}
+                  size={16}
+                  color="#B45309"
+                />
+              </View>
+            </Pressable>
+            {aiDetailsExpanded && (
+              <View className="gap-2">
+                {aiWarnings.map((warning) => (
+                  <Text key={warning} variant="caption" color="warning">
+                    • {warning}
+                  </Text>
+                ))}
+                {aiAssumptions.map((assumption) => (
+                  <Text key={assumption} variant="caption" color="secondary">
+                    • Assumed: {assumption}
+                  </Text>
+                ))}
+                {isCatalogueMiss && (
+                  <Text variant="caption" color="warning">
+                    Priced from AI knowledge — no catalogue match
+                  </Text>
+                )}
+                {aiNotes != null && (
+                  <Text variant="caption" color="secondary">
+                    {aiNotes}
+                  </Text>
+                )}
+              </View>
             )}
           </View>
         )}
@@ -700,21 +755,50 @@ export function QuoteEditScreen({
           )}
         </View>
 
-        {!readOnly && (
+        {(hasPrimaryAction || showMoreToggle) && (
+          <View className="flex-row gap-2">
+            {showSendPrimary && (
+              <View className="flex-1">
+                <Button
+                  testID="quote-approve-send"
+                  title={sendQuoteMutation.isPending ? "Sending…" : "Send quote"}
+                  disabled={sendQuoteMutation.isPending || updateQuoteMutation.isPending || !isRealQuote}
+                  onPress={handleSend}
+                />
+              </View>
+            )}
+            {showSavePrimary && (
+              <View className="flex-1">
+                <Button
+                  testID="quote-save"
+                  title={updateQuoteMutation.isPending ? "Saving…" : "Save changes"}
+                  disabled={updateQuoteMutation.isPending || sendQuoteMutation.isPending || !isRealQuote}
+                  onPress={() => void handleSave()}
+                />
+              </View>
+            )}
+            {showMoreToggle && (
+              <View className={hasPrimaryAction ? undefined : "flex-1"}>
+                <Button
+                  testID="quote-more-actions"
+                  title={actionsExpanded ? "Fewer actions" : "More actions"}
+                  variant="outline"
+                  onPress={() => setActionsExpanded((prev) => !prev)}
+                />
+              </View>
+            )}
+          </View>
+        )}
+
+        {secondaryActionsVisible && (
+          <>
+        {showSaveSecondary && (
           <Button
             testID="quote-save"
             title={updateQuoteMutation.isPending ? "Saving…" : "Save changes"}
-            variant={isSent ? "primary" : "outline"}
+            variant="outline"
             disabled={updateQuoteMutation.isPending || sendQuoteMutation.isPending || !isRealQuote}
             onPress={() => void handleSave()}
-          />
-        )}
-        {!readOnly && !isSent && (
-          <Button
-            testID="quote-approve-send"
-            title={sendQuoteMutation.isPending ? "Sending…" : "Send quote"}
-            disabled={sendQuoteMutation.isPending || updateQuoteMutation.isPending || !isRealQuote}
-            onPress={handleSend}
           />
         )}
         {chatUnavailable && chatLead ? (
@@ -780,6 +864,8 @@ export function QuoteEditScreen({
               onPress={handleConvertSheet}
             />
           )
+        )}
+          </>
         )}
       </View>
       </KeyboardAvoidingView>
