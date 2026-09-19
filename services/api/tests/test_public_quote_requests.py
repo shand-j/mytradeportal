@@ -2,8 +2,9 @@
 
 from uuid import uuid4
 
-from app.models import Contact, Tenant
+from app.models import Contact, Customer, Tenant
 from app.rls import bypass_rls_in_session
+from app.security import create_access_token, get_password_hash
 from app.utils.tenant_code import generate_unique_tenant_code
 from httpx import AsyncClient
 from sqlalchemy import select
@@ -140,6 +141,83 @@ async def test_public_submission_unblocked_contact_still_works(
         },
     )
     assert response.status_code == 201, response.text
+
+
+async def test_public_submission_blocked_contact_matches_email_case_insensitively(
+    client: AsyncClient, db: AsyncSession
+) -> None:
+    """A blocked contact cannot dodge the block by re-casing their email."""
+    slug = f"pub-{uuid4().hex[:8]}"
+    tenant = await _create_tenant(db, slug)
+    db.add(
+        Contact(
+            tenant_id=tenant.id,
+            name="Blocked Homeowner",
+            email="Blocked@Example.com",
+            is_blocked=True,
+        )
+    )
+    await db.flush()
+
+    response = await client.post(
+        f"/businesses/{slug}/quote-requests",
+        json={
+            "contact": {"name": "Blocked Homeowner", "email": "blocked@example.COM"},
+            "category": "consumer_unit",
+        },
+    )
+    assert response.status_code == 403
+    assert response.json()["detail"].startswith("customer_blocked:")
+
+    listing = await client.get("/quote-requests", headers={"X-Tenant-ID": str(tenant.id)})
+    assert listing.json() == []
+
+
+async def test_public_submission_blocked_logged_in_customer_is_rejected(
+    client: AsyncClient, db: AsyncSession
+) -> None:
+    """A blocked customer with a pre-block bearer token cannot submit either."""
+    slug = f"pub-{uuid4().hex[:8]}"
+    tenant = await _create_tenant(db, slug)
+    contact = Contact(
+        tenant_id=tenant.id,
+        name="Blocked Customer",
+        email="blocked-customer@example.com",
+        is_blocked=True,
+    )
+    db.add(contact)
+    await db.flush()
+    customer = Customer(
+        tenant_id=tenant.id,
+        contact_id=contact.id,
+        email="blocked-customer@example.com",
+        full_name="Blocked Customer",
+        password_hash=get_password_hash("homeowner-pass-123"),
+        is_active=True,
+    )
+    db.add(customer)
+    await db.flush()
+
+    token = create_access_token(
+        user_id=customer.id,
+        tenant_id=tenant.id,
+        role="customer",
+        email=customer.email,
+        subject_type="customer",
+    )
+    response = await client.post(
+        f"/businesses/{slug}/quote-requests",
+        headers={"Authorization": f"Bearer {token}"},
+        json={
+            "contact": {"name": "Blocked Customer", "email": "blocked-customer@example.com"},
+            "category": "consumer_unit",
+        },
+    )
+    assert response.status_code == 403
+    assert response.json()["detail"].startswith("customer_blocked:")
+
+    listing = await client.get("/quote-requests", headers={"X-Tenant-ID": str(tenant.id)})
+    assert listing.json() == []
 
 
 async def test_public_submission_unknown_business_is_404(client: AsyncClient) -> None:
