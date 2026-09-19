@@ -11,7 +11,8 @@ type Status = 'consuming' | 'invalid' | 'sending' | 'sent'
 /**
  * /auth/magic — consumes a magic-link token (?token=…&next=/quotes/{id}),
  * stores the portal session and redirects. Expired/invalid tokens land on a
- * "this link has expired — email me a new one" state.
+ * "this link has expired — email me a new one" state. Claim links
+ * (next=/claim) forward the token so the claim form can exchange it.
  */
 export default function PortalMagicAuth() {
   const { slug, config } = usePortal()
@@ -41,7 +42,13 @@ export default function PortalMagicAuth() {
           expiresAt: res.expires_at,
           customer: res.customer,
         })
-        navigate(next, { replace: true })
+        // Claim CTAs arrive as next=/claim: PortalClaim needs the raw token
+        // for POST /customer/auth/claim. The magic exchange does not revoke
+        // it (only the claim does), so forward it untouched.
+        const target = next.split(/[?#]/, 1)[0] === '/claim'
+          ? `${next}${next.includes('?') ? '&' : '?'}token=${encodeURIComponent(token)}`
+          : next
+        navigate(target, { replace: true })
       })
       .catch(() => setStatus('invalid'))
   }, [searchParams, slug, navigate, next])

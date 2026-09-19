@@ -196,18 +196,13 @@ test("app register against the passwordless account claims it (no 409)", async (
   // registration do. The flip is asserted in the claim-link test below.
 });
 
-test.fixme("booking-email claim link sets a password, is one-shot, flips preference", async ({
+test("booking-email claim link sets a password, is one-shot, flips preference", async ({
   page,
 }) => {
-  // FIXME(product bug, do not fix in test PRs): the booking-confirmation
-  // claim CTA is a magic link with next=/claim (portal_links.magic_link_url),
-  // but PortalMagicAuth consumes the token and then navigates to /claim with
-  // NO token in the URL — PortalClaim requires ?token= and immediately lands
-  // on the "This link has expired or has already been used" state. The
-  // claim-after-booking journey is therefore unreachable through the email
-  // link. The API-level claim contract (POST /customer/auth/claim: password
-  // set, token revoked, comms preference flipped to app) is verified in
-  // booking.spec.ts and via the app-register claim test.
+  // End-to-end chain: booking-confirmation claim CTA (magic link with
+  // next=/claim) → PortalMagicAuth consumes and forwards the token →
+  // PortalClaim sets the password via POST /customer/auth/claim, which
+  // revokes the token and flips the comms preference to app.
   const email = uniqueEmail("claimlink");
   const intake = await submitIntake(tenant, {
     name: "Claim Link Customer",
