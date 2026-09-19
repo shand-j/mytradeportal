@@ -18,6 +18,20 @@ export type ConnectStripeRead = {
   onboardingUrl: string;
 };
 
+/** Public landing origin hosting the Stripe deep-link bounce page. */
+const LANDING_BASE_URL = "https://www.mytradeportal.co.uk";
+
+/**
+ * Wrap an app deep link (mtp://...) in the https bounce page URL. Stripe's
+ * AccountLink API rejects non-http(s) return/refresh URLs, so onboarding
+ * returns via the landing page, which immediately navigates to the deep
+ * link — the in-app auth-session browser intercepts it and closes back into
+ * the app.
+ */
+export function stripeBounceUrl(next: string): string {
+  return `${LANDING_BASE_URL}/payments/stripe-bounce?next=${encodeURIComponent(next)}`;
+}
+
 export async function getPaymentsStatus(): Promise<PaymentsStatus> {
   return api.get<PaymentsStatus>("/payments/status");
 }
@@ -25,8 +39,8 @@ export async function getPaymentsStatus(): Promise<PaymentsStatus> {
 /**
  * Create (or reuse) the tenant's Stripe Express account and return its hosted
  * onboarding URL. The tradie completes onboarding in the in-app browser, then
- * Stripe redirects to the return URL — the app passes deep links
- * (mtp://payments/...) so the flow lands back inside the app.
+ * Stripe redirects to the return URL — https bounce URLs wrapping the app's
+ * deep links (mtp://payments/...) so the flow lands back inside the app.
  */
 export async function connectStripe(input?: {
   returnUrl?: string;

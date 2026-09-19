@@ -174,6 +174,50 @@ async def test_connect_returns_onboarding_url_and_reuses_account(
     create_account.assert_awaited_once()
     assert account_link.await_count == 2
 
+    # http(s) URLs reach Stripe unchanged.
+    for call in account_link.await_args_list:
+        assert call.kwargs["return_url"] == "https://app.example/ok"
+        assert call.kwargs["refresh_url"] == "https://app.example/re"
+
+
+async def test_connect_swaps_deep_link_urls_for_https_bounce(
+    admin_client: AsyncClient, db: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Build-20 mobile sends mtp:// deep links; Stripe only accepts http(s).
+
+    The API must substitute the public landing bounce URL carrying the
+    original deep link as an encoded ``next`` param instead of passing the
+    custom scheme verbatim (Stripe 400s "Not a valid URL" otherwise).
+    """
+    monkeypatch.setattr("app.config.STRIPE_SECRET_KEY", "sk_test_x")
+    monkeypatch.setattr("app.config.PUBLIC_DOCS_BASE_URL", "https://www.mytradeportal.co.uk")
+    monkeypatch.setattr(
+        "app.stripe_client.create_connected_account_v2", AsyncMock(return_value={"id": "acct_dl"})
+    )
+    account_link = AsyncMock(return_value="https://connect.stripe.com/setup/s/test")
+    monkeypatch.setattr("app.stripe_client.create_account_link", account_link)
+
+    response = await admin_client.post(
+        "/payments/connect",
+        json={
+            "return_url": "mtp://payments/stripe-return",
+            "refresh_url": "mtp://payments/stripe-refresh",
+        },
+    )
+    assert response.status_code == 200
+
+    account_link.assert_awaited_once()
+    call = account_link.await_args
+    assert call is not None
+    assert call.kwargs["return_url"] == (
+        "https://www.mytradeportal.co.uk/payments/stripe-bounce"
+        "?next=mtp%3A%2F%2Fpayments%2Fstripe-return"
+    )
+    assert call.kwargs["refresh_url"] == (
+        "https://www.mytradeportal.co.uk/payments/stripe-bounce"
+        "?next=mtp%3A%2F%2Fpayments%2Fstripe-refresh"
+    )
+
 
 async def test_onboarding_return_syncs_flags(
     admin_client: AsyncClient, db: AsyncSession, monkeypatch: pytest.MonkeyPatch

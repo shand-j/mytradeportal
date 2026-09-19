@@ -7,6 +7,7 @@ import ViewQuote from './pages/ViewQuote'
 import ViewInvoice from './pages/ViewInvoice'
 import PayInvoice from './pages/PayInvoice'
 import FairUse from './pages/FairUse'
+import StripeBounce from './pages/StripeBounce'
 import BlogIndex from './pages/blog/BlogIndex'
 import BlogPost from './pages/blog/BlogPost'
 import { resolvePortalSlug } from './portal/host'
@@ -59,6 +60,7 @@ export default function App() {
       <Route path="/invoice/:token" element={<ViewInvoice />} />
       <Route path="/pay/:token" element={<PayInvoice />} />
       <Route path="/fair-use" element={<FairUse />} />
+      <Route path="/payments/stripe-bounce" element={<StripeBounce />} />
       <Route path="/blog" element={<BlogIndex />} />
       <Route path="/blog/:slug" element={<BlogPost />} />
     </Routes>

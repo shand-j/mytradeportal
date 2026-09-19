@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import * as Linking from "expo-linking";
 import * as WebBrowser from "expo-web-browser";
-import { connectStripe } from "../api/payments";
+import { connectStripe, stripeBounceUrl } from "../api/payments";
 import { ApiError, NetworkError } from "../lib/apiClient";
 
 export type StripeConnectOnboarding = {
@@ -16,9 +16,10 @@ export type StripeConnectOnboarding = {
  * Run Stripe Connect onboarding without leaving the app.
  *
  * The hosted AccountLink opens in an ASWebAuthenticationSession (in-app
- * browser) with mtp:// deep links as return/refresh URLs, so completing or
- * abandoning the flow lands back on the screen that launched it — never in
- * Safari. Afterwards the payments status query is refetched; the API syncs
+ * browser). Stripe requires http(s) return/refresh URLs, so the app sends
+ * https bounce-page URLs wrapping mtp:// deep links — completing or
+ * abandoning the flow bounces through the landing page and back into the
+ * app, landing on the screen that launched it — never in Safari. Afterwards the payments status query is refetched; the API syncs
  * the account flags from Stripe on every status read, so the UI reflects the
  * post-onboarding state with no manual refresh.
  *
@@ -37,7 +38,13 @@ export function useStripeConnectOnboarding(): StripeConnectOnboarding {
     try {
       const returnUrl = Linking.createURL("/payments/stripe-return");
       const refreshUrl = Linking.createURL("/payments/stripe-refresh");
-      const { onboardingUrl } = await connectStripe({ returnUrl, refreshUrl });
+      // Stripe only accepts http(s) URLs, so send https bounce URLs that
+      // redirect to the deep links; the auth session still listens for the
+      // raw mtp:// URL, which the bounce page navigates to.
+      const { onboardingUrl } = await connectStripe({
+        returnUrl: stripeBounceUrl(returnUrl),
+        refreshUrl: stripeBounceUrl(refreshUrl),
+      });
       await WebBrowser.openAuthSessionAsync(onboardingUrl, returnUrl);
       await queryClient.refetchQueries({ queryKey: ["payments", "status"] });
     } catch (err) {
