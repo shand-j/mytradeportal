@@ -85,6 +85,27 @@ shift those block appointments by the same delta. `GET /jobs/suggest-schedule`
 (`quote_id=` or `hours=`) returns the earliest start where the whole block
 sequence fits around existing appointments and scheduled jobs.
 
+### Quote acceptance date preferences and draft jobs (issue #179)
+
+On the emailed quote page (`/quote/:token` on the landing site) the customer
+picks up to 3 ranked date/time-window preferences against an
+availability-aware calendar. The API behind it:
+
+- `GET /public/quote/{token}/availability` — token-scoped free/busy summary
+BY DATE (`available`/`partial`/`busy`/`closed` + the quote's
+`estimated_hours`). Deliberately coarse: no booking details ever leave it.
+- `POST /public/quote/{token}/preferences` — stores the ranked choices on
+`quote.accepted_dates` ("YYYY-MM-DD" or "YYYY-MM-DD (morning)"; parser in
+`app/preferred_dates.py`), usable before or after acceptance.
+- Acceptance with preferences (`apply_quote_acceptance`) auto-creates a
+tentative DRAFT job (`status="draft"`) pre-filled with the 1st choice;
+`POST /convert-to-job` adopts and confirms it in place (other existing jobs
+still 409). Draft jobs never block the calendar and never trigger the
+booking-confirmed email — the free/busy math shared by staff and public
+availability lives in `app/availability.py` and excludes them. The mobile
+job-create screen shows the quote's preferences as tappable chips so the
+electrician lands on the 2nd/3rd choice when the 1st doesn't fit.
+
 ### Reminder scheduler and tenant scheduling settings
 
 `services/api/app/scheduler.py` is an in-process asyncio scheduler started from

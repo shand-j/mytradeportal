@@ -27,6 +27,33 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 const TIME_RE = /^\d{2}:\d{2}$/;
 const HOUR_UNIT_RE = /^(h|hr|hrs|hour|hours)$/i;
+// Stored accepted_dates entries: "YYYY-MM-DD" or "YYYY-MM-DD (morning)".
+const PREFERENCE_RE = /^(\d{4}-\d{2}-\d{2})(?:\s*\(([^)]+)\))?$/;
+
+const PREFERENCE_RANKS = ["1st choice", "2nd choice", "3rd choice"];
+
+type QuoteDatePreference = { date: string; label: string; startTime: string | null };
+
+/**
+ * Parse one stored accepted_dates entry into a tappable date/time chip.
+ * Null for the customer app's free-text labels ("Fri 12 Sep") — those stay
+ * display-only. The coarse window maps to a start time (09:00 / 13:00),
+ * matching the server-side draft-job convention.
+ */
+export function parseQuotePreference(entry: string): QuoteDatePreference | null {
+  const match = PREFERENCE_RE.exec(entry.trim());
+  if (!match) return null;
+  const day = new Date(`${match[1]}T12:00:00`);
+  if (Number.isNaN(day.getTime())) return null;
+  const dateLabel = day.toLocaleDateString("en-GB", {
+    weekday: "short",
+    day: "numeric",
+    month: "short",
+  });
+  const window = match[2]?.trim().toLowerCase();
+  const startTime = window === "morning" ? "09:00" : window === "afternoon" ? "13:00" : null;
+  return { date: match[1], label: window ? `${dateLabel} · ${match[2]}` : dateLabel, startTime };
+}
 
 function pad(n: number): string {
   return String(n).padStart(2, "0");
@@ -179,7 +206,8 @@ export function JobCreateScreen({ onClose, initialQuoteId }: JobCreateScreenProp
 
   // N18: selecting a quote prefills title, customer, duration (from the
   // quote's server-side estimated hours, falling back to quoted labour hours)
-  // and proposes the earliest available start slot.
+  // and proposes the customer's 1st-choice date when they picked one at
+  // acceptance (falling back to the earliest available start slot).
   const prefilledQuoteRef = useRef<string | null>(null);
   useEffect(() => {
     if (!selectedQuote || prefilledQuoteRef.current === selectedQuote.id) return;
@@ -189,6 +217,22 @@ export function JobCreateScreen({ onClose, initialQuoteId }: JobCreateScreenProp
     setCustomerMode("search");
     const hours = quotedEstimatedHours(selectedQuote);
     setDurationHours(hours > 0 ? String(hours) : "");
+    const firstChoice = (selectedQuote.acceptedDates ?? [])
+      .map(parseQuotePreference)
+      .find((p): p is QuoteDatePreference => p !== null);
+    if (firstChoice) {
+      setDate(firstChoice.date);
+      if (firstChoice.startTime) {
+        setTime(firstChoice.startTime);
+      } else {
+        void fetchAvailability(firstChoice.date)
+          .then((slots) => {
+            if (slots.length > 0) setTime(toHHMM(new Date(slots[0])));
+          })
+          .catch(() => {});
+      }
+      return;
+    }
     void suggestFirstSlot().then((slot) => {
       if (slot) {
         setDate(slot.date);
@@ -196,6 +240,30 @@ export function JobCreateScreen({ onClose, initialQuoteId }: JobCreateScreenProp
       }
     });
   }, [selectedQuote]);
+
+  // The customer's ranked preferences from quote acceptance — tappable so
+  // the electrician lands on the 2nd/3rd choice when the 1st doesn't fit.
+  const quotePreferences = useMemo(
+    () =>
+      (selectedQuote?.acceptedDates ?? []).map((entry) => ({
+        entry,
+        parsed: parseQuotePreference(entry),
+      })),
+    [selectedQuote]
+  );
+
+  const applyPreference = (parsed: QuoteDatePreference) => {
+    setDate(parsed.date);
+    if (parsed.startTime) {
+      setTime(parsed.startTime);
+      return;
+    }
+    void fetchAvailability(parsed.date)
+      .then((slots) => {
+        if (slots.length > 0) setTime(toHHMM(new Date(slots[0])));
+      })
+      .catch(() => {});
+  };
 
   // Server-side recommendation: earliest start where the quote's whole
   // working-day block sequence fits around the existing calendar.
@@ -696,6 +764,55 @@ export function JobCreateScreen({ onClose, initialQuoteId }: JobCreateScreenProp
                 </Text>
               </View>
             </Pressable>
+          )}
+
+          {selectedQuote && quotePreferences.length > 0 && (
+            <View className="gap-2">
+              <Text variant="body" weight="semibold">
+                Customer's preferred dates
+              </Text>
+              <Text variant="caption" color="secondary">
+                Chosen when the quote was accepted — tap one to schedule it, or pick another
+                date below.
+              </Text>
+              <View className="flex-row flex-wrap gap-2">
+                {quotePreferences.map(({ entry, parsed }, index) =>
+                  parsed ? (
+                    <Pressable
+                      key={entry}
+                      testID={`job-create-preference-${index}`}
+                      onPress={() => applyPreference(parsed)}
+                    >
+                      <View
+                        className={`rounded-xl border p-3 ${
+                          date === parsed.date
+                            ? "border-primary bg-primary-50"
+                            : "border-slate-200 bg-white"
+                        }`}
+                      >
+                        <Text variant="caption" color="secondary">
+                          {PREFERENCE_RANKS[index] ?? `Choice ${index + 1}`}
+                        </Text>
+                        <Text variant="body" weight="semibold">
+                          {parsed.label}
+                        </Text>
+                      </View>
+                    </Pressable>
+                  ) : (
+                    <View
+                      key={entry}
+                      testID={`job-create-preference-${index}`}
+                      className="rounded-xl border border-slate-200 bg-white p-3"
+                    >
+                      <Text variant="caption" color="secondary">
+                        {PREFERENCE_RANKS[index] ?? `Choice ${index + 1}`}
+                      </Text>
+                      <Text variant="body">{entry}</Text>
+                    </View>
+                  )
+                )}
+              </View>
+            </View>
           )}
 
           {Platform.OS === "web" ? (

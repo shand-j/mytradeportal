@@ -22,6 +22,12 @@ appointment per subsequent working-day block (see ``app.work_blocks``).
 GET /jobs/suggest-schedule returns the earliest start where a quote's whole
 block sequence fits around existing appointments and scheduled jobs.
 
+Free/busy math lives in ``app.availability`` (shared with the public
+quote-page availability endpoint): appointments and scheduled jobs block
+time; cancelled/completed/draft jobs and cancelled/no-show appointments do
+not. A draft job is the tentative hold auto-created at quote acceptance —
+unconfirmed, so it never blocks the calendar.
+
 Booking confirmation: creating a job with a real slot (``scheduled_start``
 set, directly or via quote convert-to-job) emails the customer a
 ``booking_confirmed`` email (best-effort, tenant-branded, Reply-To the
@@ -42,6 +48,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from app.availability import busy_periods, free_hours
 from app.database import get_db
 from app.dependencies import TenantDep
 from app.email import send_customer_email, tenant_reply_to
@@ -405,35 +412,13 @@ async def delete_job(job_id: UUID, tenant: TenantDep, db: DbDep) -> None:
 async def _busy_periods(
     db: AsyncSession, tenant_id: UUID, window_start: datetime, window_end: datetime
 ) -> list[tuple[datetime, datetime]]:
-    """Appointments + scheduled jobs overlapping the window, as busy intervals."""
-    busy: list[tuple[datetime, datetime]] = []
-    result = await db.execute(
-        select(Appointment).where(
-            Appointment.tenant_id == tenant_id,
-            Appointment.start_at < window_end,
-            Appointment.end_at > window_start,
-            Appointment.status.notin_({"cancelled", "no_show"}),
-        )
-    )
-    busy.extend((a.start_at, a.end_at) for a in result.scalars().all())
+    """Appointments + scheduled jobs overlapping the window, as busy intervals.
 
-    jobs_result = await db.execute(
-        select(Job).where(
-            Job.tenant_id == tenant_id,
-            Job.scheduled_start.isnot(None),
-            Job.scheduled_start < window_end,
-            Job.status.notin_({"cancelled", "completed"}),
-        )
-    )
-    for job in jobs_result.scalars().all():
-        job_start = job.scheduled_start
-        if job_start is None:  # filtered above; satisfies the type checker
-            continue
-        # Jobs without an end block one hour from their start.
-        job_end = job.scheduled_end or (job_start + timedelta(hours=1))
-        if job_end > window_start:
-            busy.append((job_start, job_end))
-    return busy
+    Thin wrapper over :func:`app.availability.busy_periods` — the shared
+    implementation used by the public quote-page availability endpoint, so
+    staff and customers see the same calendar.
+    """
+    return await busy_periods(db, tenant_id, window_start, window_end)
 
 
 def _free_hours(
@@ -443,23 +428,7 @@ def _free_hours(
     busy: list[tuple[datetime, datetime]],
 ) -> float:
     """Unbooked hours inside one day's working window."""
-    day_start = datetime.combine(day, work_start)
-    day_end = datetime.combine(day, work_end)
-    if day_end <= day_start:
-        return 0.0
-    intervals = sorted(
-        (max(start, day_start), min(end, day_end))
-        for start, end in busy
-        if start < day_end and end > day_start
-    )
-    booked = 0.0
-    cursor = day_start
-    for start, end in intervals:
-        overlap_start = max(start, cursor)
-        if end > overlap_start:
-            booked += (end - overlap_start).total_seconds()
-            cursor = max(cursor, end)
-    return max((day_end - day_start).total_seconds() - booked, 0.0) / 3600
+    return free_hours(day, work_start, work_end, busy)
 
 
 # How far ahead the schedule suggestion searches for a fitting start.

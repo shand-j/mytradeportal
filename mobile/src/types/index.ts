@@ -141,7 +141,7 @@ export type Invoice = {
   paidAt?: string;
 };
 
-export type JobStatus = "confirmed" | "in_progress" | "completed" | "cancelled";
+export type JobStatus = "draft" | "confirmed" | "in_progress" | "completed" | "cancelled";
 
 export type Job = {
   id: string;

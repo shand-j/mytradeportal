@@ -16,6 +16,8 @@ from pydantic import (
     model_validator,
 )
 
+from app.preferred_dates import format_preferred_date
+
 # ---------------------------------------------------------------------------
 # Tenant
 # ---------------------------------------------------------------------------
@@ -1437,9 +1439,19 @@ class CustomerRegister(BaseModel):
 
 
 class PreferredDateInput(BaseModel):
-    """One preferred visit date in the portal client shape (``{"date": "YYYY-MM-DD"}``)."""
+    """One preferred visit date in the portal client shape (``{"date": "YYYY-MM-DD"}``).
+
+    ``time`` is an optional coarse window label ("morning" / "afternoon") —
+    the public availability is by date only, so customers never pick exact
+    clock times against the electrician's calendar.
+    """
 
     date: str = Field(..., min_length=1, max_length=40)
+    time: str | None = Field(default=None, max_length=20)
+
+    def as_string(self) -> str:
+        """Storage form on ``Quote.accepted_dates`` ("YYYY-MM-DD (morning)")."""
+        return format_preferred_date(self.date, self.time)
 
 
 class CustomerQuoteAccept(BaseModel):
@@ -1447,16 +1459,32 @@ class CustomerQuoteAccept(BaseModel):
 
     Accepts both the app shape (``["Fri 12 Sep", ...]``) and the portal shape
     (``[{"date": "YYYY-MM-DD"}, ...]``); both normalise to the same
-    ``accepted_dates`` string list stored on the quote.
+    ``accepted_dates`` string list stored on the quote. Ranked: the first
+    entry is the customer's 1st choice. At most 3 preferences.
     """
 
-    preferred_dates: list[str | PreferredDateInput] | None = None
+    preferred_dates: list[str | PreferredDateInput] | None = Field(default=None, max_length=3)
 
     def preferred_date_strings(self) -> list[str] | None:
         """Normalise both accepted shapes to the stored string list."""
         if self.preferred_dates is None:
             return None
-        return [d if isinstance(d, str) else d.date for d in self.preferred_dates]
+        return [d if isinstance(d, str) else d.as_string() for d in self.preferred_dates]
+
+
+class PublicQuotePreferences(BaseModel):
+    """Ranked date/time-window preferences submitted from the public quote page.
+
+    Stored on ``Quote.accepted_dates`` in the same string form the acceptance
+    payload normalises to, so every consumer (staff notification, draft job,
+    convert-to-job prefill) reads one format.
+    """
+
+    preferences: list[PreferredDateInput] = Field(..., min_length=1, max_length=3)
+
+    def preference_strings(self) -> list[str]:
+        """Normalise to the stored string list."""
+        return [p.as_string() for p in self.preferences]
 
 
 class CustomerLogin(BaseModel):

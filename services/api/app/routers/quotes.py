@@ -63,6 +63,7 @@ from app.models import (
     Tenant,
     User,
 )
+from app.preferred_dates import parse_preferred_date
 from app.push import notify_customer
 from app.rag import (
     estimate_llm_cost_usd,
@@ -1595,14 +1596,6 @@ async def regenerate_quote_boq(
 _HOUR_UNITS = frozenset({"h", "hr", "hrs", "hour", "hours"})
 # Fallback visit length when the quote has no per-hour labour lines.
 _DEFAULT_JOB_DURATION = timedelta(hours=2)
-# English month abbreviations, parsed manually so label parsing is locale-independent.
-_MONTH_ABBREVS = {
-    mon: num
-    for num, mon in enumerate(
-        ("jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"),
-        start=1,
-    )
-}
 
 
 def _quoted_labour_hours(quote: Quote) -> float:
@@ -1617,36 +1610,12 @@ def _quoted_labour_hours(quote: Quote) -> float:
 def _parse_accepted_date(raw: Any, today: date) -> date | None:
     """Parse one accepted_dates entry into a concrete date.
 
-    Entries are either ISO dates ("2026-09-15") or the en-GB short labels the
-    customer app offers ("Fri 12 Sep" — no year, so the current year is
-    assumed, rolling to next year when that day has already passed).
-    Unparseable entries are ignored.
+    Delegates to :func:`app.preferred_dates.parse_preferred_date` — the
+    shared implementation (ISO dates, ISO dates with a "(window)" suffix,
+    and the en-GB short labels the customer app offers). Unparseable entries
+    are ignored.
     """
-    if not isinstance(raw, str):
-        return None
-    text = raw.strip()
-    if not text:
-        return None
-    try:
-        return datetime.fromisoformat(text).date()
-    except ValueError:
-        pass
-    day: int | None = None
-    month: int | None = None
-    for token in text.replace(",", " ").split():
-        if token.isdigit() and day is None and 1 <= int(token) <= 31:
-            day = int(token)
-        elif month is None:
-            month = _MONTH_ABBREVS.get(token.lower()[:3])
-    if day is None or month is None:
-        return None
-    try:
-        candidate = date(today.year, month, day)
-        if candidate < today:
-            candidate = date(today.year + 1, month, day)
-    except ValueError:
-        return None
-    return candidate
+    return parse_preferred_date(raw, today)
 
 
 def _earliest_accepted_date(accepted_dates: list[str]) -> date | None:
@@ -1726,7 +1695,9 @@ async def convert_quote_to_job(
     conversion lands on a schedule the customer gets the ``booking_confirmed``
     email, same as job create and reschedules. Photos attached to the quote or
     its quote request (``MediaAsset`` rows and the intake form's ``media_urls``)
-    move onto the job record.
+    move onto the job record. When the acceptance flow already auto-created a
+    tentative DRAFT job for the quote, conversion adopts and confirms that job
+    in place instead of raising the usual already-has-a-job 409.
     """
     quote = await _get_quote(db, tenant.id, quote_id)
     if quote.status != "approved":
@@ -1738,7 +1709,10 @@ async def convert_quote_to_job(
     existing = await db.scalar(
         select(Job).where(Job.quote_id == quote.id, Job.tenant_id == tenant.id)
     )
-    if existing is not None:
+    # A DRAFT job is the tentative hold auto-created at quote acceptance (see
+    # app.quote_acceptance.ensure_draft_job): conversion adopts and confirms
+    # it in place instead of refusing. Any other existing job still conflicts.
+    if existing is not None and existing.status != "draft":
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="This quote already has a job",
@@ -1818,7 +1792,17 @@ async def convert_quote_to_job(
         postcode=quote.contact.postcode,
         notes="\n\n".join(notes_parts) or None,
     )
-    db.add(job)
+    if existing is not None:
+        # Adopt the acceptance-time draft: confirm it in place with the
+        # requested schedule/notes/assignee (id, contact and quote link stay).
+        existing.scheduled_start = job.scheduled_start
+        existing.scheduled_end = job.scheduled_end
+        existing.assigned_user_id = job.assigned_user_id
+        existing.notes = job.notes
+        existing.status = "scheduled"
+        job = existing
+    else:
+        db.add(job)
     await db.flush()
     if blocks:
         await create_block_appointments(db, tenant.id, job, blocks, tenant.settings)

@@ -8,8 +8,11 @@ import {
   declinePublicQuote,
   fetchPublicDocument,
   PublicDocsApiError,
+  submitPublicQuotePreferences,
   type PublicDocPayload,
+  type PublicQuotePreference,
 } from '../lib/public-docs-api'
+import { QuotePreferencesCalendar } from '../components/QuotePreferencesCalendar'
 import { TESTFLIGHT_URL, testflightConfigured } from '@/lib/site'
 import { isPortalMode } from '../portal/host'
 
@@ -262,6 +265,20 @@ export function DocumentShell({
   )
 }
 
+/** "2026-09-21 (morning)" → "Mon 21 Sep · morning"; other labels pass through. */
+function formatPreferenceLabel(entry: string): string {
+  const match = /^(\d{4}-\d{2}-\d{2})(?:\s*\(([^)]+)\))?$/.exec(entry.trim())
+  if (!match) return entry
+  const date = new Date(`${match[1]}T12:00:00`)
+  if (Number.isNaN(date.getTime())) return entry
+  const label = date.toLocaleDateString('en-GB', {
+    weekday: 'short',
+    day: 'numeric',
+    month: 'short',
+  })
+  return match[2] ? `${label} · ${match[2]}` : label
+}
+
 function AcceptQuotePanel({
   token,
   onDone,
@@ -271,8 +288,7 @@ function AcceptQuotePanel({
   onDone: (updated: PublicDocPayload) => void
   onCancel: () => void
 }) {
-  const [dates, setDates] = useState<string[]>([])
-  const [newDate, setNewDate] = useState('')
+  const [preferences, setPreferences] = useState<PublicQuotePreference[]>([])
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState('')
 
@@ -283,7 +299,7 @@ function AcceptQuotePanel({
     try {
       const updated = await acceptPublicQuote(
         token,
-        dates.length > 0 ? dates.map((date) => ({ date })) : undefined,
+        preferences.length > 0 ? preferences : undefined,
       )
       onDone(updated)
     } catch (err) {
@@ -296,48 +312,10 @@ function AcceptQuotePanel({
     <div className="mt-[var(--space-md)] border-2 border-[var(--ink)] bg-[var(--paper)] p-4">
       <p className="text-[14px] font-semibold">Accept this quote</p>
       <p className="mt-1 text-[13px] leading-relaxed text-[var(--muted)]">
-        Optionally suggest the dates that suit you — your electrician will confirm the visit.
+        Optionally pick up to 3 visit dates that suit you — the calendar shows when your
+        electrician is free. They'll confirm the exact date and time.
       </p>
-      <div className="mt-[var(--space-sm)] flex flex-wrap items-center gap-2">
-        {dates.map((date) => (
-          <span
-            key={date}
-            className="inline-flex items-center gap-2 border-2 border-[var(--ink)] bg-[var(--paper-2)] px-2.5 py-1 text-[13px]"
-          >
-            {new Date(`${date}T00:00:00`).toLocaleDateString('en-GB', {
-              day: 'numeric',
-              month: 'short',
-            })}
-            <button
-              type="button"
-              aria-label={`Remove ${date}`}
-              onClick={() => setDates((prev) => prev.filter((d) => d !== date))}
-              className="font-bold"
-            >
-              ×
-            </button>
-          </span>
-        ))}
-        <input
-          type="date"
-          value={newDate}
-          min={new Date().toISOString().slice(0, 10)}
-          onChange={(e) => setNewDate(e.target.value)}
-          aria-label="Pick a preferred date"
-          className="border-2 border-[var(--ink)] bg-[var(--paper)] px-3 py-1.5 text-[13.5px] focus:outline-none"
-        />
-        <button
-          type="button"
-          disabled={!newDate || dates.includes(newDate)}
-          onClick={() => {
-            setDates((prev) => [...prev, newDate])
-            setNewDate('')
-          }}
-          className="border-2 border-[var(--ink)] bg-[var(--paper)] px-3 py-1.5 text-[12.5px] font-bold uppercase tracking-[0.06em] disabled:opacity-40"
-        >
-          Add
-        </button>
-      </div>
+      <QuotePreferencesCalendar token={token} selected={preferences} onChange={setPreferences} />
       {error && (
         <p role="alert" className="mt-[var(--space-sm)] text-[13px] text-[var(--accent-dark)]">
           {error}
@@ -356,6 +334,98 @@ function AcceptQuotePanel({
           Cancel
         </button>
       </div>
+    </div>
+  )
+}
+
+function AcceptedQuoteSection({
+  doc,
+  token,
+  onUpdate,
+}: {
+  doc: PublicDocPayload
+  token: string
+  onUpdate: (updated: PublicDocPayload) => void
+}) {
+  const [picking, setPicking] = useState(false)
+  const [preferences, setPreferences] = useState<PublicQuotePreference[]>([])
+  const [submitting, setSubmitting] = useState(false)
+  const [error, setError] = useState('')
+  const chosen = doc.accepted_dates ?? []
+
+  async function handleSubmit() {
+    if (submitting || preferences.length === 0) return
+    setSubmitting(true)
+    setError('')
+    try {
+      const result = await submitPublicQuotePreferences(token, preferences)
+      onUpdate({ ...doc, accepted_dates: result.accepted_dates })
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Something went wrong — please try again.')
+      setSubmitting(false)
+    }
+  }
+
+  return (
+    <div className="mt-[var(--space-xl)]">
+      <p
+        className="border-2 border-[var(--ink)] p-4 text-[14px] font-semibold leading-relaxed text-white"
+        style={{ backgroundColor: 'var(--brand)' }}
+      >
+        Booking request sent — {doc.tenant.name} will confirm your visit once it's scheduled.
+        We've emailed you a confirmation with a link to track the booking in the customer portal.
+      </p>
+      {chosen.length > 0 ? (
+        <div className="mt-[var(--space-md)] border-2 border-[var(--rule)] bg-[var(--paper-2)] p-4">
+          <p className="text-[13.5px] font-semibold">Your preferred visit dates</p>
+          <ul className="mt-1.5 text-[13.5px] leading-relaxed">
+            {chosen.map((entry, index) => (
+              <li key={entry}>
+                {index + 1}. {formatPreferenceLabel(entry)}
+              </li>
+            ))}
+          </ul>
+          <p className="mt-1.5 text-[12.5px] text-[var(--muted)]">
+            {doc.tenant.name} will confirm which of these works, or suggest an alternative.
+          </p>
+        </div>
+      ) : picking ? (
+        <div className="mt-[var(--space-md)] border-2 border-[var(--ink)] bg-[var(--paper)] p-4">
+          <p className="text-[14px] font-semibold">When suits you?</p>
+          <p className="mt-1 text-[13px] leading-relaxed text-[var(--muted)]">
+            Pick up to 3 dates — the calendar shows when {doc.tenant.name} is free.
+          </p>
+          <QuotePreferencesCalendar
+            token={token}
+            selected={preferences}
+            onChange={setPreferences}
+          />
+          {error && (
+            <p role="alert" className="mt-[var(--space-sm)] text-[13px] text-[var(--accent-dark)]">
+              {error}
+            </p>
+          )}
+          <div className="mt-[var(--space-md)] flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={handleSubmit}
+              disabled={submitting || preferences.length === 0}
+              className="chip chip--fill chip--brand justify-center disabled:opacity-50"
+            >
+              {submitting ? 'Sending…' : 'Send my preferred dates'}
+            </button>
+            <button type="button" onClick={() => setPicking(false)} className="chip justify-center">
+              Skip for now
+            </button>
+          </div>
+        </div>
+      ) : (
+        <div className="mt-[var(--space-md)]">
+          <button type="button" onClick={() => setPicking(true)} className="chip justify-center">
+            Choose your preferred visit dates
+          </button>
+        </div>
+      )}
     </div>
   )
 }
@@ -491,14 +561,7 @@ export default function ViewQuote() {
               <QuoteActionBar doc={doc} token={token} onUpdate={setDoc} />
             )}
             {doc.status === 'approved' && (
-              <p
-                className="mt-[var(--space-xl)] border-2 border-[var(--ink)] p-4 text-[14px] font-semibold leading-relaxed text-white"
-                style={{ backgroundColor: 'var(--brand)' }}
-              >
-                Booking request sent — {doc.tenant.name} will confirm your visit once it's
-                scheduled. We've emailed you a confirmation with a link to track the booking in
-                the customer portal.
-              </p>
+              <AcceptedQuoteSection doc={doc} token={token} onUpdate={setDoc} />
             )}
             {doc.status === 'rejected' && (
               <p className="mt-[var(--space-xl)] border-2 border-[var(--rule)] bg-[var(--paper-2)] p-4 text-[14px] leading-relaxed">
