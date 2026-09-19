@@ -30,6 +30,7 @@ from app import config, stripe_client
 from app.database import get_db
 from app.dependencies import CurrentUserDep, TenantDep
 from app.models import StripeAccount, Tenant
+from app.portal_links import portal_base_url
 from app.rls import set_tenant_in_session
 from app.routers.invoices import _get_invoice
 from app.schemas import PaymentRead
@@ -162,7 +163,9 @@ async def _provision_account(
     """Return the tenant's connected account, creating it (with pre-fill) if absent.
 
     Pre-fills everything onboarding already knows — contact email, phone,
-    trading name, postcode, entity type — so Stripe skips those steps. Any
+    trading name, postcode, entity type — so Stripe skips those steps, plus
+    the tenant's portal URL as the business website so hosted onboarding
+    never blocks tradespeople who have no site of their own. Any
     Stripe-side failure (platform not enrolled in Connect, Accounts v2
     preview unavailable) becomes a 503 ``payments_unavailable`` with a
     ``connect_failed`` log event, never a 500 and never a half-written row.
@@ -178,6 +181,7 @@ async def _provision_account(
             phone=tenant.phone or None,
             postcode=tenant.postcode,
             entity_type=_tenant_entity_type(tenant),
+            business_url=portal_base_url(tenant),
         )
     except stripe_client.PaymentsNotConfiguredError as exc:
         raise HTTPException(

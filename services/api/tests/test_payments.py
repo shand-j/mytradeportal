@@ -361,7 +361,8 @@ async def test_connect_session_503_payments_unavailable_when_stripe_rejects(
 async def test_connect_prefills_known_business_fields(
     admin_client: AsyncClient, db: AsyncSession, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Account creation pre-fills what onboarding already captured (#188)."""
+    """Account creation pre-fills what onboarding already captured (#188),
+    plus the tenant portal URL as the business website (#222)."""
     monkeypatch.setattr("app.config.STRIPE_SECRET_KEY", "sk_test_x")
     create_account = AsyncMock(return_value={"id": "acct_prefill_1"})
     monkeypatch.setattr("app.stripe_client.create_connected_account_v2", create_account)
@@ -389,6 +390,7 @@ async def test_connect_prefills_known_business_fields(
     assert kwargs["phone"] == "+447700900123"
     assert kwargs["postcode"] == "SK8 3NJ"
     assert kwargs["entity_type"] == "individual"
+    assert kwargs["business_url"] == f"https://{tenant.slug}.mytradeportal.co.uk"
 
 
 # ---------------------------------------------------------------------------
