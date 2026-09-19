@@ -22,8 +22,9 @@ export type ApiJob = {
   customer: ApiContact;
 };
 
-export async function fetchJobs(): Promise<ApiJob[]> {
-  return api.get<ApiJob[]>("/jobs");
+export async function fetchJobs(assignedUserId?: string): Promise<ApiJob[]> {
+  const query = assignedUserId ? `?assigned_user_id=${assignedUserId}` : "";
+  return api.get<ApiJob[]>(`/jobs${query}`);
 }
 
 export async function fetchJob(id: string): Promise<ApiJob> {
@@ -162,10 +163,11 @@ function mapJob(j: ApiJob): Job {
 }
 
 /** Jobs list for the Calendar/Dashboard. Returns backend jobs mapped into the app's `Job` shape. */
-export function useJobsList() {
+export function useJobsList(filter?: { assignedUserId?: string | null }) {
+  const assignedUserId = filter?.assignedUserId ?? undefined;
   const query = useQuery({
-    queryKey: ["jobs"],
-    queryFn: fetchJobs,
+    queryKey: ["jobs", assignedUserId ?? "all"],
+    queryFn: () => fetchJobs(assignedUserId),
   });
 
   return {

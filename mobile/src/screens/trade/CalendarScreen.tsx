@@ -8,6 +8,9 @@ import { LiveBadge } from "../../components/ui/LiveBadge";
 import { Screen } from "../../components/ui/Screen";
 import { Text } from "../../components/ui/Text";
 import { useJobsList } from "../../api/jobs";
+import { useMultiSeatPlan } from "../../api/billing";
+import { useAuthStore } from "../../stores/authStore";
+import { useCalendarStore } from "../../stores/calendarStore";
 import { Job } from "../../types";
 
 const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
@@ -73,7 +76,16 @@ export function CalendarScreen(_props: CalendarScreenProps) {
   const [selectedDay, setSelectedDay] = useState(() => (today.getDay() + 6) % 7);
   const [viewMode, setViewMode] = useState<"day" | "week">("day");
 
-  const { jobs, isLoading } = useJobsList();
+  const userId = useAuthStore((s) => s.user?.id);
+  const showScopeFilter = useMultiSeatPlan();
+  const scope = useCalendarStore((s) => s.scope);
+  const setScope = useCalendarStore((s) => s.setScope);
+
+  const { jobs, isLoading } = useJobsList(
+    // Multi-seat plans get the All/Me filter; "Me" narrows server-side to
+    // jobs assigned to the signed-in user. Single-seat plans stay unfiltered.
+    showScopeFilter && scope === "me" && userId ? { assignedUserId: userId } : undefined
+  );
 
   const weekStart = useMemo(() => addDays(startOfWeek(today), weekOffset * 7), [today, weekOffset]);
   const weekDays = useMemo(() => Array.from({ length: 7 }, (_, i) => addDays(weekStart, i)), [weekStart]);
@@ -172,6 +184,25 @@ export function CalendarScreen(_props: CalendarScreenProps) {
         />
         <Button testID="calendar-next-week" title="›" size="sm" variant="outline" onPress={() => setWeekOffset((n) => n + 1)} />
       </View>
+
+      {showScopeFilter && (
+        <View className="mb-3 flex-row gap-1.5">
+          <Button
+            testID="calendar-scope-all"
+            title="All"
+            size="sm"
+            variant={scope === "all" ? "primary" : "outline"}
+            onPress={() => setScope("all")}
+          />
+          <Button
+            testID="calendar-scope-me"
+            title="Me"
+            size="sm"
+            variant={scope === "me" ? "primary" : "outline"}
+            onPress={() => setScope("me")}
+          />
+        </View>
+      )}
 
       {viewMode === "day" && (
         <>

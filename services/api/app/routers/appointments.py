@@ -42,14 +42,26 @@ async def _get_appointment(db: AsyncSession, tenant_id: UUID, appointment_id: UU
 
 
 @router.get("")
-async def list_appointments(tenant: TenantDep, db: DbDep) -> list[AppointmentRead]:
-    """List appointments for the current tenant."""
+async def list_appointments(
+    tenant: TenantDep,
+    db: DbDep,
+    assigned_user_id: UUID | None = Query(default=None),
+) -> list[AppointmentRead]:
+    """List appointments for the current tenant.
+
+    ``assigned_user_id`` narrows the list to appointments assigned to that
+    staff member (the mobile calendar's "Me" view); omitting it returns the
+    whole team ("All").
+    """
     await set_tenant_in_session(db, tenant.id)
-    result = await db.execute(
+    query = (
         select(Appointment)
         .where(Appointment.tenant_id == tenant.id)
         .order_by(Appointment.start_at.desc())
     )
+    if assigned_user_id is not None:
+        query = query.where(Appointment.assigned_user_id == assigned_user_id)
+    result = await db.execute(query)
     return [AppointmentRead.model_validate(a) for a in result.scalars().all()]
 
 
