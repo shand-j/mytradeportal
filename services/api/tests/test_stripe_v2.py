@@ -47,7 +47,8 @@ async def test_create_connected_account_v2_sends_recipient_payload(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Pins the exact v2 create payload: recipient config, express, platform liability,
-    plus the known-business-field pre-fill (#188)."""
+    plus the known-business-field pre-fill (#188) and the portal-URL business
+    website (#222)."""
     monkeypatch.setattr("app.config.STRIPE_SECRET_KEY", "sk_test_x")
     v2_request = AsyncMock(return_value={"id": "acct_v2_new"})
     monkeypatch.setattr("app.stripe_client._v2_request", v2_request)
@@ -59,6 +60,7 @@ async def test_create_connected_account_v2_sends_recipient_payload(
         phone="+447700900123",
         postcode="SK8 3NJ",
         entity_type="individual",
+        business_url="https://sparks.mytradeportal.co.uk",
     )
 
     assert result == {"id": "acct_v2_new"}
@@ -87,7 +89,10 @@ async def test_create_connected_account_v2_sends_recipient_payload(
             "responsibilities": {
                 "fees_collector": "application",
                 "losses_collector": "application",
-            }
+            },
+            # Business website lives on defaults.profile in Accounts v2
+            # (identity.business_details.url was removed in 2025-09-30.clover).
+            "profile": {"url": "https://sparks.mytradeportal.co.uk"},
         },
         "configuration": {
             "recipient": {
@@ -118,6 +123,7 @@ async def test_create_connected_account_v2_omits_email_and_key_when_absent(
     assert "contact_phone" not in kwargs["json_body"]
     # No pre-fill known → identity carries only the hard-coded country.
     assert kwargs["json_body"]["identity"] == {"country": "gb"}
+    assert "profile" not in kwargs["json_body"]["defaults"]
     assert kwargs["idempotency_key"] is None
 
 

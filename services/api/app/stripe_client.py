@@ -140,6 +140,7 @@ async def create_connected_account_v2(
     phone: str | None = None,
     postcode: str | None = None,
     entity_type: str | None = None,
+    business_url: str | None = None,
 ) -> dict[str, Any]:
     """Create a v2 connected Account with the recipient configuration (ADR-003).
 
@@ -156,6 +157,13 @@ async def create_connected_account_v2(
     so Stripe's onboarding skips those steps. ``entity_type`` is the v2
     identity enum: ``"individual"`` for sole traders, ``"company"`` for
     ltd/LLP — passed only when known, never guessed.
+
+    ``business_url`` (the tenant's customer portal URL) is pre-filled as the
+    account's business website so hosted onboarding doesn't block tradespeople
+    who have no site of their own. The v2 home for it is
+    ``defaults.profile.url``: ``identity.business_details.url`` was removed in
+    the 2025-09-30.clover preview, which the pinned ``STRIPE_V2_API_VERSION``
+    post-dates.
     """
     identity: dict[str, Any] = {"country": "gb"}
     if entity_type:
@@ -191,6 +199,8 @@ async def create_connected_account_v2(
         payload["contact_email"] = email
     if phone:
         payload["contact_phone"] = phone
+    if business_url:
+        payload["defaults"]["profile"] = {"url": business_url}
     account = await _v2_request(
         "POST",
         "/core/accounts",

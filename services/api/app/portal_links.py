@@ -46,9 +46,14 @@ async def flip_preferred_contact_to_app(db: AsyncSession, customer: Customer) ->
         customer.preferred_contact_method = APP_CONTACT_PREFERENCE
 
 
+def portal_base_url(tenant: Tenant) -> str:
+    """Absolute origin of the tenant's portal subdomain (no path)."""
+    return f"https://{tenant.slug}.{PORTAL_BASE_DOMAIN}"
+
+
 def portal_url(tenant: Tenant, path: str) -> str:
     """Absolute URL on the tenant's portal subdomain (``path`` starts with /)."""
-    return f"https://{tenant.slug}.{PORTAL_BASE_DOMAIN}{path}"
+    return f"{portal_base_url(tenant)}{path}"
 
 
 def hash_portal_token(raw: str) -> str:
