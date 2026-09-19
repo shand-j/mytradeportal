@@ -104,10 +104,31 @@ class Settings(BaseSettings):
     llm_max_retries: int = Field(default=3)
 
     # Cap follow-up chat generation to bound runaway responses. Must stay
-    # generous: kimi-k2.6 spends reasoning tokens before content, and a tight
-    # cap truncates the completion to empty content (finish_reason=length),
-    # which surfaces as the generic fallback question on repeat.
+    # generous when the chat is overridden to a reasoning model (kimi-k2.6
+    # spends reasoning tokens before content, and a tight cap truncates the
+    # completion to empty content (finish_reason=length), which surfaces as
+    # the generic fallback question on repeat); with the default cheap model
+    # it is harmless headroom.
     llm_followup_max_tokens: int = Field(default=8000)
+
+    # Triage follow-up chat model. The customer waits on each chat turn
+    # synchronously (p95 target <30s), while the flagship ``llm_model`` (e.g.
+    # Kimi k2.6) reliably takes 60-120s per call — far beyond a chat budget.
+    # The chat therefore defaults to a cheap, fast model. A bare OpenAI-style
+    # id routes via the demo idiom (``openai_api_key``, any configured
+    # non-OpenAI base suppressed); a LiteLLM-style ``provider/model`` id
+    # routes through the configured LLM provider; empty inherits
+    # ``llm_model``. When only a third-party provider is configured (no
+    # OpenAI key, non-OpenAI base), generation falls back to the flagship
+    # route rather than attempting a call that could not authenticate.
+    llm_followup_model: str = Field(default="gpt-4o-mini")
+    # Per-attempt timeout/retry budget for one chat turn — deliberately much
+    # tighter than quote generation (llm_timeout_seconds/llm_max_retries)
+    # because the customer is waiting on the reply and the guest-thread
+    # wrapper already bounds the whole turn at
+    # ``guest_followup_timeout_seconds`` (default 90s).
+    llm_followup_timeout_seconds: int = Field(default=30)
+    llm_followup_max_retries: int = Field(default=1)
 
     # Embeddings are provider-specific and Kimi has no embeddings API, so the
     # embedder is configured independently of the chat LLM. It defaults to

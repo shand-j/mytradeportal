@@ -15,6 +15,7 @@ from app.models import CostItem, QuoteRequest
 from app.rag.generation import (
     FOLLOWUP_SYSTEM_PROMPT,
     SYSTEM_PROMPT,
+    _resolve_followup_route,
     generate_followup,
     generate_quote_from_prompt,
 )
@@ -787,6 +788,123 @@ def test_followup_system_prompt_foregrounds_stated_problem() -> None:
     assert "Customer's stated problem" in FOLLOWUP_SYSTEM_PROMPT
     assert "BEFORE asking anything" in FOLLOWUP_SYSTEM_PROMPT
     assert "non-engineer" in FOLLOWUP_SYSTEM_PROMPT
+
+
+def _set_flagship_kimi_route(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Configure the production-shaped route: Kimi flagship + OpenAI key set."""
+    monkeypatch.setattr(generation_config.settings, "llm_model", "openai/kimi-k2.6")
+    monkeypatch.setattr(generation_config.settings, "llm_api_base", "https://api.moonshot.ai/v1")
+    monkeypatch.setattr(generation_config.settings, "llm_api_key", "sk-moonshot")
+    monkeypatch.setattr(generation_config.settings, "openai_api_key", "sk-openai")
+
+
+def test_resolve_followup_route_defaults_to_cheap_model(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Default: the chat turn uses the cheap model via the demo-route idiom —
+    OpenAI key, non-OpenAI base suppressed — never the slow flagship."""
+    _set_flagship_kimi_route(monkeypatch)
+    monkeypatch.setattr(generation_config.settings, "llm_followup_model", "gpt-4o-mini")
+
+    model, api_key, api_base = _resolve_followup_route()
+
+    assert (model, api_key, api_base) == ("gpt-4o-mini", "sk-openai", "")
+
+
+def test_resolve_followup_route_provider_prefixed_override(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A LiteLLM-style provider/model override routes through the configured
+    LLM provider (key + base), like the intake triage resolver."""
+    _set_flagship_kimi_route(monkeypatch)
+    monkeypatch.setattr(generation_config.settings, "llm_followup_model", "openai/moonshot-v1-8k")
+
+    model, api_key, api_base = _resolve_followup_route()
+
+    assert (model, api_key, api_base) == (
+        "openai/moonshot-v1-8k",
+        "sk-moonshot",
+        "https://api.moonshot.ai/v1",
+    )
+
+
+def test_resolve_followup_route_empty_override_inherits_flagship(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """An empty follow-up model inherits llm_model and its provider route —
+    the pre-override behaviour."""
+    _set_flagship_kimi_route(monkeypatch)
+    monkeypatch.setattr(generation_config.settings, "llm_followup_model", "")
+
+    model, api_key, api_base = _resolve_followup_route()
+
+    assert (model, api_key, api_base) == (
+        "openai/kimi-k2.6",
+        "sk-moonshot",
+        "https://api.moonshot.ai/v1",
+    )
+
+
+def test_resolve_followup_route_third_party_only_falls_back(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Without an OpenAI key on a third-party-provider deployment, a bare-id
+    cheap model could not authenticate — fall back to the flagship route
+    rather than degrading the chat to guaranteed failures."""
+    monkeypatch.setattr(generation_config.settings, "llm_model", "openai/kimi-k2.6")
+    monkeypatch.setattr(generation_config.settings, "llm_api_base", "https://api.moonshot.ai/v1")
+    monkeypatch.setattr(generation_config.settings, "llm_api_key", "sk-moonshot")
+    monkeypatch.setattr(generation_config.settings, "openai_api_key", "")
+    monkeypatch.setattr(generation_config.settings, "llm_followup_model", "gpt-4o-mini")
+
+    model, api_key, api_base = _resolve_followup_route()
+
+    assert (model, api_key, api_base) == (
+        "openai/kimi-k2.6",
+        "sk-moonshot",
+        "https://api.moonshot.ai/v1",
+    )
+
+
+def test_resolve_followup_route_openai_only_uses_configured_key(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """An OpenAI-only deployment keyed via LLM_API_KEY (no dedicated
+    OPENAI_API_KEY) reuses that key for the bare-id cheap model."""
+    monkeypatch.setattr(generation_config.settings, "llm_model", "gpt-4o")
+    monkeypatch.setattr(generation_config.settings, "llm_api_base", "")
+    monkeypatch.setattr(generation_config.settings, "llm_api_key", "sk-main")
+    monkeypatch.setattr(generation_config.settings, "openai_api_key", "")
+    monkeypatch.setattr(generation_config.settings, "llm_followup_model", "gpt-4o-mini")
+
+    model, api_key, api_base = _resolve_followup_route()
+
+    assert (model, api_key, api_base) == ("gpt-4o-mini", "sk-main", "")
+
+
+@pytest.mark.asyncio
+async def test_generate_followup_uses_chat_route_and_budget(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The chat call goes to the resolved cheap route with the chat-sized
+    timeout/retry budget, and reports the actual model used."""
+    _set_flagship_kimi_route(monkeypatch)
+    monkeypatch.setattr(generation_config.settings, "llm_followup_model", "gpt-4o-mini")
+    mock_response = MagicMock()
+    mock_response.choices = [
+        MagicMock(message=MagicMock(content='{"confidence": 60, "message": "Next?"}'))
+    ]
+
+    with patch(
+        "app.rag.generation.acompletion", new=AsyncMock(return_value=mock_response)
+    ) as mock_acompletion:
+        result = await generate_followup("Consumer unit replacement", [])
+
+    kwargs = mock_acompletion.call_args.kwargs
+    assert kwargs["model"] == "gpt-4o-mini"
+    assert kwargs["api_key"] == "sk-openai"
+    assert "api_base" not in kwargs  # suppressed, not inherited from the Kimi base
+    assert kwargs["timeout"] == generation_config.settings.llm_followup_timeout_seconds
+    assert kwargs["num_retries"] == generation_config.settings.llm_followup_max_retries
+    assert result["model"] == "gpt-4o-mini"
     assert '"options"' in FOLLOWUP_SYSTEM_PROMPT
     assert '"suggested_questions"' in FOLLOWUP_SYSTEM_PROMPT
 
