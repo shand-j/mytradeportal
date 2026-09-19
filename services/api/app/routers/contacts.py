@@ -10,7 +10,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.audit import Actions, write_audit_log
 from app.database import get_db
-from app.dependencies import CurrentUserDep, TenantDep
+from app.dependencies import (
+    BLOCKED_CUSTOMER_DETAIL as BLOCKED_CUSTOMER_DETAIL,  # re-export for router imports
+)
+from app.dependencies import (
+    CurrentUserDep,
+    TenantDep,
+)
 from app.models import Contact, Customer, Invoice, Quote
 from app.rls import set_tenant_in_session
 from app.schemas import ContactBlockRequest, ContactCreate, ContactRead, ContactUpdate
@@ -51,13 +57,6 @@ TIME_WASTER_MIN_ISSUED_QUOTES = 3
 # Quote statuses that prove the customer replied/engaged. Draft quotes were
 # never sent, so they count neither as issued nor as engagement.
 QUOTE_ENGAGED_STATUSES = ("approved", "rejected", "invoiced")
-
-# 403 detail shared by every block-enforcement point so clients can key on the
-# stable prefix and show a helpful message.
-BLOCKED_CUSTOMER_DETAIL = (
-    "customer_blocked: This customer has been blocked by the business and cannot "
-    "log in, request quotes or send messages. Contact the business directly."
-)
 
 
 async def contact_is_blocked(db: AsyncSession, tenant_id: UUID, contact_id: UUID | None) -> bool:

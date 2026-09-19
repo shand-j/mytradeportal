@@ -12,13 +12,12 @@ import {
 
 // Blocked-customer enforcement (G31, N26): once a tenant blocks a customer
 // (contact.is_blocked), the customer account must be a dead end — login,
-// quote-request creation and chat are all refused server-side. These are
-// API-level negative asserts (the CRM banner UI is covered by N26 in
-// crm.spec.ts). Correct-credentials login must still fail so the 403 cannot
-// be used to enumerate block status. One enforcement gap is encoded as
-// test.fixme with the desired behaviour asserted (it fails today and flips
-// to unexpected-pass when the backend is fixed): pre-block bearer tokens
-// keep working on CurrentCustomerDep-only read surfaces.
+// quote-request creation, chat and the public intake endpoint are all refused
+// server-side, and bearer tokens minted BEFORE the block stop authorizing
+// (get_current_customer checks the block flag, so CurrentCustomerDep-only
+// read surfaces refuse the token too). These are API-level negative asserts
+// (the CRM banner UI is covered by N26 in crm.spec.ts). Correct-credentials
+// login must still fail so the 403 cannot be used to enumerate block status.
 
 const CUSTOMER_PASSWORD = "E2E-Customer-1";
 
@@ -94,21 +93,15 @@ test.describe.serial("S — Blocked-customer enforcement", () => {
     expect(JSON.stringify(chat.json)).toContain("customer_blocked");
   });
 
-  test.fixme(
-    "G31: a blocked customer token is refused on read surfaces (quotes list)",
-    async () => {
-      // PRODUCT BUG (second surface): block enforcement lives per-endpoint —
-      // /customer/login and the /communications actor check both refuse a
-      // blocked customer, but get_current_customer (CurrentCustomerDep) never
-      // checks contact.is_blocked, so a token minted BEFORE the block keeps
-      // working on every read surface that only uses CurrentCustomerDep
-      // (/customer/quotes here). The token must die with the block.
-      const blocked = { ...tenant, token: preBlockToken };
-      const quotes = await apiRaw(blocked, "/customer/quotes");
-      expect(quotes.status).toBe(403);
-      expect(JSON.stringify(quotes.json)).toContain("customer_blocked");
-    }
-  );
+  test("G31: a blocked customer token is refused on read surfaces (quotes list)", async () => {
+    // get_current_customer (CurrentCustomerDep) checks contact.is_blocked, so
+    // a token minted BEFORE the block dies with the block on every read
+    // surface guarded only by CurrentCustomerDep (/customer/quotes here).
+    const blocked = { ...tenant, token: preBlockToken };
+    const quotes = await apiRaw(blocked, "/customer/quotes");
+    expect(quotes.status).toBe(403);
+    expect(JSON.stringify(quotes.json)).toContain("customer_blocked");
+  });
 
   test("G31: staff-side quote-request creation for a blocked customer is refused", async () => {
     const res = await apiRaw(tenant, "/quote-requests", {
