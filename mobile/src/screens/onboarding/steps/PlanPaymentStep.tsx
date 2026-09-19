@@ -12,6 +12,7 @@ import {
 } from "../../../api/billing";
 import { config } from "../../../lib/config";
 import { NetworkError } from "../../../lib/apiClient";
+import { openCheckoutSession } from "../../../lib/inAppBrowser";
 
 type Plan = {
   key: BillingPlanKey;
@@ -148,11 +149,11 @@ export function PlanPaymentStep({ data, onNext }: PlanPaymentStepProps) {
           checkoutPageUrl
         );
         onNext({ plan: plan.key, checkoutStarted: true });
-        // Kick the user out to the checkout page; Paddle.js renders the
-        // overlay there and shows a return-to-app message on completion.
+        // Open the checkout page in the in-app browser; Paddle.js renders the
+        // overlay there and the mtp:// redirect on completion closes the sheet.
         const opened = await Linking.canOpenURL(checkoutUrl);
         if (opened) {
-          await Linking.openURL(checkoutUrl);
+          await openCheckoutSession(checkoutUrl);
         } else {
           setError("Couldn't open the checkout. Try again.");
         }
