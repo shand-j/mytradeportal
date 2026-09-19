@@ -16,6 +16,7 @@ event — never a 500.
 """
 
 from typing import Annotated, Any, cast
+from urllib.parse import quote, urlsplit
 from uuid import UUID
 
 import structlog
@@ -95,11 +96,27 @@ async def _get_stripe_account(db: AsyncSession, tenant_id: UUID) -> StripeAccoun
     )
 
 
+def _stripe_safe_url(url: str) -> str:
+    """Stripe's AccountLink API only accepts http(s) URLs; bounce deep links.
+
+    Mobile clients pass custom-scheme deep links (``mtp://payments/...``) so
+    the in-app browser lands back in the app, but Stripe rejects them with a
+    400 "Not a valid URL". Substitute the public landing bounce page, which
+    immediately navigates to the original deep link — the auth-session
+    browser intercepts that navigation and closes back into the app.
+    """
+    if urlsplit(url).scheme.lower() in ("http", "https"):
+        return url
+    base = config.PUBLIC_DOCS_BASE_URL.rstrip("/")
+    return f"{base}/payments/stripe-bounce?next={quote(url, safe='')}"
+
+
 def _onboarding_urls(data: ConnectRequest) -> tuple[str, str]:
     """Return/refresh URLs for the hosted Express onboarding flow.
 
     Defaults point at the back-office payments settings page derived from
-    ``APP_PUBLIC_URL``; clients may pass explicit deep links instead.
+    ``APP_PUBLIC_URL``; clients may pass explicit deep links instead, which
+    are swapped for the https bounce page (see ``_stripe_safe_url``).
     """
     base = settings.app_public_url.rstrip("/")
     return_url = data.return_url or (f"{base}/settings/payments?stripe=return" if base else "")
@@ -109,7 +126,7 @@ def _onboarding_urls(data: ConnectRequest) -> tuple[str, str]:
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="return_url and refresh_url are required when APP_PUBLIC_URL is unset",
         )
-    return return_url, refresh_url
+    return _stripe_safe_url(return_url), _stripe_safe_url(refresh_url)
 
 
 async def _sync_account_from_stripe(db: AsyncSession, account: StripeAccount) -> StripeAccount:
