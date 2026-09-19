@@ -204,6 +204,17 @@ class User(TenantScopedBase):
     phone: Mapped[str | None] = mapped_column(String(50), nullable=True)
     password_hash: Mapped[str | None] = mapped_column(String(255), nullable=True)
     supabase_uid: Mapped[str | None] = mapped_column(String(255), nullable=True, index=True)
+    # Set when the account is created via POST /users/invite and cleared when
+    # the invitee sets their password (accept-invite flips is_active on). A
+    # row with invited_at set and is_active off is a pending invite and counts
+    # against the plan's seat limit; a deactivated user (is_active off, no
+    # invited_at) does not.
+    invited_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+    @property
+    def invite_pending(self) -> bool:
+        """True while an invited user has not yet accepted (set a password)."""
+        return self.invited_at is not None and not self.is_active
 
 
 class Contact(TenantScopedBase):
@@ -1611,6 +1622,42 @@ class CustomerPortalToken(Base):
         DateTime(timezone=True), default=lambda: datetime.now(UTC), nullable=False
     )
     last_used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class UserInviteToken(Base):
+    """A single-use bearer token that lets an invited staff user set a password.
+
+    Minted by ``POST /users/invite`` and re-issued by
+    ``POST /users/invite/magic-link``; the raw token only ever appears in the
+    emailed link (``/accept-invite?token=...`` on the landing site). Only the
+    SHA-256 hash is stored so a leaked DB dump cannot be replayed. Re-issuing
+    for a user revokes their earlier still-valid tokens so only the newest
+    emailed link works, and ``used_at`` makes each token single-use.
+
+    Deliberately a plain ``Base`` (same pattern as ``CustomerPortalToken``):
+    the accept endpoint looks the token up before any tenant/auth context
+    exists, so the table must stay out of ``app.rls.TENANT_SCOPED_TABLES``.
+    ``tenant_id`` is a plain column (no FK) so rows survive tenant teardown;
+    the accept endpoint then 401s like any invalid token.
+    """
+
+    __tablename__ = "user_invite_tokens"
+
+    id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
+    user_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    tenant_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), nullable=False, index=True)
+    token_hash: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(UTC), nullable=False
+    )
+    used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 

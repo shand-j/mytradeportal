@@ -1,10 +1,12 @@
 """Plan catalog — the single source of truth for tiers, prices and capabilities.
 
-Flat pricing model (locked decision): one subscription per business, unlimited
-users, AI unmetered on every tier. There are NO credits, quotas, allowances,
-overage charges or seats anywhere in this catalog — tiers differ by
-capability only. Fair-use guardrails (burst limit, cheap-route threshold) live
-in ``app.dependencies.fair_use_guard`` and are invisible to customers.
+Flat pricing model (locked decision): one subscription per business, AI
+unmetered on every tier. There are NO credits, quotas, allowances or overage
+charges anywhere in this catalog — tiers differ by capability plus a seat
+count (``Plan.seats``) that caps how many staff users (active + pending
+invites) a tenant may have; ``POST /users/invite`` enforces it. Fair-use
+guardrails (burst limit, cheap-route threshold) live in
+``app.dependencies.fair_use_guard`` and are invisible to customers.
 
 Both the API (``GET /billing/plans``) and the mobile onboarding flow read this
 catalog. Actual Paddle price IDs live in environment variables and are never
@@ -74,7 +76,7 @@ TEAM_EXTRA_FEATURES: frozenset[str] = frozenset(
 
 @dataclass(frozen=True)
 class Plan:
-    """A flat subscription tier: one price per business, unlimited users."""
+    """A flat subscription tier: one price per business, capped staff seats."""
 
     key: str  # sole_trader | pro | team
     name: str  # display name
@@ -85,7 +87,9 @@ class Plan:
     # only; Paddle is the billing source of truth.
     monthly_price_gbp: int
     annual_price_gbp: int
-    # Capability set — the ONLY thing that differs between tiers.
+    # Staff seats: max active users + pending invites on the tenant.
+    seats: int
+    # Capability set — the only other thing that differs between tiers.
     features: frozenset[str]
     featured: bool  # rendered as "Most popular" by clients
 
@@ -98,6 +102,7 @@ PLAN_CATALOG: tuple[Plan, ...] = (
         annual_price_env="PADDLE_PRICE_ID_SOLE_TRADER_YEAR",
         monthly_price_gbp=25,
         annual_price_gbp=250,
+        seats=1,
         features=SOLE_TRADER_FEATURES,
         featured=False,
     ),
@@ -108,6 +113,7 @@ PLAN_CATALOG: tuple[Plan, ...] = (
         annual_price_env="PADDLE_PRICE_ID_PRO_YEAR",
         monthly_price_gbp=39,
         annual_price_gbp=390,
+        seats=5,
         features=SOLE_TRADER_FEATURES | PRO_EXTRA_FEATURES,
         featured=True,
     ),
@@ -118,6 +124,7 @@ PLAN_CATALOG: tuple[Plan, ...] = (
         annual_price_env="PADDLE_PRICE_ID_TEAM_YEAR",
         monthly_price_gbp=69,
         annual_price_gbp=690,
+        seats=15,
         features=SOLE_TRADER_FEATURES | PRO_EXTRA_FEATURES | TEAM_EXTRA_FEATURES,
         featured=False,
     ),
@@ -154,6 +161,14 @@ def lowest_plan_with_feature(feature: str) -> Plan | None:
     return None
 
 
+def next_plan_with_more_seats(plan: Plan) -> Plan | None:
+    """Return the cheapest tier with more seats than ``plan`` (upgrade hint)."""
+    for candidate in PLAN_CATALOG:  # catalog is ordered cheapest → most expensive
+        if candidate.seats > plan.seats:
+            return candidate
+    return None
+
+
 def plan_to_public_dict(plan: Plan) -> dict[str, Any]:
     """Serialise a tier for ``GET /billing/plans``.
 
@@ -171,7 +186,7 @@ def plan_to_public_dict(plan: Plan) -> dict[str, Any]:
         "monthly_price_gbp": plan.monthly_price_gbp,
         "annual_price_gbp": plan.annual_price_gbp,
         "features": sorted(plan.features),
-        "unlimited_users": True,
+        "seats": plan.seats,
         "featured": plan.featured,
         "trial_days": TRIAL_DAYS,
         "trial_extension_days": TRIAL_EXTENSION_DAYS,

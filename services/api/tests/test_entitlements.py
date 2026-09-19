@@ -299,15 +299,16 @@ async def test_plans_endpoint_returns_flat_tier_catalog(client: AsyncClient) -> 
         assert plan["trial_days"] == 14
         assert plan["trial_extension_days"] == 30
         assert plan["trial_extension_sent_ai_quotes"] == 3
-        assert plan["unlimited_users"] is True
         assert isinstance(plan["features"], list) and plan["features"]
         # No AI-usage/quota numbers anywhere in the API response.
         for key in plan:
             assert "allowance" not in key
             assert "overage" not in key
-            assert "seat" not in key
 
     by_key = {p["key"]: p for p in plans}
+    assert by_key["sole_trader"]["seats"] == 1
+    assert by_key["pro"]["seats"] == 5
+    assert by_key["team"]["seats"] == 15
     assert by_key["sole_trader"]["monthly_price_gbp"] == 25
     assert by_key["sole_trader"]["annual_price_gbp"] == 250
     assert by_key["pro"]["monthly_price_gbp"] == 39

@@ -2,9 +2,16 @@
 
 | | |
 |---|---|
-| **Status** | Accepted |
+| **Status** | Accepted (amended 2026-09-19 — see note) |
 | **Date** | 2026-09-13 |
 | **Reference** | [docs/mytradeportal-research/PRD-Pricing-and-Billing.md](../mytradeportal-research/PRD-Pricing-and-Billing.md) |
+
+> **Amendment (2026-09-19, issue #190):** the founder reversed the "no seats"
+> clause for multi-user invites: each tier now carries a hard **seat cap**
+> (`Plan.seats` — sole_trader 1, pro 5, team 15) enforced by
+> `POST /users/invite`. Pricing stays flat per business — seats are a limit,
+> not a meter: no per-seat charges, no seat quantities in Paddle, and AI
+> remains unmetered on every tier. Everything else in this ADR stands.
 
 ## Context
 

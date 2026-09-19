@@ -508,7 +508,11 @@ async def test_checkout_never_sends_quantity_for_any_tier_or_interval(
     assert "seats" not in kwargs
 
 
-_BANNED_PLAN_VOCABULARY = ("allowance", "overage", "seat", "quota", "credit", "usage", "meter")
+# Metered-billing vocabulary that must never leak into the public plans
+# payload. ``seats`` is deliberately NOT banned: since the team-invites work
+# a seat count is an advertised tier property (a hard cap on staff users),
+# not a usage meter.
+_BANNED_PLAN_VOCABULARY = ("allowance", "overage", "quota", "credit", "usage", "meter")
 
 
 def _walk_strings(node: Any) -> "list[str]":
@@ -529,7 +533,7 @@ def _walk_strings(node: Any) -> "list[str]":
 async def test_plans_payload_contains_no_quota_vocabulary_anywhere(
     client: AsyncClient,
 ) -> None:
-    """Deep scan: no allowance/overage/seat/quota/credit/usage/meter token in
+    """Deep scan: no allowance/overage/quota/credit/usage/meter token in
     any key or string value of GET /billing/plans, at any nesting depth, for
     every tier."""
     response = await client.get("/billing/plans")
