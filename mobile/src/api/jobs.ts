@@ -125,6 +125,7 @@ export async function completeJob(id: string): Promise<ApiJob> {
 
 /** Backend default is "scheduled"; the app's UI vocabulary uses "confirmed". */
 const STATUS_MAP: Record<string, JobStatus> = {
+  draft: "draft",
   scheduled: "confirmed",
   confirmed: "confirmed",
   in_progress: "in_progress",

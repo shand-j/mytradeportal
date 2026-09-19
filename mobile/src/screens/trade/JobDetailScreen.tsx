@@ -31,6 +31,7 @@ function errorMessage(err: unknown, fallback: string): string {
 }
 
 const STATUS_COPY: Record<JobStatus, string> = {
+  draft: "Draft",
   confirmed: "Confirmed",
   in_progress: "In progress",
   completed: "Completed",
@@ -38,6 +39,7 @@ const STATUS_COPY: Record<JobStatus, string> = {
 };
 
 const STATUS_COLORS: Record<JobStatus, string> = {
+  draft: "#FFFBEB", // warning surface — tentative until confirmed via the quote
   confirmed: "#E2E8EB", // info-100 slate
   in_progress: "#FFFBEB", // warning surface
   completed: "#ECFDF5", // success surface

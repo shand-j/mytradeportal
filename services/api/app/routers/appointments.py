@@ -8,6 +8,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.availability import NON_BLOCKING_JOB_STATUSES
 from app.database import get_db
 from app.dependencies import TenantDep
 from app.models import Appointment, Contact, Job
@@ -120,7 +121,7 @@ async def get_availability(
             Job.tenant_id == tenant.id,
             Job.scheduled_start.isnot(None),
             Job.scheduled_start < day_end,
-            Job.status.notin_({"cancelled", "completed"}),
+            Job.status.notin_(NON_BLOCKING_JOB_STATUSES),
         )
     )
     for job in jobs_result.scalars().all():

@@ -22,29 +22,32 @@ from __future__ import annotations
 
 import hashlib
 import secrets
-from datetime import datetime, timedelta
+from datetime import date, datetime, time, timedelta
 from decimal import Decimal
 from typing import TYPE_CHECKING, Annotated, Any, Literal
 from urllib.parse import urlencode
 
 import structlog
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app import stripe_client
+from app.availability import busy_periods, free_hours
 from app.config import PUBLIC_DOCS_BASE_URL
 from app.database import get_db
 from app.limiter import limiter
 from app.models import Contact, Customer, DocumentAccessToken, Invoice, Quote, StripeAccount, Tenant
 from app.payment_details import tenant_payment_details
-from app.quote_acceptance import apply_quote_acceptance, apply_quote_decline
+from app.push import notify_staff
+from app.quote_acceptance import apply_quote_acceptance, apply_quote_decline, ensure_draft_job
 from app.rls import bypass_rls_for_transaction, set_tenant_in_session
 
 # FastAPI evaluates body-model annotations at route registration, so this
 # import must stay at runtime despite the future-annotations banner.
-from app.schemas import CustomerQuoteAccept  # noqa: TC001
+from app.schemas import CustomerQuoteAccept, PublicQuotePreferences  # noqa: TC001
+from app.work_blocks import daily_working_hours, working_hours
 
 if TYPE_CHECKING:
     from uuid import UUID
@@ -149,6 +152,9 @@ def _quote_payload(quote: Quote, contact: Contact | None) -> dict[str, Any]:
         "description": quote.description,
         "invoice_number": None,
         "customer_first_name": _first_name(contact.name if contact else None),
+        # The customer's own ranked preferences, echoed back so the page can
+        # show what they already chose (their own data — not a privacy leak).
+        "accepted_dates": quote.accepted_dates or [],
         "lines": [
             {
                 "description": line.description,
@@ -429,3 +435,107 @@ async def decline_public_quote(
     payload = _base_payload("quote", tenant)
     payload.update(_quote_payload(quote, contact))
     return payload
+
+
+# Bounds on the public availability window (days ahead of tomorrow).
+_AVAILABILITY_DEFAULT_DAYS = 35
+_AVAILABILITY_MAX_DAYS = 62
+
+
+@router.get("/quote/{token}/availability")
+@limiter.limit("60/hour")
+async def get_public_quote_availability(
+    request: Request,
+    token: str,
+    db: DbDep,
+    days: int = Query(default=_AVAILABILITY_DEFAULT_DAYS, ge=1, le=_AVAILABILITY_MAX_DAYS),
+) -> dict[str, Any]:
+    """Free/busy summary by date for the quote's tenant, token-scoped.
+
+    Backs the availability-aware calendar on the emailed quote page: the
+    customer picks up to 3 preferred visit dates against what the electrician
+    can actually fit in. Privacy posture is deliberate: each day carries only
+    a coarse status (``available`` / ``partial`` / ``busy`` / ``closed``) —
+    no booking titles, times, customers or counts ever leave this endpoint.
+    The quote's own estimated duration rides along so the page can say how
+    long the visit should take.
+    """
+    await bypass_rls_for_transaction(db)
+    record, tenant = await _load_token_and_tenant(db, "quote", token)
+    await set_tenant_in_session(db, tenant.id)
+    quote = await db.get(Quote, record.document_id)
+    if quote is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not found")
+
+    work_start, work_end, working_days = working_hours(tenant.settings)
+    daily = daily_working_hours(tenant.settings)
+    start_day = date.today() + timedelta(days=1)
+    window_start = datetime.combine(start_day, time.min)
+    window_end = datetime.combine(start_day + timedelta(days=days), time.max)
+    busy = await busy_periods(db, tenant.id, window_start, window_end)
+
+    summary: list[dict[str, Any]] = []
+    for offset in range(days):
+        day = start_day + timedelta(days=offset)
+        if daily <= 0 or day.weekday() not in working_days:
+            day_status = "closed"
+        else:
+            free = free_hours(day, work_start, work_end, busy)
+            if free <= 1e-6:
+                day_status = "busy"
+            elif free < daily - 1e-6:
+                day_status = "partial"
+            else:
+                day_status = "available"
+        summary.append({"date": day.isoformat(), "status": day_status})
+    return {
+        "estimated_hours": float(quote.estimated_hours)
+        if quote.estimated_hours is not None
+        else None,
+        "days": summary,
+    }
+
+
+@router.post("/quote/{token}/preferences")
+@limiter.limit("60/hour")
+async def submit_public_quote_preferences(
+    request: Request,
+    token: str,
+    data: PublicQuotePreferences,
+    db: DbDep,
+) -> dict[str, Any]:
+    """Token-authorized submission of up to 3 ranked visit-date preferences.
+
+    Usable both before acceptance (the preferences then ride through the
+    accept call's storage) and after — a customer who accepted without
+    picking dates can send them later, and re-submitting replaces the list.
+    Post-acceptance submissions (re)create the tentative draft job from the
+    1st choice and notify staff; the customer's ranked choices always land in
+    the staff notification, same as at acceptance time.
+    """
+    await bypass_rls_for_transaction(db)
+    record, tenant = await _load_token_and_tenant(db, "quote", token)
+    await set_tenant_in_session(db, tenant.id)
+    quote, contact = await _load_quote_for_action(db, record)
+    if quote.status not in {"sent", "approved"}:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Preferences can no longer be updated",
+        )
+    quote.accepted_dates = data.preference_strings()
+    if quote.status == "approved":
+        await ensure_draft_job(db, quote=quote)
+        customer_name = (contact.name if contact else None) or "Your customer"
+        await notify_staff(
+            db,
+            quote.tenant_id,
+            kind="quote_dates_submitted",
+            title="Preferred dates updated",
+            body=(
+                f"{customer_name} chose preferred dates for '{quote.title}': "
+                f"{', '.join(quote.accepted_dates)}."
+            ),
+            link=f"/quotes/{quote.id}",
+        )
+    await db.commit()
+    return {"accepted_dates": quote.accepted_dates}
