@@ -205,6 +205,212 @@ async def test_push_token_upsert(admin_client: AsyncClient, db: AsyncSession) ->
     assert count == 1
 
 
+async def test_upsert_push_token_repoints_row_hidden_by_rls(
+    client: AsyncClient, db: AsyncSession
+) -> None:
+    """Direct regression test for the prod 500: the existence check must see
+    another tenant's row despite RLS.
+
+    Exercises ``_upsert_push_token`` against the raw session (no HTTP request
+    first) because the test harness shares one top-level transaction, where a
+    transaction-local RLS bypass from any earlier bypassing endpoint (login,
+    tenant bootstrap) would leak and mask the bug.
+    """
+    from app.routers.notifications import _upsert_push_token
+    from app.schemas import PushTokenCreate
+
+    tenant_a = Tenant(slug=f"a-{uuid4().hex[:8]}", name="A Ltd")
+    tenant_b = Tenant(slug=f"b-{uuid4().hex[:8]}", name="B Ltd")
+    db.add_all([tenant_a, tenant_b])
+    await db.flush()
+
+    # The device registered its token under tenant A previously.
+    await set_tenant_in_session(db, tenant_a.id)
+    existing = PushToken(
+        tenant_id=tenant_a.id,
+        owner_type="staff",
+        owner_id=uuid4(),
+        token="ExponentPushToken[rls-hidden]",
+        platform="ios",
+    )
+    db.add(existing)
+    await db.commit()
+
+    # The same device now registers under tenant B. Under RLS the SELECT
+    # cannot see tenant A's row; without the cross-tenant lookup the INSERT
+    # violates the global unique constraint and the request 500s.
+    await set_tenant_in_session(db, tenant_b.id)
+    row = await _upsert_push_token(
+        db,
+        tenant_b.id,
+        "staff",
+        uuid4(),
+        PushTokenCreate(token="ExponentPushToken[rls-hidden]", platform="android"),
+    )
+
+    assert row.id == existing.id
+    assert row.tenant_id == tenant_b.id
+    assert row.platform == "android"
+
+    # One row globally, now owned by tenant B.
+    count_b = await db.scalar(
+        select(func.count(PushToken.id)).where(PushToken.tenant_id == tenant_b.id)
+    )
+    assert count_b == 1
+    await set_tenant_in_session(db, tenant_a.id)
+    count_a = await db.scalar(
+        select(func.count(PushToken.id)).where(PushToken.tenant_id == tenant_a.id)
+    )
+    assert count_a == 0
+
+
+async def test_upsert_push_token_sequential_reregister_is_idempotent(
+    client: AsyncClient, db: AsyncSession
+) -> None:
+    """Double-registering the same token under one tenant keeps a single row."""
+    from app.routers.notifications import _upsert_push_token
+    from app.schemas import PushTokenCreate
+
+    tenant = Tenant(slug=f"t-{uuid4().hex[:8]}", name="T Ltd")
+    db.add(tenant)
+    await db.flush()
+    await set_tenant_in_session(db, tenant.id)
+
+    owner = uuid4()
+    first = await _upsert_push_token(
+        db,
+        tenant.id,
+        "staff",
+        owner,
+        PushTokenCreate(token="ExponentPushToken[dup]", platform="ios"),
+    )
+    second = await _upsert_push_token(
+        db,
+        tenant.id,
+        "staff",
+        owner,
+        PushTokenCreate(token="ExponentPushToken[dup]", platform="android"),
+    )
+
+    assert second.id == first.id
+    assert second.platform == "android"
+    count = await db.scalar(
+        select(func.count(PushToken.id)).where(PushToken.tenant_id == tenant.id)
+    )
+    assert count == 1
+
+
+async def test_push_token_repoints_across_tenants(
+    admin_client: AsyncClient, db: AsyncSession
+) -> None:
+    """A token registered under tenant A re-registers under tenant B without a 500.
+
+    Regression test: the RLS tenant policy hid tenant A's row from the SELECT,
+    so the INSERT violated the global unique constraint on ``token``.
+    """
+    tenant_a = UUID(admin_client.headers["X-Tenant-ID"])
+
+    # Seed the device token under tenant A directly (as if a previous
+    # registration had happened while the device was logged into A).
+    await set_tenant_in_session(db, tenant_a)
+    existing = PushToken(
+        tenant_id=tenant_a,
+        owner_type="staff",
+        owner_id=uuid4(),
+        token="ExponentPushToken[cross-tenant]",
+        platform="ios",
+    )
+    db.add(existing)
+    await db.flush()
+
+    # Bootstrap tenant B with its own staff admin and log in as them.
+    slug = f"other-{uuid4().hex[:8]}"
+    created = await admin_client.post(
+        "/tenants",
+        json={
+            "slug": slug,
+            "name": "Other Ltd",
+            "admin_email": f"admin@{slug}.example.com",
+            "admin_password": "bootstrap-pass-123",
+            "admin_name": "Other Admin",
+        },
+    )
+    assert created.status_code == 201, created.text
+    tenant_b = UUID(created.json()["id"])
+    login = await admin_client.post(
+        "/auth/login",
+        json={
+            "email": f"admin@{slug}.example.com",
+            "password": "bootstrap-pass-123",
+            "tenant_slug": slug,
+        },
+    )
+    assert login.status_code == 200, login.text
+
+    # Re-register the SAME token as tenant B staff: must re-point, not 500.
+    resp = await admin_client.post(
+        "/notifications/push-token",
+        headers={"X-Tenant-ID": str(tenant_b)},
+        json={"token": "ExponentPushToken[cross-tenant]", "platform": "android"},
+    )
+    assert resp.status_code == 201, resp.text
+    body = resp.json()
+    assert body["id"] == str(existing.id)
+    assert body["tenant_id"] == str(tenant_b)
+    assert body["platform"] == "android"
+
+    # The row moved to tenant B; nothing remains under tenant A.
+    await set_tenant_in_session(db, tenant_b)
+    stored = await db.scalar(select(PushToken).where(PushToken.tenant_id == tenant_b))
+    assert stored is not None
+    assert stored.id == existing.id
+    await set_tenant_in_session(db, tenant_a)
+    count_a = await db.scalar(
+        select(func.count(PushToken.id)).where(PushToken.tenant_id == tenant_a)
+    )
+    assert count_a == 0
+
+
+async def test_customer_push_token_repoints_across_tenants(
+    admin_client: AsyncClient, db: AsyncSession
+) -> None:
+    """The customer endpoint shares the same cross-tenant re-point behavior."""
+    tenant_a = UUID(admin_client.headers["X-Tenant-ID"])
+
+    # Staff of tenant A registers the device token first.
+    first = await admin_client.post(
+        "/notifications/push-token",
+        json={"token": "ExponentPushToken[shared-device]", "platform": "ios"},
+    )
+    assert first.status_code == 201, first.text
+
+    # A customer of tenant B registers the same device token.
+    created = await admin_client.post(
+        "/tenants", json={"slug": f"other-{uuid4().hex[:8]}", "name": "Other Ltd"}
+    )
+    assert created.status_code == 201
+    tenant_b = UUID(created.json()["id"])
+    auth, customer_id = await _register_customer(admin_client, db, tenant_b)
+
+    resp = await admin_client.post(
+        "/customer/notifications/push-token",
+        headers=auth,
+        json={"token": "ExponentPushToken[shared-device]", "platform": "ios"},
+    )
+    assert resp.status_code == 201, resp.text
+    body = resp.json()
+    assert body["id"] == first.json()["id"]
+    assert body["tenant_id"] == str(tenant_b)
+    assert body["owner_type"] == "customer"
+    assert body["owner_id"] == customer_id
+
+    await set_tenant_in_session(db, tenant_a)
+    count_a = await db.scalar(
+        select(func.count(PushToken.id)).where(PushToken.tenant_id == tenant_a)
+    )
+    assert count_a == 0
+
+
 async def test_customer_push_token_upsert(admin_client: AsyncClient, db: AsyncSession) -> None:
     tenant_id = UUID(admin_client.headers["X-Tenant-ID"])
     auth, customer_id = await _register_customer(admin_client, db, tenant_id)
