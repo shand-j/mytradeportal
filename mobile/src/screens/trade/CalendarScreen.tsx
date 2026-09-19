@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { Pressable, ScrollView, View } from "react-native";
+import { Alert, Pressable, ScrollView, View } from "react-native";
 import { useRouter } from "expo-router";
 import { Button } from "../../components/ui/Button";
 import { Header } from "../../components/ui/Header";
@@ -9,6 +9,7 @@ import { Screen } from "../../components/ui/Screen";
 import { Text } from "../../components/ui/Text";
 import { useJobsList } from "../../api/jobs";
 import { useMultiSeatPlan } from "../../api/billing";
+import { openNavigation } from "../../lib/navigation";
 import { useAuthStore } from "../../stores/authStore";
 import { useCalendarStore } from "../../stores/calendarStore";
 import { Job } from "../../types";
@@ -105,6 +106,13 @@ export function CalendarScreen(_props: CalendarScreenProps) {
   }, [jobs, weekDays]);
 
   const unscheduledJobs = useMemo(() => jobs.filter((job) => !job.date), [jobs]);
+
+  const handleNavigate = async (job: Job) => {
+    const opened = await openNavigation(job.address, job.postcode);
+    if (!opened) {
+      Alert.alert("Cannot open maps", "No maps application is available on this device.");
+    }
+  };
 
   const selectedDate = weekDays[selectedDay];
   const dayBookings = jobsByDay.get(toIsoDate(selectedDate)) ?? [];
@@ -244,6 +252,16 @@ export function CalendarScreen(_props: CalendarScreenProps) {
                       {booking.customerName} · {booking.postcode}
                     </Text>
                   </View>
+                  {booking.address || booking.postcode ? (
+                    <IconButton
+                      testID={`booking-navigate-${booking.id}`}
+                      icon="navigate"
+                      size={20}
+                      color="#0F1E26"
+                      accessibilityLabel={`Get directions to ${booking.title}`}
+                      onPress={() => void handleNavigate(booking)}
+                    />
+                  ) : null}
                 </View>
               </Pressable>
             ))}
@@ -388,6 +406,16 @@ export function CalendarScreen(_props: CalendarScreenProps) {
                         {job.customerName}
                       </Text>
                     </View>
+                    {job.address || job.postcode ? (
+                      <IconButton
+                        testID={`unscheduled-navigate-${job.id}`}
+                        icon="navigate"
+                        size={20}
+                        color="#0F1E26"
+                        accessibilityLabel={`Get directions to ${job.title}`}
+                        onPress={() => void handleNavigate(job)}
+                      />
+                    ) : null}
                   </View>
                 </Pressable>
               ))}
