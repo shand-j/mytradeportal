@@ -11,6 +11,7 @@ import { fetchQuote } from "../../api/quotes";
 import { useQuoteRoundingIncrement } from "../../api/businesses";
 import { ApiError } from "../../lib/apiClient";
 import { formatMoneyGBP, roundUpToIncrement } from "../../lib/format";
+import { openNavigation } from "../../lib/navigation";
 import { Job, JobStatus } from "../../types";
 
 function pad(n: number): string {
@@ -305,26 +306,10 @@ export function JobDetailScreen({
   };
 
   const navigateToAddress = async () => {
-    const address = encodeURIComponent(job.address);
-    // Platform-default routing: on iOS the universal maps URL is handed to the
-    // system, which opens the user's default maps app (Apple Maps if none was
-    // chosen); elsewhere geo: lets Android pick. The Apple scheme is only the
-    // last-resort fallback — never the first choice.
-    const schemes =
-      Platform.OS === "ios"
-        ? [`https://maps.apple.com/?q=${address}`, `maps://?q=${address}`]
-        : [
-            `geo:0,0?q=${address}`,
-            `https://www.google.com/maps/search/?api=1&query=${address}`,
-          ];
-    for (const url of schemes) {
-      const can = await Linking.canOpenURL(url);
-      if (can) {
-        await Linking.openURL(url);
-        return;
-      }
+    const opened = await openNavigation(job.address, job.postcode);
+    if (!opened) {
+      Alert.alert("Cannot open maps", "No maps application is available on this device.");
     }
-    Alert.alert("Cannot open maps", "No maps application is available on this device.");
   };
 
   const callCustomer = () =>
@@ -481,8 +466,12 @@ export function JobDetailScreen({
           <Text variant="body" weight="semibold">
             Address
           </Text>
-          <Text variant="body">{job.address}</Text>
-          <Button testID="job-navigate" title="Navigate" onPress={navigateToAddress} />
+          <Text variant="body">
+            {[job.address, job.postcode].filter((part) => part.trim().length > 0).join(", ") || "No address on file"}
+          </Text>
+          {job.address.trim().length > 0 || job.postcode.trim().length > 0 ? (
+            <Button testID="job-navigate" title="Navigate" onPress={() => void navigateToAddress()} />
+          ) : null}
         </View>
 
         <View className="rounded-2xl bg-slate-100 p-4 gap-3">
