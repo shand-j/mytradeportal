@@ -102,6 +102,40 @@ async def test_create_job_with_notes_and_assignee(client: AsyncClient, db: Async
     assert fetched.json()["assigned_to"] == "Spark One"
 
 
+async def test_list_jobs_filters_by_assignee(client: AsyncClient, db: AsyncSession) -> None:
+    """?assigned_user_id narrows the list ("Me"); omitting it returns all ("All")."""
+    tenant = await _create_tenant(client, f"job-{uuid4().hex[:8]}")
+    contact = await _create_contact(client, tenant["id"], "List Filter")
+    spark_one = await _create_user(db, tenant["id"], "Spark One")
+    spark_two = await _create_user(db, tenant["id"], "Spark Two")
+
+    async def create(title: str, assignee: User | None) -> dict[str, Any]:
+        payload: dict[str, Any] = {"contact_id": contact["id"], "title": title}
+        if assignee is not None:
+            payload["assigned_user_id"] = str(assignee.id)
+        response = await client.post("/jobs", headers={"X-Tenant-ID": tenant["id"]}, json=payload)
+        assert response.status_code == 201, response.text
+        data: dict[str, Any] = response.json()
+        return data
+
+    mine = await create("Job for one", spark_one)
+    theirs = await create("Job for two", spark_two)
+    unassigned = await create("Unassigned job", None)
+
+    all_response = await client.get("/jobs", headers={"X-Tenant-ID": tenant["id"]})
+    assert all_response.status_code == 200
+    all_ids = {job["id"] for job in all_response.json()}
+    assert all_ids == {mine["id"], theirs["id"], unassigned["id"]}
+
+    filtered = await client.get(
+        "/jobs",
+        headers={"X-Tenant-ID": tenant["id"]},
+        params={"assigned_user_id": str(spark_one.id)},
+    )
+    assert filtered.status_code == 200
+    assert {job["id"] for job in filtered.json()} == {mine["id"]}
+
+
 async def test_create_job_merges_contact_notes(client: AsyncClient) -> None:
     """The CRM contact's notes are appended to the job notes at creation,
     keeping whatever the user typed on the create screen first."""

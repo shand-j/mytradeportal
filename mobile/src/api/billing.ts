@@ -14,6 +14,13 @@ export const CHECKOUT_PLAN_KEY: Record<BillingPlanKey, PlanKey> = {
   team: "business",
 };
 
+/** Inverse of CHECKOUT_PLAN_KEY — a subscription's legacy plan key → tier. */
+export const SUBSCRIPTION_TIER_KEY: Record<PlanKey, BillingPlanKey> = {
+  starter: "sole_trader",
+  pro: "pro",
+  business: "team",
+};
+
 export type BillingPlan = {
   key: BillingPlanKey;
   name: string;
@@ -25,6 +32,8 @@ export type BillingPlan = {
   overageBehavior: "block" | "metered";
   overagePricePence: number;
   minSeats: number;
+  /** Staff seats included in the tier (max active users + pending invites). */
+  seats: number;
   pooledAllowance: boolean;
   featured: boolean;
   trialDays: number;
@@ -115,4 +124,19 @@ export function useCreateBillingCheckout() {
       void client.invalidateQueries({ queryKey: ["billing", "subscription"] });
     },
   });
+}
+
+/**
+ * True when the tenant's subscription tier includes more than one staff seat
+ * (seat counts come from GET /billing/plans — the per-plan source of truth).
+ * False while either query is loading or when there is no subscription, so
+ * single-seat tenants never see team-only UI.
+ */
+export function useMultiSeatPlan(): boolean {
+  const subscription = useSubscription();
+  const plans = useBillingPlans();
+  const planKey = subscription.data?.planKey;
+  if (!planKey) return false;
+  const tier = plans.data?.find((p) => p.key === SUBSCRIPTION_TIER_KEY[planKey]);
+  return (tier?.seats ?? 1) > 1;
 }

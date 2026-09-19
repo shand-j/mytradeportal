@@ -167,15 +167,27 @@ async def create_block_appointments(
 
 
 @router.get("")
-async def list_jobs(tenant: TenantDep, db: DbDep) -> list[JobRead]:
-    """List jobs for the current tenant."""
+async def list_jobs(
+    tenant: TenantDep,
+    db: DbDep,
+    assigned_user_id: UUID | None = Query(default=None),
+) -> list[JobRead]:
+    """List jobs for the current tenant.
+
+    ``assigned_user_id`` narrows the list to jobs assigned to that staff
+    member (the mobile calendar's "Me" view); omitting it returns the whole
+    team ("All").
+    """
     await set_tenant_in_session(db, tenant.id)
-    result = await db.execute(
+    query = (
         select(Job)
         .options(*_job_load_options())
         .where(Job.tenant_id == tenant.id)
         .order_by(Job.created_at.desc())
     )
+    if assigned_user_id is not None:
+        query = query.where(Job.assigned_user_id == assigned_user_id)
+    result = await db.execute(query)
     return [JobRead.model_validate(j) for j in result.scalars().all()]
 
 
