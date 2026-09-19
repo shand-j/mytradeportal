@@ -217,10 +217,13 @@ async def submit_public_quote_request(
     if customer is not None and customer.contact_id:
         contact = await db.get(Contact, customer.contact_id)
     if contact is None and data.contact.email:
+        # Case-insensitive match (same idiom as customer login/registration):
+        # an exact-match lookup would let a blocked contact dodge the block
+        # below — and the dedup — by re-entering their email with new casing.
         contact = await db.scalar(
             select(Contact).where(
                 Contact.tenant_id == tenant.id,
-                Contact.email == str(data.contact.email),
+                func.lower(Contact.email) == str(data.contact.email).lower(),
             )
         )
     # Blocked customers (N26) cannot submit via the public form either. Only a

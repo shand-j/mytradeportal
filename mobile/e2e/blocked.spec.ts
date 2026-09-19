@@ -15,11 +15,10 @@ import {
 // quote-request creation and chat are all refused server-side. These are
 // API-level negative asserts (the CRM banner UI is covered by N26 in
 // crm.spec.ts). Correct-credentials login must still fail so the 403 cannot
-// be used to enumerate block status. Two enforcement gaps are encoded as
-// test.fixme with the desired behaviour asserted (they fail today and flip
-// to unexpected-pass when the backend is fixed): the public intake endpoint
-// accepts a blocked customer, and pre-block bearer tokens keep working on
-// CurrentCustomerDep-only read surfaces.
+// be used to enumerate block status. One enforcement gap is encoded as
+// test.fixme with the desired behaviour asserted (it fails today and flips
+// to unexpected-pass when the backend is fixed): pre-block bearer tokens
+// keep working on CurrentCustomerDep-only read surfaces.
 
 const CUSTOMER_PASSWORD = "E2E-Customer-1";
 
@@ -126,13 +125,13 @@ test.describe.serial("S — Blocked-customer enforcement", () => {
     expect(JSON.stringify(res.json)).toContain("customer_blocked");
   });
 
-  test.fixme(
+  test(
     "G31: the public quote-request endpoint refuses a blocked logged-in customer",
     async () => {
-      // PRODUCT BUG: submit_public_quote_request (routers/businesses.py) reuses
-      // the blocked customer's contact and creates the request without ever
-      // checking contact_is_blocked — the staff-side endpoint and the login
-      // dependency both enforce N26, the public intake path does not.
+      // submit_public_quote_request (routers/businesses.py) resolves the
+      // logged-in customer's contact (or reuses one by case-insensitive
+      // email) and enforces contact_is_blocked with the same 403 the
+      // staff-side endpoint and login dependency return.
       const blocked = { ...tenant, token: preBlockToken };
       const res = await apiRaw(
         blocked,
