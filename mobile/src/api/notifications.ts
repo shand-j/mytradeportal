@@ -2,6 +2,7 @@ import { useEffect, useRef } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Platform } from "react-native";
 import { api } from "../lib/apiClient";
+import { dedupeKey, shouldFireLocalAlert } from "../lib/notificationDedupe";
 import { fireLocalQuoteReadyAlert } from "../lib/pushNotifications";
 import { useAuthStore } from "../stores/authStore";
 
@@ -223,6 +224,9 @@ export function routeForPushData(
  * expo-notifications alert when a NEW unread quote_ready notification appears
  * while the app is open. Also reports freshly arrived quote_ready/quote_failed
  * notifications so callers can react (e.g. update the "generating" banner).
+ * The local alert is skipped when the remote push for the same entity was
+ * already received or tapped this session, and fires at most once per entity
+ * per session (see src/lib/notificationDedupe.ts).
  */
 export function useQuoteReadyWatcher(
   role: NotificationRole,
@@ -249,7 +253,11 @@ export function useQuoteReadyWatcher(
     if (fresh.length === 0) return;
     fresh.forEach((n) => {
       seenRef.current!.add(n.id);
-      if (n.type === "quote_ready" && Platform.OS !== "web") {
+      if (
+        n.type === "quote_ready" &&
+        Platform.OS !== "web" &&
+        shouldFireLocalAlert(dedupeKey(n.type, n.link))
+      ) {
         void fireLocalQuoteReadyAlert(n.title, n.body ?? "");
       }
       callbackRef.current?.(n);
