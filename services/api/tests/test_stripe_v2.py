@@ -46,7 +46,8 @@ def _v2_account_response(
 async def test_create_connected_account_v2_sends_recipient_payload(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Pins the exact v2 create payload: recipient config, express, platform liability."""
+    """Pins the exact v2 create payload: recipient config, express, platform liability,
+    plus the known-business-field pre-fill (#188)."""
     monkeypatch.setattr("app.config.STRIPE_SECRET_KEY", "sk_test_x")
     v2_request = AsyncMock(return_value={"id": "acct_v2_new"})
     monkeypatch.setattr("app.stripe_client._v2_request", v2_request)
@@ -55,6 +56,9 @@ async def test_create_connected_account_v2_sends_recipient_payload(
         email="sparky@example.com",
         display_name="Sparks Electrical",
         tenant_id="tenant-123",
+        phone="+447700900123",
+        postcode="SK8 3NJ",
+        entity_type="individual",
     )
 
     assert result == {"id": "acct_v2_new"}
@@ -69,7 +73,15 @@ async def test_create_connected_account_v2_sends_recipient_payload(
     assert kwargs["json_body"] == {
         "display_name": "Sparks Electrical",
         "contact_email": "sparky@example.com",
-        "identity": {"country": "gb"},
+        "contact_phone": "+447700900123",
+        "identity": {
+            "country": "gb",
+            "entity_type": "individual",
+            "business_details": {
+                "registered_name": "Sparks Electrical",
+                "address": {"country": "gb", "postal_code": "SK8 3NJ"},
+            },
+        },
         "dashboard": "express",
         "defaults": {
             "responsibilities": {
@@ -103,6 +115,9 @@ async def test_create_connected_account_v2_omits_email_and_key_when_absent(
     assert call is not None
     kwargs = call.kwargs
     assert "contact_email" not in kwargs["json_body"]
+    assert "contact_phone" not in kwargs["json_body"]
+    # No pre-fill known → identity carries only the hard-coded country.
+    assert kwargs["json_body"]["identity"] == {"country": "gb"}
     assert kwargs["idempotency_key"] is None
 
 
