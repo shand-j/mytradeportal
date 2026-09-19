@@ -178,6 +178,10 @@ export default defineRailway(() => {
       LLM_MODEL: "openai/kimi-k2.6",
       LLM_API_BASE: preserve(),
       LLM_API_KEY: preserve(),
+      // Vision model for the photo-captioning step (AI quote image evidence,
+      // #198). Empty = fall back to LLM_MODEL; must be a vision-capable model
+      // or photo captioning silently skips (fail-open by design).
+      LLM_VISION_MODEL: preserve(),
       LLM_TEMPERATURE: "",
       LLM_MAX_RETRIES: "3",
       LLM_TIMEOUT_SECONDS: "300",
