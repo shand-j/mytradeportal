@@ -83,7 +83,7 @@ function buildRegisterInput(data: Record<string, unknown>): RegisterBusinessInpu
 
 export function OnboardingStepperScreen() {
   const { business } = useBusiness();
-  const { logout, finishRegistration, loading } = useAuth();
+  const { logout, finishRegistration, completeOnboarding, loading } = useAuth();
   const router = useRouter();
   const { resume } = useLocalSearchParams<{ resume?: string }>();
   // Resume mode: user logged back in with a tenant that never finished
@@ -102,6 +102,10 @@ export function OnboardingStepperScreen() {
   // Paddle checkout call (/billing/checkout) runs with an authenticated tenant.
   const [registered, setRegistered] = useState(isResume);
   const scrollRef = useRef<ScrollView>(null);
+  // Registration at the review step is 7 sequential network calls; without a
+  // guard a second tap fires a parallel registration that 409s against the
+  // first and the wizard jumps back to the account step (#225).
+  const submittingRef = useRef(false);
 
   // Prefill the wizard from the server-side onboarding progress so the review
   // summary (and any back-navigation) shows what was already captured.
@@ -153,6 +157,8 @@ export function OnboardingStepperScreen() {
       setEmailConflict(false);
     }
     if (STEPS[stepIndex].key === "review") {
+      if (submittingRef.current) return;
+      submittingRef.current = true;
       setError(null);
       try {
         if (!registered) {
@@ -185,10 +191,15 @@ export function OnboardingStepperScreen() {
                 : "We couldn't create your business account. Please try again.";
         setError(message);
         return;
+      } finally {
+        submittingRef.current = false;
       }
     }
     if (isLast) {
-      // Already registered at the review step; plan checkout opened by the step.
+      // Already registered at the review step; plan checkout opened by the
+      // step. Mark onboarding complete so the index route never bounces a
+      // finished (esp. resumed) wizard back into /onboarding?resume=1 (#225).
+      completeOnboarding();
       router.replace("/(trade)/dashboard");
     } else {
       setStepIndex((i) => i + 1);

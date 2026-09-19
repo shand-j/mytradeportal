@@ -113,18 +113,19 @@ export async function completeOnboardingSteps(
 /**
  * Provision a real business from the wizard: create the tenant + admin user,
  * authenticate, record the launch-gate onboarding steps, then launch.
- * Retries on slug collisions.
+ * Retries on slug collisions, and resumes (rather than failing) when the
+ * email conflict turns out to be this wizard's own earlier attempt (#225).
  */
 export async function registerBusiness(input: RegisterBusinessInput): Promise<ApiUser> {
   let slug = `${slugify(input.tradingName)}-${randomSuffix()}`;
+  let user: ApiUser | null = null;
 
   for (let attempt = 0; attempt < 3; attempt++) {
     try {
       await createTenant(slug, input);
       break;
     } catch (err) {
-      // Retry only on slug collision; an email conflict means the account
-      // already exists and the user should log in, not mint another tenant.
+      // Retry only on slug collision.
       if (
         err instanceof ApiError &&
         err.status === 409 &&
@@ -134,11 +135,34 @@ export async function registerBusiness(input: RegisterBusinessInput): Promise<Ap
         slug = `${slugify(input.tradingName)}-${randomSuffix()}`;
         continue;
       }
+      // Email conflict: the account already exists. When it's THIS user's own
+      // account — an earlier attempt of this same wizard created the tenant
+      // but died before finishing (double-tap, dropped connection, app kill) —
+      // the wizard's credentials still log in, so resume below instead of
+      // bouncing back: the step recording and launch are idempotent. A failed
+      // login means the email genuinely belongs to someone else — rethrow the
+      // 409 so the wizard surfaces the duplicate inline on the account step.
+      if (
+        err instanceof ApiError &&
+        err.status === 409 &&
+        err.detail.toLowerCase().includes("email")
+      ) {
+        try {
+          const session = await loginWithToken(input.email, input.password);
+          user = session.user;
+          break;
+        } catch {
+          throw err;
+        }
+      }
       throw err;
     }
   }
 
-  const { user } = await loginWithToken(input.email, input.password, slug);
+  if (!user) {
+    const session = await loginWithToken(input.email, input.password, slug);
+    user = session.user;
+  }
 
   await completeStep("business_identity", input.identity ?? { tradingName: input.tradingName });
   await completeStep("compliance", input.compliance ?? {});
