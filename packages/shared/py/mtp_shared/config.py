@@ -130,6 +130,19 @@ class Settings(BaseSettings):
     llm_followup_timeout_seconds: int = Field(default=30)
     llm_followup_max_retries: int = Field(default=1)
 
+    # Quote-refine model. A refine is a constrained edit of already-drafted
+    # line items, but on the flagship ``llm_model`` (e.g. Kimi k2.6 at 60-120s
+    # per call) a single chat completion plus retrieval embeddings races the
+    # 120s server-side refine budget — so refine defaults to a cheap, fast
+    # model with the flagship kept as opt-in. Resolution mirrors
+    # ``llm_followup_model``: a bare OpenAI-style id routes via
+    # ``openai_api_key`` with any configured non-OpenAI base suppressed; a
+    # LiteLLM-style ``provider/model`` id routes through the configured LLM
+    # provider; empty inherits ``llm_model``. On a third-party-only deployment
+    # (no OpenAI key, non-OpenAI base) the flagship route is kept — never
+    # worse than the pre-override behaviour.
+    llm_refine_model: str = Field(default="gpt-4o-mini")
+
     # Embeddings are provider-specific and Kimi has no embeddings API, so the
     # embedder is configured independently of the chat LLM. It defaults to
     # OpenAI (or any OpenAI-compatible embeddings endpoint). When no embedding

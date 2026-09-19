@@ -485,21 +485,17 @@ def _sanitize_string_list(value: Any, *, max_items: int, max_length: int) -> lis
     return sanitized
 
 
-def _resolve_followup_route() -> tuple[str, str, str]:
-    """Return (model, api_key, api_base) for the follow-up chat call.
+def _resolve_fast_route(override_model: str, *, log_event: str) -> tuple[str, str, str]:
+    """Shared resolver for the cheap/fast routes (follow-up chat, refine).
 
-    The chat turn defaults to the cheap/fast ``llm_followup_model`` because
-    the customer waits on each reply synchronously and the flagship
-    ``llm_model`` (e.g. Kimi k2.6) reliably takes 60-120s — far beyond a
-    chat budget. Routing mirrors the demo/intake-triage idiom: a bare
-    OpenAI-style id uses the OpenAI key with any configured non-OpenAI base
-    suppressed; a LiteLLM-style ``provider/model`` id (or an empty override,
-    which inherits ``llm_model``) uses the configured LLM provider. When
-    only a third-party provider is configured (no OpenAI key, non-OpenAI
-    base set), a bare-id call could not authenticate, so the flagship route
-    is kept — never worse than the pre-override behaviour.
+    A bare OpenAI-style id uses the OpenAI key with any configured non-OpenAI
+    base suppressed (the demo idiom); a LiteLLM-style ``provider/model`` id
+    (or an empty override, which inherits ``llm_model``) uses the configured
+    LLM provider. When only a third-party provider is configured (no OpenAI
+    key, non-OpenAI base set), a bare-id call could not authenticate, so the
+    flagship route is kept — never worse than the pre-override behaviour.
     """
-    model = settings.llm_followup_model or settings.llm_model
+    model = override_model or settings.llm_model
     if model == settings.llm_model or "/" in model:
         return model, settings.resolved_llm_api_key, settings.llm_api_base
     if settings.openai_api_key:
@@ -508,11 +504,35 @@ def _resolve_followup_route() -> tuple[str, str, str]:
         # OpenAI-only deployment keyed via LLM_API_KEY/OPENAI_API_KEY fallback.
         return model, settings.resolved_llm_api_key, ""
     logger.warning(
-        "followup_route_fallback",
-        followup_model=model,
+        log_event,
+        override_model=model,
         reason="third-party provider only; bare-id route cannot authenticate",
     )
     return settings.llm_model, settings.resolved_llm_api_key, settings.llm_api_base
+
+
+def _resolve_followup_route() -> tuple[str, str, str]:
+    """Return (model, api_key, api_base) for the follow-up chat call.
+
+    The chat turn defaults to the cheap/fast ``llm_followup_model`` because
+    the customer waits on each reply synchronously and the flagship
+    ``llm_model`` (e.g. Kimi k2.6) reliably takes 60-120s — far beyond a
+    chat budget. See :func:`_resolve_fast_route` for the routing rules.
+    """
+    return _resolve_fast_route(settings.llm_followup_model, log_event="followup_route_fallback")
+
+
+def resolve_refine_route() -> tuple[str, str, str]:
+    """Return (model, api_key, api_base) for the quote-refine generation call.
+
+    A refine is a constrained edit of existing line items, so it defaults to
+    the cheap/fast ``llm_refine_model``: on the flagship ``llm_model`` (e.g.
+    Kimi k2.6) a single chat completion reliably takes 60-120s, which races
+    the 120s server-side refine budget even on a healthy provider. Set
+    ``llm_refine_model`` empty (or to the flagship id) to opt back into the
+    flagship. See :func:`_resolve_fast_route` for the routing rules.
+    """
+    return _resolve_fast_route(settings.llm_refine_model, log_event="refine_route_fallback")
 
 
 async def generate_followup(

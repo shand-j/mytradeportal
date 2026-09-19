@@ -478,6 +478,118 @@ async def test_refine_quote_times_out_with_retryable_503(
     assert "too long" in response.json()["detail"]
 
 
+@pytest.mark.asyncio
+async def test_refine_quote_uses_resolved_refine_route(
+    client: AsyncClient, db: AsyncSession
+) -> None:
+    """Refine routes generation through the dedicated refine model (cheap/fast
+    by default) so a slow flagship completion cannot race the 120s budget."""
+    tenant = await _create_tenant(client, f"sparky-{uuid4().hex[:8]}")
+    await _mark_vat_registered(db, tenant["id"])
+    contact = await _create_contact(client, tenant["id"], "Refine Customer")
+    created = await client.post(
+        "/quotes",
+        headers={"X-Tenant-ID": tenant["id"]},
+        json={"contact_id": contact["id"], "title": "Manual quote"},
+    )
+    assert created.status_code == 201
+    quote_id = created.json()["id"]
+
+    generated = {
+        "line_items": [
+            {
+                "description": "Refined labour",
+                "kind": "labour",
+                "unit": "job",
+                "quantity": 1,
+                "unit_price": 200.00,
+            }
+        ],
+        "notes": "",
+    }
+    generate_mock = AsyncMock(return_value=generated)
+    with (
+        patch(
+            "app.routers.quotes.resolve_refine_route",
+            return_value=("gpt-4o-mini", "sk-openai", ""),
+        ) as route_mock,
+        patch(
+            "app.routers.quotes.search_cost_items_with_status",
+            new=AsyncMock(return_value=([], "no_index")),
+        ),
+        patch("app.routers.quotes.generate_quote_from_prompt", new=generate_mock),
+    ):
+        refined = await client.post(
+            f"/quotes/{quote_id}/refine",
+            headers={"X-Tenant-ID": tenant["id"]},
+            json={"instructions": "Increase labour"},
+        )
+
+    assert refined.status_code == 200, refined.text
+    route_mock.assert_called_once_with()
+    kwargs = generate_mock.call_args.kwargs
+    assert kwargs["model"] == "gpt-4o-mini"
+    assert kwargs["api_key"] == "sk-openai"
+    assert kwargs["api_base"] == ""
+
+
+@pytest.mark.asyncio
+async def test_refine_quote_default_route_resolves_to_cheap_model(
+    client: AsyncClient, db: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """End-to-end wiring: with a Kimi flagship configured, the refine call
+    still goes to the default cheap model (the timeout backstop stays at
+    120s, so it is never the thing that saves a healthy provider)."""
+    tenant = await _create_tenant(client, f"sparky-{uuid4().hex[:8]}")
+    await _mark_vat_registered(db, tenant["id"])
+    contact = await _create_contact(client, tenant["id"], "Refine Customer")
+    created = await client.post(
+        "/quotes",
+        headers={"X-Tenant-ID": tenant["id"]},
+        json={"contact_id": contact["id"], "title": "Manual quote"},
+    )
+    assert created.status_code == 201
+    quote_id = created.json()["id"]
+
+    monkeypatch.setattr(settings, "llm_model", "openai/kimi-k2.6")
+    monkeypatch.setattr(settings, "llm_api_base", "https://api.moonshot.ai/v1")
+    monkeypatch.setattr(settings, "llm_api_key", "sk-moonshot")
+    monkeypatch.setattr(settings, "openai_api_key", "sk-openai")
+    monkeypatch.setattr(settings, "llm_refine_model", "gpt-4o-mini")
+
+    generated = {
+        "line_items": [
+            {
+                "description": "Refined labour",
+                "kind": "labour",
+                "unit": "job",
+                "quantity": 1,
+                "unit_price": 200.00,
+            }
+        ],
+        "notes": "",
+    }
+    generate_mock = AsyncMock(return_value=generated)
+    with (
+        patch(
+            "app.routers.quotes.search_cost_items_with_status",
+            new=AsyncMock(return_value=([], "no_index")),
+        ),
+        patch("app.routers.quotes.generate_quote_from_prompt", new=generate_mock),
+    ):
+        refined = await client.post(
+            f"/quotes/{quote_id}/refine",
+            headers={"X-Tenant-ID": tenant["id"]},
+            json={"instructions": "Increase labour"},
+        )
+
+    assert refined.status_code == 200, refined.text
+    kwargs = generate_mock.call_args.kwargs
+    assert kwargs["model"] == "gpt-4o-mini"
+    assert kwargs["api_key"] == "sk-openai"
+    assert kwargs["api_base"] == ""
+
+
 @pytest.mark.skip(reason="OCERP/BoQ is parked for the mobile-pivot MVP")
 @pytest.mark.asyncio
 async def test_generate_quote_with_ocerp(client: AsyncClient) -> None:
