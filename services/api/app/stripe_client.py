@@ -137,6 +137,9 @@ async def create_connected_account_v2(
     email: str | None = None,
     display_name: str | None = None,
     tenant_id: str | None = None,
+    phone: str | None = None,
+    postcode: str | None = None,
+    entity_type: str | None = None,
 ) -> dict[str, Any]:
     """Create a v2 connected Account with the recipient configuration (ADR-003).
 
@@ -147,10 +150,26 @@ async def create_connected_account_v2(
     No ``merchant``/``card_payments`` configuration is requested (that would
     only lengthen onboarding; the platform remains merchant of record).
     Returns ``{"id": ...}``.
+
+    Everything we already know about the tradie is pre-filled (contact email,
+    phone, trading name, postcode, entity type from their business structure)
+    so Stripe's onboarding skips those steps. ``entity_type`` is the v2
+    identity enum: ``"individual"`` for sole traders, ``"company"`` for
+    ltd/LLP — passed only when known, never guessed.
     """
+    identity: dict[str, Any] = {"country": "gb"}
+    if entity_type:
+        identity["entity_type"] = entity_type
+    business_details: dict[str, Any] = {}
+    if display_name:
+        business_details["registered_name"] = display_name
+    if postcode:
+        business_details["address"] = {"country": "gb", "postal_code": postcode}
+    if business_details:
+        identity["business_details"] = business_details
     payload: dict[str, Any] = {
         "display_name": display_name or "My Trade Portal tradesperson",
-        "identity": {"country": "gb"},
+        "identity": identity,
         "dashboard": "express",
         "defaults": {
             "responsibilities": {
@@ -170,6 +189,8 @@ async def create_connected_account_v2(
     }
     if email:
         payload["contact_email"] = email
+    if phone:
+        payload["contact_phone"] = phone
     account = await _v2_request(
         "POST",
         "/core/accounts",
@@ -204,6 +225,24 @@ async def create_account_link(
         type="account_onboarding",
     )
     return str(link["url"])
+
+
+async def create_account_session(account_id: str) -> dict[str, Any]:
+    """Create an AccountSession for the embedded onboarding component.
+
+    Returns ``{"client_secret": ..., "expires_at": ...}`` — the client secret
+    authorises Stripe's embedded Connect components (RN SDK / Stripe.js) to
+    run account onboarding natively in-app for this connected account. Only
+    the ``account_onboarding`` component is enabled; payouts/balances stay in
+    Stripe's hosted Express dashboard.
+    """
+    stripe = _stripe()
+    session = await asyncio.to_thread(
+        stripe.AccountSession.create,
+        account=account_id,
+        components={"account_onboarding": {"enabled": True}},
+    )
+    return {"client_secret": session["client_secret"], "expires_at": int(session["expires_at"])}
 
 
 def _capability_flags(account: dict[str, Any]) -> dict[str, bool | str]:

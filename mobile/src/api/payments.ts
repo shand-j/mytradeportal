@@ -24,11 +24,15 @@ export async function getPaymentsStatus(): Promise<PaymentsStatus> {
 
 /**
  * Create (or reuse) the tenant's Stripe Express account and return its hosted
- * onboarding URL. The tradie completes onboarding in the browser, then Stripe
- * redirects back to the return URL the backend configured.
+ * onboarding URL. The tradie completes onboarding in the in-app browser, then
+ * Stripe redirects to the return URL — the app passes deep links
+ * (mtp://payments/...) so the flow lands back inside the app.
  */
-export async function connectStripe(): Promise<ConnectStripeRead> {
-  return api.post<ConnectStripeRead>("/payments/connect", {});
+export async function connectStripe(input?: {
+  returnUrl?: string;
+  refreshUrl?: string;
+}): Promise<ConnectStripeRead> {
+  return api.post<ConnectStripeRead>("/payments/connect", input ?? {});
 }
 
 /** Set the tenant-level default for offering card payment on new invoices. */

@@ -97,7 +97,7 @@ describe("02 onboarding: wizard walk-through (stops before tenant creation)", ()
   });
 
   it("step 1 Welcome renders the value props and launch preview", async () => {
-    await expectStep("1 of 10: Welcome");
+    await expectStep("1 of 12: Welcome");
     await waitForTextContains("Get leads from QR codes");
     await waitForTextContains("AI drafts quotes");
     await waitForTextContains("Certificates, invoices, and accounts");
@@ -110,14 +110,14 @@ describe("02 onboarding: wizard walk-through (stops before tenant creation)", ()
 
   it("step 2 Account: Continue is blocked until the form is valid", async () => {
     await tapText("Create my account");
-    await expectStep("2 of 10: Account");
+    await expectStep("2 of 12: Account");
     await waitForText("This is how you’ll log in to manage your business.");
     // Incomplete form — tapping Continue must not advance.
     await setFieldByPlaceholder("Full name", FULL_NAME);
     await dismissKeyboard();
     await tapText("Continue");
     await driver.pause(500);
-    await expectStep("2 of 10: Account");
+    await expectStep("2 of 12: Account");
   });
 
   it("step 2 Account: role chips, terms checkbox and completed form advance", async () => {
@@ -136,7 +136,7 @@ describe("02 onboarding: wizard walk-through (stops before tenant creation)", ()
     await tapText("Continue");
     // Successful password form → iOS Keychain "Save Password?" sheet.
     await dismissPasswordPrompt();
-    await expectStep("3 of 10: Identity");
+    await expectStep("3 of 12: Identity");
   });
 
   it("step 3 Identity: trading name required, structure chips toggle fields", async () => {
@@ -146,7 +146,7 @@ describe("02 onboarding: wizard walk-through (stops before tenant creation)", ()
     await waitForTextContains("Customers see this on quotes");
     await tapText("Continue");
     await driver.pause(500);
-    await expectStep("3 of 10: Identity"); // blocked: no trading name
+    await expectStep("3 of 12: Identity"); // blocked: no trading name
     await setFieldByPlaceholder("e.g. Smith Electrical Ltd", TRADING_NAME);
     await dismissKeyboard();
     // Sole trader shows the MTD hint…
@@ -161,13 +161,13 @@ describe("02 onboarding: wizard walk-through (stops before tenant creation)", ()
     await setFieldByPlaceholder("e.g. 45", "45");
     await dismissKeyboard();
     await tapText("Continue");
-    await expectStep("4 of 10: Address");
+    await expectStep("4 of 12: Address");
   });
 
   it("step 4 Address: postcode and address are required to continue", async () => {
     await tapText("Continue");
     await driver.pause(500);
-    await expectStep("4 of 10: Address"); // blocked
+    await expectStep("4 of 12: Address"); // blocked
     await setFieldByPlaceholder("e.g. SK8 3NJ", "SK8 3NJ");
     await setFieldByPlaceholder("Full trading address", "1 Test Way, Cheadle, Manchester");
     // Defocus the multiline field by tapping its label (Return would insert
@@ -178,7 +178,7 @@ describe("02 onboarding: wizard walk-through (stops before tenant creation)", ()
     await waitForText("Postcode list");
     await waitForText("Nations served");
     await tapText("Continue");
-    await expectStep("5 of 10: Tax");
+    await expectStep("5 of 12: Tax");
   });
 
   it("step 5 Tax: VAT toggle reveals VAT fields, No keeps it simple", async () => {
@@ -192,7 +192,7 @@ describe("02 onboarding: wizard walk-through (stops before tenant creation)", ()
     await dismissKeyboard();
     await tapText("No");
     await tapText("Continue");
-    await expectStep("6 of 10: Compliance");
+    await expectStep("6 of 12: Compliance");
   });
 
   it("step 6 Compliance: scheme, membership, qualifications and insurance", async () => {
@@ -208,18 +208,18 @@ describe("02 onboarding: wizard walk-through (stops before tenant creation)", ()
     await tapText("£2m");
     await waitForText("DD-MM-YYYY");
     await tapText("Continue");
-    await expectStep("7 of 10: Services");
+    await expectStep("7 of 12: Services");
   });
 
   it("step 7 Services: Continue blocked until at least one service is chosen", async () => {
     await waitForTextContains("Choose the jobs you want to quote for");
     await tapText("Continue");
     await driver.pause(500);
-    await expectStep("7 of 10: Services"); // blocked: nothing selected
+    await expectStep("7 of 12: Services"); // blocked: nothing selected
     await tapText("EV charger");
     await tapText("EICR");
     await tapText("Continue");
-    await expectStep("8 of 10: Branding");
+    await expectStep("8 of 12: Branding");
   });
 
   it("step 8 Branding: hex validation and preset swatches", async () => {
@@ -234,7 +234,7 @@ describe("02 onboarding: wizard walk-through (stops before tenant creation)", ()
     await tapId("brand-colour-059669");
     await waitForId("brand-colour-preview");
     await tapId("branding-continue");
-    await expectStep("9 of 10: Review");
+    await expectStep("9 of 12: Review");
   });
 
   it("step 9 Review: summary reflects entered data; plan entry point renders", async () => {
@@ -271,11 +271,11 @@ describe("02 onboarding: wizard walk-through (stops before tenant creation)", ()
       await tapBack();
       await driver.pause(400);
     }
-    await expectStep("3 of 10: Identity");
+    await expectStep("3 of 12: Identity");
     expect(await readFieldByPlaceholder("e.g. Smith Electrical Ltd")).toBe(TRADING_NAME);
     // One more back → Account: email and full name must still be there.
     await tapBack();
-    await expectStep("2 of 10: Account");
+    await expectStep("2 of 12: Account");
     expect(await readFieldByPlaceholder("you@business.com")).toBe(EMAIL);
     expect(await readFieldByPlaceholder("Full name")).toBe(FULL_NAME);
   });
@@ -283,7 +283,7 @@ describe("02 onboarding: wizard walk-through (stops before tenant creation)", ()
   it("leaving the wizard from step 1 returns to the entry screen", async () => {
     // Walk back to the welcome step, then use the header back (logout path).
     await tapBack(); // → Welcome
-    await expectStep("1 of 10: Welcome");
+    await expectStep("1 of 12: Welcome");
     await tapBack(); // goBack on step 1 → logout → entry
     await waitForText("My Trade Portal", 20000);
     await relaunchApp();

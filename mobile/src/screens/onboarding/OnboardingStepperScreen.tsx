@@ -14,8 +14,10 @@ import {
 } from "../../api/onboarding";
 import { AccountStep } from "./steps/AccountStep";
 import { AddressServiceAreaStep } from "./steps/AddressServiceAreaStep";
+import { BankDetailsStep } from "./steps/BankDetailsStep";
 import { BrandingStep } from "./steps/BrandingStep";
 import { BusinessIdentityStep } from "./steps/BusinessIdentityStep";
+import { CardPaymentsStep } from "./steps/CardPaymentsStep";
 import { ComplianceStep } from "./steps/ComplianceStep";
 import { PlanPaymentStep } from "./steps/PlanPaymentStep";
 import { ReviewLaunchStep } from "./steps/ReviewLaunchStep";
@@ -41,6 +43,10 @@ const STEPS: { key: string; label: string; component: ComponentType<WizardStepPr
   { key: "services", label: "Services", component: ServicesStep },
   { key: "branding", label: "Branding", component: BrandingStep },
   { key: "review", label: "Review", component: ReviewLaunchStep },
+  // Post-registration steps: the tenant exists from the review step, so bank
+  // details (always) and the card-payments gate save straight to it (#188/189).
+  { key: "bank_details", label: "Bank details", component: BankDetailsStep },
+  { key: "card_payments", label: "Card payments", component: CardPaymentsStep },
   { key: "plan", label: "Plan", component: PlanPaymentStep },
 ];
 

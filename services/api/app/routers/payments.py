@@ -1,8 +1,9 @@
 """Stripe Connect payment endpoints (customer → tradie card payments, ADR-003).
 
 Staff-only, tenant-scoped. Covers Express onboarding (connect/status/return),
-the tenant-level accept-card default, and listing recorded payments for an
-invoice. Online card checkout itself is created from the public document
+the AccountSession endpoint for embedded in-app onboarding
+(connect/session), the tenant-level accept-card default, and listing recorded
+payments for an invoice. Online card checkout itself is created from the public document
 endpoint (``app.routers.public_docs``) and settled via
 ``app.routers.stripe_webhooks``.
 
@@ -24,7 +25,7 @@ from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app import stripe_client
+from app import config, stripe_client
 from app.config import settings
 from app.database import get_db
 from app.dependencies import CurrentUserDep, TenantDep
@@ -56,6 +57,13 @@ class ConnectRequest(BaseModel):
 
 class ConnectRead(BaseModel):
     onboarding_url: str
+
+
+class ConnectSessionRead(BaseModel):
+    client_secret: str
+    expires_at: int
+    stripe_account_id: str
+    publishable_key: str
 
 
 class PaymentSettingsUpdate(BaseModel):
@@ -115,6 +123,76 @@ async def _sync_account_from_stripe(db: AsyncSession, account: StripeAccount) ->
     return account
 
 
+def _tenant_entity_type(tenant: Tenant) -> str | None:
+    """Map the tenant's business structure onto the Accounts v2 identity enum.
+
+    Read from the dedicated column first, falling back to the onboarding
+    wizard's business_identity step (the column isn't populated from the
+    wizard yet). Returns None when unknown — entity type is never guessed,
+    because it steers Stripe's whole KYC path.
+    """
+    structure = tenant.structure or (
+        (tenant.onboarding_progress or {}).get("business_identity") or {}
+    ).get("value", {}).get("structure")
+    if structure == "sole_trader":
+        return "individual"
+    if structure in ("ltd", "llp"):
+        return "company"
+    return None
+
+
+async def _provision_account(
+    db: AsyncSession,
+    tenant: Tenant,
+    current_user: Any,
+) -> StripeAccount:
+    """Return the tenant's connected account, creating it (with pre-fill) if absent.
+
+    Pre-fills everything onboarding already knows — contact email, phone,
+    trading name, postcode, entity type — so Stripe skips those steps. Any
+    Stripe-side failure (platform not enrolled in Connect, Accounts v2
+    preview unavailable) becomes a 503 ``payments_unavailable`` with a
+    ``connect_failed`` log event, never a 500 and never a half-written row.
+    """
+    account = await _get_stripe_account(db, tenant.id)
+    if account is not None:
+        return account
+    try:
+        created = await stripe_client.create_connected_account_v2(
+            email=current_user.email if current_user is not None else tenant.email or None,
+            display_name=tenant.name,
+            tenant_id=str(tenant.id),
+            phone=tenant.phone or None,
+            postcode=tenant.postcode,
+            entity_type=_tenant_entity_type(tenant),
+        )
+    except stripe_client.PaymentsNotConfiguredError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="payments_not_configured",
+        ) from exc
+    except Exception as exc:
+        if not stripe_client.is_stripe_error(exc):
+            raise
+        logger.error(
+            "connect_failed",
+            tenant_id=str(tenant.id),
+            error_type=type(exc).__name__,
+            error=str(exc)[:300],
+        )
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="payments_unavailable",
+        ) from exc
+    account = StripeAccount(
+        tenant_id=tenant.id,
+        stripe_account_id=str(created["id"]),
+    )
+    db.add(account)
+    await db.flush()
+    return account
+
+
 def _status_read(account: StripeAccount | None, tenant: Tenant) -> PaymentStatusRead:
     return PaymentStatusRead(
         stripe_configured=stripe_client.is_configured(),
@@ -130,9 +208,21 @@ def _status_read(account: StripeAccount | None, tenant: Tenant) -> PaymentStatus
 
 @router.get("/status")
 async def get_payment_status(tenant: TenantDep, db: DbDep) -> PaymentStatusRead:
-    """Payment connection status for the current tenant (mirrored flags)."""
+    """Payment connection status for the current tenant.
+
+    When an account exists the mirrored flags are first synced from Stripe
+    (the source of truth), so the app always reads fresh state after the
+    tradie returns from onboarding — no manual refresh step. A Stripe outage
+    degrades to the last mirrored flags rather than failing the read.
+    """
     await set_tenant_in_session(db, tenant.id)
     account = await _get_stripe_account(db, tenant.id)
+    if account is not None and stripe_client.is_configured():
+        try:
+            await _sync_account_from_stripe(db, account)
+            await db.commit()
+        except Exception:
+            logger.warning("stripe_status_sync_failed", tenant_id=str(tenant.id))
     return _status_read(account, tenant)
 
 
@@ -158,38 +248,7 @@ async def connect_stripe_account(
     await set_tenant_in_session(db, tenant.id)
     return_url, refresh_url = _onboarding_urls(data)
 
-    account = await _get_stripe_account(db, tenant.id)
-    if account is None:
-        try:
-            created = await stripe_client.create_connected_account_v2(
-                email=current_user.email if current_user is not None else tenant.email or None,
-                display_name=tenant.name,
-                tenant_id=str(tenant.id),
-            )
-        except stripe_client.PaymentsNotConfiguredError as exc:
-            raise HTTPException(
-                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                detail="payments_not_configured",
-            ) from exc
-        except Exception as exc:
-            if not stripe_client.is_stripe_error(exc):
-                raise
-            logger.error(
-                "connect_failed",
-                tenant_id=str(tenant.id),
-                error_type=type(exc).__name__,
-                error=str(exc)[:300],
-            )
-            raise HTTPException(
-                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                detail="payments_unavailable",
-            ) from exc
-        account = StripeAccount(
-            tenant_id=tenant.id,
-            stripe_account_id=str(created["id"]),
-        )
-        db.add(account)
-        await db.flush()
+    account = await _provision_account(db, tenant, current_user)
 
     try:
         onboarding_url = await stripe_client.create_account_link(
@@ -212,6 +271,53 @@ async def connect_stripe_account(
         ) from exc
     await db.commit()
     return ConnectRead(onboarding_url=onboarding_url)
+
+
+@router.post("/connect/session")
+async def create_connect_session(
+    tenant: TenantDep,
+    current_user: CurrentUserDep,
+    db: DbDep,
+) -> ConnectSessionRead:
+    """Create an AccountSession for Stripe's embedded onboarding component.
+
+    This is the backend half of fully in-app Connect onboarding: the client
+    (RN SDK / Stripe.js embedded components) mounts the account-onboarding
+    component with this client secret instead of bouncing to a hosted
+    AccountLink URL. The tenant's connected account is provisioned first when
+    absent, reusing the same Accounts v2 recipient configuration as
+    ``/payments/connect``.
+    """
+    if not stripe_client.is_configured():
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="payments_not_configured",
+        )
+    await set_tenant_in_session(db, tenant.id)
+    account = await _provision_account(db, tenant, current_user)
+
+    try:
+        session = await stripe_client.create_account_session(account.stripe_account_id)
+    except Exception as exc:
+        if not stripe_client.is_stripe_error(exc):
+            raise
+        logger.error(
+            "connect_failed",
+            tenant_id=str(tenant.id),
+            error_type=type(exc).__name__,
+            error=str(exc)[:300],
+        )
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="payments_unavailable",
+        ) from exc
+    await db.commit()
+    return ConnectSessionRead(
+        client_secret=str(session["client_secret"]),
+        expires_at=int(session["expires_at"]),
+        stripe_account_id=account.stripe_account_id,
+        publishable_key=config.STRIPE_PUBLISHABLE_KEY,
+    )
 
 
 @router.get("/onboarding-return", response_class=HTMLResponse)
