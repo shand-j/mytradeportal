@@ -18,6 +18,7 @@ from app.rag.generation import (
     _resolve_followup_route,
     generate_followup,
     generate_quote_from_prompt,
+    resolve_refine_route,
 )
 from app.rag.retrieval import (
     _embedding_cache,
@@ -907,6 +908,55 @@ async def test_generate_followup_uses_chat_route_and_budget(
     assert result["model"] == "gpt-4o-mini"
     assert '"options"' in FOLLOWUP_SYSTEM_PROMPT
     assert '"suggested_questions"' in FOLLOWUP_SYSTEM_PROMPT
+
+
+def test_resolve_refine_route_defaults_to_cheap_model(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Default: refine uses the cheap model via the demo-route idiom — OpenAI
+    key, non-OpenAI base suppressed — never the slow flagship (a 60-120s Kimi
+    completion races the 120s refine budget)."""
+    _set_flagship_kimi_route(monkeypatch)
+    monkeypatch.setattr(generation_config.settings, "llm_refine_model", "gpt-4o-mini")
+
+    model, api_key, api_base = resolve_refine_route()
+
+    assert (model, api_key, api_base) == ("gpt-4o-mini", "sk-openai", "")
+
+
+def test_resolve_refine_route_empty_override_inherits_flagship(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """An empty refine model inherits llm_model and its provider route — the
+    flagship opt-in, matching the pre-override behaviour."""
+    _set_flagship_kimi_route(monkeypatch)
+    monkeypatch.setattr(generation_config.settings, "llm_refine_model", "")
+
+    model, api_key, api_base = resolve_refine_route()
+
+    assert (model, api_key, api_base) == (
+        "openai/kimi-k2.6",
+        "sk-moonshot",
+        "https://api.moonshot.ai/v1",
+    )
+
+
+def test_resolve_refine_route_third_party_only_falls_back(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Without an OpenAI key on a third-party-provider deployment, a bare-id
+    cheap model could not authenticate — fall back to the flagship route."""
+    monkeypatch.setattr(generation_config.settings, "llm_model", "openai/kimi-k2.6")
+    monkeypatch.setattr(generation_config.settings, "llm_api_base", "https://api.moonshot.ai/v1")
+    monkeypatch.setattr(generation_config.settings, "llm_api_key", "sk-moonshot")
+    monkeypatch.setattr(generation_config.settings, "openai_api_key", "")
+    monkeypatch.setattr(generation_config.settings, "llm_refine_model", "gpt-4o-mini")
+
+    model, api_key, api_base = resolve_refine_route()
+
+    assert (model, api_key, api_base) == (
+        "openai/kimi-k2.6",
+        "sk-moonshot",
+        "https://api.moonshot.ai/v1",
+    )
 
 
 def test_validate_generated_quote_clamps_out_of_range_prices() -> None:

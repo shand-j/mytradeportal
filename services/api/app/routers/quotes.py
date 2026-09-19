@@ -68,6 +68,7 @@ from app.push import notify_customer
 from app.rag import (
     estimate_llm_cost_usd,
     generate_quote_from_prompt,
+    resolve_refine_route,
     search_cost_items_with_status,
     validate_generated_quote,
 )
@@ -588,8 +589,17 @@ async def refine_quote(
         quote_id=quote.id,
         quote_request_id=quote.quote_request_id,
     )
+    # Route refine through the dedicated fast model (LLM_REFINE_MODEL, cheap by
+    # default): on the flagship (e.g. Kimi k2.6) one chat completion alone takes
+    # 60-120s, so it races the overall budget below even on a healthy provider.
+    refine_model, refine_api_key, refine_api_base = resolve_refine_route()
     try:
         async with asyncio.timeout(_REFINE_LLM_TIMEOUT_SECONDS):
+            # Retrieval re-runs per refine: the original retrieval context is
+            # not persisted on the quote, and the instructions can introduce
+            # new materials/scope the original query never covered. Both
+            # lookups are one embedding each (fast, per-text cached) — the
+            # chat completion above is the real latency driver.
             retrieved, retrieval_status = await search_cost_items_with_status(
                 f"{quote.title} {data.instructions}"
             )
@@ -597,6 +607,9 @@ async def refine_quote(
                 job_description=description,
                 cost_items=retrieved,
                 tenant_settings=tenant.settings,
+                model=refine_model,
+                api_base=refine_api_base,
+                api_key=refine_api_key,
                 telemetry=telemetry,
             )
     except TimeoutError as exc:
