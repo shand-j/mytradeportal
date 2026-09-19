@@ -12,12 +12,14 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import ColumnElement, func, or_, select, update
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
 from app.dependencies import ActiveUserDep, CurrentCustomerDep, TenantDep
 from app.models import Customer, Notification, PushToken, Tenant, User
 from app.portal_links import flip_preferred_contact_to_app
+from app.rls import bypass_rls_for_transaction
 from app.schemas import NotificationRead, PushTokenCreate, PushTokenRead, UnreadCountRead
 
 if TYPE_CHECKING:
@@ -73,7 +75,16 @@ async def _upsert_push_token(
     owner_id: UUID,
     data: PushTokenCreate,
 ) -> PushToken:
-    """Register or re-point a device token (tokens are globally unique)."""
+    """Register or re-point a device token (tokens are globally unique).
+
+    The same device may re-register under a different account/tenant, so the
+    existence check must see every tenant's rows: under the tenant RLS policy
+    the SELECT would miss another tenant's row and the INSERT would violate
+    the global unique constraint on ``token`` (a 500). The bypass is
+    transaction-local and touches only the opaque device token — the row is
+    immediately re-pointed at the caller's tenant, so no tenant data crosses.
+    """
+    await bypass_rls_for_transaction(db)
     push_token = await db.scalar(select(PushToken).where(PushToken.token == data.token))
     if push_token is None:
         push_token = PushToken(
@@ -84,13 +95,28 @@ async def _upsert_push_token(
             platform=data.platform,
         )
         db.add(push_token)
+        try:
+            await db.commit()
+        except IntegrityError:
+            # A concurrent registration of the same token won the race between
+            # the check and the INSERT. Roll back (which also clears the
+            # transaction-local bypass) and re-point that row instead.
+            await db.rollback()
+            await bypass_rls_for_transaction(db)
+            push_token = await db.scalar(select(PushToken).where(PushToken.token == data.token))
+            assert push_token is not None
+            push_token.tenant_id = tenant_id
+            push_token.owner_type = owner_type
+            push_token.owner_id = owner_id
+            push_token.platform = data.platform
+            await db.commit()
     else:
         # The same device may re-register under a different account/tenant.
         push_token.tenant_id = tenant_id
         push_token.owner_type = owner_type
         push_token.owner_id = owner_id
         push_token.platform = data.platform
-    await db.commit()
+        await db.commit()
     await db.refresh(push_token)
     return push_token
 
