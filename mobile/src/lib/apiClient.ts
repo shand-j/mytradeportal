@@ -6,11 +6,16 @@ import { usePaywallStore } from "../stores/paywallStore";
 export class ApiError extends Error {
   status: number;
   detail: string;
-  constructor(status: number, detail: string) {
+  /** Machine-readable code when the server sends structured detail
+   * (e.g. dispatch guardrail rejections: schedule_conflict, daily_hours_cap,
+   * job_locked). Null for plain-string details. */
+  code: string | null;
+  constructor(status: number, detail: string, code: string | null = null) {
     super(detail || `Request failed (${status})`);
     this.name = "ApiError";
     this.status = status;
     this.detail = detail;
+    this.code = code;
   }
 }
 
@@ -117,17 +122,37 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
   }
 
   if (!response.ok) {
-    const detail =
-      payload && typeof payload === "object" && "detail" in payload
-        ? String((payload as { detail: unknown }).detail)
-        : response.statusText;
+    // FastAPI error bodies are {detail: ...}. Detail is usually a string, but
+    // structured rejections (e.g. dispatch guardrail 409s) send an object —
+    // {code, reason} — and validation 422s send an array of {msg} objects.
+    // Flatten all three so callers always get a toastable message, and keep
+    // the machine-readable code for clients that want to branch on it.
+    let detail = response.statusText;
+    let code: string | null = null;
+    const raw = payload && typeof payload === "object" ? (payload as { detail?: unknown }).detail : undefined;
+    if (typeof raw === "string") {
+      detail = raw;
+    } else if (Array.isArray(raw)) {
+      detail = raw
+        .map((item) =>
+          item && typeof item === "object" && "msg" in item ? String(item.msg) : String(item)
+        )
+        .join("; ");
+    } else if (raw && typeof raw === "object") {
+      const structured = raw as { code?: unknown; reason?: unknown };
+      code = typeof structured.code === "string" ? structured.code : null;
+      detail =
+        typeof structured.reason === "string"
+          ? structured.reason
+          : (code ?? JSON.stringify(raw));
+    }
     // 402 subscription_required: flag globally so the app routes staff to the
     // paywall. The billing endpoints themselves are exempt server-side, so
     // this only fires for genuinely gated data endpoints.
     if (response.status === 402) {
       usePaywallStore.getState().setRequired(true);
     }
-    throw new ApiError(response.status, detail);
+    throw new ApiError(response.status, detail, code);
   }
 
   return camelizeKeys(payload) as T;

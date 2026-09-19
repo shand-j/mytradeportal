@@ -28,6 +28,12 @@ time; cancelled/completed/draft jobs and cancelled/no-show appointments do
 not. A draft job is the tentative hold auto-created at quote acceptance —
 unconfirmed, so it never blocks the calendar.
 
+Dispatch guardrails (``app.dispatch``, epic #233 phase 2) run on every
+assignment/reschedule here and in the appointments/quotes routers:
+double-booking and the 10h daily cap are 409s with structured detail
+(``code``/``reason``), and in-progress/completed jobs reject
+reassignment/reschedule outright.
+
 Booking confirmation: creating a job with a real slot (``scheduled_start``
 set, directly or via quote convert-to-job) emails the customer a
 ``booking_confirmed`` email (best-effort, tenant-branded, Reply-To the
@@ -48,9 +54,15 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.availability import busy_periods, free_hours
+from app.availability import (
+    DEFAULT_JOB_DURATION,
+    NON_BLOCKING_APPOINTMENT_STATUSES,
+    busy_periods,
+    free_hours,
+)
 from app.database import get_db
 from app.dependencies import TenantDep, single_active_user
+from app.dispatch import enforce_assignment_guardrails, ensure_job_mutable
 from app.email import send_customer_email, tenant_reply_to
 from app.email_templates import booking_confirmed as booking_confirmed_template
 from app.models import Appointment, Contact, Customer, Job, Quote, QuoteLineItem, Tenant, User
@@ -140,6 +152,31 @@ def plan_job_blocks(
     return plan_working_blocks(settings, start.date(), total_hours)
 
 
+def block_appointment_span(
+    block: WorkBlock, settings: dict[str, Any] | None
+) -> tuple[datetime, datetime]:
+    """The calendar span a working-day block appointment occupies."""
+    work_start, _, _ = working_hours(settings)
+    start_at = datetime.combine(block.day, work_start)
+    return start_at, start_at + timedelta(hours=block.hours)
+
+
+def scheduled_spans(
+    start: datetime,
+    end: datetime | None,
+    blocks: list[WorkBlock],
+    settings: dict[str, Any] | None,
+) -> list[tuple[datetime, datetime]]:
+    """Every window an assignment puts on the assignee's calendar.
+
+    The job's own (day-1) span — end-less jobs block one hour, matching the
+    availability math — plus one span per working-day block appointment.
+    """
+    spans = [(start, end or start + DEFAULT_JOB_DURATION)]
+    spans.extend(block_appointment_span(block, settings) for block in blocks[1:])
+    return spans
+
+
 async def create_block_appointments(
     db: AsyncSession,
     tenant_id: UUID,
@@ -155,10 +192,9 @@ async def create_block_appointments(
     """
     if len(blocks) < 2:
         return
-    work_start, _, _ = working_hours(settings)
     total_days = len(blocks)
     for index, block in enumerate(blocks[1:], start=2):
-        start_at = datetime.combine(block.day, work_start)
+        start_at, end_at = block_appointment_span(block, settings)
         db.add(
             Appointment(
                 tenant_id=tenant_id,
@@ -166,7 +202,7 @@ async def create_block_appointments(
                 job_id=job.id,
                 title=f"{job.title} — day {index} of {total_days}",
                 start_at=start_at,
-                end_at=start_at + timedelta(hours=block.hours),
+                end_at=end_at,
                 address=job.address,
                 assigned_user_id=job.assigned_user_id,
             )
@@ -241,6 +277,15 @@ async def create_job(data: JobCreate, tenant: TenantDep, db: DbDep) -> JobRead:
         blocks = plan_job_blocks(tenant.settings, job.scheduled_start, job.scheduled_end)
         if blocks:
             job.scheduled_end = job.scheduled_start + timedelta(hours=blocks[0].hours)
+    # Dispatch guardrails run before anything is persisted: double-booking and
+    # the 10h daily cap reject with a structured 409.
+    if job.scheduled_start is not None:
+        await enforce_assignment_guardrails(
+            db,
+            tenant.id,
+            assigned_user_id,
+            scheduled_spans(job.scheduled_start, job.scheduled_end, blocks, tenant.settings),
+        )
     db.add(job)
     await db.flush()
     if blocks:
@@ -267,7 +312,7 @@ async def create_job(data: JobCreate, tenant: TenantDep, db: DbDep) -> JobRead:
 
 async def _sync_linked_appointments(
     db: AsyncSession, tenant_id: UUID, job: Job, previous_start: datetime | None
-) -> None:
+) -> list[Appointment]:
     """One-way job → appointment schedule sync (see module docstring).
 
     Every linked appointment shifts by the job's own movement (new start
@@ -278,9 +323,12 @@ async def _sync_linked_appointments(
     job schedule keeps each appointment's existing duration; a job being
     unscheduled (no start) leaves its appointments untouched, since
     appointments cannot represent an unscheduled slot.
+
+    Returns the linked appointments (post-shift) so the caller can run the
+    dispatch guardrails over their new spans.
     """
     if job.scheduled_start is None:
-        return
+        return []
     result = await db.execute(
         select(Appointment)
         .where(Appointment.job_id == job.id, Appointment.tenant_id == tenant_id)
@@ -288,7 +336,7 @@ async def _sync_linked_appointments(
     )
     appointments = list(result.scalars().all())
     if not appointments:
-        return
+        return []
     if previous_start is not None:
         delta = job.scheduled_start - previous_start
     else:
@@ -306,6 +354,7 @@ async def _sync_linked_appointments(
             appointment.end_at = job.scheduled_end
         else:
             appointment.end_at = appointment.start_at + duration
+    return appointments
 
 
 async def _email_booking_confirmed(db: AsyncSession, tenant_id: UUID, job: Job) -> None:
@@ -394,21 +443,63 @@ async def update_job(
     tenant: TenantDep,
     db: DbDep,
 ) -> JobRead:
-    """Update a job's schedule, notes or assignee."""
+    """Update a job's schedule, notes or assignee.
+
+    Dispatch guardrails apply to schedule/assignee changes: in-progress and
+    completed jobs are locked (409 ``job_locked``), and the new placement must
+    not double-book the assignee or push them over the daily hours cap.
+    """
     job = await _get_job(db, tenant.id, job_id)
     changes = data.model_dump(exclude_unset=True)
-    if "assigned_user_id" in changes:
+    schedule_changed = "scheduled_start" in changes or "scheduled_end" in changes
+    assignee_changed = "assigned_user_id" in changes
+    if schedule_changed or assignee_changed:
+        ensure_job_mutable(job)
+    if assignee_changed:
         await _validate_assignee(db, tenant.id, changes["assigned_user_id"])
     previous_start = job.scheduled_start
     for key, value in changes.items():
         setattr(job, key, value)
     if "scheduled_start" in changes or "scheduled_end" in changes:
-        await _sync_linked_appointments(db, tenant.id, job, previous_start)
+        appointments = await _sync_linked_appointments(db, tenant.id, job, previous_start)
+        # Guardrails run after the new spans are known but before the booking
+        # confirmation email and commit; a rejection rolls the mutation back.
+        if job.scheduled_start is not None:
+            try:
+                await enforce_assignment_guardrails(
+                    db,
+                    tenant.id,
+                    job.assigned_user_id,
+                    scheduled_spans(job.scheduled_start, job.scheduled_end, [], None)
+                    + [
+                        (a.start_at, a.end_at)
+                        for a in appointments
+                        if a.status not in NON_BLOCKING_APPOINTMENT_STATUSES
+                    ],
+                    exclude_job_id=job.id,
+                    exclude_appointment_ids=frozenset(a.id for a in appointments),
+                )
+            except HTTPException:
+                await db.rollback()
+                raise
         # Booking confirmation to the customer on every schedule change that
         # lands on a real slot (first scheduling and reschedules alike;
         # unscheduling sends nothing — the electrician tells them directly).
         if "scheduled_start" in changes and job.scheduled_start != previous_start:
             await _email_booking_confirmed(db, tenant.id, job)
+    elif assignee_changed and job.scheduled_start is not None:
+        # Pure reassignment: the existing slot moves to another calendar.
+        try:
+            await enforce_assignment_guardrails(
+                db,
+                tenant.id,
+                job.assigned_user_id,
+                scheduled_spans(job.scheduled_start, job.scheduled_end, [], None),
+                exclude_job_id=job.id,
+            )
+        except HTTPException:
+            await db.rollback()
+            raise
     await db.commit()
     # The assignee/media relationships were loaded by the initial _get_job;
     # expire them so the re-read reflects the values just written.

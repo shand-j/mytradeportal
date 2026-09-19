@@ -826,6 +826,7 @@ class AppointmentUpdate(BaseModel):
     status: str | None = None
     address: str | None = None
     notes: str | None = None
+    assigned_user_id: UUID | None = None
 
 
 class AppointmentRead(BaseModel):
