@@ -116,11 +116,7 @@ test.describe("G18 — arrival & intake", () => {
     expect(login.status).toBe(401);
   });
 
-  test.fixme("QR entry channel (?ch=qr) is recorded on the lead", async ({ page }) => {
-    // FIXME(product bug, do not fix in test PRs): the public intake schema
-    // accepts `entry_channel` (and feeds it to the AI intake check) but the
-    // QuoteRequest create never persists it — the model column
-    // (models.py:1232) stays NULL. G18 requires entry_channel recorded.
+  test("QR entry channel (?ch=qr) is recorded on the lead", async ({ page }) => {
     const tenant = await loadTenant("portal-intake");
     const description = "QR arrival intake job";
 
@@ -137,7 +133,7 @@ test.describe("G18 — arrival & intake", () => {
     const leads = await staffApi<Array<Record<string, any>>>(tenant, "/quote-requests");
     const lead = leads.find((l) => l.raw_text === description);
     expect(lead, "lead stored").toBeTruthy();
-    expect(lead!.entry_channel ?? (lead!.structured_data as any)?.entry_channel).toBe("qr");
+    expect(lead!.entry_channel).toBe("qr");
   });
 
   test("phone-preferred intake requires a phone number (5ac841a)", async ({ page }) => {

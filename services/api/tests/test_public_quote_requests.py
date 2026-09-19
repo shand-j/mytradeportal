@@ -220,6 +220,54 @@ async def test_public_submission_blocked_logged_in_customer_is_rejected(
     assert listing.json() == []
 
 
+async def test_public_submission_persists_entry_channel(
+    client: AsyncClient, db: AsyncSession
+) -> None:
+    slug = f"pub-{uuid4().hex[:8]}"
+    tenant = await _create_tenant(db, slug)
+
+    response = await client.post(
+        f"/businesses/{slug}/quote-requests",
+        json={
+            "contact": {"name": "QR Homeowner", "email": "qr@example.com"},
+            "category": "consumer_unit",
+            "entry_channel": "qr",
+        },
+    )
+    assert response.status_code == 201, response.text
+
+    # The lead carries the attribution channel for analytics and follow-ups.
+    listing = await client.get(
+        "/quote-requests",
+        headers={"X-Tenant-ID": str(tenant.id)},
+    )
+    assert listing.status_code == 200, listing.text
+    rows = listing.json()
+    assert len(rows) == 1
+    assert rows[0]["entry_channel"] == "qr"
+
+
+async def test_public_submission_without_entry_channel_stays_null(
+    client: AsyncClient, db: AsyncSession
+) -> None:
+    slug = f"pub-{uuid4().hex[:8]}"
+    tenant = await _create_tenant(db, slug)
+
+    response = await client.post(
+        f"/businesses/{slug}/quote-requests",
+        json={"contact": {"name": "Direct Homeowner"}},
+    )
+    assert response.status_code == 201, response.text
+
+    listing = await client.get(
+        "/quote-requests",
+        headers={"X-Tenant-ID": str(tenant.id)},
+    )
+    rows = listing.json()
+    assert len(rows) == 1
+    assert rows[0]["entry_channel"] is None
+
+
 async def test_public_submission_unknown_business_is_404(client: AsyncClient) -> None:
     response = await client.post(
         "/businesses/does-not-exist/quote-requests",

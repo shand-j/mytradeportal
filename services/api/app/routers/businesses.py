@@ -294,6 +294,7 @@ async def submit_public_quote_request(
         contact_id=contact.id,
         customer_id=customer.id if customer is not None else None,
         source="app",
+        entry_channel=data.entry_channel,
         raw_text=data.raw_text,
         structured_data=structured_data,
         urgency=data.urgency,
