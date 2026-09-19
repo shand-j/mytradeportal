@@ -59,6 +59,16 @@ async function completeStep(step: string, value: Record<string, unknown>): Promi
   await api.patch(`/onboarding/step/${step}`, { step, value });
 }
 
+/**
+ * The branding step can stage a picked logo (a local file URI) for upload
+ * after registration. The URI is meaningless server-side, so it is stripped
+ * before the branding step is recorded.
+ */
+function withoutLogoAsset(branding: Record<string, unknown>): Record<string, unknown> {
+  const { logoAsset: _staged, ...rest } = branding;
+  return rest;
+}
+
 export type OnboardingStatus = {
   status: string;
   onboardingProgress: Record<string, { completed: boolean; value: Record<string, unknown> }>;
@@ -102,7 +112,7 @@ export async function completeOnboardingSteps(
     services: (services.services as string[] | undefined) ?? [],
   });
   if (!branding.skipped && Object.keys(branding).length > 0) {
-    await completeStep("branding", branding);
+    await completeStep("branding", withoutLogoAsset(branding));
   }
   if (Object.keys(tax).length > 0) {
     await completeStep("tax", tax);
@@ -168,7 +178,7 @@ export async function registerBusiness(input: RegisterBusinessInput): Promise<Ap
   await completeStep("compliance", input.compliance ?? {});
   await completeStep("services", { services: input.services ?? [] });
   if (input.branding) {
-    await completeStep("branding", input.branding);
+    await completeStep("branding", withoutLogoAsset(input.branding));
   }
   if (input.tax) {
     await completeStep("tax", input.tax);

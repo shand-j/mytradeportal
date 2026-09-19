@@ -19,6 +19,7 @@ from fastapi import (
     UploadFile,
     status,
 )
+from fastapi.responses import StreamingResponse
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -115,6 +116,37 @@ async def get_public_config(slug: str, db: DbDep) -> BusinessPublicConfig:
     await bypass_rls_for_transaction(db)
     tenant = await _resolve_active_tenant(db, slug)
     return await _build_public_config(db, tenant)
+
+
+@router.get("/{slug}/logo")
+async def get_business_logo(slug: str, db: DbDep) -> StreamingResponse:
+    """Stream the tenant's logo (no auth) for portal/landing/app rendering.
+
+    ``settings.logo_url`` points here; the public surfaces embed it as a
+    plain ``<img>`` src, so this mirrors ``/files/download`` streaming but
+    without auth. The stored key comes from the tenant's own settings (set
+    by the authenticated upload endpoint), never from the request. Short
+    cache lifetime so a re-uploaded logo shows up quickly at the same URL.
+    """
+    from app.config import settings
+    from app.routers.files import s3_client
+
+    await bypass_rls_for_transaction(db)
+    tenant = await _resolve_active_tenant(db, slug)
+    key = (tenant.settings or {}).get("logo_key")
+    if not isinstance(key, str) or not key.startswith(f"tenants/{tenant.id}/"):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Logo not found")
+    try:
+        obj = s3_client().get_object(Bucket=settings.minio_bucket, Key=key)
+    except Exception:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Logo not found"
+        ) from None
+    return StreamingResponse(
+        obj["Body"].iter_chunks(64 * 1024),
+        media_type=obj.get("ContentType") or "image/png",
+        headers={"Cache-Control": "public, max-age=300"},
+    )
 
 
 async def _get_or_provision_customer(

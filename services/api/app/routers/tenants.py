@@ -2,10 +2,11 @@
 
 from datetime import datetime, timedelta
 from typing import Annotated, Any
-from uuid import UUID
+from uuid import UUID, uuid4
 
 import httpx
-from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request, status
+import structlog
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request, UploadFile, status
 from mtp_shared import get_settings
 from pydantic import EmailStr
 from sqlalchemy import func, select
@@ -30,6 +31,7 @@ from app.security import get_password_hash
 from app.supabase import admin_create_user, is_supabase_configured
 from app.utils.tenant_code import generate_unique_tenant_code
 
+logger = structlog.get_logger("api.tenants")
 router = APIRouter(prefix="/tenants", tags=["Tenants"])
 DbDep = Annotated[AsyncSession, Depends(get_db)]
 _settings = get_settings()
@@ -331,6 +333,141 @@ async def update_current_tenant(
         entity_id=tenant.id,
         payload={"changed_fields": sorted(set(data.model_dump(exclude_unset=True).keys()))},
     )
+    await db.commit()
+    await db.refresh(tenant)
+    return TenantRead.model_validate(tenant)
+
+
+# Tenant logo constraints. Logos render on public portal/landing pages via
+# GET /businesses/{slug}/logo, so they are small images only — 2 MB is
+# generous for a logo and keeps the public route cheap to serve.
+_LOGO_MAX_BYTES = 2 * 1024 * 1024
+_LOGO_CONTENT_TYPES = {
+    "image/png": ".png",
+    "image/jpeg": ".jpg",
+    "image/webp": ".webp",
+}
+
+
+def _logo_public_url(request: Request, slug: str) -> str:
+    """Absolute URL of the public logo route, for embedding in settings.
+
+    Portal/landing pages and the app render ``logo_url`` as an ``<img>`` src
+    from origins other than the API's, so a relative path would not resolve.
+    ``PUBLIC_API_BASE_URL`` overrides; otherwise the request origin (the API's
+    own host, via proxy headers) is correct — the logo is served by this
+    service.
+    """
+    from app.config import PUBLIC_API_BASE_URL
+
+    base = (PUBLIC_API_BASE_URL or str(request.base_url)).rstrip("/")
+    return f"{base}/businesses/{slug}/logo"
+
+
+def _store_logo(tenant_id: UUID, content_type: str, content: bytes) -> str:
+    """Store logo bytes in MinIO under the tenant's ``branding/`` prefix."""
+    from app.config import settings
+    from app.routers.files import _ensure_bucket, s3_client
+
+    key = f"tenants/{tenant_id}/branding/logo-{uuid4()}{_LOGO_CONTENT_TYPES[content_type]}"
+    client = s3_client()
+    _ensure_bucket(client)
+    client.put_object(
+        Bucket=settings.minio_bucket,
+        Key=key,
+        Body=content,
+        ContentType=content_type,
+    )
+    return key
+
+
+def _delete_stored_logo(tenant: Tenant) -> None:
+    """Best-effort delete of the tenant's current logo object from MinIO."""
+    from app.config import settings
+    from app.routers.files import s3_client
+
+    key = (tenant.settings or {}).get("logo_key")
+    if not isinstance(key, str) or not key:
+        return
+    try:
+        s3_client().delete_object(Bucket=settings.minio_bucket, Key=key)
+    except Exception as exc:  # orphaned object is harmless; never block
+        logger.warning(
+            "logo_delete_failed",
+            tenant_id=str(tenant.id),
+            error_type=type(exc).__name__,
+        )
+
+
+@router.post("/me/logo")
+async def upload_current_tenant_logo(
+    file: UploadFile,
+    request: Request,
+    tenant: TenantDep,
+    current_user: ActiveUserDep,
+    db: DbDep,
+) -> TenantRead:
+    """Upload the tenant's business logo (staff, multipart).
+
+    Validates type (png/jpeg/webp) and size (≤2 MB), stores the object in
+    MinIO under ``tenants/{id}/branding/`` and points ``settings.logo_url``
+    at the unauthenticated ``GET /businesses/{slug}/logo`` route so the logo
+    renders on public portal/landing pages. Replaces any existing logo.
+    """
+    if current_user.tenant_id != tenant.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="User does not belong to this tenant",
+        )
+
+    content_type = (file.content_type or "").lower()
+    if content_type not in _LOGO_CONTENT_TYPES:
+        raise HTTPException(
+            status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
+            detail="Only png, jpeg or webp images are accepted",
+        )
+    content = await file.read()
+    if len(content) > _LOGO_MAX_BYTES:
+        raise HTTPException(
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            detail="Logo must be 2 MB or smaller",
+        )
+    try:
+        key = _store_logo(tenant.id, content_type, content)
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=f"Could not store file: {exc}",
+        ) from exc
+
+    _delete_stored_logo(tenant)
+    tenant.settings = {
+        **(tenant.settings or {}),
+        "logo_key": key,
+        "logo_url": _logo_public_url(request, tenant.slug),
+    }
+    await db.commit()
+    await db.refresh(tenant)
+    return TenantRead.model_validate(tenant)
+
+
+@router.delete("/me/logo")
+async def delete_current_tenant_logo(
+    tenant: TenantDep,
+    current_user: ActiveUserDep,
+    db: DbDep,
+) -> TenantRead:
+    """Remove the tenant's logo (staff): clears the branding settings."""
+    if current_user.tenant_id != tenant.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="User does not belong to this tenant",
+        )
+    _delete_stored_logo(tenant)
+    settings = {**(tenant.settings or {})}
+    settings.pop("logo_key", None)
+    settings.pop("logo_url", None)
+    tenant.settings = settings
     await db.commit()
     await db.refresh(tenant)
     return TenantRead.model_validate(tenant)
