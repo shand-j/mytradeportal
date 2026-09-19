@@ -2,7 +2,8 @@
 
 Covers the auto badge rules (Late Payer / Non-payer / Time Waster), manual
 override semantics (override wins, clearing returns to auto), and the block
-enforcement points (customer login + quote-request creation).
+enforcement points (customer login, quote-request creation, and revocation of
+pre-block bearer tokens).
 """
 
 from datetime import datetime, timedelta
@@ -371,6 +372,33 @@ async def test_blocked_customer_cannot_log_in(
     await admin_client.post(f"/contacts/{contact['id']}/unblock")
     again = await client.post("/customer/login", json=login_payload)
     assert again.status_code == 200, again.text
+
+
+async def test_blocked_customer_bearer_token_stops_authorizing(
+    client: AsyncClient, admin_client: AsyncClient, db: AsyncSession
+) -> None:
+    """A token minted before the block dies with it; unblocking revives it."""
+    contact, customer = await _register_customer(admin_client, db)
+    login_payload = {"email": customer.email, "password": "customer-pass-123"}
+
+    login = await client.post("/customer/login", json=login_payload)
+    assert login.status_code == 200, login.text
+    auth = {"Authorization": f"Bearer {login.json()['accessToken']}"}
+
+    # Read surface guarded only by CurrentCustomerDep.
+    ok = await client.get("/customer/quotes", headers=auth)
+    assert ok.status_code == 200, ok.text
+
+    blocked = await admin_client.post(f"/contacts/{contact['id']}/block", json={})
+    assert blocked.status_code == 200, blocked.text
+
+    refused = await client.get("/customer/quotes", headers=auth)
+    assert refused.status_code == 403
+    assert refused.json()["detail"].startswith("customer_blocked:")
+
+    await admin_client.post(f"/contacts/{contact['id']}/unblock")
+    restored = await client.get("/customer/quotes", headers=auth)
+    assert restored.status_code == 200, restored.text
 
 
 async def test_blocked_customer_cannot_create_quote_request(

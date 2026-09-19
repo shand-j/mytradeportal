@@ -15,7 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app import config as app_config
 from app.alerting import send_alert
 from app.database import get_db
-from app.models import AiAlertState, AiCallEvent, Customer, Subscription, Tenant, User
+from app.models import AiAlertState, AiCallEvent, Contact, Customer, Subscription, Tenant, User
 from app.plans import (
     DEFAULT_PLAN_KEY,
     Plan,
@@ -29,6 +29,14 @@ from app.security import AUTH_COOKIE_NAME, decode_access_token
 logger = structlog.get_logger("api.dependencies")
 
 settings = get_settings()
+
+# 403 detail shared by every block-enforcement point so clients can key on the
+# stable prefix and show a helpful message. Lives here (not in a router) so the
+# auth dependency can raise it without importing router modules.
+BLOCKED_CUSTOMER_DETAIL = (
+    "customer_blocked: This customer has been blocked by the business and cannot "
+    "log in, request quotes or send messages. Contact the business directly."
+)
 
 
 def _extract_token(request: Request) -> str | None:
@@ -215,6 +223,16 @@ async def get_current_customer(
     customer = await db.get(Customer, customer_id)
     if customer is None or not customer.is_active or customer.tenant_id != tenant_id:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Not authenticated")
+    # A blocked CRM contact (N26) revokes the customer account's access, so any
+    # bearer token minted before the block must stop authorizing here — not
+    # only at login. One extra primary-key read per authenticated request, the
+    # same cost as the Customer lookup above (no cache needed).
+    if customer.contact_id is not None:
+        contact = await db.get(Contact, customer.contact_id)
+        if contact is not None and contact.tenant_id == tenant_id and contact.is_blocked:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN, detail=BLOCKED_CUSTOMER_DETAIL
+            )
     return customer
 
 
