@@ -46,6 +46,7 @@ from app.calculations import (
 from app.config import settings
 from app.database import get_db
 from app.dependencies import AiAllowanceDep, CurrentUserDep, TenantDep, single_active_user
+from app.dispatch import enforce_assignment_guardrails
 from app.email import resolve_customer_magic_link, send_customer_email, tenant_reply_to
 from app.email_templates import quote_ready as quote_ready_template
 from app.limiter import limiter, tenant_key
@@ -87,6 +88,7 @@ from app.routers.jobs import (
     create_block_appointments,
     merge_contact_notes,
     plan_job_blocks,
+    scheduled_spans,
 )
 from app.routers.public_docs import issue_document_token, public_document_url
 from app.schemas import (
@@ -1803,6 +1805,17 @@ async def convert_quote_to_job(
             )
             if blocks:
                 scheduled_end = scheduled_start + timedelta(hours=blocks[0].hours)
+
+    # Dispatch guardrails (double-booking / 10h daily cap) apply to the
+    # converted job's whole block sequence before anything is persisted. The
+    # adopted draft never self-conflicts: drafts don't block the calendar.
+    if scheduled_start is not None:
+        await enforce_assignment_guardrails(
+            db,
+            tenant.id,
+            assigned_user_id,
+            scheduled_spans(scheduled_start, scheduled_end, blocks, tenant.settings),
+        )
 
     job = Job(
         tenant_id=tenant.id,
