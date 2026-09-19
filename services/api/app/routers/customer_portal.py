@@ -377,14 +377,16 @@ async def register_customer(
 
     # Welcome email — transactional account mail, so platform-branded from the
     # no-reply sender (no tenant display name, no Reply-To). Best-effort: the
-    # wrapper logs and never raises.
-    from app.config import settings
-
-    app_origin = settings.app_public_url.rstrip("/") if settings.app_public_url else ""
+    # wrapper logs and never raises. The CTA is a portal magic link on the
+    # tenant's subdomain (same helper as the magic-link request flow below) —
+    # APP_PUBLIC_URL is the back-office host and must never appear in
+    # customer mail. The token mint is committed with the email-failure
+    # alert commit below.
+    login_url = await magic_link_url(db, tenant, customer, "/quotes")
     subject, html, text = account_created_template(
         name=customer.full_name.split()[0] if customer.full_name else None,
         business_name=tenant.name,
-        login_url=f"{app_origin}/customer-login" if app_origin else None,
+        login_url=login_url,
     )
     await send_customer_email(
         db,

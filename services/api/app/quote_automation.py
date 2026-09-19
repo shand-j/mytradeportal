@@ -199,8 +199,7 @@ async def email_triage_question(
     logs a warning instead of dropping silently when the lead's contact has no
     email address.
     """
-    from app.config import settings
-    from app.email import send_customer_email, tenant_reply_to
+    from app.email import resolve_customer_magic_link, send_customer_email, tenant_reply_to
     from app.email_templates import triage_question as triage_question_template
     from app.models import Contact
 
@@ -209,8 +208,13 @@ async def email_triage_question(
         if quote_request.contact_id is not None
         else None
     )
-    app_origin = settings.app_public_url.rstrip("/") if settings.app_public_url else ""
-    chat_url = f"{app_origin}/customer/chat/{quote_request.id}" if app_origin else None
+    # Portal magic link into the thread, mirroring the staff-reply email in
+    # routers/communications.py: the linked quote when there is one, the
+    # quotes list otherwise. ``None`` when the lead has no customer account
+    # (the template then drops the CTA). APP_PUBLIC_URL is the back-office
+    # host and must never appear in customer mail.
+    next_path = f"/quotes/{quote_request.quote_id}" if quote_request.quote_id else "/quotes"
+    chat_url = await resolve_customer_magic_link(db, tenant, contact, next_path)
     subject, html, text = triage_question_template(
         customer_name=contact.name.split()[0] if contact is not None and contact.name else "there",
         business_name=tenant.name,
