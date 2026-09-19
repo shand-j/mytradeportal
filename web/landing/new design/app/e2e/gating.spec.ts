@@ -74,17 +74,58 @@ test("passwordless customer: staff see unreachable on the lead", async () => {
   expect(lead!.customer.has_account).toBe(true); // account exists, just passwordless
 });
 
-test.fixme("portal quote detail surfaces phone/email contact channels", async () => {
-  // FIXME(product bug found by this suite): the portal's Call/Email-us chips
-  // (PortalQuoteDetail, and the PortalShell "Call" nav link) gate on
-  // `config.phone` / `config.reply_email` from GET /businesses/{slug}/
-  // public-config — which read the `tenants.phone` / `tenants.email` COLUMNS.
-  // No API writes those columns: onboarding (POST /tenants) and
-  // PATCH /tenants/me both funnel phone/email into the settings JSONB, and
-  // TenantRead.email/phone (from_attributes) read the same empty columns.
-  // Real tenants therefore never get contact channels on the portal.
-  // Once the API persists contact details onto the columns (or public-config
-  // reads settings), seed phone/email here and assert the chips render.
+test("portal quote detail surfaces phone/email contact channels", async ({ page }) => {
+  // Seed tenant contact details the way Settings does (PATCH /tenants/me
+  // flattens phone/email into the settings JSONB, #143).
+  const phone = "07700 900123";
+  const email = "office@e2e-portal.trade";
+  const patched = await staffApiRaw(tenant, "/tenants/me", {
+    method: "PATCH",
+    body: { phone, email },
+  });
+  expect(patched.status).toBe(200);
+
+  // The portal reads them back through the public config that drives the chips.
+  const configRes = await fetch(
+    `${process.env.TEST_API_BASE_URL}/businesses/${tenant.slug}/public-config`,
+  );
+  expect(configRes.status).toBe(200);
+  const config = (await configRes.json()) as Record<string, unknown>;
+  expect(config.contactPhone ?? config.contact_phone).toBe(phone);
+  expect(config.replyEmail ?? config.reply_email).toBe(email);
+
+  const quotes = await customerApi<Array<{ id: string }>>(session, "/customer/quotes");
+  expect(quotes.length).toBeGreaterThan(0);
+
+  // Sign the portal in by seeding the stored session, as /auth/magic does.
+  await page.addInitScript(
+    ([slug, token, customer]: [string, string, unknown]) => {
+      window.localStorage.setItem(
+        `mtp_portal_${slug}`,
+        JSON.stringify({
+          accessToken: token,
+          expiresAt: new Date(Date.now() + 3_600_000).toISOString(),
+          customer,
+        }),
+      );
+    },
+    [tenant.slug, session.token, session.customer],
+  );
+  await gotoPortal(page, `/quotes/${quotes[0].id}`);
+
+  // The header Call link and the quote-detail Call/Email-us chips render with
+  // working tel:/mailto: targets.
+  const headerCall = page.getByRole("link", { name: "Call", exact: true });
+  await expect(headerCall).toBeVisible();
+  await expect(headerCall).toHaveAttribute("href", `tel:${phone}`);
+
+  const callChip = page.getByRole("link", { name: `Call ${tenant.name}` });
+  await expect(callChip).toBeVisible();
+  await expect(callChip).toHaveAttribute("href", `tel:${phone}`);
+
+  const emailChip = page.getByRole("link", { name: "Email us" });
+  await expect(emailChip).toBeVisible();
+  await expect(emailChip).toHaveAttribute("href", new RegExp(`^mailto:${email}`));
 });
 
 test("paywall gates staff surfaces but the customer portal stays live", async () => {
