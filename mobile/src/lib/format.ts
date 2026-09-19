@@ -27,6 +27,19 @@ export function formatMoneyGBP(amount: number): string {
   return gbpFormatter.format(amount);
 }
 
+/**
+ * Round a money total UP to the nearest multiple of `increment` (£513 → £515
+ * at an increment of 5). Mirrors the backend's quote-rounding rule so client-
+ * side previews match the stored totals; 0/negative increment disables it.
+ */
+export function roundUpToIncrement(total: number, increment: number): number {
+  if (!Number.isFinite(total) || !Number.isFinite(increment) || increment <= 0) return total;
+  const totalPence = Math.round(total * 100);
+  const incrementPence = Math.round(increment * 100);
+  if (incrementPence <= 0) return total;
+  return (Math.ceil(totalPence / incrementPence) * incrementPence) / 100;
+}
+
 const URGENCY_LABELS: Record<string, string> = {
   emergency: "Emergency",
   emergency_today: "Emergency — today",

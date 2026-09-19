@@ -31,6 +31,8 @@ export type ApiQuote = {
   vatRate: string;
   vatAmount: string;
   total: string;
+  /** Tenant quote-rounding uplift already included in `total`. */
+  roundingAdjustment?: string;
   validUntil: string | null;
   sentAt: string | null;
   /** Customer-reconfirmed visit dates captured at acceptance (free-text strings). */
@@ -303,6 +305,10 @@ const STATUS_MAP: Record<string, QuoteStatus> = {
 
 /** Map a backend quote into the app's display `Quote` shape. */
 export function mapQuote(q: ApiQuote): Quote {
+  const parseMoney = (value: string | undefined): number | undefined => {
+    const parsed = parseFloat(value ?? "");
+    return Number.isFinite(parsed) ? parsed : undefined;
+  };
   return {
     id: q.id,
     leadId: "",
@@ -332,6 +338,10 @@ export function mapQuote(q: ApiQuote): Quote {
     expiresAt: q.validUntil ?? undefined,
     acceptedDates: q.acceptedDates ?? [],
     vatRate: Number.isFinite(parseFloat(q.vatRate)) ? parseFloat(q.vatRate) : 0.2,
+    subtotal: parseMoney(q.subtotal),
+    vatAmount: parseMoney(q.vatAmount),
+    total: parseMoney(q.total),
+    roundingAdjustment: parseMoney(q.roundingAdjustment),
   };
 }
 

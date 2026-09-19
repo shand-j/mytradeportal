@@ -12,10 +12,11 @@ import { Text } from "../../components/ui/Text";
 import { ContactCustomerCard } from "../../components/trade/ContactCustomerCard";
 import { Lead, Quote, QuoteLineItem } from "../../types";
 import { updateQuote, useRefineQuote, useSendQuote, useUpdateQuote } from "../../api/quotes";
+import { useQuoteRoundingIncrement } from "../../api/businesses";
 import { useLead } from "../../api/quoteRequests";
 import { startDirectThread } from "../../api/communications";
 import { ApiError, NetworkError } from "../../lib/apiClient";
-import { formatMoneyGBP } from "../../lib/format";
+import { formatMoneyGBP, roundUpToIncrement } from "../../lib/format";
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -325,6 +326,9 @@ export function QuoteEditScreen({
     }
   };
 
+  // The backend re-applies the tenant's rounding increment on every save, so
+  // the preview must round the same way or it disagrees with the stored total.
+  const roundingIncrement = useQuoteRoundingIncrement();
   const totals = useMemo(() => {
     const subtotal = items.reduce((sum, item) => {
       const qty = parseFloat(item.qty) || 0;
@@ -332,8 +336,10 @@ export function QuoteEditScreen({
       return sum + qty * price;
     }, 0);
     const vat = subtotal * vatRate;
-    return { subtotal, vat, total: subtotal + vat };
-  }, [items, vatRate]);
+    const rawTotal = subtotal + vat;
+    const total = roundUpToIncrement(rawTotal, roundingIncrement);
+    return { subtotal, vat, uplift: total - rawTotal, total };
+  }, [items, vatRate, roundingIncrement]);
 
   const updateItem = (id: string, field: keyof QuoteLineItem, value: string) => {
     setItems((prev) => prev.map((item) => (item.id === id ? { ...item, [field]: value } : item)));
@@ -672,6 +678,16 @@ export function QuoteEditScreen({
               {formatMoneyGBP(totals.vat)}
             </Text>
           </View>
+          {totals.uplift > 0.004 && (
+            <View>
+              <Text variant="caption" color="secondary">
+                Rounded up
+              </Text>
+              <Text variant="caption" color="secondary">
+                +{formatMoneyGBP(totals.uplift)}
+              </Text>
+            </View>
+          )}
           <View className="items-end">
             <Text variant="caption" color="secondary">
               Total

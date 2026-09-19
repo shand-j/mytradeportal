@@ -125,6 +125,13 @@ export type Quote = {
   /** Customer-reconfirmed visit dates captured at acceptance. */
   acceptedDates: string[];
   vatRate: number;
+  /** Server totals (ex VAT, VAT amount, VAT-inclusive total). `total` already
+   * includes any tenant quote-rounding uplift; display these instead of
+   * recomputing from line items so every surface shows the same value. */
+  subtotal?: number;
+  vatAmount?: number;
+  total?: number;
+  roundingAdjustment?: number;
 };
 
 export type InvoiceStatus = "draft" | "sent" | "paid" | "overdue" | "refunded";

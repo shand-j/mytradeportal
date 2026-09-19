@@ -106,7 +106,8 @@ function BookDateView({
       }, 0),
     [quote]
   );
-  const total = subtotal * (1 + quote.vatRate);
+  // Prefer the server total — it includes the tenant's rounding uplift.
+  const total = quote.total ?? subtotal * (1 + quote.vatRate);
 
   const nextDays = useMemo(() => {
     const days = [];
@@ -306,7 +307,7 @@ function CustomerQuoteView({
   const { business } = useBusiness();
   const [confirmingDates, setConfirmingDates] = useState(false);
   const [selectedDates, setSelectedDates] = useState<string[]>([]);
-  const subtotal = useMemo(
+  const computedSubtotal = useMemo(
     () =>
       quote.lineItems.reduce((sum, item) => {
         const qty = parseFloat(item.qty) || 0;
@@ -315,8 +316,10 @@ function CustomerQuoteView({
       }, 0),
     [quote]
   );
-  const vat = subtotal * quote.vatRate;
-  const total = subtotal + vat;
+  // Prefer the server totals — they include the tenant's rounding uplift.
+  const subtotal = quote.subtotal ?? computedSubtotal;
+  const vat = quote.vatAmount ?? subtotal * quote.vatRate;
+  const total = quote.total ?? subtotal + vat;
   const isOpen = status === "open";
   const isAccepted = status === "accepted";
   const isRejected = status === "rejected";
@@ -666,7 +669,8 @@ function QuoteCard({
       }, 0),
     [quote]
   );
-  const total = subtotal * (1 + quote.vatRate);
+  // Prefer the server total — it includes the tenant's rounding uplift.
+  const total = quote.total ?? subtotal * (1 + quote.vatRate);
 
   return (
     <Pressable onPress={onPress} testID={`quote-card-${quote.id}`}>
