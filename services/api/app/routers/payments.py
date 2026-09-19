@@ -27,7 +27,6 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app import config, stripe_client
-from app.config import settings
 from app.database import get_db
 from app.dependencies import CurrentUserDep, TenantDep
 from app.models import StripeAccount, Tenant
@@ -114,18 +113,15 @@ def _stripe_safe_url(url: str) -> str:
 def _onboarding_urls(data: ConnectRequest) -> tuple[str, str]:
     """Return/refresh URLs for the hosted Express onboarding flow.
 
-    Defaults point at the back-office payments settings page derived from
-    ``APP_PUBLIC_URL``; clients may pass explicit deep links instead, which
-    are swapped for the https bounce page (see ``_stripe_safe_url``).
+    Defaults are the app's own deep links, which ``_stripe_safe_url`` swaps
+    for the public https bounce page (``PUBLIC_DOCS_BASE_URL``) that
+    navigates straight back into the app — ``APP_PUBLIC_URL`` is the
+    back-office admin host and must never appear in a Stripe redirect.
+    Clients may pass explicit URLs instead; http(s) ones reach Stripe
+    unchanged.
     """
-    base = settings.app_public_url.rstrip("/")
-    return_url = data.return_url or (f"{base}/settings/payments?stripe=return" if base else "")
-    refresh_url = data.refresh_url or (f"{base}/settings/payments?stripe=refresh" if base else "")
-    if not return_url or not refresh_url:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="return_url and refresh_url are required when APP_PUBLIC_URL is unset",
-        )
+    return_url = data.return_url or "mtp://payments/stripe-return"
+    refresh_url = data.refresh_url or "mtp://payments/stripe-refresh"
     return _stripe_safe_url(return_url), _stripe_safe_url(refresh_url)
 
 

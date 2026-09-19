@@ -224,8 +224,11 @@ class Settings(BaseSettings):
     posthog_api_key: str = Field(default="")
     posthog_host: str = Field(default="https://eu.i.posthog.com")
 
-    # Public base URL used to build customer/staff email links. Falls back to
-    # the API's own origin at runtime when unset.
+    # Back-office (admin) origin. Never used for customer-facing links —
+    # those resolve via portal magic links ({slug}.PORTAL_BASE_DOMAIN),
+    # PUBLIC_DOCS_BASE_URL document/bounce pages, PASSWORD_RESET_BASE_URL
+    # and CALENDAR_FEED_BASE_URL. Remaining use is staff-facing fallback
+    # links (invites, set-password) only.
     app_public_url: str = Field(default="")
 
     # Auth

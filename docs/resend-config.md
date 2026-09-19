@@ -13,7 +13,7 @@ Step 3 — Set Railway variables (API service)
 RESEND_FROM_EMAIL = quotes@yourdomain> (currently onboarding@resend.dev — change this)
 RESEND_NO_REPLY_EMAIL = no-reply@<yourdomain> (new variable — requires the small code change below to take effect)
 RESEND_API_KEY — keep as-is
-APP_PUBLIC_URL — already set; password-reset links use it. Currently points at the Railway admin URL, which works, but point it at your real domain later for cleaner links.
+APP_PUBLIC_URL — already set; back-office (admin) origin only. Customer-facing links never use it: portal emails carry magic links on {slug}.mytradeportal.co.uk, Stripe onboarding returns bounce through PUBLIC_DOCS_BASE_URL/payments/stripe-bounce, and calendar feeds use CALENDAR_FEED_BASE_URL. Do NOT point customer journeys at it.
 Step 4 — Code change (required, not yet in the repo)
 Today services/api/app/email.py:_resend_from() uses one global address for everything, and password resets are even tenant-branded with the tenant as Reply-To (auth.py309-318). Needed:
 

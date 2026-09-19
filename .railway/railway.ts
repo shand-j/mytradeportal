@@ -208,8 +208,11 @@ export default defineRailway(() => {
       SUPABASE_URL: preserve(),
       SUPABASE_ANON_KEY: preserve(),
       SUPABASE_SERVICE_ROLE_KEY: preserve(),
-      // Public URL the reset-password + quote links resolve to. Update to
-      // the App Store / landing page domain once available.
+      // Back-office (admin) origin only — NOT used for customer-facing
+      // links: portal emails use magic links on {slug}.PORTAL_BASE_DOMAIN,
+      // Stripe onboarding returns bounce through PUBLIC_DOCS_BASE_URL, and
+      // calendar feeds use CALENDAR_FEED_BASE_URL. Remaining use is
+      // staff-facing fallback links (invites, set-password).
       APP_PUBLIC_URL: preserve(),
       // Calendar feed (webcal/.ics) links must resolve to THIS service's
       // public origin — APP_PUBLIC_URL points at the back office, where the

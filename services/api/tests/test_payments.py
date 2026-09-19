@@ -219,6 +219,43 @@ async def test_connect_swaps_deep_link_urls_for_https_bounce(
     )
 
 
+async def test_connect_default_urls_bounce_through_public_landing(
+    admin_client: AsyncClient, db: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Empty connect body: defaults must never expose APP_PUBLIC_URL.
+
+    The default return/refresh used to point at the back-office payments
+    settings page derived from APP_PUBLIC_URL (the Django admin host — a
+    404 for the Stripe redirect). They now default to the app's own deep
+    links bounced through the public https landing page, exactly like
+    client-supplied deep links.
+    """
+    monkeypatch.setattr("app.config.STRIPE_SECRET_KEY", "sk_test_x")
+    monkeypatch.setattr("app.config.PUBLIC_DOCS_BASE_URL", "https://www.mytradeportal.co.uk")
+    # Even with APP_PUBLIC_URL set, it must not leak into Stripe redirects.
+    monkeypatch.setattr("app.config.settings.app_public_url", "https://admin.example.com")
+    monkeypatch.setattr(
+        "app.stripe_client.create_connected_account_v2", AsyncMock(return_value={"id": "acct_dflt"})
+    )
+    account_link = AsyncMock(return_value="https://connect.stripe.com/setup/s/test")
+    monkeypatch.setattr("app.stripe_client.create_account_link", account_link)
+
+    response = await admin_client.post("/payments/connect", json={})
+    assert response.status_code == 200
+
+    account_link.assert_awaited_once()
+    call = account_link.await_args
+    assert call is not None
+    assert call.kwargs["return_url"] == (
+        "https://www.mytradeportal.co.uk/payments/stripe-bounce"
+        "?next=mtp%3A%2F%2Fpayments%2Fstripe-return"
+    )
+    assert call.kwargs["refresh_url"] == (
+        "https://www.mytradeportal.co.uk/payments/stripe-bounce"
+        "?next=mtp%3A%2F%2Fpayments%2Fstripe-refresh"
+    )
+
+
 async def test_onboarding_return_syncs_flags(
     admin_client: AsyncClient, db: AsyncSession, monkeypatch: pytest.MonkeyPatch
 ) -> None:
