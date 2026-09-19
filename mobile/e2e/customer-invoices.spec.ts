@@ -1,6 +1,7 @@
 import { test } from "@playwright/test";
 import {
   api,
+  apiRaw,
   createTestTenant,
   expect,
   loginAsCustomer,
@@ -15,14 +16,9 @@ import {
 
 // Customer invoices in the app (G26): the customer invoice list + detail
 // screens render total/status/line items, and the pay entry point is gated
-// on the tenant actually taking card payments (Stripe-connected).
-//
-// PRODUCT BUG (fixme'd below): POST /customer/invoices/{id}/pay was retired
-// when online payment moved to Stripe Connect (ADR-003 — the endpoint now
-// answers 410 "use the pay link in the invoice email"), but the app's detail
-// screen still renders "Pay now" for EVERY unpaid invoice and calls the dead
-// endpoint. The desired contract — pay CTA only when the invoice carries a
-// payment_url — is encoded as a fixme until the app consumes payment_url.
+// on the tenant actually taking card payments (Stripe-connected). The Pay
+// action renders only when the invoice carries a payment_url, and
+// POST /customer/invoices/{id}/pay mints the Stripe /pay link.
 
 const CUSTOMER_PASSWORD = "E2E-Customer-1";
 
@@ -98,48 +94,42 @@ test.describe.serial("U — Customer invoices", () => {
     await expect(page.locator("body")).toContainText("AWAITING PAYMENT");
   });
 
-  test.fixme(
-    "G26: the pay entry point only appears when the tenant takes card payments",
-    async ({ page }) => {
-      // PRODUCT BUG: CustomerInvoiceDetailScreen renders "Pay now" for every
-      // unpaid invoice; it should render only when the invoice carries a
-      // payment_url (Stripe configured + charges enabled). This tenant has no
-      // Stripe account, so no pay CTA should render at all.
-      await loginAsCustomer(page, tenant, {
-        email: customer.email,
-        password: CUSTOMER_PASSWORD,
-      });
-      await tap(page, "tab-invoices");
-      await tap(page, `invoice-${invoice.id}`);
-      await expect(page.locator('[data-testid="invoice-pay"]')).toHaveCount(0);
-    }
-  );
-
-  test("G26: tapping pay without card payments surfaces a graceful error", async ({ page }) => {
-    // Interim contract until the fixme above lands: the dead Paddle-era
-    // endpoint answers 410 and the screen must show that message, not crash.
-    const auth = await loginCustomer(tenant, {
-      email: customer.email,
-      password: CUSTOMER_PASSWORD,
-    });
-    const customerApi = { ...tenant, token: (auth.accessToken ?? auth.access_token) as string };
-    const probe = await api(customerApi, `/customer/invoices/${invoice.id}`, {});
-    if (probe.payment_url) {
-      // Stripe is configured on this api and the invoice got a live pay link —
-      // the dead-end tap assert does not apply.
-      test.skip(true, "tenant/api exposes a payment_url for this invoice");
-    }
-
+  test("G26: the pay entry point only appears when the tenant takes card payments", async ({
+    page,
+  }) => {
+    // CustomerInvoiceDetailScreen renders "Pay now" only when the invoice
+    // carries a payment_url (Stripe configured + charges enabled). This
+    // tenant has no Stripe account, so no pay CTA should render at all.
     await loginAsCustomer(page, tenant, {
       email: customer.email,
       password: CUSTOMER_PASSWORD,
     });
     await tap(page, "tab-invoices");
     await tap(page, `invoice-${invoice.id}`);
-    await tap(page, "invoice-pay");
-    await page
-      .locator('[data-testid="invoice-pay-error"]')
-      .waitFor({ state: "visible", timeout: 30000 });
-    await expect(page.locator('[data-testid="invoice-pay-error"]')).toContainText("pay link");
+    await expect(page.locator('[data-testid="invoice-pay"]')).toHaveCount(0);
+  });
+
+  test("G26: the pay endpoint contract matches the UI gating", async () => {
+    const auth = await loginCustomer(tenant, {
+      email: customer.email,
+      password: CUSTOMER_PASSWORD,
+    });
+    const customerApi = { ...tenant, token: (auth.accessToken ?? auth.access_token) as string };
+    const probe = await api(customerApi, `/customer/invoices/${invoice.id}`, {});
+
+    if (probe.payment_url) {
+      // Stripe configured + charges enabled: the endpoint mints a /pay link.
+      const resp = await apiRaw(customerApi, `/customer/invoices/${invoice.id}/pay`, {
+        method: "POST",
+      });
+      expect(resp.status).toBe(200);
+      expect(resp.json.payment_url).toContain("/pay/");
+    } else {
+      // No card payments: no CTA renders, and the endpoint backs that up.
+      const resp = await apiRaw(customerApi, `/customer/invoices/${invoice.id}/pay`, {
+        method: "POST",
+      });
+      expect(resp.status).toBe(409);
+    }
   });
 });

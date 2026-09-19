@@ -1,17 +1,18 @@
 """Tests for the customer (homeowner) invoice endpoints.
 
 The customer sees only their own sent/paid/overdue invoices — never drafts,
-never other customers' or tenants' invoices. The old Paddle pay endpoint now
-answers 410: card payment moved to the Stripe /pay link in the invoice email
-(ADR-003).
+never other customers' or tenants' invoices. The pay endpoint returns the
+Stripe /pay link for a card-payable invoice, 400 when already paid, and 409
+when card payment is not offered (ADR-003).
 """
 
 from decimal import Decimal
 from typing import Any
+from unittest.mock import AsyncMock
 from uuid import uuid4
 
 import pytest
-from app.models import Contact, Customer, Invoice, InvoiceLineItem, Tenant
+from app.models import Contact, Customer, Invoice, InvoiceLineItem, StripeAccount, Tenant
 from app.rls import bypass_rls_in_session, set_tenant_in_session
 from app.security import get_password_hash
 from httpx import AsyncClient
@@ -199,13 +200,72 @@ async def test_invoices_require_customer_token(client: AsyncClient) -> None:
     assert resp.status_code == 401
 
 
-async def test_pay_returns_410_gone(client: AsyncClient, db: AsyncSession) -> None:
+async def test_pay_returns_409_when_card_payment_unavailable(
+    client: AsyncClient, db: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # No Stripe configured and no Connect account: the app hides the Pay
+    # action (payment_url is null), and the endpoint backs that up with 409.
+    monkeypatch.setattr("app.config.STRIPE_SECRET_KEY", "")
+    create_intent = AsyncMock()
+    monkeypatch.setattr("app.stripe_client.create_payment_intent", create_intent)
+
     tenant, customer, auth = await _setup(client, db)
     invoice = await _create_invoice(db, tenant, customer, status="sent")
 
     resp = await client.post(f"/customer/invoices/{invoice.id}/pay", headers=auth)
-    assert resp.status_code == 410, resp.text
-    assert "pay link in the invoice email" in resp.json()["detail"]
+    assert resp.status_code == 409, resp.text
+    assert "Card payment isn't available" in resp.json()["detail"]
+    create_intent.assert_not_called()
+
+
+async def test_pay_returns_payment_url_for_card_invoice(
+    client: AsyncClient, db: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr("app.config.STRIPE_SECRET_KEY", "sk_test_x")
+    create_intent = AsyncMock(return_value={"id": "pi_portal", "client_secret": "cs_portal"})
+    monkeypatch.setattr("app.stripe_client.create_payment_intent", create_intent)
+    # The public /pay view reuses the intent the pay endpoint minted.
+    retrieve_intent = AsyncMock(
+        return_value={
+            "id": "pi_portal",
+            "client_secret": "cs_portal",
+            "status": "requires_payment_method",
+            "amount": 12000,
+        }
+    )
+    monkeypatch.setattr("app.stripe_client.retrieve_payment_intent", retrieve_intent)
+
+    tenant, customer, auth = await _setup(client, db)
+    await set_tenant_in_session(db, tenant.id)
+    tenant_row = await db.get(Tenant, tenant.id)
+    assert tenant_row is not None
+    tenant_row.settings = {"payments": {"accept_card_default": True}}
+    db.add(
+        StripeAccount(
+            tenant_id=tenant.id,
+            stripe_account_id="acct_portal_1",
+            details_submitted=True,
+            charges_enabled=True,
+            payouts_enabled=True,
+            onboarding_complete=True,
+        )
+    )
+    await db.commit()
+    invoice = await _create_invoice(db, tenant, customer, status="sent")
+
+    resp = await client.post(f"/customer/invoices/{invoice.id}/pay", headers=auth)
+    assert resp.status_code == 200, resp.text
+    payment_url = resp.json()["payment_url"]
+    assert "/pay/" in payment_url
+    assert "pi=pi_portal" in payment_url
+    assert "cs=cs_portal" in payment_url
+    # The pay link must work — the token resolves to this invoice publicly.
+    raw_token = payment_url.split("/pay/")[1].split("?")[0]
+    doc = await client.get(f"/public/invoice/{raw_token}")
+    assert doc.status_code == 200
+    assert doc.json()["invoice_number"] == invoice.invoice_number
+    # UI gating stays in step: the pay page sees the invoice as payable too.
+    assert doc.json()["payment_url"] is not None
 
 
 async def test_pay_rejects_paid_and_foreign_invoices(client: AsyncClient, db: AsyncSession) -> None:

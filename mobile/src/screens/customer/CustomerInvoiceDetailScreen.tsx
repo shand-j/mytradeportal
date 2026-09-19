@@ -37,8 +37,8 @@ export function CustomerInvoiceDetailScreen({ invoice, onBack }: CustomerInvoice
   const handlePay = async () => {
     setPayError(null);
     try {
-      const checkout = await pay.mutateAsync(invoice.id);
-      await Linking.openURL(checkout.checkoutUrl);
+      const payLink = await pay.mutateAsync(invoice.id);
+      await Linking.openURL(payLink.paymentUrl);
     } catch (err) {
       setPayError(errorMessage(err, "Couldn't start the payment. Please try again."));
     }
@@ -146,7 +146,7 @@ export function CustomerInvoiceDetailScreen({ invoice, onBack }: CustomerInvoice
         </View>
       </ScrollView>
 
-      {!isPaid && (
+      {!isPaid && invoice.paymentUrl && (
         <View style={styles.footer}>
           {payError && (
             <View className="rounded-2xl bg-amber-50 p-3">
@@ -163,6 +163,14 @@ export function CustomerInvoiceDetailScreen({ invoice, onBack }: CustomerInvoice
           />
           <Text variant="caption" color="secondary" align="center">
             You'll be taken to a secure card checkout to pay {invoice.businessName}.
+          </Text>
+        </View>
+      )}
+      {!isPaid && !invoice.paymentUrl && (
+        <View style={styles.footer}>
+          <Text variant="caption" color="secondary" align="center">
+            To pay, use the bank transfer details on your invoice email — or contact{" "}
+            {invoice.businessName}.
           </Text>
         </View>
       )}
