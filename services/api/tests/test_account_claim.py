@@ -12,11 +12,12 @@ from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING, Any
+from urllib.parse import parse_qs, urlparse
 from uuid import uuid4
 
 import pytest
 from app.models import Contact, Customer, CustomerPortalToken, Tenant
-from app.portal_links import hash_portal_token, issue_portal_token
+from app.portal_links import hash_portal_token, issue_portal_token, magic_link_url
 from app.rls import bypass_rls_in_session, set_tenant_in_session
 from app.security import get_password_hash
 from sqlalchemy import select, update
@@ -134,6 +135,53 @@ async def test_claim_round_trip(client: AsyncClient, db: AsyncSession) -> None:
     assert record.revoked_at is not None
     replay = await _claim(client, raw, headers={"host": f"{slug}.localhost"})
     assert replay.status_code == 401
+
+
+async def test_booking_email_claim_cta_chain(client: AsyncClient, db: AsyncSession) -> None:
+    """API-level replay of the booking-email claim CTA chain, as the portal
+    runs it: the booking-confirmed email carries a magic link with
+    next=/claim; PortalMagicAuth exchanges the token (which must NOT revoke
+    it), then PortalClaim submits the same token to /customer/auth/claim.
+    Only the claim revokes — so the exchange-then-claim sequence must succeed
+    and any later replay (exchange or claim) must 401."""
+    slug = f"claim-{uuid4().hex[:8]}"
+    tenant = await _create_tenant(db, slug)
+    email = f"casey-{uuid4().hex[:6]}@example.com"
+    customer = await _create_customer(db, tenant, email, preferred="email")
+
+    # Same call the booking-confirmed email makes for the claim CTA.
+    link = await magic_link_url(db, tenant, customer, "/claim")
+    await db.commit()
+    assert link.startswith(f"https://{slug}.")
+    parsed = urlparse(link)
+    assert parsed.path == "/auth/magic"
+    params = parse_qs(parsed.query)
+    assert params["next"] == ["/claim"]
+    raw = params["token"][0]
+
+    host = {"host": f"{slug}.localhost"}
+
+    # PortalMagicAuth: exchange the token for a session — non-destructive.
+    exchange = await _exchange(client, raw, headers=host)
+    assert exchange.status_code == 200, exchange.text
+
+    # PortalClaim: the same token still claims the account afterwards.
+    claim = await _claim(client, raw, headers=host)
+    assert claim.status_code == 200, claim.text
+
+    # The claim revoked the token: replaying the email link now fails at the
+    # exchange step (PortalMagicAuth's "link expired" state) and at claim.
+    replay_exchange = await _exchange(client, raw, headers=host)
+    assert replay_exchange.status_code == 401
+    replay_claim = await _claim(client, raw, headers=host)
+    assert replay_claim.status_code == 401
+
+    # And the claimed password signs in.
+    login = await client.post(
+        "/customer/login",
+        json={"slug": slug, "email": email, "password": "new-password-123"},
+    )
+    assert login.status_code == 200, login.text
 
 
 async def test_claim_used_expired_unknown_uniform_401(
