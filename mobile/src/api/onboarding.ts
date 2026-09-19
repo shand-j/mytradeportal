@@ -44,6 +44,9 @@ async function createTenant(slug: string, input: RegisterBusinessInput): Promise
       adminEmail: input.email,
       adminName: input.fullName,
       adminPassword: input.password,
+      // The wizard's "Work email" is also the business's public contact email
+      // (portal "Email us" chip, quote/invoice Reply-To).
+      email: input.email,
       phone: input.phone,
       address: input.address,
       postcode: input.postcode,

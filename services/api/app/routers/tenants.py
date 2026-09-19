@@ -135,11 +135,17 @@ async def create_tenant(
 
     tenant_code = await generate_unique_tenant_code(db)
     tenant = Tenant(slug=data.slug, code=tenant_code, name=data.name)
+    # The public-config "Email us" chip and quote/invoice Reply-To read
+    # settings.email; without this default no client ever populated it
+    # (issue #143). The onboarding "Work email" doubles as the business
+    # contact email until the tenant sets a different one in Settings.
+    contact_email = data.email or data.admin_email
     tenant_settings: dict[str, Any] = {}
     for key, value in (
         ("phone", data.phone),
         ("address", data.address),
         ("postcode", data.postcode),
+        ("email", str(contact_email) if contact_email else None),
     ):
         if value:
             tenant_settings[key] = value

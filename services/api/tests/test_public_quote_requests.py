@@ -166,3 +166,71 @@ async def test_public_config_by_code_returns_tenant(client: AsyncClient, db: Asy
 async def test_public_config_by_code_unknown_is_404(client: AsyncClient) -> None:
     response = await client.get("/businesses/by-code/000000/public-config")
     assert response.status_code == 404
+
+
+async def test_public_config_surfaces_contact_details(
+    client: AsyncClient, db: AsyncSession
+) -> None:
+    """The portal Call/Email chips gate on these public-config fields (#143)."""
+    slug = f"pub-{uuid4().hex[:8]}"
+    tenant = await _create_tenant(db, slug)
+    tenant.settings = {
+        "phone": "07700 900123",
+        "email": "office@example.com",
+        "address": "1 Wire Lane, Stockport",
+    }
+    await db.flush()
+
+    response = await client.get(f"/businesses/{slug}/public-config")
+    assert response.status_code == 200, response.text
+    data = response.json()
+    assert data["contactPhone"] == "07700 900123"
+    assert data["replyEmail"] == "office@example.com"
+    assert data["address"] == "1 Wire Lane, Stockport"
+
+
+async def test_tenant_creation_persists_contact_details(client: AsyncClient) -> None:
+    """Onboarding contact details must reach the settings public-config reads."""
+    slug = f"reg-{uuid4().hex[:8]}"
+    response = await client.post(
+        "/tenants",
+        json={
+            "slug": slug,
+            "name": f"{slug} Ltd",
+            "phone": "07700 900456",
+            "email": "office@example.com",
+            "admin_email": f"owner-{slug}@example.com",
+            "admin_password": "onboarding-password-1",
+            "admin_name": "Owner",
+        },
+    )
+    assert response.status_code == 201, response.text
+
+    config = await client.get(f"/businesses/{slug}/public-config")
+    assert config.status_code == 200, config.text
+    data = config.json()
+    assert data["contactPhone"] == "07700 900456"
+    assert data["replyEmail"] == "office@example.com"
+
+
+async def test_tenant_creation_defaults_contact_email_to_admin_email(
+    client: AsyncClient,
+) -> None:
+    """No explicit contact email → the admin's work email is used (#143)."""
+    slug = f"reg-{uuid4().hex[:8]}"
+    admin_email = f"owner-{slug}@example.com"
+    response = await client.post(
+        "/tenants",
+        json={
+            "slug": slug,
+            "name": f"{slug} Ltd",
+            "admin_email": admin_email,
+            "admin_password": "onboarding-password-1",
+            "admin_name": "Owner",
+        },
+    )
+    assert response.status_code == 201, response.text
+
+    config = await client.get(f"/businesses/{slug}/public-config")
+    assert config.status_code == 200, config.text
+    assert config.json()["replyEmail"] == admin_email

@@ -31,6 +31,9 @@ class TenantCreate(BaseModel):
     phone: str | None = Field(default=None, max_length=50)
     address: str | None = Field(default=None, max_length=2000)
     postcode: str | None = Field(default=None, max_length=20)
+    # Public contact email (portal "Email us" chip, quote/invoice Reply-To).
+    # Defaults to the admin's work email when not given explicitly.
+    email: EmailStr | None = None
 
     # Optional atomic bootstrap of the tenant's first admin user. All three
     # fields must be provided together; when omitted only the tenant is
