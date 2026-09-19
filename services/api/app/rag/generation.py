@@ -485,6 +485,36 @@ def _sanitize_string_list(value: Any, *, max_items: int, max_length: int) -> lis
     return sanitized
 
 
+def _resolve_followup_route() -> tuple[str, str, str]:
+    """Return (model, api_key, api_base) for the follow-up chat call.
+
+    The chat turn defaults to the cheap/fast ``llm_followup_model`` because
+    the customer waits on each reply synchronously and the flagship
+    ``llm_model`` (e.g. Kimi k2.6) reliably takes 60-120s — far beyond a
+    chat budget. Routing mirrors the demo/intake-triage idiom: a bare
+    OpenAI-style id uses the OpenAI key with any configured non-OpenAI base
+    suppressed; a LiteLLM-style ``provider/model`` id (or an empty override,
+    which inherits ``llm_model``) uses the configured LLM provider. When
+    only a third-party provider is configured (no OpenAI key, non-OpenAI
+    base set), a bare-id call could not authenticate, so the flagship route
+    is kept — never worse than the pre-override behaviour.
+    """
+    model = settings.llm_followup_model or settings.llm_model
+    if model == settings.llm_model or "/" in model:
+        return model, settings.resolved_llm_api_key, settings.llm_api_base
+    if settings.openai_api_key:
+        return model, settings.openai_api_key, ""
+    if not settings.llm_api_base:
+        # OpenAI-only deployment keyed via LLM_API_KEY/OPENAI_API_KEY fallback.
+        return model, settings.resolved_llm_api_key, ""
+    logger.warning(
+        "followup_route_fallback",
+        followup_model=model,
+        reason="third-party provider only; bare-id route cannot authenticate",
+    )
+    return settings.llm_model, settings.resolved_llm_api_key, settings.llm_api_base
+
+
 async def generate_followup(
     job_description: str,
     prior_messages: list[dict[str, str]],
@@ -506,29 +536,30 @@ async def generate_followup(
     tenant) recorded by :class:`app.ai_telemetry.AiCallTracker` — this is what
     captures the token usage that used to be computed then dropped here.
     """
-    if not settings.resolved_llm_api_key:
+    model, api_key, api_base = _resolve_followup_route()
+    if not api_key:
         raise RuntimeError("LLM API key is not configured")
 
     messages = _build_followup_messages(job_description, prior_messages, final_turn=final_turn)
     completion_kwargs: dict[str, Any] = {
-        "model": settings.llm_model,
+        "model": model,
         "messages": messages,
-        "api_key": settings.resolved_llm_api_key,
+        "api_key": api_key,
         "response_format": {"type": "json_object"},
-        "timeout": settings.llm_timeout_seconds,
-        "num_retries": settings.llm_max_retries,
+        # Chat-sized budget: the customer waits on each turn, so the timeout
+        # and retries are far tighter than quote generation's.
+        "timeout": settings.llm_followup_timeout_seconds,
+        "num_retries": settings.llm_followup_max_retries,
         "max_tokens": settings.llm_followup_max_tokens,
     }
-    if settings.llm_temperature is not None and _model_allows_custom_temperature(
-        settings.llm_model
-    ):
+    if settings.llm_temperature is not None and _model_allows_custom_temperature(model):
         completion_kwargs["temperature"] = settings.llm_temperature
-    if settings.llm_api_base:
-        completion_kwargs["api_base"] = settings.llm_api_base
+    if api_base:
+        completion_kwargs["api_base"] = api_base
 
     tracker = AiCallTracker(
         telemetry,
-        model=settings.llm_model,
+        model=model,
         prompt_version=TRIAGE_FOLLOWUP_PROMPT_VERSION,
         prompt_text="\n".join(m["content"] for m in messages) if telemetry is not None else None,
     )
@@ -541,7 +572,7 @@ async def generate_followup(
         logger.error(
             "llm_error",
             phase="followup",
-            model=settings.llm_model,
+            model=model,
             error_type=type(exc).__name__,
         )
         raise RuntimeError(f"LLM generation failed: {exc.message}") from exc
@@ -549,7 +580,7 @@ async def generate_followup(
         logger.error(
             "llm_error",
             phase="followup",
-            model=settings.llm_model,
+            model=model,
             error_type=type(exc).__name__,
         )
         raise RuntimeError(f"LLM service unavailable: {exc}") from exc
@@ -558,7 +589,7 @@ async def generate_followup(
     if not content:
         logger.warning(
             "llm_followup_empty",
-            model=settings.llm_model,
+            model=model,
             finish_reason=getattr(response.choices[0], "finish_reason", None),
             duration_ms=round((time.perf_counter() - started) * 1000, 2),
         )
@@ -585,7 +616,7 @@ async def generate_followup(
     )
     logger.info(
         "llm_followup_generated",
-        model=settings.llm_model,
+        model=model,
         duration_ms=round((time.perf_counter() - started) * 1000, 2),
         prior_message_count=len(prior_messages),
         message_count=len(messages),
@@ -605,9 +636,10 @@ async def generate_followup(
         "options": options,
         "suggested_questions": suggested_questions,
         "usage": _extract_usage(response),
-        # Actual model used — callers recording spend must not assume
-        # settings.llm_model on override paths (the model-label bug).
-        "model": settings.llm_model,
+        # Actual model used (route-resolved) — callers recording spend must
+        # not assume settings.llm_model on override paths (the model-label
+        # bug).
+        "model": model,
     }
 
 
