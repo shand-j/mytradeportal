@@ -19,6 +19,12 @@ PUBLIC_DOCS_BASE_URL: str = os.environ.get(
     "PUBLIC_DOCS_BASE_URL", "https://www.mytradeportal.co.uk"
 ).rstrip("/")
 
+# Public origin of this API, used when minting absolute URLs into tenant
+# settings that must render off-host (e.g. the tenant logo ``<img>`` src on
+# portal/landing pages, which live on a different origin than the API). Empty
+# falls back to the request origin (correct behind Railway's proxy headers).
+PUBLIC_API_BASE_URL: str = os.environ.get("PUBLIC_API_BASE_URL", "").strip().rstrip("/")
+
 # In-process reminder scheduler (quote/invoice follow-up emails). Runs as an
 # asyncio task started from the app lifespan; no extra infra. Disable per
 # environment (e.g. PR previews) with REMINDER_SCHEDULER_ENABLED=false.

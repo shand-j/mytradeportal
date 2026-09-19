@@ -7,6 +7,7 @@ import { Text } from "../../components/ui/Text";
 import { useAuth } from "../../contexts/AuthContext";
 import { useBusiness } from "../../theme/ThemeProvider";
 import { ApiError } from "../../lib/apiClient";
+import { uploadTenantLogo, type LogoAsset } from "../../api/businesses";
 import {
   RegisterBusinessInput,
   completeOnboardingSteps,
@@ -167,6 +168,18 @@ export function OnboardingStepperScreen() {
           await completeOnboardingSteps(merged);
         }
         setRegistered(true);
+        // A logo staged during the branding step can only upload now — the
+        // tenant did not exist before registration. Best-effort: a failed
+        // upload never blocks onboarding; Settings can re-upload later.
+        const stagedLogo = (merged.branding as Record<string, unknown> | undefined)
+          ?.logoAsset as LogoAsset | undefined;
+        if (stagedLogo) {
+          try {
+            await uploadTenantLogo(stagedLogo);
+          } catch {
+            // Swallow: the logo is optional polish, not a launch gate.
+          }
+        }
       } catch (err) {
         if (
           err instanceof ApiError &&

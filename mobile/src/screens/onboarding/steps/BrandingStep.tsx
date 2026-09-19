@@ -1,8 +1,11 @@
 import { useState } from "react";
 import { Pressable, ScrollView, View } from "react-native";
+import { Image } from "expo-image";
+import * as ImagePicker from "expo-image-picker";
 import { Button } from "../../../components/ui/Button";
 import { FormField } from "../../../components/ui/FormField";
 import { Text } from "../../../components/ui/Text";
+import type { LogoAsset } from "../../../api/businesses";
 
 type BrandingStepProps = {
   data?: Record<string, unknown>;
@@ -51,6 +54,33 @@ export function BrandingStep({ data, onNext }: BrandingStepProps) {
   const [hexInput, setHexInput] = useState(primaryColor.toUpperCase());
   const [hexError, setHexError] = useState<string | null>(null);
   const [reviewUrl, setReviewUrl] = useState((data?.reviewUrl as string) ?? "");
+  // No tenant exists until the review step registers, so the picked logo is
+  // staged locally and uploaded by the stepper once registration succeeds.
+  const [logoAsset, setLogoAsset] = useState<LogoAsset | null>(
+    (data?.logoAsset as LogoAsset) ?? null
+  );
+  const [logoError, setLogoError] = useState<string | null>(null);
+
+  const pickLogo = async () => {
+    setLogoError(null);
+    const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!permission.granted) {
+      setLogoError("Photo library access denied");
+      return;
+    }
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      quality: 0.9,
+      allowsMultipleSelection: false,
+    });
+    if (result.canceled || result.assets.length === 0) return;
+    const asset = result.assets[0];
+    setLogoAsset({
+      uri: asset.uri,
+      name: asset.fileName ?? `logo-${Date.now()}.jpg`,
+      type: asset.mimeType ?? "image/jpeg",
+    });
+  };
 
   const pickPreset = (colour: string) => {
     setPrimaryColor(colour);
@@ -143,10 +173,71 @@ export function BrandingStep({ data, onNext }: BrandingStepProps) {
           )}
         </View>
 
+        <View className="rounded-2xl bg-slate-100 p-4 gap-3">
+          <Text variant="body" weight="semibold">
+            Business logo
+          </Text>
+          <Text variant="caption" color="secondary">
+            Shown on your customer portal, quotes, and invoices. Optional — you can add it later in Settings.
+          </Text>
+          {logoAsset ? (
+            <View className="flex-row items-center gap-4">
+              <View className="h-16 w-16 items-center justify-center rounded-xl border border-slate-300 bg-white">
+                <Image
+                  testID="branding-logo-preview"
+                  source={{ uri: logoAsset.uri }}
+                  style={{ width: 56, height: 56 }}
+                  contentFit="contain"
+                />
+              </View>
+              <View className="flex-1 gap-2">
+                <Button
+                  testID="branding-logo-change"
+                  title="Change logo"
+                  variant="outline"
+                  onPress={() => void pickLogo()}
+                />
+                <Button
+                  testID="branding-logo-remove"
+                  title="Remove"
+                  variant="outline"
+                  onPress={() => setLogoAsset(null)}
+                />
+              </View>
+            </View>
+          ) : (
+            <Pressable
+              testID="branding-logo-add"
+              onPress={() => void pickLogo()}
+              className="flex-row items-center gap-3 rounded-xl border border-dashed border-slate-300 bg-slate-50 p-4"
+            >
+              <View className="flex-1">
+                <Text variant="body" weight="semibold">
+                  Add your logo
+                </Text>
+                <Text variant="caption" color="secondary">
+                  PNG, JPEG or WebP, up to 2 MB
+                </Text>
+              </View>
+            </Pressable>
+          )}
+          {logoError && (
+            <Text testID="branding-logo-error" variant="caption" color="warning">
+              {logoError}
+            </Text>
+          )}
+        </View>
+
         <Button
           testID="branding-continue"
           title="Continue"
-          onPress={() => onNext({ primaryColor, reviewUrl: reviewUrl.trim() || undefined })}
+          onPress={() =>
+            onNext({
+              primaryColor,
+              reviewUrl: reviewUrl.trim() || undefined,
+              ...(logoAsset ? { logoAsset } : {}),
+            })
+          }
         />
         <Button title="Skip for now" variant="outline" onPress={() => onNext({ skipped: true })} />
       </View>

@@ -1,5 +1,8 @@
 import { useQuery } from "@tanstack/react-query";
 import { api } from "../lib/apiClient";
+import { camelizeKeys } from "../lib/case";
+import { config } from "../lib/config";
+import { tokenStorage } from "../lib/tokenStorage";
 import { BusinessConfig } from "../types";
 
 type PublicConfigResponse = {
@@ -130,6 +133,60 @@ export type UpdateTenantInput = {
 /** Persist branding/business details for the authenticated user's tenant. */
 export async function updateCurrentTenant(input: UpdateTenantInput): Promise<BusinessConfig> {
   const data = await api.patch<CurrentTenantResponse>("/tenants/me", input);
+  return normalizeTenant(data);
+}
+
+/** A logo image picked on-device, not yet uploaded. */
+export type LogoAsset = {
+  uri: string;
+  name: string;
+  type: string;
+};
+
+/**
+ * Upload the tenant's business logo (staff). Multipart through the API —
+ * MinIO is private-network-only, so devices never see storage URLs. The
+ * server points settings.logo_url at the public GET /businesses/{slug}/logo
+ * route; the response carries the new URL.
+ */
+export async function uploadTenantLogo(asset: LogoAsset): Promise<BusinessConfig> {
+  const [token, tenantId] = await Promise.all([
+    tokenStorage.getToken(),
+    tokenStorage.getTenantId(),
+  ]);
+  const form = new FormData();
+  // React Native and web File / Blob shapes differ; both are accepted by
+  // FormData under `any` here without runtime pain.
+  const blob =
+    typeof File !== "undefined"
+      ? await fetch(asset.uri).then((r) => r.blob())
+      : ({ uri: asset.uri, name: asset.name, type: asset.type } as unknown as Blob);
+  form.append("file", blob as Blob, asset.name);
+  const headers: Record<string, string> = {};
+  if (token) headers["Authorization"] = `Bearer ${token}`;
+  if (tenantId) headers["X-Tenant-ID"] = tenantId;
+  const response = await fetch(`${config.apiBaseUrl}/tenants/me/logo`, {
+    method: "POST",
+    headers,
+    body: form,
+  });
+  if (!response.ok) {
+    let detail = `Upload failed (${response.status})`;
+    try {
+      const payload = (await response.json()) as { detail?: unknown };
+      if (payload.detail) detail = String(payload.detail);
+    } catch {
+      // Non-JSON error body — keep the status-based message.
+    }
+    throw new Error(detail);
+  }
+  const data = camelizeKeys(await response.json()) as CurrentTenantResponse;
+  return normalizeTenant(data);
+}
+
+/** Remove the tenant's logo (staff): clears the branding settings server-side. */
+export async function removeTenantLogo(): Promise<BusinessConfig> {
+  const data = await api.delete<CurrentTenantResponse>("/tenants/me/logo");
   return normalizeTenant(data);
 }
 
