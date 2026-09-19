@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Linking, ScrollView, StyleSheet, View } from "react-native";
+import { ScrollView, StyleSheet, View } from "react-native";
 import { Button } from "../../components/ui/Button";
 import { Header } from "../../components/ui/Header";
 import { Icon } from "../../components/ui/Icon";
@@ -8,6 +8,7 @@ import { Text } from "../../components/ui/Text";
 import { CustomerInvoice, usePayMyInvoice } from "../../api/customerInvoices";
 import { ApiError } from "../../lib/apiClient";
 import { formatDateUK, formatMoneyGBP } from "../../lib/format";
+import { openInAppBrowser } from "../../lib/inAppBrowser";
 
 const STATUS_STYLES: Record<string, { background: string; label: string }> = {
   sent: { background: "#E2E8EB", label: "AWAITING PAYMENT" },
@@ -38,7 +39,7 @@ export function CustomerInvoiceDetailScreen({ invoice, onBack }: CustomerInvoice
     setPayError(null);
     try {
       const payLink = await pay.mutateAsync(invoice.id);
-      await Linking.openURL(payLink.paymentUrl);
+      await openInAppBrowser(payLink.paymentUrl);
     } catch (err) {
       setPayError(errorMessage(err, "Couldn't start the payment. Please try again."));
     }

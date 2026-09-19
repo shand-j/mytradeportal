@@ -7,6 +7,7 @@ import { Screen } from "../../components/ui/Screen";
 import { Text } from "../../components/ui/Text";
 import { createBillingCheckout, useSubscription, type PlanKey } from "../../api/billing";
 import { config } from "../../lib/config";
+import { openCheckoutSession } from "../../lib/inAppBrowser";
 import { usePaywallStore } from "../../stores/paywallStore";
 
 const PLAN_NAMES: Record<PlanKey, string> = {
@@ -48,7 +49,7 @@ export function PaywallScreen() {
         const { checkoutUrl } = await createBillingCheckout(planKey, checkoutPageUrl);
         const opened = await Linking.canOpenURL(checkoutUrl);
         if (opened) {
-          await Linking.openURL(checkoutUrl);
+          await openCheckoutSession(checkoutUrl);
         } else {
           setError("Couldn't open the checkout. Try again.");
         }
