@@ -1,8 +1,10 @@
 """Subscription / billing endpoints for the tenant paywall.
 
-Flat pricing model: one subscription per business, three flat tiers, unlimited
-users, AI unmetered on every tier. There is no seat, quantity or overage
-logic anywhere in this module. The 14-day trial is handled by Paddle /
+Flat pricing model: one subscription per business, three flat tiers that
+differ by capability plus a staff seat cap (``Plan.seats``), AI unmetered on
+every tier. There is no quantity or overage logic anywhere in this module;
+the subscription read model exposes the plan's seat count and current usage
+so clients can gate team-only UI. The 14-day trial is handled by Paddle /
 ``app.trial``. This module owns the checkout-URL creation and the
 subscription read model; state mutations happen exclusively via webhooks
 (:mod:`app.routers.webhooks`).
@@ -21,7 +23,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
 from app.database import get_db
-from app.dependencies import CurrentUserDep, TenantDep
+from app.dependencies import CurrentUserDep, TenantDep, seats_in_use
 from app.models import Subscription, Tenant
 from app.paddle_client import (
     await_transaction_subscription_id,
@@ -261,8 +263,8 @@ async def list_plans() -> list[dict[str, Any]]:
 
     Public by design — the onboarding plan step renders before checkout and
     must never be blocked by auth/tenant state. Each tier carries its key,
-    display name, flat monthly/annual GBP list prices (per business —
-    unlimited users on every tier), the env var NAMES that hold the Paddle
+    display name, flat monthly/annual GBP list prices (per business — not per
+    seat), staff seat cap, the env var NAMES that hold the Paddle
     price IDs (the IDs themselves stay server-side), the capability list, the
     featured flag, and trial terms. There are deliberately no AI-usage
     numbers: AI is unmetered on every tier. Mobile renders from this and
@@ -431,7 +433,24 @@ async def change_plan(
         plan_key=sub.plan_key,
         paddle_subscription_id=sub.paddle_subscription_id,
     )
-    return SubscriptionRead.model_validate(sub)
+    return await _subscription_read(db, sub)
+
+
+async def _subscription_read(db: AsyncSession, sub: Subscription) -> SubscriptionRead:
+    """Serialise a subscription with its plan's seat context.
+
+    ``seats`` comes from the plan catalog (legacy plan keys resolved), so it
+    is never stored on the row; ``seats_in_use`` counts active users plus
+    pending invites — the same number ``POST /users/invite`` gates on.
+    """
+    plan = get_plan(sub.plan_key)
+    return SubscriptionRead.model_validate(
+        {
+            **sub.__dict__,
+            "seats": plan.seats,
+            "seats_in_use": await seats_in_use(db, sub.tenant_id),
+        }
+    )
 
 
 @router.get("/subscription")
@@ -439,12 +458,16 @@ async def get_subscription(
     tenant: TenantDep,
     db: DbDep,
 ) -> SubscriptionRead | None:
-    """Return the tenant's current subscription state (or ``null`` if none)."""
+    """Return the tenant's current subscription state (or ``null`` if none).
+
+    Carries the plan's seat count and current seat usage so clients can gate
+    team-only UI (assignee pickers, team invites) without a second request.
+    """
     await set_tenant_in_session(db, tenant.id)
     sub = await db.scalar(select(Subscription).where(Subscription.tenant_id == tenant.id))
     if sub is None:
         return None
-    return SubscriptionRead.model_validate(sub)
+    return await _subscription_read(db, sub)
 
 
 @router.post("/portal-session")

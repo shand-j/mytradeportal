@@ -275,6 +275,33 @@ async def _tenant_plan(tenant: Tenant, db: AsyncSession) -> Plan:
     return get_plan(sub.plan_key) if sub is not None else get_plan(DEFAULT_PLAN_KEY)
 
 
+async def seats_in_use(db: AsyncSession, tenant_id: UUID) -> int:
+    """Active users plus pending invites — the count the plan seat cap applies to."""
+    used = await db.scalar(
+        select(func.count(User.id)).where(
+            User.tenant_id == tenant_id,
+            # A pending invite holds a seat; a deactivated account does not.
+            (User.is_active.is_(True)) | (User.invited_at.isnot(None)),
+        )
+    )
+    return used or 0
+
+
+async def single_active_user(db: AsyncSession, tenant_id: UUID) -> User | None:
+    """The tenant's only active staff user, or None when there are zero or several.
+
+    Single-seat plans (sole_trader) can only ever have one staff user, so a
+    job/appointment create that omits ``assigned_user_id`` unambiguously means
+    that person — the create routers default to them instead of leaving the
+    record unassigned.
+    """
+    result = await db.execute(
+        select(User).where(User.tenant_id == tenant_id, User.is_active.is_(True))
+    )
+    users = list(result.scalars().all())
+    return users[0] if len(users) == 1 else None
+
+
 def require_tier_feature(feature: str) -> Callable[[Tenant, AsyncSession], Awaitable[Tenant]]:
     """Dependency factory gating an endpoint on a plan capability.
 

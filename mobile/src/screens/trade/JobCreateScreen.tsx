@@ -910,30 +910,35 @@ export function JobCreateScreen({ onClose, initialQuoteId }: JobCreateScreenProp
             keyboardType="decimal-pad"
           />
 
-          <View className="gap-2">
-            <Text variant="body" weight="semibold">
-              Assigned to
-            </Text>
-            <View className="flex-row flex-wrap gap-2">
-              <Button
-                testID="job-create-assignee-none"
-                title="Unassigned"
-                size="sm"
-                variant={assignedUserId === null ? "primary" : "outline"}
-                onPress={() => setAssignedUserId(null)}
-              />
-              {users.map((user) => (
+          {/* Team gating: with a single active user (every sole_trader tenant)
+              there is nothing to pick — the API auto-assigns that user, so the
+              picker only renders once the tenant actually has staff to choose. */}
+          {users.length > 1 && (
+            <View className="gap-2">
+              <Text variant="body" weight="semibold">
+                Assigned to
+              </Text>
+              <View className="flex-row flex-wrap gap-2">
                 <Button
-                  key={user.id}
-                  testID={`job-create-assignee-${user.id}`}
-                  title={user.fullName}
+                  testID="job-create-assignee-none"
+                  title="Unassigned"
                   size="sm"
-                  variant={assignedUserId === user.id ? "primary" : "outline"}
-                  onPress={() => setAssignedUserId(user.id)}
+                  variant={assignedUserId === null ? "primary" : "outline"}
+                  onPress={() => setAssignedUserId(null)}
                 />
-              ))}
+                {users.map((user) => (
+                  <Button
+                    key={user.id}
+                    testID={`job-create-assignee-${user.id}`}
+                    title={user.fullName}
+                    size="sm"
+                    variant={assignedUserId === user.id ? "primary" : "outline"}
+                    onPress={() => setAssignedUserId(user.id)}
+                  />
+                ))}
+              </View>
             </View>
-          </View>
+          )}
 
           <FormField
             testID="job-create-notes"

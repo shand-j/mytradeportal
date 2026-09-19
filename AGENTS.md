@@ -106,6 +106,21 @@ availability lives in `app/availability.py` and excludes them. The mobile
 job-create screen shows the quote's preferences as tappable chips so the
 electrician lands on the 2nd/3rd choice when the 1st doesn't fit.
 
+### Team gating and sole-staff auto-assignment (issue #191)
+
+Plan tiers cap staff seats (`Plan.seats`: sole_trader 1, pro 5, team 15 —
+enforced by `POST /users/invite`). Assignment is only meaningful on multi-seat
+plans, so every job-creation path (`POST /jobs`, quote convert-to-job, the
+acceptance-time draft job) and `POST /appointments` defaults
+`assigned_user_id` to the tenant's ONLY active user when none is supplied
+(`app.dependencies.single_active_user`); explicit assignees are validated and
+always win. Seat context reaches clients via `GET /billing/subscription`,
+which now carries `seats` (plan catalog, legacy keys resolved) and
+`seats_in_use` (active users + pending invites — the same count the invite
+endpoint gates on). The mobile app gates its assignee pickers on the simpler
+equivalent signal: the pickers (job create, job detail) render only when
+`GET /users` returns more than one active user.
+
 ### Reminder scheduler and tenant scheduling settings
 
 `services/api/app/scheduler.py` is an in-process asyncio scheduler started from

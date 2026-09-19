@@ -70,6 +70,10 @@ export type SubscriptionRead = {
   canceledAt: string | null;
   createdAt: string;
   updatedAt: string;
+  /** Staff seats included in the plan (sole_trader 1, pro 5, team 15). */
+  seats: number;
+  /** Active users + pending invites — the count the seat cap gates on. */
+  seatsInUse: number;
 };
 
 export type BillingCheckoutRead = {
