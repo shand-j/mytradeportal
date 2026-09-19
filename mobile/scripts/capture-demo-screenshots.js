@@ -123,6 +123,7 @@ async function main() {
   await capture(page, "quote-edit");
 
   // 8. In-app chat request for more info
+  await tapTestId(page, "quote-more-actions");
   await tapTestId(page, "quote-request-info");
   await sleep(600);
   await capture(page, "request-info-chat");

@@ -175,6 +175,7 @@ test.describe.serial("J — Job create, convert & detail editing", () => {
     await page.goto(`/(trade)/quote/${convertQuote.id}`, { waitUntil: "networkidle" });
     await waitText(page, "Review quote");
 
+    await tap(page, "quote-more-actions");
     await tap(page, "quote-convert-job");
     await waitText(page, "Job detail", 30000);
     const job = await waitForJob(tenant, convertQuote.title, undefined, 30000);

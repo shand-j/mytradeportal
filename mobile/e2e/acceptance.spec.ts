@@ -185,6 +185,7 @@ test.describe.serial("S — Acceptance date reconfirmation", () => {
     await page.goto(`/(trade)/quote/${quoteId}`, { waitUntil: "networkidle" });
     await waitText(page, "Review quote");
 
+    await tap(page, "quote-more-actions");
     await tap(page, "quote-convert-job");
     await waitText(page, "Job detail", 30_000);
 

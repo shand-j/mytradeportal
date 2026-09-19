@@ -78,6 +78,7 @@ test.describe.serial("N — Messages", () => {
     await page.goto(`/(trade)/quote/${quote.id}`, { waitUntil: "networkidle" });
     await waitText(page, "Review quote");
 
+    await tap(page, "quote-more-actions");
     await tap(page, "quote-request-info");
     await page
       .locator('[data-testid="chat-composer"]')
