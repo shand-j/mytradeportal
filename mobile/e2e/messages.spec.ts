@@ -1,6 +1,8 @@
 import { test } from "@playwright/test";
 import {
+  bodyText,
   createTestTenant,
+  expect,
   fill,
   loginAsTradeOwner,
   seedCustomer,
@@ -83,5 +85,21 @@ test.describe.serial("N — Messages", () => {
     await page
       .locator('[data-testid="chat-composer"]')
       .waitFor({ state: "visible", timeout: 30000 });
+  });
+});
+
+// N24: a fresh tenant with no quote requests or threads must see the designed
+// inbox empty state — not a blank screen or an error. Own tenant so the inbox
+// is guaranteed empty (the N-suite tenant above seeds a lead).
+test.describe("N24 — Empty inbox", () => {
+  test("empty inbox renders the designed empty state", async ({ page }) => {
+    const tenant = await createTestTenant("messages-empty");
+    await loginAsTradeOwner(page, tenant);
+    await tap(page, "tab-messages");
+
+    await waitText(page, "No conversations yet — new quote requests will appear here.");
+    const text = (await bodyText(page)).toLowerCase();
+    expect(text).not.toContain("something went wrong");
+    expect(text).not.toContain("could not load");
   });
 });
