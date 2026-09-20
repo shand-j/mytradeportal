@@ -242,8 +242,11 @@ class Contact(TenantScopedBase):
     # in, request quotes or message the business.
     badge_overrides: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict, nullable=False)
     # Per-customer reminder (chase) overrides (F2). NULL = tenant defaults.
-    # Supported keys: quote_chase_enabled / invoice_chase_enabled (bool) and
-    # max_reminders (int, caps the tenant cadence downward only).
+    # Supported keys: quote_chase_enabled / invoice_chase_enabled (bool),
+    # max_reminders (int, caps the tenant cadence downward only) and
+    # sms_opt_out (bool — set by POST /webhooks/telnyx when the customer
+    # replies STOP; appointment reminders then skip SMS and fall back to
+    # email, and START/UNSTOP clears it again).
     reminder_preferences: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
     is_blocked: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     blocked_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
@@ -1669,13 +1672,15 @@ class UserInviteToken(Base):
 
 
 class EmailFailureAlert(Base):
-    """Dedupe ledger for staff "customer email wasn't delivered" alerts.
+    """Dedupe ledger for staff "customer message wasn't delivered" alerts.
 
     One row per (tenant, contact, calendar day): the first send-time failure
     or Resend bounce webhook for a contact inserts a row and pages staff;
     every further failure that day — any purpose, either source — sees the
     row and stays silent, so a broken mailbox cannot spam the electrician's
-    bell on every reminder sweep or webhook retry.
+    bell on every reminder sweep or webhook retry. Telnyx SMS delivery
+    receipts (``source="telnyx_dlr"``) share the same ledger, so a customer
+    whose details are wrong on both channels pages staff at most once a day.
 
     Deliberately a plain ``Base`` (same pattern as ``ProcessedWebhook``): rows
     are written from contexts with no tenant GUC (bounce webhooks) and are
@@ -1694,7 +1699,7 @@ class EmailFailureAlert(Base):
     tenant_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), nullable=False, index=True)
     contact_id: Mapped[UUID | None] = mapped_column(PGUUID(as_uuid=True), nullable=True, index=True)
     alert_date: Mapped[date] = mapped_column(Date, nullable=False)
-    source: Mapped[str] = mapped_column(String(20), nullable=False)  # send | bounce
+    source: Mapped[str] = mapped_column(String(20), nullable=False)  # send | bounce | telnyx_dlr
     purpose: Mapped[str] = mapped_column(String(100), nullable=False)
     error_class: Mapped[str] = mapped_column(String(100), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)

@@ -22,17 +22,26 @@ non-GSM-7 character (see :func:`app.sms.sms_segment_limit`).
 
 STOP opt-out trade-off: "Reply STOP to opt out" is only appended when the
 resolved sender is a NUMBER. When the tenant's name is used as an
-alphanumeric sender ID, customer replies cannot reach us (and UK STOP
-handling is not wired), so promising an opt-out mechanism would be
-misleading — the line is omitted rather than lied about.
+alphanumeric sender ID, customer replies cannot reach us, so promising an
+opt-out mechanism would be misleading — the line is omitted rather than lied
+about. Replies to a numeric sender arrive as ``message.received`` events at
+``POST /webhooks/telnyx`` (see ``app.routers.telnyx_webhooks``): a STOP
+keyword sets ``sms_opt_out`` on the contact's ``reminder_preferences`` and
+this module then skips SMS for that contact, degrading to the email fallback
+(and omitting the STOP line — an opted-out contact must not be told to text
+a number they just opted out of).
 
 Dispatch state lives in the same ``reminders`` table as the other chases:
 one row per actually-delivered reminder, keyed
 ``(entity_type="appointment", entity_id, payload.window_hours, payload.role)``
 so an hourly sweep can never double-fire a window, and an SMS row also
 suppresses the email fallback for the same window+role (channel-agnostic
-dedupe). Failed sends record nothing — mirroring the quote/invoice chase
-semantics, a customer we could not reach must not burn a slot.
+dedupe). SMS rows additionally carry ``payload.to`` (the normalised
+recipient) and ``payload.telnyx_message_id`` so Telnyx delivery receipts
+(``POST /webhooks/telnyx``) can record delivery status transitions back onto
+the row and inbound STOP replies can resolve the texting contact. Failed
+sends record nothing — mirroring the quote/invoice chase semantics, a
+customer we could not reach must not burn a slot.
 
 Plan + fair use: ``sms_reminders`` is on every tier (cost basis: worst case
 ≈ £1.60/month SMS for the cheapest plan), but like AI tokens it carries an
@@ -350,7 +359,7 @@ async def process_appointment_reminders(
                     )
                 if delivered is None:
                     continue
-                channel = delivered
+                channel, message_id = delivered
                 fired.add((str(window), role))
                 appointment_sequences = sequences.setdefault(appointment.id, 0) + 1
                 sequences[appointment.id] = appointment_sequences
@@ -366,6 +375,8 @@ async def process_appointment_reminders(
                         else (staff.phone if staff is not None else None)
                     )
                     payload["to"] = normalize_phone(phone)
+                    if message_id:
+                        payload["telnyx_message_id"] = message_id
                 db.add(
                     Reminder(
                         tenant_id=tenant.id,
@@ -412,16 +423,21 @@ async def _remind_customer(
     window: int,
     sms_allowed: bool,
     numeric_sender: bool,
-) -> str | None:
+) -> tuple[str, str | None] | None:
     """Customer reminder: SMS when allowed, else the email fallback.
 
-    Returns the delivered channel (``"sms"``/``email``), or ``None`` when
-    there was no usable channel (no phone and no email) — nothing recorded,
-    mirroring the quote/invoice "failed sends don't burn slots" rule.
+    Returns ``(channel, telnyx_message_id)`` — the message id is ``None``
+    for the email fallback — or ``None`` when there was no usable channel
+    (no phone and no email), in which case nothing is recorded, mirroring
+    the quote/invoice "failed sends don't burn slots" rule. A contact who
+    replied STOP (``reminder_preferences.sms_opt_out``, set by the Telnyx
+    inbound webhook) is treated as having no usable SMS channel and goes
+    straight to the email fallback.
     """
     if contact is None:
         return None
-    if sms_allowed and contact.phone and normalize_phone(contact.phone):
+    sms_opted_out = bool((contact.reminder_preferences or {}).get("sms_opt_out"))
+    if sms_allowed and not sms_opted_out and contact.phone and normalize_phone(contact.phone):
         body = _customer_sms_text(
             tenant_name=tenant.name,
             first_name=(contact.name.split()[0] if contact.name else ""),
@@ -435,7 +451,7 @@ async def _remind_customer(
             tenant_id=tenant.id,
         )
         if message_id:
-            return "sms"
+            return "sms", message_id
         # Telnyx failure → degrade to email for this window rather than
         # dropping the reminder entirely.
     if not contact.email:
@@ -468,7 +484,7 @@ async def _remind_customer(
     )
     if not delivered:
         return None
-    return "email"
+    return "email", None
 
 
 async def _remind_staff(
@@ -478,13 +494,13 @@ async def _remind_staff(
     staff: User,
     window: int,
     sms_allowed: bool,
-) -> str:
+) -> tuple[str, str | None]:
     """Staff reminder: free in-app/push always; SMS too when a phone is set.
 
-    Returns the delivered channel: ``"sms"`` when the text went out, else
-    ``"push"`` (push-only still records a reminder row so the window dedupes).
+    Returns ``(channel, telnyx_message_id)``: ``("sms", id)`` when the text
+    went out, else ``("push", None)`` (push-only still records a reminder row
+    so the window dedupes).
     """
-    channel = "push"
     if sms_allowed and staff.phone and normalize_phone(staff.phone):
         body = _staff_sms_text(tenant_name=tenant.name, appointment=appointment)
         message_id = await send_sms(
@@ -494,5 +510,5 @@ async def _remind_staff(
             tenant_id=tenant.id,
         )
         if message_id:
-            channel = "sms"
-    return channel
+            return "sms", message_id
+    return "push", None
