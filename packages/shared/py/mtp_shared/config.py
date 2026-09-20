@@ -230,6 +230,11 @@ class Settings(BaseSettings):
     telnyx_api_key: str = Field(default="")
     telnyx_from_number: str = Field(default="")
     telnyx_messaging_profile_id: str = Field(default="")
+    # Ed25519 public key (base64, from Mission Control → Keys & Credentials)
+    # verifying POST /webhooks/telnyx signatures (delivery receipts + inbound
+    # STOP opt-outs). Empty disables the endpoint: it answers 503 so Telnyx
+    # keeps retrying until configured.
+    telnyx_public_key: str = Field(default="")
 
     # PostHog product analytics (optional passthrough from ``app.analytics``).
     # Empty ``posthog_api_key`` disables the integration entirely — events are
