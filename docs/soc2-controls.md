@@ -107,7 +107,9 @@ The engineering team maintains:
 
 ### CC6.2: Prior to Access
 
-- User accounts are created through the tenant onboarding flow or Django admin.
+- User accounts are created through the tenant onboarding flow, seat-capped
+  staff invites (`POST /users/invite`, single-use set-password links), or
+  Django admin.
 - Passwords are hashed with bcrypt.
 - Role-based access controls distinguish `admin` and `staff` users.
 
@@ -115,6 +117,11 @@ The engineering team maintains:
 
 - Tenant admins can deactivate users via the back-office UI.
 - Django superusers can delete accounts via the admin panel.
+- Whole-tenant offboarding (`POST /tenants/me/offboard`) revokes every access
+  path in one transaction: staff/customer accounts deactivated (JWT validators
+  check `is_active` per request), magic-link/invite/document/reset tokens
+  revoked, provider accounts detached, and PII anonymised in place — see
+  `docs/data-retention.md`.
 
 ### CC6.6: Encryption
 
@@ -159,8 +166,8 @@ The engineering team maintains:
 - Third-party dependencies are scanned for known vulnerabilities.
 - Third-party vendors — Railway (hosting), Moonshot AI (Kimi LLM via
   LiteLLM), Stripe (customer→tradesperson payments), Paddle (subscription
-  billing, merchant of record), and Resend (transactional email) — are
-  assessed for production readiness.
+  billing, merchant of record), Resend (transactional email), and Telnyx
+  (SMS appointment reminders) — are assessed for production readiness.
 
 ## Evidence Locations
 

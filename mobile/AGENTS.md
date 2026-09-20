@@ -44,6 +44,10 @@ pnpm lint         # tsc --noEmit
   devDependency; `eas.json` has `development` / `development-simulator` /
   `preview` / `production` profiles). OTA hot fixes go through EAS Update
   (`eas update --branch production`).
+- **Quota-free builds:** `eas build --platform ios --profile production --local`
+  runs the build on your Mac via fastlane (requires full Xcode + fastlane) and
+  consumes no EAS build minutes; submit the resulting `.ipa` with
+  `eas submit --platform ios --path <ipa>`. See `mobile/README.md`.
 - `EXPO_PUBLIC_API_BASE_URL` must be set in BOTH places: `eas.json` build
   profiles (used at `eas build` time) AND as an EAS project environment
   variable (used at `eas update` time — eas.json profile envs are NOT applied
