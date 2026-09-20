@@ -1,5 +1,15 @@
 # Beta PRD — My Trade Portal Mobile (iOS)
 
+> **Status (2026-09-20): shipped.** Every iteration below is complete and the
+> October 2026 beta cohort is live; this document is kept as the historical
+> spec. `docs/beta-test-plan.md` is the current verification map, and
+> `AGENTS.md` documents the architecture as built. Two statements in this PRD
+> did not survive implementation: **demo mode was removed entirely** (connected
+> mode is the only runtime mode — the `owner@demo.trade` account is a real
+> seeded user, not a client-side mock), and **real payments did ship** —
+> Stripe Connect destination charges for customer→tradesperson invoices plus
+> Paddle for the platform subscription (see `docs/payments-model.md`).
+
 > Product Requirements Document for the closed Beta of the white-label electrician
 > field-service app. Goal: a single iOS app that brands per tenant, supports
 > separate electrician and customer logins, and is fully integrated with the
