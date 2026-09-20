@@ -634,7 +634,14 @@ class InvoiceLineItem(Base, TimestampMixin):
 
 
 class Payment(Base, TimestampMixin):
-    """A payment record linked to Paddle."""
+    """A payment record for an invoice.
+
+    Receivables are Stripe Connect (ADR-003): the webhook writes these rows
+    with ``provider="stripe"`` on ``payment_intent.succeeded``. Legacy Paddle
+    invoice payments may still appear in historical data (``paid_via`` on the
+    invoice distinguishes them); Paddle's remaining role is platform
+    subscription billing via the ``subscriptions`` table.
+    """
 
     __tablename__ = "payments"
 
