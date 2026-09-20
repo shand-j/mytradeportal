@@ -3,6 +3,16 @@ name: CI
 # Mobile-beta scope. Runs the Python + mobile TypeScript quality gates on every
 # PR/push, then deploys the api / admin / data-pipeline services (plus native
 # databases, qdrant, minio) via Railway IaC on push to main.
+#
+# CI hard rules (see docs/ci-hard-rules.md):
+# - No live LLM or Paddle calls from CI. This workflow never sets LLM_API_KEY /
+#   OPENAI_API_KEY / PADDLE_API_KEY; the eval harness runs offline against
+#   canned fixtures (services/api/evals) and LLM/Paddle-facing tests use mocks
+#   or forged, locally-signed webhooks. Do not add provider credentials here.
+# - Schema changes are gated by the schema-sync job below: the project has no
+#   Alembic migrations (scripts/init_db.py is the single source of truth), so
+#   the job proves the sync is idempotent and reconciles an older prod-like
+#   schema instead of a classic up/down migration test.
 
 on:
   push:
@@ -72,6 +82,75 @@ jobs:
         # Do not lower this; raise it when coverage improves.
         run: pytest --cov-fail-under=70
 
+  schema-sync:
+    # Migration gate (CI hard rules). This project has no Alembic migrations:
+    # scripts/init_db.py is the single source of truth — it creates the schema
+    # from the current SQLAlchemy models, reconciles missing columns on
+    # existing tables, and applies RLS. A classic up/down migration test does
+    # not apply, so this job proves the two properties a migration gate exists
+    # for, against a fresh Postgres:
+    #   1. Idempotency: a second run reconciles nothing (safe as a preDeploy).
+    #   2. Reconcile: against a prod-like *older* schema (simulated by
+    #      dropping a recently added column), the sync brings it forward.
+    # There is no prod-like dump fixture in the repo (checked
+    # services/api/tests and scripts/); if one is ever added, extend this job
+    # to restore it and run init_db against the restored dump.
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: mtp
+          POSTGRES_PASSWORD: mtp
+          POSTGRES_DB: mtp
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U mtp"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      DATABASE_URL: postgresql+asyncpg://mtp:mtp@localhost:5432/mtp
+      # Keep the BI metadata database name unique per run; init_db creates it.
+      METABASE_DB_NAME: metabase_ci
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+
+      - name: First schema sync (fresh database)
+        run: python scripts/init_db.py
+
+      - name: Second schema sync must reconcile nothing (idempotency proof)
+        run: |
+          OUTPUT=$(python scripts/init_db.py 2>&1)
+          echo "$OUTPUT"
+          echo "$OUTPUT" | grep -q "\[init_db\] No missing columns to reconcile"
+
+      - name: Reconcile an older prod-like schema
+        # Simulate a production dump from an older release by dropping a
+        # recently added column; the sync must re-add it (this is the "up"
+        # direction of the migration gate).
+        run: |
+          psql "postgresql://mtp:mtp@localhost:5432/mtp" \
+            -c 'ALTER TABLE quotes DROP COLUMN rounding_adjustment'
+          OUTPUT=$(python scripts/init_db.py 2>&1)
+          echo "$OUTPUT"
+          echo "$OUTPUT" | grep -q "Adding missing column quotes.rounding_adjustment"
+          psql "postgresql://mtp:mtp@localhost:5432/mtp" \
+            -tAc "SELECT 1 FROM information_schema.columns \
+                  WHERE table_name='quotes' AND column_name='rounding_adjustment'" \
+            | grep -q 1
+
   mobile:
     runs-on: ubuntu-latest
     defaults:
@@ -108,7 +187,7 @@ jobs:
     # Requires the RAILWAY_TOKEN (project-scoped) GitHub secret and an
     # existing Railway project wired to this repo. Runs only after both
     # quality-gate jobs pass on main.
-    needs: [python, mobile]
+    needs: [python, mobile, schema-sync]
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     runs-on: ubuntu-latest
     environment: MyTradePortal/Production
