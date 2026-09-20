@@ -314,6 +314,7 @@ def quote_reminder(
     view_url: str | None = None,
     portal_url: str | None = None,
     personal_message: str | None = None,
+    brand_color: str | None = None,
 ) -> tuple[str, str, str]:
     """Follow-up email for a sent-but-unanswered quote. (subject, html, text).
 
@@ -325,10 +326,12 @@ def quote_reminder(
     ``personal_message`` is an optional AI-drafted personalised paragraph
     (F2); when present it is shown directly under the greeting, ahead of the
     standard copy. The static template stays the skeleton either way.
+    ``brand_color`` tints the CTA button with the tenant's brand (the
+    platform indigo is the fallback when unset).
     """
     subject = f"Reminder: your quote from {business_name}"
     if portal_url:
-        text_cta, html_cta = _magic_link_cta(portal_url, "View and accept your quote")
+        text_cta, html_cta = _magic_link_cta(portal_url, "View and accept your quote", brand_color)
         if view_url:
             text_secondary, html_secondary = _view_only_secondary(view_url)
         else:
@@ -337,7 +340,7 @@ def quote_reminder(
         text_cta = f"View and accept the quote here:\n{view_url}\n\n"
         html_cta = f"""\
     <p style="margin:24px 0;">
-      <a href="{view_url}" style="background:#4F46E5;color:#fff;padding:12px 20px;border-radius:8px;text-decoration:none;font-weight:600;">View quote</a>
+      <a href="{view_url}" style="background:{brand_color or "#4F46E5"};color:#fff;padding:12px 20px;border-radius:8px;text-decoration:none;font-weight:600;">View quote</a>
     </p>
     <p style="color:#64748b;font-size:13px;">If the button doesn't work, copy and paste this link:<br><a href="{view_url}" style="color:#4F46E5;">{view_url}</a></p>
 """
@@ -388,6 +391,7 @@ def invoice_reminder(
     view_url: str | None = None,
     portal_url: str | None = None,
     personal_message: str | None = None,
+    brand_color: str | None = None,
 ) -> tuple[str, str, str]:
     """Payment-chasing email for an unpaid sent invoice. (subject, html, text).
 
@@ -400,12 +404,18 @@ def invoice_reminder(
 
     ``personal_message`` is an optional AI-drafted personalised paragraph
     (F2); when present it is shown directly under the greeting, ahead of the
-    standard copy.
+    standard copy. ``brand_color`` tints the CTA buttons with the tenant's
+    brand (white button text; the unbranded fallback keeps the platform
+    dark/gold, matching :func:`invoice_sent`).
     """
     subject = f"Reminder: invoice {invoice_number} from {business_name}"
     payment_text, payment_html = _payment_details_block(payment_details)
+    button_bg = brand_color or "#0F1E26"
+    button_fg = "#fff" if brand_color else "#FFC107"
     if portal_url:
-        action_text, action_html = _magic_link_cta(portal_url, "View and pay your invoice")
+        action_text, action_html = _magic_link_cta(
+            portal_url, "View and pay your invoice", brand_color
+        )
         if view_url:
             text_secondary, html_secondary = _view_only_secondary(view_url)
         else:
@@ -413,8 +423,8 @@ def invoice_reminder(
     elif view_url:
         action_text = f"View and pay online:\n{view_url}\n\n"
         action_html = (
-            f'<p><a href="{view_url}" style="display:inline-block;background:#0F1E26;'
-            'color:#FFC107;padding:12px 24px;text-decoration:none;font-weight:700;">'
+            f'<p><a href="{view_url}" style="display:inline-block;background:{button_bg};'
+            f'color:{button_fg};padding:12px 24px;text-decoration:none;font-weight:700;">'
             "View and pay online</a></p>"
         )
         text_secondary, html_secondary = "", ""
