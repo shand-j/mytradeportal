@@ -661,15 +661,23 @@ logs out on a tenant-mismatch 403.
 - **Security suite**: `security/` contains read-only/code-analysis tests and an
 agentic penetration-test orchestrator. It is safe to run but requires live target
 credentials.
-- **Dependency audits**:
+- **Dependency audits** (also run by the `dependency-audit` job in
+`pr-verify.yml` — `pnpm audit` is a hard high/critical gate there, `pip-audit`
+is report-only because it has no severity filter and some advisories against
+our tree, e.g. ecdsa CVE-2024-23342, have no fixed release):
 
 ```bash
-# Python
-pip-audit --desc --audit-level=high
+# Python (no severity filter; review output for high/critical)
+pip-audit --desc
 
-# Node
+# Node (fails on high/critical; the only accepted advisories are the
+# documented GHSA IDs in auditConfig.ignoreGhsas in pnpm-workspace.yaml)
 pnpm audit --audit-level=high
 ```
+
+Transitive Node packages with fixable advisories are pinned to patched
+releases via `overrides` in `pnpm-workspace.yaml` — add new ones there rather
+than bumping direct dependencies that aren't actually vulnerable.
 
 ---
 
