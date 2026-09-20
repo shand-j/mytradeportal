@@ -9,10 +9,17 @@ reviewers.
 The system scope covers:
 - Multi-tenant FastAPI backend (`services/api`)
 - Django admin panel (`services/admin`)
-- OCERP microservice (`services/ocerp`)
 - Data pipeline (`services/data-pipeline`)
+- React Native + Expo iOS app (`mobile/`)
 - React back-office UI (`web/app`)
+- Marketing site and tenant-branded customer portal (`web/landing`)
 - Railway-hosted infrastructure (`.railway/railway.ts`)
+
+Customer→tradesperson payments run on Stripe Connect (destination charges to
+the tradesperson's Express account; the platform never holds funds — see
+`docs/decisions/ADR-003-stripe-connect-express.md`). Platform subscription
+billing is handled by Paddle as merchant of record. AI features call a
+third-party LLM (Kimi/Moonshot via LiteLLM, OpenAI-compatible API).
 
 ## Control Environment
 
@@ -86,8 +93,9 @@ The engineering team maintains:
 - All production secrets are stored in Railway variables or GitHub environment
   secrets.
 - The `DJANGO_SUPERUSER_PASSWORD` is rotated through GitHub Actions on deploy.
-- `OPENAI_API_KEY`, `PADDLE_API_KEY`, and database credentials are never
-  committed.
+- LLM (`LLM_API_KEY`/`EMBEDDING_API_KEY`), payment (`STRIPE_SECRET_KEY`,
+  `STRIPE_WEBHOOK_SECRET`, `PADDLE_API_KEY`), and database credentials are
+  never committed.
 
 ## Logical and Physical Access Controls
 
@@ -149,7 +157,10 @@ The engineering team maintains:
 ### CC9.2: Vendor Risk Management
 
 - Third-party dependencies are scanned for known vulnerabilities.
-- Railway and OpenAI are assessed for production readiness.
+- Third-party vendors — Railway (hosting), Moonshot AI (Kimi LLM via
+  LiteLLM), Stripe (customer→tradesperson payments), Paddle (subscription
+  billing, merchant of record), and Resend (transactional email) — are
+  assessed for production readiness.
 
 ## Evidence Locations
 
