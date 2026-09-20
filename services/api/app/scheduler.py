@@ -334,6 +334,7 @@ async def _process_quote_reminders(
             view_url=view_url,
             portal_url=portal_url,
             personal_message=personal_message,
+            brand_color=tenant.primary_color,
         )
         delivered = await send_customer_email(
             db,
@@ -479,6 +480,7 @@ async def _process_invoice_reminders(
             view_url=view_url,
             portal_url=portal_url,
             personal_message=personal_message,
+            brand_color=tenant.primary_color,
         )
         delivered = await send_customer_email(
             db,
