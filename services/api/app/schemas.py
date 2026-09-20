@@ -1337,6 +1337,32 @@ class TenantBootstrapRead(TenantRead):
     admin_user: UserRead | None = None
 
 
+class TenantOffboardRequest(BaseModel):
+    """Confirmation payload for tenant offboarding (GDPR deletion).
+
+    ``confirm_slug`` must equal the tenant's slug so an offboard can never be
+    triggered by an accidental click or a CSRF-style replay against the wrong
+    tenant context.
+    """
+
+    confirm_slug: str
+    reason: str | None = None
+
+
+class TenantOffboardRead(BaseModel):
+    """Summary of what the offboarding run changed."""
+
+    tenant_id: UUID
+    status: str
+    offboarded_at: datetime
+    users_deactivated: int
+    customers_deactivated: int
+    contacts_anonymised: int
+    tokens_revoked: int
+    paddle_subscription_cancelled: bool
+    stripe_account_detached: bool
+
+
 # ---------------------------------------------------------------------------
 # Mobile pivot schemas
 # ---------------------------------------------------------------------------

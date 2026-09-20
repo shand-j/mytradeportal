@@ -216,6 +216,24 @@ async def get_price(price_id: str) -> dict[str, Any]:
         return response.json()["data"]  # type: ignore[no-any-return]
 
 
+async def cancel_subscription(subscription_id: str) -> None:
+    """Cancel a subscription immediately (tenant offboarding).
+
+    ``POST /subscriptions/{id}/cancel`` with ``effective_from=immediately``
+    stops billing at once; the resulting ``subscription.canceled`` webhook
+    re-syncs the local mirror. Callers treat this as best-effort — an
+    unconfigured key or a Paddle outage must never block offboarding.
+    """
+    if not settings.paddle_api_key:
+        raise RuntimeError("Paddle API key is not configured")
+    async with httpx.AsyncClient(base_url=_paddle_base_url(), headers=_headers()) as client:
+        response = await client.post(
+            f"/subscriptions/{subscription_id}/cancel",
+            json={"effective_from": "immediately"},
+        )
+        _raise_for_status(response, "cancel_subscription")
+
+
 async def create_customer_address(
     customer_id: str,
     country_code: str = "GB",

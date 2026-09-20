@@ -297,6 +297,19 @@ async def retrieve_account(account_id: str) -> dict[str, bool | str]:
     return _capability_flags(account)
 
 
+async def delete_connected_account(account_id: str) -> None:
+    """Delete a platform-controlled Express connected account (tenant offboarding).
+
+    Uses the v1 SDK ``Account.delete`` — Accounts v2 has no delete endpoint and
+    v1 deletion is still supported for platform-created Express accounts (the
+    same account ids the v2 API reads). Callers treat this as best-effort: a
+    failure leaves the account live in the Stripe dashboard and must never
+    block offboarding.
+    """
+    stripe = _stripe()
+    await asyncio.to_thread(stripe.Account.delete, account_id)
+
+
 async def create_payment_intent(
     *,
     amount_pence: int,
