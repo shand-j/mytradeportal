@@ -1,6 +1,6 @@
 """Tenant management endpoints."""
 
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from typing import Annotated, Any
 from uuid import UUID, uuid4
 
@@ -9,20 +9,38 @@ import structlog
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request, UploadFile, status
 from mtp_shared import get_settings
 from pydantic import EmailStr
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app import paddle_client, stripe_client
 from app.audit import Actions, write_audit_log
 from app.database import get_db
-from app.dependencies import ActiveUserDep, TenantDep
+from app.dependencies import ActiveUserDep, RequireAdminDep, TenantDep
 from app.limiter import limiter
-from app.models import Subscription, Tenant, User
+from app.models import (
+    Communication,
+    Contact,
+    Customer,
+    CustomerPortalToken,
+    DocumentAccessToken,
+    Job,
+    PasswordResetToken,
+    Property,
+    QuoteRequest,
+    StripeAccount,
+    Subscription,
+    Tenant,
+    User,
+    UserInviteToken,
+)
 from app.plans import DEFAULT_PLAN_KEY, TRIAL_DAYS
 from app.rls import bypass_rls_for_transaction, set_tenant_in_session
 from app.schemas import (
     EmailAvailabilityRead,
     TenantBootstrapRead,
     TenantCreate,
+    TenantOffboardRead,
+    TenantOffboardRequest,
     TenantRead,
     TenantUpdate,
     UserRead,
@@ -471,6 +489,272 @@ async def delete_current_tenant_logo(
     await db.commit()
     await db.refresh(tenant)
     return TenantRead.model_validate(tenant)
+
+
+def _anonymised_email(entity_id: UUID) -> str:
+    """Deterministic, non-PII replacement address for an anonymised account.
+
+    Unique per row so per-tenant uniqueness expectations keep holding, on a
+    reserved ``.invalid`` TLD so a scrubbed address can never receive mail.
+    """
+    return f"deleted-{entity_id.hex[:12]}@offboarded.invalid"
+
+
+async def _revoke_tenant_tokens(db: AsyncSession, tenant_id: UUID) -> int:
+    """Invalidate every outstanding bearer credential the tenant could hold.
+
+    JWTs are stateless, so revocation works by deactivating their subjects
+    (staff users / customer accounts are checked on every request) AND by
+    revoking the persisted token families: portal magic links, staff invite
+    links, public quote/invoice document links and password-reset tokens.
+    Returns the number of persisted token rows revoked.
+    """
+    now = datetime.now(UTC)
+    revoked = 0
+    for model in (CustomerPortalToken, UserInviteToken):
+        result = await db.execute(
+            update(model)
+            .where(model.tenant_id == tenant_id, model.revoked_at.is_(None))
+            .values(revoked_at=now)
+        )
+        revoked += result.rowcount or 0  # type: ignore[attr-defined]
+    # Document links are single-tenant too; the snapshot email is PII and goes
+    # with the revocation.
+    result = await db.execute(
+        update(DocumentAccessToken)
+        .where(DocumentAccessToken.tenant_id == tenant_id)
+        .values(revoked_at=datetime.utcnow(), contact_email=None)
+    )
+    revoked += result.rowcount or 0  # type: ignore[attr-defined]
+    # Password-reset tokens are single-use; mark every unused one as used.
+    result = await db.execute(
+        update(PasswordResetToken)
+        .where(PasswordResetToken.tenant_id == tenant_id, PasswordResetToken.used_at.is_(None))
+        .values(used_at=datetime.utcnow())
+    )
+    revoked += result.rowcount or 0  # type: ignore[attr-defined]
+    return revoked
+
+
+async def _scrub_tenant_pii(db: AsyncSession, tenant: Tenant) -> dict[str, int]:
+    """Anonymise personal data in place while preserving financial records.
+
+    Quotes, invoices, payments and their line items are HMRC-relevant records
+    (kept 6 years — see docs/data-retention.md) and are NOT touched beyond the
+    PII-bearing party records they reference: amounts, VAT, numbering and
+    foreign keys stay intact so the retained books remain internally
+    consistent. Everything that identifies a person (staff or homeowner) is
+    replaced or cleared.
+    """
+    counts = {"users": 0, "customers": 0, "contacts": 0}
+
+    users = (await db.execute(select(User).where(User.tenant_id == tenant.id))).scalars().all()
+    for user in users:
+        user.email = _anonymised_email(user.id)
+        user.full_name = "Offboarded user"
+        user.phone = None
+        user.password_hash = None
+        user.supabase_uid = None
+        user.invited_at = None  # a pending invite no longer holds a seat
+        user.is_active = False
+        counts["users"] += 1
+
+    customers = (
+        (await db.execute(select(Customer).where(Customer.tenant_id == tenant.id))).scalars().all()
+    )
+    for customer in customers:
+        customer.email = _anonymised_email(customer.id)
+        customer.full_name = "Former customer"
+        customer.phone = None
+        customer.address = None
+        customer.postcode = None
+        customer.property_profile = {}
+        customer.parking_notes = None
+        customer.access_notes = None
+        customer.password_hash = None
+        customer.magic_link_token = None
+        customer.magic_link_expires_at = None
+        customer.marketing_consent = False
+        customer.is_active = False
+        counts["customers"] += 1
+
+    contacts = (
+        (await db.execute(select(Contact).where(Contact.tenant_id == tenant.id))).scalars().all()
+    )
+    for contact in contacts:
+        contact.name = "Former customer"
+        contact.email = None
+        contact.phone = None
+        contact.address = None
+        contact.postcode = None
+        contact.notes = None
+        contact.parking_notes = None
+        contact.access_notes = None
+        counts["contacts"] += 1
+
+    # Home addresses are personal data; a property row has no financial value.
+    properties = (
+        (await db.execute(select(Property).where(Property.tenant_id == tenant.id))).scalars().all()
+    )
+    for prop in properties:
+        prop.address = "Removed"
+        prop.postcode = "REMOVED"
+        prop.lat = None
+        prop.lng = None
+        prop.notes = None
+        prop.is_active = False
+
+    # Customer correspondence is personal data, not a financial record.
+    communications = (
+        (await db.execute(select(Communication).where(Communication.tenant_id == tenant.id)))
+        .scalars()
+        .all()
+    )
+    for comm in communications:
+        comm.subject = None
+        comm.body = None
+
+    # Lead intake free-text carries anything the homeowner typed.
+    quote_requests = (
+        (await db.execute(select(QuoteRequest).where(QuoteRequest.tenant_id == tenant.id)))
+        .scalars()
+        .all()
+    )
+    for qr in quote_requests:
+        qr.raw_text = None
+        qr.structured_data = {}
+        qr.ai_extracted_summary = None
+
+    # Job site addresses identify the customer's home; schedule/status stays.
+    jobs = (await db.execute(select(Job).where(Job.tenant_id == tenant.id))).scalars().all()
+    for job in jobs:
+        job.address = None
+        job.postcode = None
+        job.lat = None
+        job.lng = None
+
+    # The tenant's own contact details are personal data when the business is
+    # a sole trader; branding/pricing settings stay for the retained records.
+    settings = {
+        key: value
+        for key, value in (tenant.settings or {}).items()
+        if key not in ("email", "phone", "address", "postcode")
+    }
+    tenant.settings = settings
+    return counts
+
+
+@router.post("/me/offboard")
+async def offboard_current_tenant(
+    data: TenantOffboardRequest,
+    tenant: TenantDep,
+    current_user: RequireAdminDep,
+    db: DbDep,
+) -> TenantOffboardRead:
+    """Offboard the current tenant (admin only): deactivate + anonymise.
+
+    GDPR deletion companion to ``GET /export/my-data`` — tenants are expected
+    to export first. The run is a single transaction that:
+
+    1. Cancels the Paddle SaaS subscription and detaches the Stripe Connect
+       account (both best-effort — provider outages never block offboarding).
+    2. Revokes every access path: staff and customer accounts are deactivated
+       (their JWTs are validated against ``is_active`` on every request), and
+       portal magic links, invite links, password-reset tokens and public
+       document links are revoked.
+    3. Anonymises personal data in place while preserving the financial
+       records (quotes, invoices, payments) HMRC requires for 6 years.
+    4. Marks the tenant inactive so tenant resolution rejects every further
+       request, including the portal subdomain.
+
+    Full row deletion happens after the financial retention window as an ops
+    task; backup rotation is documented in ``docs/data-retention.md``.
+    """
+    if current_user.tenant_id != tenant.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="User does not belong to this tenant",
+        )
+    if data.confirm_slug != tenant.slug:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="confirm_slug does not match the tenant slug",
+        )
+
+    # --- Provider detachment (best-effort, before rows are scrubbed) ---
+    paddle_cancelled = False
+    subscription = await db.scalar(select(Subscription).where(Subscription.tenant_id == tenant.id))
+    if subscription is not None:
+        if subscription.paddle_subscription_id and subscription.status not in ("canceled",):
+            try:
+                await paddle_client.cancel_subscription(subscription.paddle_subscription_id)
+                paddle_cancelled = True
+            except Exception as exc:
+                logger.warning(
+                    "offboard_paddle_cancel_failed",
+                    tenant_id=str(tenant.id),
+                    error_type=type(exc).__name__,
+                )
+        else:
+            paddle_cancelled = True  # nothing remote left to cancel
+        subscription.status = "canceled"
+
+    stripe_detached = False
+    stripe_account = await db.scalar(
+        select(StripeAccount).where(StripeAccount.tenant_id == tenant.id)
+    )
+    if stripe_account is not None:
+        try:
+            await stripe_client.delete_connected_account(stripe_account.stripe_account_id)
+            stripe_detached = True
+        except Exception as exc:
+            logger.warning(
+                "offboard_stripe_delete_failed",
+                tenant_id=str(tenant.id),
+                error_type=type(exc).__name__,
+            )
+        # Detach locally either way: the offboarded tenant must never take
+        # another card payment through the platform.
+        await db.delete(stripe_account)
+
+    # --- Access revocation + PII scrub ---
+    tokens_revoked = await _revoke_tenant_tokens(db, tenant.id)
+    counts = await _scrub_tenant_pii(db, tenant)
+
+    offboarded_at = datetime.utcnow()
+    tenant.is_active = False
+    tenant.status = "offboarded"
+
+    await db.flush()
+    await write_audit_log(
+        db,
+        tenant_id=tenant.id,
+        actor=current_user,
+        action=Actions.TENANT_OFFBOARDED,
+        entity_type="tenant",
+        entity_id=tenant.id,
+        payload={
+            "reason": data.reason,
+            "users_deactivated": counts["users"],
+            "customers_deactivated": counts["customers"],
+            "contacts_anonymised": counts["contacts"],
+            "tokens_revoked": tokens_revoked,
+            "paddle_subscription_cancelled": paddle_cancelled,
+            "stripe_account_detached": stripe_detached,
+        },
+    )
+    await db.commit()
+    return TenantOffboardRead(
+        tenant_id=tenant.id,
+        status=tenant.status,
+        offboarded_at=offboarded_at,
+        users_deactivated=counts["users"],
+        customers_deactivated=counts["customers"],
+        contacts_anonymised=counts["contacts"],
+        tokens_revoked=tokens_revoked,
+        paddle_subscription_cancelled=paddle_cancelled,
+        stripe_account_detached=stripe_detached,
+    )
 
 
 @router.get("/{tenant_id}")

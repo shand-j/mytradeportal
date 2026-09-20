@@ -83,7 +83,10 @@ async def resolve_tenant(db: AsyncSession, slug: str | None) -> Tenant:
     if slug:
         result = await db.execute(select(Tenant).where(Tenant.slug == slug))
         tenant = result.scalar_one_or_none()
-        if tenant is not None:
+        # An explicit slug must resolve to an ACTIVE tenant — an offboarded
+        # (is_active=False) tenant's subdomain must stop resolving everywhere,
+        # exactly like an unknown slug.
+        if tenant is not None and tenant.is_active:
             return tenant
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,

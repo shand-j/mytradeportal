@@ -73,6 +73,7 @@ class Actions:
 
     TENANT_CREATED = "tenant.created"
     TENANT_UPDATED = "tenant.updated"
+    TENANT_OFFBOARDED = "tenant.offboarded"
 
 
 async def write_audit_log(
