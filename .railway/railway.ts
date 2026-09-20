@@ -307,7 +307,10 @@ export default defineRailway(() => {
       // Public by design (present in every browser bundle); values live in the
       // dashboard, picked up here via preserve().
       // API origin for browser calls (demo quote endpoints, password reset).
-      VITE_API_URL: "https://api-production-65db.up.railway.app",
+      // Per-environment reference: each environment's landing calls its OWN
+      // api — a hardcoded host means PR preview landings call the stale
+      // staging api (which wedged and failed every pr-env-verify run).
+      VITE_API_URL: "https://${{api.RAILWAY_PUBLIC_DOMAIN}}",
       VITE_PADDLE_ENV: "sandbox",
       VITE_PADDLE_CLIENT_TOKEN: preserve(),
       // Stripe.js key (pk_...) for the tenant portal invoice /pay page.
