@@ -10,6 +10,8 @@ import { useBusiness } from "../../theme/ThemeProvider";
 import { createPortalSession, useSubscription } from "../../api/billing";
 import { api, ApiError } from "../../lib/apiClient";
 import { openCalendarSubscription } from "../../api/calendar";
+import { config } from "../../lib/config";
+import { openInAppBrowser } from "../../lib/inAppBrowser";
 
 function SubscriptionCard() {
   const { data, isLoading } = useSubscription();
@@ -209,6 +211,11 @@ export function SettingsScreen() {
       title: "Working hours",
       subtitle: "Working day times & days for scheduling",
       onPress: () => router.push("/(trade)/working-hours"),
+    },
+    {
+      title: "Help & guides",
+      subtitle: "Step-by-step guides for every feature",
+      onPress: () => void openInAppBrowser(config.helpUrl),
     },
   ];
 

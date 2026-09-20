@@ -9,6 +9,8 @@ import { requestPasswordReset } from "../../api/auth";
 import { requestInviteMagicLink } from "../../api/users";
 import { useAuth } from "../../contexts/AuthContext";
 import { NetworkError } from "../../lib/apiClient";
+import { config } from "../../lib/config";
+import { openInAppBrowser } from "../../lib/inAppBrowser";
 import { pendingInviteStorage } from "../../lib/pendingInvite";
 import { useBusiness } from "../../theme/ThemeProvider";
 import { AppRole } from "../../types";
@@ -314,6 +316,13 @@ export function LoginScreen({ role, mode = "login", initialEmail, onBack }: Logi
             }}
           />
         )}
+        <Button
+          testID="login-help-link"
+          title="Need a hand? Browse the help guides"
+          variant="ghost"
+          size="sm"
+          onPress={() => void openInAppBrowser(config.helpUrl)}
+        />
         </ScrollView>
       </KeyboardAvoidingView>
 
