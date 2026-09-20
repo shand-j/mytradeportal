@@ -10,6 +10,8 @@ import FairUse from './pages/FairUse'
 import StripeBounce from './pages/StripeBounce'
 import BlogIndex from './pages/blog/BlogIndex'
 import BlogPost from './pages/blog/BlogPost'
+import HelpIndex from './pages/help/HelpIndex'
+import HelpArticle from './pages/help/HelpArticle'
 import { resolvePortalSlug } from './portal/host'
 import { PortalProvider } from './portal/PortalProvider'
 import PortalHome from './portal/pages/PortalHome'
@@ -63,6 +65,8 @@ export default function App() {
       <Route path="/payments/stripe-bounce" element={<StripeBounce />} />
       <Route path="/blog" element={<BlogIndex />} />
       <Route path="/blog/:slug" element={<BlogPost />} />
+      <Route path="/help" element={<HelpIndex />} />
+      <Route path="/help/:slug" element={<HelpArticle />} />
     </Routes>
   )
 }
