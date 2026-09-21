@@ -50,6 +50,46 @@ export async function fetchMyAppointments(): Promise<ApiAppointment[]> {
   return api.get<ApiAppointment[]>("/customer/appointments");
 }
 
+export async function fetchAppointments(assignedUserId?: string): Promise<ApiAppointment[]> {
+  const query = assignedUserId ? `?assigned_user_id=${assignedUserId}` : "";
+  return api.get<ApiAppointment[]>(`/appointments${query}`);
+}
+
+/** Appointment reduced to what the trade calendar needs to bucket it by day. */
+export type CalendarAppointment = {
+  id: string;
+  /** Local "YYYY-MM-DD" date, so entries bucket into the day the user sees. */
+  date: string;
+};
+
+/** Local (not UTC) calendar date — same rule as jobs (see api/jobs.ts). */
+function toLocalIsoDate(d: Date): string {
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+
+/**
+ * Tenant appointments for the trade calendar (GET /appointments). Mirrors the
+ * availability rules: cancelled and no-show appointments never block the
+ * calendar, so they are dropped from the list. `assignedUserId` powers the
+ * multi-seat All/Me filter, like `useJobsList`.
+ */
+export function useAppointmentsList(filter?: { assignedUserId?: string | null }) {
+  const assignedUserId = filter?.assignedUserId ?? undefined;
+  const query = useQuery({
+    queryKey: ["appointments", assignedUserId ?? "all"],
+    queryFn: () => fetchAppointments(assignedUserId),
+  });
+
+  return {
+    appointments: (query.data ?? [])
+      .filter((a) => a.status !== "cancelled" && a.status !== "no_show")
+      .map((a): CalendarAppointment => ({ id: a.id, date: toLocalIsoDate(new Date(a.startAt)) })),
+    isConnected: query.isSuccess,
+    isLoading: query.isLoading,
+  };
+}
+
 /**
  * Free 1-hour start slots (ISO datetimes) for a trade calendar date
  * (GET /appointments/availability?date=YYYY-MM-DD). Appointments and scheduled
