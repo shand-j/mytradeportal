@@ -8,6 +8,7 @@ import { Header } from "../../components/ui/Header";
 import { Text } from "../../components/ui/Text";
 import { Screen } from "../../components/ui/Screen";
 import { fetchQuote } from "../../api/quotes";
+import { MeasurementEntry } from "../../api/jobs";
 import { useQuoteRoundingIncrement } from "../../api/businesses";
 import { ApiError } from "../../lib/apiClient";
 import { formatMoneyGBP, roundUpToIncrement } from "../../lib/format";
@@ -52,6 +53,8 @@ type InvoiceItem = { id: string; description: string; amount: number };
 
 type JobUpdatePatch = {
   notes?: string;
+  /** Replaces the job's measurements list. */
+  measurements?: MeasurementEntry[];
   assignedUserId?: string | null;
   /** ISO datetimes — scheduling/rescheduling the job. */
   scheduledStart?: string;
@@ -86,6 +89,8 @@ type JobDetailScreenProps = {
   members?: { id: string; fullName: string }[];
   /** Notes saved on the backend job record. */
   initialNotes?: string | null;
+  /** Measurements saved on the backend job record. */
+  initialMeasurements?: MeasurementEntry[];
   /** Raw scheduled window from the backend job record (null when unscheduled). */
   scheduledStart?: string | null;
   scheduledEnd?: string | null;
@@ -115,6 +120,7 @@ export function JobDetailScreen({
   onUpdateJob,
   members,
   initialNotes,
+  initialMeasurements,
   scheduledStart,
   scheduledEnd,
   photos,
@@ -128,6 +134,9 @@ export function JobDetailScreen({
   const [notes, setNotes] = useState(initialNotes ?? "");
   const [notesDirty, setNotesDirty] = useState(false);
   const [savingNotes, setSavingNotes] = useState(false);
+  const [measurements, setMeasurements] = useState<MeasurementEntry[]>(initialMeasurements ?? []);
+  const [measurementsDirty, setMeasurementsDirty] = useState(false);
+  const [savingMeasurements, setSavingMeasurements] = useState(false);
   const [assignedTo, setAssignedTo] = useState(job.assignedTo);
   const [assigneePickerOpen, setAssigneePickerOpen] = useState(false);
   const [savingAssignee, setSavingAssignee] = useState(false);
@@ -146,6 +155,9 @@ export function JobDetailScreen({
   useEffect(() => {
     if (!notesDirty) setNotes(initialNotes ?? "");
   }, [initialNotes, notesDirty]);
+  useEffect(() => {
+    if (!measurementsDirty) setMeasurements(initialMeasurements ?? []);
+  }, [initialMeasurements, measurementsDirty]);
   useEffect(() => setAssignedTo(job.assignedTo), [job.assignedTo]);
 
   // Quote-less jobs have no priced lines to inherit: the electrician builds the
@@ -204,6 +216,37 @@ export function JobDetailScreen({
       Alert.alert("Couldn't save the notes", errorMessage(err, "Please try again."));
     } finally {
       setSavingNotes(false);
+    }
+  };
+
+  const updateMeasurement = (index: number, field: keyof MeasurementEntry, value: string) => {
+    setMeasurements((prev) =>
+      prev.map((entry, i) => (i === index ? { ...entry, [field]: value } : entry))
+    );
+    setMeasurementsDirty(true);
+  };
+
+  const removeMeasurement = (index: number) => {
+    setMeasurements((prev) => prev.filter((_, i) => i !== index));
+    setMeasurementsDirty(true);
+  };
+
+  const handleSaveMeasurements = async () => {
+    if (!onUpdateJob) return;
+    // Blank rows are dropped rather than rejected — the API requires a
+    // non-empty label and value on every stored entry.
+    const cleaned = measurements
+      .map((entry) => ({ label: entry.label.trim(), value: entry.value.trim() }))
+      .filter((entry) => entry.label !== "" && entry.value !== "");
+    setSavingMeasurements(true);
+    try {
+      await onUpdateJob({ measurements: cleaned });
+      setMeasurements(cleaned);
+      setMeasurementsDirty(false);
+    } catch (err) {
+      Alert.alert("Couldn't save the measurements", errorMessage(err, "Please try again."));
+    } finally {
+      setSavingMeasurements(false);
     }
   };
 
@@ -539,6 +582,63 @@ export function JobDetailScreen({
             </ScrollView>
           </View>
         )}
+
+        <View className="rounded-2xl bg-slate-100 p-4 gap-2">
+          <Text variant="body" weight="semibold">
+            Measurements
+          </Text>
+          {measurements.length === 0 && (
+            <Text testID="job-measurements-empty" variant="caption" color="secondary">
+              No measurements recorded yet.
+            </Text>
+          )}
+          {measurements.map((entry, index) => (
+            <View key={index} className="flex-row items-center gap-2">
+              <TextInput
+                testID={`job-measurement-label-${index}`}
+                className="h-10 flex-1 rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-900"
+                value={entry.label}
+                onChangeText={(value) => updateMeasurement(index, "label", value)}
+                placeholder="Label (e.g. Cable run)"
+              />
+              <TextInput
+                testID={`job-measurement-value-${index}`}
+                className="h-10 flex-1 rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-900"
+                value={entry.value}
+                onChangeText={(value) => updateMeasurement(index, "value", value)}
+                placeholder="Value (e.g. 12 m)"
+              />
+              <Pressable
+                testID={`job-measurement-remove-${index}`}
+                accessibilityLabel={`Remove measurement ${index + 1}`}
+                onPress={() => removeMeasurement(index)}
+              >
+                <Text variant="body" weight="semibold" color="primary">
+                  ✕
+                </Text>
+              </Pressable>
+            </View>
+          ))}
+          <Button
+            testID="job-measurement-add"
+            title="+ Add measurement"
+            variant="outline"
+            size="sm"
+            onPress={() => {
+              setMeasurements((prev) => [...prev, { label: "", value: "" }]);
+              setMeasurementsDirty(true);
+            }}
+          />
+          {onUpdateJob && measurementsDirty && (
+            <Button
+              testID="job-measurements-save"
+              title={savingMeasurements ? "Saving…" : "Save measurements"}
+              size="sm"
+              disabled={savingMeasurements}
+              onPress={() => void handleSaveMeasurements()}
+            />
+          )}
+        </View>
 
         <View className="rounded-2xl bg-slate-100 p-4 gap-2">
           <Text variant="body" weight="semibold">

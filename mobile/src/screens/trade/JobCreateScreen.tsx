@@ -17,7 +17,7 @@ import { Screen } from "../../components/ui/Screen";
 import { Text } from "../../components/ui/Text";
 import { useContactsList, findOrCreateContact } from "../../api/contacts";
 import { useCreateJob, useConvertQuoteToJob, useScheduleSuggestion } from "../../api/jobs";
-import type { ScheduleSuggestion } from "../../api/jobs";
+import type { MeasurementEntry, ScheduleSuggestion } from "../../api/jobs";
 import { ApiQuote, fetchQuotes, setQuoteApproval, useApiQuote } from "../../api/quotes";
 import { fetchAvailability, useAvailability } from "../../api/appointments";
 import { useUsersList } from "../../api/users";
@@ -156,6 +156,7 @@ export function JobCreateScreen({ onClose, initialQuoteId }: JobCreateScreenProp
   const [time, setTime] = useState("");
   const [durationHours, setDurationHours] = useState("");
   const [assignedUserId, setAssignedUserId] = useState<string | null>(null);
+  const [measurements, setMeasurements] = useState<MeasurementEntry[]>([]);
   const [notes, setNotes] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
@@ -323,6 +324,13 @@ export function JobCreateScreen({ onClose, initialQuoteId }: JobCreateScreenProp
     return { start: start.toISOString(), end: end?.toISOString() };
   };
 
+  // Blank rows are dropped rather than rejected — the API requires a non-empty
+  // label and value on every stored entry.
+  const cleanedMeasurements = () =>
+    measurements
+      .map((entry) => ({ label: entry.label.trim(), value: entry.value.trim() }))
+      .filter((entry) => entry.label !== "" && entry.value !== "");
+
   const handleCreate = async () => {
     setError(null);
     if (!selectedQuote && !title.trim()) {
@@ -334,6 +342,7 @@ export function JobCreateScreen({ onClose, initialQuoteId }: JobCreateScreenProp
       setError(schedule);
       return;
     }
+    const recordedMeasurements = cleanedMeasurements();
 
     let resolvedContactId = contactId;
     if (selectedQuote) {
@@ -380,6 +389,8 @@ export function JobCreateScreen({ onClose, initialQuoteId }: JobCreateScreenProp
             scheduledStart: schedule.start,
             scheduledEnd: schedule.end,
             notes: notes.trim() !== "" ? notes.trim() : undefined,
+            measurements:
+              recordedMeasurements.length > 0 ? recordedMeasurements : undefined,
             assignedUserId: assignedUserId ?? undefined,
           },
         });
@@ -390,6 +401,7 @@ export function JobCreateScreen({ onClose, initialQuoteId }: JobCreateScreenProp
           scheduledStart: schedule.start,
           scheduledEnd: schedule.end,
           notes: notes.trim() !== "" ? notes.trim() : undefined,
+          measurements: recordedMeasurements.length > 0 ? recordedMeasurements : undefined,
           assignedUserId: assignedUserId ?? undefined,
         });
       }
@@ -939,6 +951,59 @@ export function JobCreateScreen({ onClose, initialQuoteId }: JobCreateScreenProp
               </View>
             </View>
           )}
+
+          <View className="gap-2">
+            <Text variant="body" weight="semibold">
+              Measurements
+            </Text>
+            <Text variant="caption" color="secondary">
+              Optional — e.g. cable run lengths, board height, room dimensions.
+            </Text>
+            {measurements.map((entry, index) => (
+              <View key={index} className="flex-row items-center gap-2">
+                <TextInput
+                  testID={`job-create-measurement-label-${index}`}
+                  className="h-12 flex-1 rounded-xl border border-slate-200 bg-white px-4 text-base text-slate-900"
+                  value={entry.label}
+                  onChangeText={(value) =>
+                    setMeasurements((prev) =>
+                      prev.map((e, i) => (i === index ? { ...e, label: value } : e))
+                    )
+                  }
+                  placeholder="Label (e.g. Cable run)"
+                  placeholderTextColor="#94A3B8"
+                />
+                <TextInput
+                  testID={`job-create-measurement-value-${index}`}
+                  className="h-12 flex-1 rounded-xl border border-slate-200 bg-white px-4 text-base text-slate-900"
+                  value={entry.value}
+                  onChangeText={(value) =>
+                    setMeasurements((prev) =>
+                      prev.map((e, i) => (i === index ? { ...e, value } : e))
+                    )
+                  }
+                  placeholder="Value (e.g. 12 m)"
+                  placeholderTextColor="#94A3B8"
+                />
+                <Pressable
+                  testID={`job-create-measurement-remove-${index}`}
+                  accessibilityLabel={`Remove measurement ${index + 1}`}
+                  onPress={() => setMeasurements((prev) => prev.filter((_, i) => i !== index))}
+                >
+                  <Text variant="body" weight="semibold" color="primary">
+                    ✕
+                  </Text>
+                </Pressable>
+              </View>
+            ))}
+            <Button
+              testID="job-create-measurement-add"
+              title="+ Add measurement"
+              variant="outline"
+              size="sm"
+              onPress={() => setMeasurements((prev) => [...prev, { label: "", value: "" }])}
+            />
+          </View>
 
           <FormField
             testID="job-create-notes"

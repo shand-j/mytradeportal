@@ -696,6 +696,13 @@ def _strip_tz(value: datetime | None) -> datetime | None:
     return value
 
 
+class MeasurementEntry(BaseModel):
+    """One structured measurement recorded against a job (label + value)."""
+
+    label: str = Field(..., min_length=1, max_length=100)
+    value: str = Field(..., min_length=1, max_length=255)
+
+
 class JobCreate(BaseModel):
     contact_id: UUID
     quote_id: UUID | None = None
@@ -704,6 +711,7 @@ class JobCreate(BaseModel):
     scheduled_start: datetime | None = None
     scheduled_end: datetime | None = None
     notes: str | None = None
+    measurements: list[MeasurementEntry] = Field(default_factory=list)
     assigned_user_id: UUID | None = None
 
     _normalize_schedule = field_validator("scheduled_start", "scheduled_end", mode="after")(
@@ -717,6 +725,7 @@ class JobConvertRequest(BaseModel):
     scheduled_start: datetime | None = None
     scheduled_end: datetime | None = None
     notes: str | None = None
+    measurements: list[MeasurementEntry] = Field(default_factory=list)
     assigned_user_id: UUID | None = None
 
     _normalize_schedule = field_validator("scheduled_start", "scheduled_end", mode="after")(
@@ -728,11 +737,18 @@ class JobUpdate(BaseModel):
     scheduled_start: datetime | None = None
     scheduled_end: datetime | None = None
     notes: str | None = None
+    measurements: list[MeasurementEntry] | None = None
     assigned_user_id: UUID | None = None
 
     _normalize_schedule = field_validator("scheduled_start", "scheduled_end", mode="after")(
         _strip_tz
     )
+
+    @field_validator("measurements", mode="before")
+    @classmethod
+    def _null_clears_measurements(cls, value: Any) -> Any:
+        """An explicit null clears the list; omitting the key leaves it alone."""
+        return [] if value is None else value
 
 
 class JobRead(BaseModel):
@@ -749,6 +765,8 @@ class JobRead(BaseModel):
     scheduled_end: datetime | None
     completed_at: datetime | None
     notes: str | None
+    # Structured measurements recorded for the job (validated label/value pairs).
+    measurements: list[MeasurementEntry] = Field(default_factory=list)
     assigned_user_id: UUID | None
     # Denormalised from the contact at job creation — display-only thereafter,
     # so a later contact edit does not rewrite the job's history.

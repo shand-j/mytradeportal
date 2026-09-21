@@ -86,6 +86,7 @@ export default function JobDetailRoute() {
       }}
       members={users.map((u) => ({ id: u.id, fullName: u.fullName }))}
       initialNotes={raw.notes}
+      initialMeasurements={raw.measurements ?? []}
       scheduledStart={raw.scheduledStart}
       scheduledEnd={raw.scheduledEnd}
       photos={raw.photos ?? []}
