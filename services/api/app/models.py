@@ -509,6 +509,9 @@ class Job(TenantScopedBase):
     lat: Mapped[Decimal | None] = mapped_column(Numeric(10, 8), nullable=True)
     lng: Mapped[Decimal | None] = mapped_column(Numeric(11, 8), nullable=True)
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Structured on-site measurements ([{label, value}]) alongside the
+    # free-text notes — validated to that shape by the API schemas.
+    measurements: Mapped[list[dict[str, Any]]] = mapped_column(JSONB, default=list, nullable=False)
 
     contact: Mapped[Contact] = relationship("Contact", back_populates="jobs")
     # Staff member the job is assigned to (display name surfaced on JobRead).

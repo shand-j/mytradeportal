@@ -1834,6 +1834,8 @@ async def convert_quote_to_job(
         # created after they were merged at creation; the merge also covers
         # older quotes and is a no-op when the notes are already present.
         notes=merge_contact_notes("\n\n".join(notes_parts) or None, quote.contact.notes),
+        # Structured measurements recorded at conversion time ride onto the job.
+        measurements=[m.model_dump() for m in schedule.measurements],
     )
     if existing is not None:
         # Adopt the acceptance-time draft: confirm it in place with the
@@ -1842,6 +1844,7 @@ async def convert_quote_to_job(
         existing.scheduled_end = job.scheduled_end
         existing.assigned_user_id = job.assigned_user_id
         existing.notes = job.notes
+        existing.measurements = job.measurements
         existing.status = "scheduled"
         job = existing
     else:

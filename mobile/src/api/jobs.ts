@@ -3,6 +3,9 @@ import { api, ApiError } from "../lib/apiClient";
 import { ApiContact } from "./quotes";
 import { Job, JobStatus } from "../types";
 
+/** One structured measurement recorded against a job. */
+export type MeasurementEntry = { label: string; value: string };
+
 /** Full backend job shape (camelized JobRead). */
 export type ApiJob = {
   id: string;
@@ -14,6 +17,8 @@ export type ApiJob = {
   scheduledEnd: string | null;
   completedAt: string | null;
   notes: string | null;
+  /** Structured measurements recorded for the job (label + value pairs). */
+  measurements: MeasurementEntry[];
   assignedUserId: string | null;
   /** Display name of the assignee, derived server-side. */
   assignedTo: string | null;
@@ -40,6 +45,7 @@ export type CreateJobInput = {
   scheduledStart?: string;
   scheduledEnd?: string;
   notes?: string;
+  measurements?: MeasurementEntry[];
   assignedUserId?: string;
 };
 
@@ -52,6 +58,8 @@ export type UpdateJobInput = {
   scheduledStart?: string;
   scheduledEnd?: string;
   notes?: string;
+  /** Replaces the job's measurements list (send [] to clear). */
+  measurements?: MeasurementEntry[];
   /** Pass null to unassign. */
   assignedUserId?: string | null;
 };
@@ -65,6 +73,8 @@ export type ConvertToJobSchedule = {
   scheduledStart?: string;
   scheduledEnd?: string;
   notes?: string;
+  /** Structured measurements carried onto the converted job. */
+  measurements?: MeasurementEntry[];
   assignedUserId?: string;
 };
 
