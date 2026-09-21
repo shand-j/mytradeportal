@@ -31,7 +31,6 @@ export const PricingTiers: Tier[] = [
       'AI intake briefs',
       'Quote & payment chase sequences',
       'Online card payments',
-      'Xero & QuickBooks sync',
       'Data export',
     ],
     featured: false,

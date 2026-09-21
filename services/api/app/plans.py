@@ -45,7 +45,6 @@ SOLE_TRADER_FEATURES: frozenset[str] = frozenset(
         "ai_quote_draft",
         "chase_sequences",
         "online_payments",
-        "accounting_sync",
         "data_export",
         "customer_portal",
         "intake_brief",
