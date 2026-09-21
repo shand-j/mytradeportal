@@ -191,9 +191,11 @@ async def test_public_availability_marks_non_working_days_closed(
     tenant_row.settings = {"working_days": [0]}  # Mondays only
     await db.commit()
 
-    response = await client.get(f"/public/quote/{raw}/availability?days=7")
+    response = await client.get(f"/public/quote/{raw}/availability?days=14")
     assert response.status_code == 200
     days = {entry["date"]: entry["status"] for entry in response.json()["days"]}
+    # Next Monday plus its Tuesday: on Mondays the next-Monday + Tuesday pair
+    # can land on day 8, so the window must exceed 7 days to always contain both.
     monday = date.today() + timedelta(days=(7 - date.today().weekday()) % 7 or 7)
     assert days[monday.isoformat()] == "available"
     tuesday = monday + timedelta(days=1)
