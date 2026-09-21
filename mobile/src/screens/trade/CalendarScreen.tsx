@@ -8,6 +8,7 @@ import { LiveBadge } from "../../components/ui/LiveBadge";
 import { Screen } from "../../components/ui/Screen";
 import { Text } from "../../components/ui/Text";
 import { useJobsList } from "../../api/jobs";
+import { useAppointmentsList } from "../../api/appointments";
 import { useMultiSeatPlan } from "../../api/billing";
 import { openNavigation } from "../../lib/navigation";
 import { useAuthStore } from "../../stores/authStore";
@@ -74,19 +75,22 @@ export function CalendarScreen(_props: CalendarScreenProps) {
   const router = useRouter();
   const today = useMemo(() => new Date(), []);
   const [weekOffset, setWeekOffset] = useState(0);
+  const [monthOffset, setMonthOffset] = useState(0);
   const [selectedDay, setSelectedDay] = useState(() => (today.getDay() + 6) % 7);
-  const [viewMode, setViewMode] = useState<"day" | "week">("day");
+  const [viewMode, setViewMode] = useState<"day" | "week" | "month">("day");
 
   const userId = useAuthStore((s) => s.user?.id);
   const showScopeFilter = useMultiSeatPlan();
   const scope = useCalendarStore((s) => s.scope);
   const setScope = useCalendarStore((s) => s.setScope);
 
+  const scopeFilter = showScopeFilter && scope === "me" && userId ? { assignedUserId: userId } : undefined;
   const { jobs, isLoading } = useJobsList(
     // Multi-seat plans get the All/Me filter; "Me" narrows server-side to
     // jobs assigned to the signed-in user. Single-seat plans stay unfiltered.
-    showScopeFilter && scope === "me" && userId ? { assignedUserId: userId } : undefined
+    scopeFilter
   );
+  const { appointments } = useAppointmentsList(scopeFilter);
 
   const weekStart = useMemo(() => addDays(startOfWeek(today), weekOffset * 7), [today, weekOffset]);
   const weekDays = useMemo(() => Array.from({ length: 7 }, (_, i) => addDays(weekStart, i)), [weekStart]);
@@ -107,11 +111,73 @@ export function CalendarScreen(_props: CalendarScreenProps) {
 
   const unscheduledJobs = useMemo(() => jobs.filter((job) => !job.date), [jobs]);
 
+  /** First of the month currently shown in month view. */
+  const visibleMonth = useMemo(
+    () => new Date(today.getFullYear(), today.getMonth() + monthOffset, 1),
+    [today, monthOffset]
+  );
+
+  /** Monday-start weeks covering every day of the visible month. */
+  const monthWeeks = useMemo(() => {
+    const first = startOfWeek(visibleMonth);
+    const last = startOfWeek(new Date(visibleMonth.getFullYear(), visibleMonth.getMonth() + 1, 0));
+    const weeks: Date[][] = [];
+    for (let week = first; week <= last; week = addDays(week, 7)) {
+      weeks.push(Array.from({ length: 7 }, (_, i) => addDays(week, i)));
+    }
+    return weeks;
+  }, [visibleMonth]);
+
+  /** Jobs + appointments per day across the whole visible month grid. */
+  const monthCounts = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const week of monthWeeks) {
+      for (const d of week) map.set(toIsoDate(d), 0);
+    }
+    for (const job of jobs) {
+      if (!job.date) continue;
+      const count = map.get(job.date);
+      if (count !== undefined) map.set(job.date, count + 1);
+    }
+    for (const appointment of appointments) {
+      const count = map.get(appointment.date);
+      if (count !== undefined) map.set(appointment.date, count + 1);
+    }
+    return map;
+  }, [jobs, appointments, monthWeeks]);
+
+  const monthBookingCount = useMemo(
+    () =>
+      monthWeeks.reduce(
+        (sum, week) =>
+          sum +
+          week.reduce(
+            (inner, d) =>
+              d.getMonth() === visibleMonth.getMonth() ? inner + (monthCounts.get(toIsoDate(d)) ?? 0) : inner,
+            0
+          ),
+        0
+      ),
+    [monthWeeks, monthCounts, visibleMonth]
+  );
+
+  const monthLabel = visibleMonth.toLocaleDateString("en-GB", { month: "long", year: "numeric" });
+
   const handleNavigate = async (job: Job) => {
     const opened = await openNavigation(job.address, job.postcode);
     if (!opened) {
       Alert.alert("Cannot open maps", "No maps application is available on this device.");
     }
+  };
+
+  /** Jump to a day tapped in the month grid: open that day in day view. */
+  const handleSelectMonthDay = (date: Date) => {
+    const weekDiff = Math.round(
+      (startOfWeek(date).getTime() - startOfWeek(today).getTime()) / (7 * 24 * 60 * 60 * 1000)
+    );
+    setWeekOffset(weekDiff);
+    setSelectedDay((date.getDay() + 6) % 7);
+    setViewMode("day");
   };
 
   const selectedDate = weekDays[selectedDay];
@@ -152,12 +218,14 @@ export function CalendarScreen(_props: CalendarScreenProps) {
       <View className="flex-row items-start justify-between gap-3">
         <View>
           <Text variant="body" weight="semibold">
-            {viewMode === "week" ? rangeLabel : formatDay(selectedDate)}
+            {viewMode === "week" ? rangeLabel : viewMode === "month" ? monthLabel : formatDay(selectedDate)}
           </Text>
           <Text variant="caption" color="secondary">
             {viewMode === "week"
               ? `${weekBookingCount} booking${weekBookingCount === 1 ? "" : "s"} this week`
-              : `${dayBookings.length} booking${dayBookings.length === 1 ? "" : "s"}`}
+              : viewMode === "month"
+                ? `${monthBookingCount} booking${monthBookingCount === 1 ? "" : "s"} this month`
+                : `${dayBookings.length} booking${dayBookings.length === 1 ? "" : "s"}`}
           </Text>
         </View>
         <View className="flex-row gap-1.5">
@@ -175,22 +243,46 @@ export function CalendarScreen(_props: CalendarScreenProps) {
             variant={viewMode === "week" ? "primary" : "outline"}
             onPress={() => setViewMode("week")}
           />
+          <Button
+            testID="calendar-month"
+            title="Month"
+            size="sm"
+            variant={viewMode === "month" ? "primary" : "outline"}
+            onPress={() => setViewMode("month")}
+          />
         </View>
       </View>
 
       <View className="mb-3 flex-row items-center gap-2">
-        <Button testID="calendar-prev-week" title="‹" size="sm" variant="outline" onPress={() => setWeekOffset((n) => n - 1)} />
+        <Button
+          testID="calendar-prev-week"
+          title="‹"
+          size="sm"
+          variant="outline"
+          onPress={() =>
+            viewMode === "month" ? setMonthOffset((n) => n - 1) : setWeekOffset((n) => n - 1)
+          }
+        />
         <Button
           testID="calendar-today"
           title="Today"
           size="sm"
-          variant={weekOffset === 0 ? "primary" : "outline"}
+          variant={(viewMode === "month" ? monthOffset : weekOffset) === 0 ? "primary" : "outline"}
           onPress={() => {
             setWeekOffset(0);
+            setMonthOffset(0);
             setSelectedDay((today.getDay() + 6) % 7);
           }}
         />
-        <Button testID="calendar-next-week" title="›" size="sm" variant="outline" onPress={() => setWeekOffset((n) => n + 1)} />
+        <Button
+          testID="calendar-next-week"
+          title="›"
+          size="sm"
+          variant="outline"
+          onPress={() =>
+            viewMode === "month" ? setMonthOffset((n) => n + 1) : setWeekOffset((n) => n + 1)
+          }
+        />
       </View>
 
       {showScopeFilter && (
@@ -272,6 +364,60 @@ export function CalendarScreen(_props: CalendarScreenProps) {
             )}
           </ScrollView>
         </>
+      )}
+
+      {viewMode === "month" && (
+        <ScrollView className="flex-1" contentContainerStyle={{ paddingBottom: 24 }}>
+          {/* Weekday header row */}
+          <View className="flex-row">
+            {DAYS.map((day) => (
+              <View key={day} className="flex-1 items-center py-1">
+                <Text variant="caption" color="secondary" weight="semibold">
+                  {day}
+                </Text>
+              </View>
+            ))}
+          </View>
+          {monthWeeks.map((week) => (
+            <View key={toIsoDate(week[0])} className="flex-row">
+              {week.map((date) => {
+                const iso = toIsoDate(date);
+                const isToday = isSameDay(date, today);
+                const inMonth = date.getMonth() === visibleMonth.getMonth();
+                const count = monthCounts.get(iso) ?? 0;
+                return (
+                  <Pressable
+                    key={iso}
+                    testID={`month-day-${iso}`}
+                    className="flex-1"
+                    accessibilityLabel={`Open ${formatDay(date)} in day view`}
+                    onPress={() => handleSelectMonthDay(date)}
+                  >
+                    <View className={`items-center gap-1 rounded-xl py-1.5 ${isToday ? "bg-primary-50" : ""}`}>
+                      <View
+                        className={`h-7 w-7 items-center justify-center rounded-full ${isToday ? "bg-primary" : ""}`}
+                      >
+                        <Text
+                          variant="caption"
+                          weight={isToday ? "bold" : "normal"}
+                          style={isToday ? { color: "#FFFFFF" } : undefined}
+                          color={isToday ? undefined : inMonth ? "text" : "secondary"}
+                        >
+                          {date.getDate()}
+                        </Text>
+                      </View>
+                      <View className="h-1.5 flex-row items-center gap-0.5">
+                        {Array.from({ length: Math.min(count, 3) }, (_, i) => (
+                          <View key={i} className="h-1.5 w-1.5 rounded-full bg-accent-500" />
+                        ))}
+                      </View>
+                    </View>
+                  </Pressable>
+                );
+              })}
+            </View>
+          ))}
+        </ScrollView>
       )}
 
       {viewMode === "week" && (
