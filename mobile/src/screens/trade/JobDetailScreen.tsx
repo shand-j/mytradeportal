@@ -8,7 +8,7 @@ import { Header } from "../../components/ui/Header";
 import { Text } from "../../components/ui/Text";
 import { Screen } from "../../components/ui/Screen";
 import { fetchQuote } from "../../api/quotes";
-import { MeasurementEntry } from "../../api/jobs";
+import { JobPhotoKind, MeasurementEntry } from "../../api/jobs";
 import { useQuoteRoundingIncrement } from "../../api/businesses";
 import { ApiError } from "../../lib/apiClient";
 import { formatMoneyGBP, roundUpToIncrement } from "../../lib/format";
@@ -50,6 +50,18 @@ const STATUS_COLORS: Record<JobStatus, string> = {
 };
 
 type InvoiceItem = { id: string; description: string; amount: number };
+
+/** A job photo with its before/after/general label. */
+type JobPhoto = { id: string; url: string; kind: JobPhotoKind };
+
+const PHOTO_KIND_LABELS: Record<JobPhotoKind, string> = {
+  before: "Before",
+  after: "After",
+  general: "General",
+};
+
+/** Display order for the grouped photo sections. */
+const PHOTO_KIND_ORDER: JobPhotoKind[] = ["before", "after", "general"];
 
 type JobUpdatePatch = {
   notes?: string;
@@ -94,8 +106,10 @@ type JobDetailScreenProps = {
   /** Raw scheduled window from the backend job record (null when unscheduled). */
   scheduledStart?: string | null;
   scheduledEnd?: string | null;
-  /** Photos carried over from the source quote. */
-  photos?: string[];
+  /** Photos carried over from the source quote, with before/after labels. */
+  photos?: JobPhoto[];
+  /** Pick + upload a new job photo with the given kind (enables the upload UI). */
+  onAddPhoto?: (kind: JobPhotoKind) => Promise<void>;
   busy?: boolean;
   /** Customer contact details for the message button (N5 contact preference). */
   contactEmail?: string | null;
@@ -124,6 +138,7 @@ export function JobDetailScreen({
   scheduledStart,
   scheduledEnd,
   photos,
+  onAddPhoto,
   busy,
   contactEmail,
   preferredContactMethod,
@@ -149,6 +164,8 @@ export function JobDetailScreen({
   const [schedDate, setSchedDate] = useState("");
   const [schedTime, setSchedTime] = useState("");
   const [savingSchedule, setSavingSchedule] = useState(false);
+  const [photoKind, setPhotoKind] = useState<JobPhotoKind>("general");
+  const [addingPhoto, setAddingPhoto] = useState(false);
 
   // The job record loads asynchronously — adopt server notes until the user
   // starts editing.
@@ -409,6 +426,18 @@ export function JobDetailScreen({
     );
   };
 
+  const handleAddPhoto = async () => {
+    if (!onAddPhoto) return;
+    setAddingPhoto(true);
+    try {
+      await onAddPhoto(photoKind);
+    } catch (err) {
+      Alert.alert("Couldn't add the photo", errorMessage(err, "Please try again."));
+    } finally {
+      setAddingPhoto(false);
+    }
+  };
+
   const addLineItem = () => {
     setItems((prev) => [
       ...prev,
@@ -562,26 +591,61 @@ export function JobDetailScreen({
           )}
         </View>
 
-        {photos && photos.length > 0 && (
+        {(photos && photos.length > 0) || onAddPhoto ? (
           <View className="rounded-2xl bg-slate-100 p-4 gap-3">
             <Text variant="body" weight="semibold">
               Photos
             </Text>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-              <View className="flex-row gap-2">
-                {photos.map((url, index) => (
-                  <Image
-                    key={url}
-                    testID={`job-photo-${index}`}
-                    source={{ uri: url }}
-                    className="h-24 w-24 rounded-xl"
-                    accessibilityLabel={`Job photo ${index + 1}`}
-                  />
-                ))}
-              </View>
-            </ScrollView>
+            {PHOTO_KIND_ORDER.map((kind) => {
+              const group = (photos ?? []).filter((photo) => photo.kind === kind);
+              if (group.length === 0) return null;
+              return (
+                <View key={kind} className="gap-2">
+                  <Text variant="caption" color="secondary">
+                    {PHOTO_KIND_LABELS[kind]}
+                  </Text>
+                  <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+                    <View className="flex-row gap-2">
+                      {group.map((photo, index) => (
+                        <Image
+                          key={photo.id}
+                          testID={`job-photo-${kind}-${index}`}
+                          source={{ uri: photo.url }}
+                          className="h-24 w-24 rounded-xl"
+                          accessibilityLabel={`${PHOTO_KIND_LABELS[kind]} photo ${index + 1}`}
+                        />
+                      ))}
+                    </View>
+                  </ScrollView>
+                </View>
+              );
+            })}
+            {onAddPhoto && (
+              <>
+                <View className="flex-row gap-2">
+                  {PHOTO_KIND_ORDER.map((kind) => (
+                    <Button
+                      key={kind}
+                      testID={`job-photo-kind-${kind}`}
+                      title={PHOTO_KIND_LABELS[kind]}
+                      size="sm"
+                      variant={photoKind === kind ? "primary" : "outline"}
+                      onPress={() => setPhotoKind(kind)}
+                    />
+                  ))}
+                </View>
+                <Button
+                  testID="job-photo-add"
+                  title={addingPhoto ? "Uploading…" : `Add ${photoKind} photo`}
+                  variant="outline"
+                  size="sm"
+                  disabled={addingPhoto}
+                  onPress={() => void handleAddPhoto()}
+                />
+              </>
+            )}
           </View>
-        )}
+        ) : null}
 
         <View className="rounded-2xl bg-slate-100 p-4 gap-2">
           <Text variant="body" weight="semibold">

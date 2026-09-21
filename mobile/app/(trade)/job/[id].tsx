@@ -1,8 +1,16 @@
 import { useMemo } from "react";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import * as ImagePicker from "expo-image-picker";
 import { JobDetailScreen } from "../../../src/screens/trade/JobDetailScreen";
-import { useJobDetail, useJobActions, useUpdateJob } from "../../../src/api/jobs";
+import {
+  attachJobMedia,
+  useJobDetail,
+  useJobActions,
+  useUpdateJob,
+  type JobPhotoKind,
+} from "../../../src/api/jobs";
+import { uploadFileToApi } from "../../../src/api/uploads";
 import { createAndSendInvoice, fetchInvoices } from "../../../src/api/invoices";
 import { useQuote } from "../../../src/api/quotes";
 import { useUsersList } from "../../../src/api/users";
@@ -64,6 +72,45 @@ export default function JobDetailRoute() {
     });
   };
 
+  // Pick a photo from the library, upload it through the API and attach it to
+  // the job with the chosen before/after/general label.
+  const handleAddPhoto = async (kind: JobPhotoKind) => {
+    const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!permission.granted) {
+      throw new Error("Photo library access denied");
+    }
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      quality: 0.7,
+      allowsMultipleSelection: false,
+    });
+    if (result.canceled || result.assets.length === 0) return;
+    const asset = result.assets[0];
+    const uploaded = await uploadFileToApi("/files/upload", {
+      uri: asset.uri,
+      name: asset.fileName ?? `photo-${Date.now()}.jpg`,
+      type: asset.mimeType ?? "image/jpeg",
+    });
+    await attachJobMedia(raw.id, {
+      fileUrl: uploaded.url,
+      fileKey: uploaded.key,
+      mimeType: asset.mimeType ?? "image/jpeg",
+      sizeBytes: asset.fileSize ?? null,
+      kind,
+    });
+    queryClient.invalidateQueries({ queryKey: ["job", raw.id] });
+    queryClient.invalidateQueries({ queryKey: ["jobs"] });
+  };
+
+  // Grouped display needs the label; unlabelled URLs (older records) count as
+  // general photos.
+  const photos =
+    raw.mediaAssets?.map((asset) => ({
+      id: asset.id,
+      url: asset.fileUrl,
+      kind: asset.kind,
+    })) ?? raw.photos.map((url) => ({ id: url, url, kind: "general" as const }));
+
   return (
     <JobDetailScreen
       job={realJob}
@@ -89,7 +136,8 @@ export default function JobDetailRoute() {
       initialMeasurements={raw.measurements ?? []}
       scheduledStart={raw.scheduledStart}
       scheduledEnd={raw.scheduledEnd}
-      photos={raw.photos ?? []}
+      photos={photos}
+      onAddPhoto={handleAddPhoto}
       contactEmail={contact?.email ?? raw.customer.email}
       preferredContactMethod={contact?.preferredContactMethod ?? null}
       hasAccount={contact?.hasAccount ?? false}

@@ -751,6 +751,20 @@ class JobUpdate(BaseModel):
         return [] if value is None else value
 
 
+# Before/after labelling for job photos; anything without a label is general.
+MediaAssetKind = Literal["before", "after", "general"]
+
+
+class JobMediaAssetRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    file_url: str
+    file_key: str | None
+    mime_type: str | None
+    kind: str
+
+
 class JobRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -776,6 +790,8 @@ class JobRead(BaseModel):
     assigned_to: str | None = None
     # Photo/file URLs carried over from the source quote's quote request.
     photos: list[str] = Field(default_factory=list)
+    # Same assets with their before/after/general label, for grouped display.
+    media_assets: list[JobMediaAssetRead] = Field(default_factory=list)
     created_at: datetime
     updated_at: datetime
     customer: ContactRead = Field(validation_alias="contact", serialization_alias="customer")
@@ -794,8 +810,10 @@ class JobRead(BaseModel):
         try:
             media = getattr(value, "media", None) or []
             value.photos = [asset.file_url for asset in media]
+            value.media_assets = [JobMediaAssetRead.model_validate(asset) for asset in media]
         except Exception:  # unloaded relationship outside a session
             value.photos = []
+            value.media_assets = []
         return value
 
 
@@ -1819,6 +1837,22 @@ class QuoteRequestMediaCreate(BaseModel):
     mime_type: str | None = Field(default=None, max_length=100)
     size_bytes: int | None = None
     source: str = Field(default="in_app")
+    kind: MediaAssetKind = "general"
+
+
+class JobMediaCreate(BaseModel):
+    """Attach an uploaded photo to a job (staff)."""
+
+    file_url: str
+    file_key: str | None = None
+    mime_type: str | None = Field(default=None, max_length=100)
+    size_bytes: int | None = None
+    source: str = Field(default="in_app")
+    kind: MediaAssetKind = "general"
+
+
+class JobMediaUpdate(BaseModel):
+    kind: MediaAssetKind
 
 
 class AiInterpretLineItem(BaseModel):

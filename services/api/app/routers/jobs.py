@@ -65,11 +65,29 @@ from app.dependencies import TenantDep, single_active_user
 from app.dispatch import enforce_assignment_guardrails, ensure_job_mutable
 from app.email import send_customer_email, tenant_reply_to
 from app.email_templates import booking_confirmed as booking_confirmed_template
-from app.models import Appointment, Contact, Customer, Job, Quote, QuoteLineItem, Tenant, User
+from app.models import (
+    Appointment,
+    Contact,
+    Customer,
+    Job,
+    MediaAsset,
+    Quote,
+    QuoteLineItem,
+    Tenant,
+    User,
+)
 from app.portal_links import magic_link_url
 from app.push import notify_staff
 from app.rls import set_tenant_in_session
-from app.schemas import JobCreate, JobRead, JobUpdate, ScheduleSuggestion, ScheduleSuggestionDay
+from app.schemas import (
+    JobCreate,
+    JobMediaCreate,
+    JobMediaUpdate,
+    JobRead,
+    JobUpdate,
+    ScheduleSuggestion,
+    ScheduleSuggestionDay,
+)
 from app.work_blocks import (
     WorkBlock,
     daily_working_hours,
@@ -654,3 +672,50 @@ async def get_job(job_id: UUID, tenant: TenantDep, db: DbDep) -> JobRead:
     """Get a single job."""
     job = await _get_job(db, tenant.id, job_id)
     return JobRead.model_validate(job)
+
+
+@router.post("/{job_id}/media", status_code=status.HTTP_201_CREATED)
+async def attach_job_media(
+    job_id: UUID,
+    data: JobMediaCreate,
+    tenant: TenantDep,
+    db: DbDep,
+) -> JobRead:
+    """Attach an uploaded photo to a job, labelled before/after/general."""
+    job = await _get_job(db, tenant.id, job_id)
+    asset = MediaAsset(
+        tenant_id=tenant.id,
+        job_id=job.id,
+        file_url=data.file_url,
+        file_key=data.file_key,
+        mime_type=data.mime_type,
+        size_bytes=data.size_bytes,
+        source=data.source,
+        kind=data.kind,
+    )
+    db.add(asset)
+    await db.commit()
+    # The media relationship was loaded by the initial _get_job and the
+    # session does not expire on commit — expire it so the re-read sees the
+    # newly attached asset.
+    db.expire(job, ["media"])
+    return JobRead.model_validate(await _get_job(db, tenant.id, job.id))
+
+
+@router.patch("/{job_id}/media/{asset_id}")
+async def update_job_media(
+    job_id: UUID,
+    asset_id: UUID,
+    data: JobMediaUpdate,
+    tenant: TenantDep,
+    db: DbDep,
+) -> JobRead:
+    """Relabel a job photo (before/after/general)."""
+    job = await _get_job(db, tenant.id, job_id)
+    asset = await db.get(MediaAsset, asset_id)
+    if asset is None or asset.tenant_id != tenant.id or asset.job_id != job.id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Media asset not found")
+    asset.kind = data.kind
+    await db.commit()
+    db.expire(job, ["media"])
+    return JobRead.model_validate(await _get_job(db, tenant.id, job.id))
