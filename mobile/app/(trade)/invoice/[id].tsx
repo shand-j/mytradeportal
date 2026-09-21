@@ -6,6 +6,7 @@ import {
   useMarkInvoicePaid,
   useRefundInvoice,
   useSendInvoice,
+  useSendInvoiceSms,
   useUpdateInvoice,
 } from "../../../src/api/invoices";
 import { usePaymentsStatus } from "../../../src/api/payments";
@@ -17,6 +18,7 @@ export default function InvoiceDetailRoute() {
   const { invoice: realInvoice, apiInvoice } = useInvoice(id);
   const markPaid = useMarkInvoicePaid();
   const sendInvoice = useSendInvoice();
+  const sendInvoiceSms = useSendInvoiceSms();
   const updateInvoice = useUpdateInvoice();
   const refundInvoice = useRefundInvoice();
   const paymentsStatus = usePaymentsStatus();
@@ -42,6 +44,9 @@ export default function InvoiceDetailRoute() {
       markingPaid={markPaid.isPending}
       onSendInvoice={() => sendInvoice.mutateAsync(realInvoice.id).then(() => undefined)}
       sendingInvoice={sendInvoice.isPending}
+      onSendInvoiceSms={() => sendInvoiceSms.mutateAsync(realInvoice.id).then(() => undefined)}
+      sendingSms={sendInvoiceSms.isPending}
+      smsAvailable={apiInvoice?.smsAvailable ?? false}
       lineItems={apiInvoice?.lineItems ?? []}
       vatRate={vatRate}
       roundingAdjustment={parseFloat(apiInvoice?.roundingAdjustment ?? "") || 0}

@@ -81,7 +81,14 @@ from app.models import (
 )
 from app.plans import DEFAULT_PLAN_KEY, current_period, get_plan
 from app.push import notify_staff
-from app.sms import normalize_phone, normalize_sender, send_sms, sms_configured, sms_segment_limit
+from app.sms import (
+    fit_single_segment,
+    normalize_phone,
+    normalize_sender,
+    send_sms,
+    sms_configured,
+    sms_segment_limit,
+)
 
 if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncSession
@@ -109,30 +116,6 @@ def _windows() -> list[int]:
     return sorted(windows or [24, 2])
 
 
-def _fit_single_segment(text: str) -> str:
-    """Hard-truncate ``text`` to one SMS segment at a word boundary.
-
-    Last resort after the compact body forms have been tried: cut at the
-    last word boundary that fits (with an ellipsis), verifying the result
-    against the limit for the characters actually used — "…" is not GSM-7,
-    so a GSM-7 body fitted with "…" drops to the 70-char UCS-2 budget.
-    """
-    if len(text) <= sms_segment_limit(text):
-        return text
-    for ellipsis in ("…", "..."):
-        limit = sms_segment_limit(ellipsis)
-        body = text[: limit - len(ellipsis)].rstrip()
-        space = body.rfind(" ")
-        if space > 0:
-            body = body[:space].rstrip()
-        if not body:
-            continue
-        fitted = f"{body}{ellipsis}"
-        if len(fitted) <= sms_segment_limit(fitted):
-            return fitted
-    return text[:70]
-
-
 def _customer_sms_text(
     *, tenant_name: str, first_name: str, appointment: Appointment, include_stop: bool
 ) -> str:
@@ -141,7 +124,7 @@ def _customer_sms_text(
     Builds the fullest form first (greeting + title + address) and drops
     the address line, then the greeting, then the business name if over
     budget; anything still over limit is word-boundary truncated by
-    :func:`_fit_single_segment`.
+    :func:`app.sms.fit_single_segment`.
     """
     start = appointment.start_at
     when = f"{start:%a %d %b at %H:%M}"
@@ -160,7 +143,7 @@ def _customer_sms_text(
     for form in forms:
         if len(form) <= sms_segment_limit(form):
             return form
-    return _fit_single_segment(forms[-1])
+    return fit_single_segment(forms[-1])
 
 
 def _staff_sms_text(*, tenant_name: str, appointment: Appointment) -> str:
@@ -170,7 +153,7 @@ def _staff_sms_text(*, tenant_name: str, appointment: Appointment) -> str:
         f"{appointment.start_at:%a %d %b at %H:%M}. Open the app for details."
     )
     if len(body) > sms_segment_limit(body):
-        return _fit_single_segment(body)
+        return fit_single_segment(body)
     return body
 
 

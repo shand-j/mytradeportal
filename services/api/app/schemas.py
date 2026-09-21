@@ -957,6 +957,10 @@ class InvoiceRead(BaseModel):
     created_at: datetime
     updated_at: datetime
     customer: ContactRead = Field(validation_alias="contact", serialization_alias="customer")
+    # SMS-send affordance for the UI: true only when Telnyx is configured, the
+    # contact's phone normalises to E.164 and they have not replied STOP.
+    # Computed on read by the invoices router — not a column.
+    sms_available: bool = False
 
 
 # ---------------------------------------------------------------------------

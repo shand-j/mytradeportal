@@ -16,7 +16,7 @@ Sender identity: the tenant's business name is preferred, sent as a Telnyx
 alphanumeric sender ID (see :func:`normalize_sender`); it falls back to the
 configured ``TELNYX_FROM_NUMBER`` / messaging profile. Cost model note: the
 fair-use guardrail assumes exactly ONE SMS segment per reminder, so callers
-must keep bodies within :func:`sms_segment_limit` — the reminder sweep
+must keep bodies within :func:`sms_segment_limit` — :func:`fit_single_segment`
 truncates to a word boundary when needed.
 """
 
@@ -62,6 +62,30 @@ def sms_segment_limit(text: str) -> int:
     fair-use cost model assumes one segment per reminder.
     """
     return 160 if all(c in GSM7_CHARSET for c in text) else 70
+
+
+def fit_single_segment(text: str) -> str:
+    """Hard-truncate ``text`` to one SMS segment at a word boundary.
+
+    Last resort after the compact body forms have been tried: cut at the
+    last word boundary that fits (with an ellipsis), verifying the result
+    against the limit for the characters actually used — "…" is not GSM-7,
+    so a GSM-7 body fitted with "…" drops to the 70-char UCS-2 budget.
+    """
+    if len(text) <= sms_segment_limit(text):
+        return text
+    for ellipsis in ("…", "..."):
+        limit = sms_segment_limit(ellipsis)
+        body = text[: limit - len(ellipsis)].rstrip()
+        space = body.rfind(" ")
+        if space > 0:
+            body = body[:space].rstrip()
+        if not body:
+            continue
+        fitted = f"{body}{ellipsis}"
+        if len(fitted) <= sms_segment_limit(fitted):
+            return fitted
+    return text[:70]
 
 
 def normalize_phone(raw: str | None) -> str | None:

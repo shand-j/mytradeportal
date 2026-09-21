@@ -43,6 +43,11 @@ export type InvoiceDetailScreenProps = {
   /** When provided (connected mode), sends/re-sends the invoice and notifies the customer. */
   onSendInvoice?: () => Promise<void>;
   sendingInvoice?: boolean;
+  /** When provided (connected mode), sends the invoice by SMS with the pay link. */
+  onSendInvoiceSms?: () => Promise<void>;
+  sendingSms?: boolean;
+  /** Backend-computed SMS eligibility — the SMS send button renders only when true. */
+  smsAvailable?: boolean;
   /** Raw line items from the API, used to seed the inline line-item editor. */
   lineItems?: ApiInvoiceLineItem[];
   /** VAT rate applied to the invoice (derived from the API amounts). */
@@ -81,6 +86,9 @@ export function InvoiceDetailScreen({
   markingPaid,
   onSendInvoice,
   sendingInvoice,
+  onSendInvoiceSms,
+  sendingSms,
+  smsAvailable = false,
   lineItems,
   vatRate = 0.2,
   roundingAdjustment = 0,
@@ -146,6 +154,21 @@ export function InvoiceDetailScreen({
       setSendError(errorMessage(err, "Couldn't send the invoice. Please try again."));
     }
   };
+
+  /** SMS twin of sendInvoice — the button only renders when the backend says
+   * the contact is SMS-eligible; a 4xx here surfaces as the send error. */
+  const sendInvoiceSms = async () => {
+    if (!onSendInvoiceSms) return;
+    setSendError(null);
+    try {
+      await onSendInvoiceSms();
+      onClose();
+    } catch (err) {
+      setSendError(errorMessage(err, "Couldn't send the invoice by SMS. Please try again."));
+    }
+  };
+
+  const canSendSms = smsAvailable && !!onSendInvoiceSms;
 
   const startEditing = () => {
     setEditItems(toEditable(lineItems ?? []));
@@ -541,6 +564,15 @@ export function InvoiceDetailScreen({
                   disabled={sendingInvoice}
                   onPress={() => void sendInvoice()}
                 />
+                {canSendSms && (
+                  <Button
+                    testID="invoice-send-sms-reminder"
+                    title={sendingSms ? "Sending…" : "Send reminder via SMS"}
+                    variant="outline"
+                    disabled={sendingSms}
+                    onPress={() => void sendInvoiceSms()}
+                  />
+                )}
               </>
             )}
             {(isOverdue || status === "draft") && (
@@ -551,6 +583,15 @@ export function InvoiceDetailScreen({
                   disabled={sendingInvoice}
                   onPress={() => void sendInvoice()}
                 />
+                {canSendSms && (
+                  <Button
+                    testID="invoice-send-sms"
+                    title={sendingSms ? "Sending…" : "Send via SMS"}
+                    variant="outline"
+                    disabled={sendingSms}
+                    onPress={() => void sendInvoiceSms()}
+                  />
+                )}
                 {canEdit && (
                   <Button
                     testID="invoice-edit"
