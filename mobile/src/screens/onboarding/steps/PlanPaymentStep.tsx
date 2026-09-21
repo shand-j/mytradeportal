@@ -107,7 +107,7 @@ function toDisplayPlan(plan: BillingPlan): Plan {
       "Team assignment",
       "Branded customer portal",
     ],
-    team: ["Everything in Pro", "Priority support", "Accounting sync"],
+    team: ["Everything in Pro", "Priority support"],
   };
   return {
     key: plan.key,
