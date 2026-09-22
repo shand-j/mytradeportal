@@ -1055,6 +1055,10 @@ class MediaAsset(TenantScopedBase):
     size_bytes: Mapped[int | None] = mapped_column(nullable=True)
     captured_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     source: Mapped[str] = mapped_column(String(50), default="in_app", nullable=False)
+    # Before/after labelling for job photos ("before" | "after" | "general").
+    kind: Mapped[str] = mapped_column(
+        String(20), default="general", server_default="general", nullable=False
+    )
 
 
 class Consent(TenantScopedBase):

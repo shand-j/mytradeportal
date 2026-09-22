@@ -6,6 +6,18 @@ import { Job, JobStatus } from "../types";
 /** One structured measurement recorded against a job. */
 export type MeasurementEntry = { label: string; value: string };
 
+/** Before/after/general label on a job photo (backend MediaAsset.kind). */
+export type JobPhotoKind = "before" | "after" | "general";
+
+/** A job photo asset as surfaced on JobRead.media_assets (camelized). */
+export type ApiJobMediaAsset = {
+  id: string;
+  fileUrl: string;
+  fileKey: string | null;
+  mimeType: string | null;
+  kind: JobPhotoKind;
+};
+
 /** Full backend job shape (camelized JobRead). */
 export type ApiJob = {
   id: string;
@@ -24,6 +36,8 @@ export type ApiJob = {
   assignedTo: string | null;
   /** Photo URLs carried over from the source quote. */
   photos: string[];
+  /** Same photos with their before/after/general label. */
+  mediaAssets?: ApiJobMediaAsset[];
   customer: ApiContact;
 };
 
@@ -128,6 +142,28 @@ export function useScheduleSuggestion(quoteId: string | null | undefined) {
 
 export async function startJob(id: string): Promise<ApiJob> {
   return api.post<ApiJob>(`/jobs/${id}/start`);
+}
+
+export type AttachJobMediaInput = {
+  fileUrl: string;
+  fileKey?: string | null;
+  mimeType?: string | null;
+  sizeBytes?: number | null;
+  kind: JobPhotoKind;
+};
+
+/** Attach an uploaded photo to a job with its before/after/general label. */
+export async function attachJobMedia(jobId: string, input: AttachJobMediaInput): Promise<ApiJob> {
+  return api.post<ApiJob>(`/jobs/${jobId}/media`, input);
+}
+
+/** Relabel a job photo (PATCH /jobs/{id}/media/{assetId}). */
+export async function updateJobMediaKind(
+  jobId: string,
+  assetId: string,
+  kind: JobPhotoKind
+): Promise<ApiJob> {
+  return api.patch<ApiJob>(`/jobs/${jobId}/media/${assetId}`, { kind });
 }
 
 export async function completeJob(id: string): Promise<ApiJob> {

@@ -318,6 +318,7 @@ async def attach_media(
         mime_type=data.mime_type,
         size_bytes=data.size_bytes,
         source=data.source,
+        kind=data.kind,
     )
     db.add(asset)
     await db.flush()
