@@ -12,6 +12,7 @@ import { api, ApiError } from "../../lib/apiClient";
 import { openCalendarSubscription } from "../../api/calendar";
 import { config } from "../../lib/config";
 import { openInAppBrowser } from "../../lib/inAppBrowser";
+import { PortalQrSheet } from "../../components/trade/PortalQrSheet";
 
 function SubscriptionCard() {
   const { data, isLoading } = useSubscription();
@@ -139,6 +140,7 @@ export function SettingsScreen() {
   const { business, setBusiness } = useBusiness();
   const [calendarLinkLoading, setCalendarLinkLoading] = useState(false);
   const [calendarLinkError, setCalendarLinkError] = useState<string | null>(null);
+  const [showQrSheet, setShowQrSheet] = useState(false);
 
   const handleCalendarSubscription = async () => {
     setCalendarLinkError(null);
@@ -211,6 +213,11 @@ export function SettingsScreen() {
       title: "Working hours",
       subtitle: "Working day times & days for scheduling",
       onPress: () => router.push("/(trade)/working-hours"),
+    },
+    {
+      title: "Share your booking page",
+      subtitle: "QR code + link for customers",
+      onPress: () => setShowQrSheet(true),
     },
     {
       title: "Help & guides",
@@ -300,6 +307,8 @@ export function SettingsScreen() {
 
         <Button testID="settings-logout" title="Log out" variant="outline" onPress={handleLogout} />
       </ScrollView>
+
+      <PortalQrSheet visible={showQrSheet} onClose={() => setShowQrSheet(false)} />
     </Screen>
   );
 }
