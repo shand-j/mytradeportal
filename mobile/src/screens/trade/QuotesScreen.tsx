@@ -1,20 +1,17 @@
 import { useEffect, useMemo, useState } from "react";
-import { Modal, Pressable, ScrollView, Share, View } from "react-native";
+import { Pressable, ScrollView, View } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import { useQuery } from "@tanstack/react-query";
 import { Button } from "../../components/ui/Button";
 import { Header } from "../../components/ui/Header";
 import { LiveBadge } from "../../components/ui/LiveBadge";
-import { QrCode } from "../../components/ui/QrCode";
 import { Screen } from "../../components/ui/Screen";
 import { Text } from "../../components/ui/Text";
 import { LeadCard } from "../../components/trade/LeadCard";
 import { GeneratingQuoteBanner } from "../../components/trade/GeneratingQuoteBanner";
+import { PortalQrSheet } from "../../components/trade/PortalQrSheet";
 import { SettingsMenuButton } from "../../components/ui/SettingsMenuButton";
 import { useQuotesList } from "../../api/quotes";
 import { useLeadsList } from "../../api/quoteRequests";
-import { fetchCurrentTenant } from "../../api/businesses";
-import { useBusiness } from "../../theme/ThemeProvider";
 import { Quote, QuoteStatus } from "../../types";
 
 type FilterKey = "all" | "new" | "flagged" | "sent" | "accepted";
@@ -64,20 +61,7 @@ export type QuotesScreenProps = {
 
 export function QuotesScreen(_props: QuotesScreenProps) {
   const router = useRouter();
-  const { business } = useBusiness();
   const [showQrSheet, setShowQrSheet] = useState(false);
-  // Trade login already loads the tenant into the business store; the query is
-  // the same cache key the settings screens use, so this is usually free.
-  const tenantQuery = useQuery({ queryKey: ["current-tenant"], queryFn: fetchCurrentTenant });
-  const tenantSlug = tenantQuery.data?.slug ?? business?.slug ?? null;
-  const portalUrl = tenantSlug ? `https://${tenantSlug}.mytradeportal.co.uk` : null;
-
-  const sharePortalLink = () => {
-    if (!portalUrl) return;
-    void Share.share({
-      message: `Get a quote from ${tenantQuery.data?.name ?? business?.name ?? "us"}: ${portalUrl}`,
-    });
-  };
   // Deep links (e.g. dashboard "Outstanding quotes") arrive with ?filter=&sort=
   const params = useLocalSearchParams<{ filter?: string; sort?: string }>();
   const [activeFilter, setActiveFilter] = useState<FilterKey>(() =>
@@ -222,48 +206,7 @@ export function QuotesScreen(_props: QuotesScreenProps) {
         />
       </ScrollView>
 
-      <Modal
-        testID="qr-modal"
-        visible={showQrSheet}
-        transparent
-        animationType="slide"
-        onRequestClose={() => setShowQrSheet(false)}
-      >
-        <Pressable
-          className="flex-1 justify-end bg-black/40"
-          onPress={() => setShowQrSheet(false)}
-        >
-          <Pressable className="rounded-t-3xl bg-white px-6 pt-6 pb-10 gap-4" onPress={() => {}}>
-            <Text variant="title" weight="bold" align="center">
-              Your customer portal
-            </Text>
-            <Text variant="caption" color="secondary" align="center">
-              Customers scan this to request a quote — print it for your van, invoices, or business cards.
-            </Text>
-            {portalUrl ? (
-              <View className="items-center py-2">
-                <QrCode testID="portal-qr-code" value={portalUrl} size={200} />
-              </View>
-            ) : (
-              <Text variant="body" color="secondary" align="center">
-                Your portal link is still loading — pull to retry in a moment.
-              </Text>
-            )}
-            {portalUrl && (
-              <Text testID="portal-url" variant="body" weight="semibold" align="center">
-                {portalUrl}
-              </Text>
-            )}
-            <Button
-              testID="qr-share-link"
-              title="Share link"
-              disabled={!portalUrl}
-              onPress={sharePortalLink}
-            />
-            <Button title="Close" variant="outline" onPress={() => setShowQrSheet(false)} />
-          </Pressable>
-        </Pressable>
-      </Modal>
+      <PortalQrSheet visible={showQrSheet} onClose={() => setShowQrSheet(false)} />
     </Screen>
   );
 }

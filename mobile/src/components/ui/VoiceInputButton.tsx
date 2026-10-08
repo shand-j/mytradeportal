@@ -33,6 +33,11 @@ export function VoiceInputButton({ value, onChangeText, testID, disabled }: Voic
   // Finalized segments from the current session: interim results only cover
   // the latest utterance, so finished utterances accumulate here.
   const finalizedRef = useRef("");
+  // Whether this component has already fallen back to server-assisted
+  // recognition (after one invisible cold-start retry); later taps skip
+  // straight to the working path.
+  const fellBackRef = useRef(false);
+  const retryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pulse = useRef(new Animated.Value(1)).current;
 
   useSpeechRecognitionEvent("start", () => {
@@ -52,6 +57,22 @@ export function VoiceInputButton({ value, onChangeText, testID, disabled }: Voic
     onChangeText(joinDictation(baseTextRef.current, session));
   });
   useSpeechRecognitionEvent("error", (event) => {
+    // Cold-start failure mode (seen on device): the first tap fails while the
+    // on-device recognition model isn't ready, and the second tap succeeds.
+    // Retry once invisibly with server-assisted recognition before giving up —
+    // same service iOS keyboard dictation uses, so it always works on-device-
+    // capable hardware.
+    if (!fellBackRef.current) {
+      fellBackRef.current = true;
+      setUnavailableHint(null);
+      retryTimerRef.current = setTimeout(() => {
+        ExpoSpeechRecognitionModule.start({
+          ...START_OPTIONS,
+          requiresOnDeviceRecognition: false,
+        });
+      }, 250);
+      return;
+    }
     setListening(false);
     if (event.error === "not-allowed" || event.error === "service-not-allowed") {
       setUnavailableHint(
@@ -81,6 +102,7 @@ export function VoiceInputButton({ value, onChangeText, testID, disabled }: Voic
   // Never leave the recognizer running if the screen unmounts mid-dictation.
   useEffect(
     () => () => {
+      if (retryTimerRef.current) clearTimeout(retryTimerRef.current);
       if (Platform.OS === "ios") ExpoSpeechRecognitionModule.abort();
     },
     []
@@ -103,14 +125,8 @@ export function VoiceInputButton({ value, onChangeText, testID, disabled }: Voic
     baseTextRef.current = value;
     finalizedRef.current = "";
     ExpoSpeechRecognitionModule.start({
-      lang: "en-GB",
-      interimResults: true,
-      // Auto-stops on a few seconds of silence (iOS); tap again to stop sooner.
-      continuous: false,
-      requiresOnDeviceRecognition: true,
-      addsPunctuation: true,
-      contextualStrings: VOICE_CONTEXTUAL_STRINGS,
-      iosTaskHint: "dictation",
+      ...START_OPTIONS,
+      requiresOnDeviceRecognition: !fellBackRef.current,
     });
   };
 
@@ -156,6 +172,16 @@ function joinDictation(base: string, transcript: string): string {
   if (!trimmedBase) return transcript;
   return `${trimmedBase} ${transcript}`;
 }
+
+const START_OPTIONS = {
+  lang: "en-GB",
+  interimResults: true,
+  // Auto-stops on a few seconds of silence (iOS); tap again to stop sooner.
+  continuous: false,
+  addsPunctuation: true,
+  contextualStrings: VOICE_CONTEXTUAL_STRINGS,
+  iosTaskHint: "dictation",
+} as const;
 
 const styles = StyleSheet.create({
   container: {
