@@ -7,6 +7,7 @@ import { OptionChips } from "../../components/ui/OptionChips";
 import { PhotoAsset, PhotoPicker } from "../../components/ui/PhotoPicker";
 import { Screen } from "../../components/ui/Screen";
 import { Text } from "../../components/ui/Text";
+import { VoiceInputButton } from "../../components/ui/VoiceInputButton";
 import { Lead } from "../../types";
 import { useContactsList } from "../../api/contacts";
 import { useIntakeCustomerStore } from "../../stores/intakeCustomerStore";
@@ -350,9 +351,16 @@ export function QuoteIntakeScreen({ lead, contact, onBack, onComplete }: QuoteIn
             </View>
 
             <View className="rounded-2xl bg-slate-100 p-4 gap-2">
-              <Text variant="body" weight="semibold">
-                Job description *
-              </Text>
+              <View className="flex-row items-center justify-between">
+                <Text variant="body" weight="semibold">
+                  Job description *
+                </Text>
+                <VoiceInputButton
+                  testID="intake-description-voice"
+                  value={description}
+                  onChangeText={setDescription}
+                />
+              </View>
               <TextInput
                 testID="intake-description"
                 className="h-24 rounded-xl border border-slate-200 bg-white px-4 pt-3 text-base text-slate-900"

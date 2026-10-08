@@ -9,6 +9,7 @@ import { IconButton } from "../../components/ui/IconButton";
 import { Screen } from "../../components/ui/Screen";
 import { SelectableChip } from "../../components/ui/SelectableChip";
 import { Text } from "../../components/ui/Text";
+import { VoiceInputButton } from "../../components/ui/VoiceInputButton";
 import { ContactCustomerCard } from "../../components/trade/ContactCustomerCard";
 import { Lead, Quote, QuoteLineItem } from "../../types";
 import { updateQuote, useRefineQuote, useSendQuote, useUpdateQuote } from "../../api/quotes";
@@ -636,9 +637,17 @@ export function QuoteEditScreen({
 
         {!readOnly && seedQuote?.aiGenerated && isRealQuote && (
           <View className="rounded-2xl border border-slate-200 bg-white p-3 gap-2">
-            <Text variant="body" weight="semibold">
-              Refine with AI
-            </Text>
+            <View className="flex-row items-center justify-between">
+              <Text variant="body" weight="semibold">
+                Refine with AI
+              </Text>
+              <VoiceInputButton
+                testID="refine-instructions-voice"
+                value={refineInstructions}
+                onChangeText={setRefineInstructions}
+                disabled={refineQuoteMutation.isPending}
+              />
+            </View>
             <TextInput
               testID="refine-instructions"
               className="h-20 rounded-lg border border-slate-200 px-3 pt-2 text-sm text-slate-900"
