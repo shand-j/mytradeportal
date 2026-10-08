@@ -97,6 +97,27 @@ async def test_contact_notes_flow_to_quote_and_job(client: AsyncClient) -> None:
     assert "Gate code 4521; dog on site" in (job["notes"] or "")
 
 
+async def test_create_quote_accepts_tz_aware_valid_until(client: AsyncClient) -> None:
+    """Regression: Z-suffixed valid_until previously 500'd (asyncpg DataError —
+    aware datetime into a naive DateTime column). Inputs are normalised to
+    naive UTC by the schema."""
+    tenant = await _create_tenant(client, f"quote-{uuid4().hex[:8]}")
+    contact = await _create_contact(client, tenant["id"], "TZ Aware")
+
+    response = await client.post(
+        "/quotes",
+        headers={"X-Tenant-ID": tenant["id"]},
+        json={
+            "contact_id": contact["id"],
+            "title": "TZ quote",
+            "valid_until": "2026-11-01T00:00:00Z",
+            "line_items": [{"description": "Labour", "quantity": "1", "unit_price": "100.00"}],
+        },
+    )
+    assert response.status_code == 201, response.text
+    assert response.json()["valid_until"].startswith("2026-11-01T00:00:00")
+
+
 async def test_update_quote(client: AsyncClient) -> None:
     tenant = await _create_tenant(client, f"quote-{uuid4().hex[:8]}")
     contact = await _create_contact(client, tenant["id"], "Quote Updater")

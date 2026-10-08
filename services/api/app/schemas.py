@@ -450,6 +450,13 @@ class BillOfQuantitiesUpdate(BaseModel):
     line_items: list[BoQLineItemUpdate] = Field(default_factory=list)
 
 
+def _strip_tz(value: datetime | None) -> datetime | None:
+    """Store naive UTC — schedule/due-date columns are `DateTime` (no timezone)."""
+    if value is not None and value.tzinfo is not None:
+        return value.astimezone(UTC).replace(tzinfo=None)
+    return value
+
+
 class QuoteCreate(BaseModel):
     contact_id: UUID
     title: str = Field(..., min_length=1, max_length=255)
@@ -460,6 +467,8 @@ class QuoteCreate(BaseModel):
     vat_rate: Decimal = Decimal("0.20")
     valid_until: datetime | None = None
     estimated_hours: Decimal | None = None
+
+    _normalize_valid_until = field_validator("valid_until", mode="after")(_strip_tz)
 
 
 class QuoteRead(BaseModel):
@@ -575,6 +584,8 @@ class QuoteUpdate(BaseModel):
     # the router rejects values above the tenant's registered rate.
     vat_rate: Decimal | None = Field(default=None, ge=0, le=1)
 
+    _normalize_valid_until = field_validator("valid_until", mode="after")(_strip_tz)
+
     @model_validator(mode="after")
     def _vat_rate_not_null(self) -> "QuoteUpdate":
         # Unlike estimated_hours, a null VAT rate has no defined meaning —
@@ -687,13 +698,6 @@ class PushTokenRead(BaseModel):
 # ---------------------------------------------------------------------------
 # Job
 # ---------------------------------------------------------------------------
-
-
-def _strip_tz(value: datetime | None) -> datetime | None:
-    """Store naive UTC — job schedule columns are `DateTime` (no timezone)."""
-    if value is not None and value.tzinfo is not None:
-        return value.astimezone(UTC).replace(tzinfo=None)
-    return value
 
 
 class MeasurementEntry(BaseModel):
@@ -854,6 +858,8 @@ class AppointmentCreate(BaseModel):
     notes: str | None = None
     assigned_user_id: UUID | None = None
 
+    _normalize_window = field_validator("start_at", "end_at", mode="after")(_strip_tz)
+
 
 class AppointmentUpdate(BaseModel):
     title: str | None = Field(default=None, min_length=1, max_length=255)
@@ -863,6 +869,8 @@ class AppointmentUpdate(BaseModel):
     address: str | None = None
     notes: str | None = None
     assigned_user_id: UUID | None = None
+
+    _normalize_window = field_validator("start_at", "end_at", mode="after")(_strip_tz)
 
 
 class AppointmentRead(BaseModel):
@@ -913,6 +921,8 @@ class InvoiceCreate(BaseModel):
     vat_rate: Decimal = Decimal("0.20")
     line_items: list[InvoiceLineItemCreate] = Field(default_factory=list)
 
+    _normalize_due_date = field_validator("due_date", mode="after")(_strip_tz)
+
 
 class InvoiceUpdate(BaseModel):
     due_date: datetime | None = None
@@ -928,6 +938,8 @@ class InvoiceUpdate(BaseModel):
     # Full replacement when provided (same semantics as QuoteUpdate).
     line_items: list[InvoiceLineItemCreate] | None = None
 
+    _normalize_due_date = field_validator("due_date", mode="after")(_strip_tz)
+
     @model_validator(mode="after")
     def _vat_rate_not_null(self) -> "InvoiceUpdate":
         # A null VAT rate would silently fall back to 20% in
@@ -942,6 +954,8 @@ class InvoiceUpdate(BaseModel):
 class QuoteConvertToInvoice(BaseModel):
     invoice_number: str | None = Field(default=None, min_length=1, max_length=50)
     due_date: datetime | None = None
+
+    _normalize_due_date = field_validator("due_date", mode="after")(_strip_tz)
 
 
 class InvoiceRead(BaseModel):
