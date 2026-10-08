@@ -14,7 +14,8 @@ dependencies = [
     "pydantic-settings>=2.3.0",
     "PyYAML>=6.0.1",
     "requests>=2.31.0",
-    "sqlalchemy[asyncio]>=2.0.30",
+    # Pinned below 2.1 alongside the root package — keep in sync.
+    "sqlalchemy[asyncio]>=2.0.30,<2.1",
     "asyncpg>=0.29.0",
     "qdrant-client~=1.19.0",
     "litellm>=1.40.0",

@@ -21,6 +21,21 @@ overrides:
   '@xmldom/xmldom@>=0.7.0 <0.9.0': '~0.8.15'
   '@xmldom/xmldom@>=0.9.0 <0.9.12': '~0.9.12'
   'deepmerge-ts@<8.0.0': '>=8.0.0'
+  # Second wave (PR #262) — same pattern, still all dev/build/e2e tooling:
+  # shell-quote via react-devtools-core, undici via webdriverio→cheerio,
+  # brace-expansion via glob/minimatch (expo cli + wdio), compression via
+  # @expo/cli, source-map-js via web/app jsdom→css-tree, basic-ftp via
+  # get-uri (@puppeteer/browsers). basic-ftp 5→6 is the one major crossing:
+  # v6's only breaking change is disabling separate FTP transfer hosts by
+  # default, which get-uri's plain Client() usage never relied on.
+  'shell-quote@<1.11.0': '^1.11.0'
+  'undici@>=7.0.0 <7.29.1': '^7.29.1'
+  'brace-expansion@<1.1.20': '^1.1.20'
+  'brace-expansion@>=2.0.0 <2.1.6': '^2.1.6'
+  'brace-expansion@>=4.0.0 <5.0.11': '^5.0.11'
+  'compression@<1.8.2': '^1.8.2'
+  'source-map-js@<1.2.2': '^1.2.2'
+  'basic-ftp@>=5.0.0 <6.2.1': '^6.2.1'
 
 # High-severity advisories accepted for now (issue #53) — no patched release
 # exists and both are confined to local dev tooling, so the CI audit gate
@@ -32,12 +47,20 @@ overrides:
 # - image-size@1.2.1 via metro (RN bundler, dev-time). The fix line (2.0.3+)
 #   drops the file-path API metro's Assets.js requires, so forcing it breaks
 #   bundling; exploitation needs a malicious image committed to the repo.
+# Second wave (PR #262), also no patched release:
+# - braces@3.0.3 via metro-file-map→micromatch (dev-time glob matching; the
+#   stack exhaustion needs a crafted glob pattern, i.e. a malicious commit).
+# - node-forge@1.4.0 via @expo/cli (local dev server TLS/cert helpers; the
+#   RSA PKCS#1 v1.5 verification flaw is not exposed to any attacker input
+#   there — it verifies Expo's own bundled material).
 auditConfig:
   ignoreGhsas:
     - GHSA-7pqw-9j4j-h8q3 # extract-zip arbitrary file write via symlink entries
     - GHSA-jmr9-qjv8-65gv # extract-zip unvalidated symlink path traversal
     - GHSA-5p2g-fcmc-qvqq # image-size JXL/HEIF parser infinite-loop DoS
     - GHSA-w3rx-r6r6-pgpr # image-size ICNS parser infinite-loop DoS
+    - GHSA-vfj7-8cjw-p6xm # braces stack-exhaustion DoS via nested patterns (no fix)
+    - GHSA-86w9-cpqp-85rv # node-forge RSA PKCS#1 v1.5 verification flaw (no fix)
 
 onlyBuiltDependencies:
   - supabase
