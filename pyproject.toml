@@ -15,7 +15,10 @@ dependencies = [
     "pydantic-settings>=2.3.0",
     "email-validator>=2.0.0",
     # Database
-    "sqlalchemy[asyncio]>=2.0.30",
+    # Pinned below 2.1: the 2.1 line (released 2026-10) changed typed unions
+    # and broke the strict mypy gate + schema-sync on a floor-pinned resolve.
+    # Revisit deliberately when adopting 2.1.
+    "sqlalchemy[asyncio]>=2.0.30,<2.1",
     "asyncpg>=0.29.0",
     "psycopg2-binary>=2.9.9",
     # Cache / tasks
