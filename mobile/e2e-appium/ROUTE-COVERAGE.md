@@ -11,7 +11,7 @@ asserts intended behaviour blocked by a known gap; `—` out of beta scope.
 | `app/customer-login.tsx` | Customer login + register toggle | 01 |
 | `app/reset-password.tsx` | Set-new-password deep-link screen (invalid/expired token paths) | 01 |
 | `app/onboarding/index.tsx` | 10-step tenant wizard: every step's UI, validation gating, back-nav persistence; stops before plan payment (no real tenant) | 02 |
-| `app/paywall.tsx` | Plan selection / Paddle checkout | ⚠️ 02 asserts entry point only — creating a real tenant + Paddle session excluded by data-safety rule |
+| `app/paywall.tsx` | Subscription-required gate: read-only plan pricing, plain-text website mention (no in-app purchase — App Store 3.1.1) | ⚠️ 02 asserts entry point only — creating a real tenant excluded by data-safety rule |
 | `app/(trade)/dashboard.tsx` | Stats, three-dot settings, notification bell, bottom nav (all 5 tabs) | 10 |
 | `app/(trade)/quotes.tsx` + `quote/[id].tsx` | List, detail totals cross-checked vs API, refine-with-AI regeneration state, request-info, send (status + audit log), convert-to-job | 11 |
 | `app/(trade)/quote-intake.tsx` | AI quote generation intake + generating/ready banners | 12 |
@@ -29,7 +29,7 @@ asserts intended behaviour blocked by a known gap; `—` out of beta scope.
 | `app/(trade)/certificates.tsx` + `certificate/[id].tsx` | EICR certificates | — post-beta (hidden from UI) |
 | `app/(trade)/settings.tsx` | Settings root, identity, subscription plan, logout → entry | 10, 18 |
 | `app/(trade)/branding.tsx` | Brand fields vs API, colour swatch/hex save → persisted → survives relaunch → restore | 18 |
-| `app/(trade)/billing.tsx` | Plan tiers, subscription state | 18 |
+| `app/(trade)/billing.tsx` | Read-only plan tiers (no in-app entry point since web-first billing) | — covered by the web-build E2E (regression plan-step section) |
 | `app/(customer)/requests.tsx` | Empty-state copy, 10-step request wizard (persisted title/raw_text/postcode/preferred dates), draft-withheld gating, accept + date reconfirmation + booking, reject, revised-quote → chat | 20 |
 | `app/(customer)/messages.tsx` | AI chat: follow-up question, reply persisted direction=inbound, triage-complete notification, bottom-nav access | 21 |
 | `app/(customer)/notifications.tsx` | Bell + list + badge | 30 |
@@ -42,8 +42,10 @@ asserts intended behaviour blocked by a known gap; `—` out of beta scope.
 - **Customer profile save** (`ProfileScreen.save()` shows a toast only; no
   customer-profile PATCH endpoint exists) — spec 22 asserts the read path and
   documents the gap rather than failing.
-- **Paywall/Paddle checkout** excluded: creating a real tenant in production
-  is prohibited; onboarding spec stops at the plan entry point.
+- **Paywall / web-first billing** excluded: creating a real tenant in
+  production is prohibited; onboarding spec stops at the plan entry point.
+  The app carries no Paddle checkout (App Store 3.1.1) — plan screens are
+  read-only; settings spec 18 asserts the purchase CTAs are absent.
 - **Push banner delivery while app closed** needs a dev-signed build +
   APNs; the TestFlight build asserts the in-app notification row + token
   registration instead.

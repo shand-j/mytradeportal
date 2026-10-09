@@ -1,22 +1,11 @@
 import * as WebBrowser from "expo-web-browser";
 
 /**
- * In-app browser helpers — keep checkout/payment flows inside the app instead
- * of bouncing to Safari (same pattern as useStripeConnectOnboarding).
+ * In-app browser helper — keeps customer payment flows inside the app instead
+ * of bouncing to Safari (same pattern as useStripeConnectOnboarding). The
+ * trade SaaS subscription is sold on the web (App Store Guideline 3.1.1), so
+ * there is deliberately no checkout helper here.
  */
-
-/**
- * Open the Paddle checkout page (GET /billing/checkout-page?_ptxn=…) in an
- * ASWebAuthenticationSession. The page navigates to mtp:// on
- * checkout.completed, which auto-closes the sheet and lands the user back on
- * the screen that launched it. Resolves with "success" on the redirect and
- * "cancel"/"dismiss" when the user closes the sheet — none are errors, so
- * callers keep their existing post-open behavior (polling / advancing) in
- * every case.
- */
-export async function openCheckoutSession(url: string): Promise<void> {
-  await WebBrowser.openAuthSessionAsync(url, "mtp://");
-}
 
 /**
  * Open a payment page that confirms in-page (e.g. the Stripe /pay page, whose

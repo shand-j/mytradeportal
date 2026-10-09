@@ -261,7 +261,7 @@ describe("02 onboarding: wizard walk-through (stops before tenant creation)", ()
     await waitForText("ev charger · eicr");
     // The plan entry point renders — but tapping it would POST /tenants and
     // provision a REAL tenant (finishRegistration runs at this transition,
-    // before any Paddle checkout), so we assert and stop here.
+    // before the read-only plan step), so we assert and stop here.
     await waitForId("onboarding-choose-plan");
   });
 

@@ -99,8 +99,9 @@ export function OnboardingStepperScreen() {
   // Set when the review-step registration 409'd on a duplicate email: the
   // wizard jumps back to the account step, which shows the conflict inline.
   const [emailConflict, setEmailConflict] = useState(false);
-  // The tenant is registered when leaving the review step, so the plan step's
-  // Paddle checkout call (/billing/checkout) runs with an authenticated tenant.
+  // The tenant is registered when leaving the review step. The plan step is
+  // read-only (App Store 3.1.1: subscriptions are sold on the website), so no
+  // billing calls happen in-app.
   const [registered, setRegistered] = useState(isResume);
   const scrollRef = useRef<ScrollView>(null);
   // Registration at the review step is 7 sequential network calls; without a
@@ -209,8 +210,9 @@ export function OnboardingStepperScreen() {
       }
     }
     if (isLast) {
-      // Already registered at the review step; plan checkout opened by the
-      // step. Mark onboarding complete so the index route never bounces a
+      // Already registered at the review step; the plan step only points to
+      // web subscription (no in-app purchase). Mark onboarding complete so
+      // the index route never bounces a
       // finished (esp. resumed) wizard back into /onboarding?resume=1 (#225).
       completeOnboarding();
       router.replace("/(trade)/dashboard");

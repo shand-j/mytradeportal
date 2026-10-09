@@ -1,43 +1,30 @@
 import { useRouter } from "expo-router";
 import { useState } from "react";
-import { Linking, Pressable, ScrollView, Share, View } from "react-native";
+import { Pressable, ScrollView, Share, View } from "react-native";
 import { Button } from "../../components/ui/Button";
 import { Header } from "../../components/ui/Header";
 import { Screen } from "../../components/ui/Screen";
 import { Text } from "../../components/ui/Text";
 import { useAuth } from "../../contexts/AuthContext";
 import { useBusiness } from "../../theme/ThemeProvider";
-import { createPortalSession, useSubscription } from "../../api/billing";
+import { useSubscription } from "../../api/billing";
 import { api, ApiError } from "../../lib/apiClient";
 import { openCalendarSubscription } from "../../api/calendar";
 import { config } from "../../lib/config";
 import { openInAppBrowser } from "../../lib/inAppBrowser";
 import { PortalQrSheet } from "../../components/trade/PortalQrSheet";
 
+/**
+ * Read-only subscription status (App Store Guideline 3.1.1): plans are bought
+ * and managed on the website, so the card only reports state. The website
+ * mentions below are plain text on purpose; they must never become links.
+ */
 function SubscriptionCard() {
   const { data, isLoading } = useSubscription();
-  const router = useRouter();
-  const [portalLoading, setPortalLoading] = useState(false);
-  const [portalError, setPortalError] = useState<string | null>(null);
 
   if (isLoading) {
     return null;
   }
-
-  const openPlanPicker = () => router.push("/(trade)/billing");
-
-  const openCustomerPortal = async () => {
-    setPortalError(null);
-    setPortalLoading(true);
-    try {
-      const { portalUrl } = await createPortalSession();
-      await Linking.openURL(portalUrl);
-    } catch {
-      setPortalError("Couldn't open subscription management. Please try again.");
-    } finally {
-      setPortalLoading(false);
-    }
-  };
 
   if (!data) {
     return (
@@ -48,7 +35,9 @@ function SubscriptionCard() {
         <Text variant="caption" color="secondary">
           You don't have an active plan yet. Start a 14-day free trial to unlock everything.
         </Text>
-        <Button testID="settings-choose-plan" title="Choose a plan" onPress={openPlanPicker} />
+        <Text variant="caption" color="secondary">
+          Subscribe at mytradeportal.co.uk — your plan shows up here automatically.
+        </Text>
       </View>
     );
   }
@@ -104,31 +93,13 @@ function SubscriptionCard() {
       )}
       {data.status === "incomplete" && (
         <Text variant="caption" color="warning">
-          Checkout wasn't completed — try again to finish activating your plan.
+          Your subscription isn't active yet — finish setting it up on our website.
         </Text>
       )}
       {(data.status === "incomplete" || data.status === "canceled") && (
-        <Button
-          testID="settings-restart-checkout"
-          title="Choose a plan"
-          onPress={openPlanPicker}
-        />
-      )}
-      {data.paddleCustomerId && (
-        <>
-          <Button
-            testID="settings-manage-subscription"
-            title={portalLoading ? "Opening…" : "Manage subscription"}
-            variant="outline"
-            disabled={portalLoading}
-            onPress={openCustomerPortal}
-          />
-          {portalError && (
-            <Text variant="caption" color="warning">
-              {portalError}
-            </Text>
-          )}
-        </>
+        <Text variant="caption" color="secondary">
+          Manage your subscription at mytradeportal.co.uk
+        </Text>
       )}
     </View>
   );
@@ -150,7 +121,7 @@ export function SettingsScreen() {
     } catch (error) {
       setCalendarLinkError(
         error instanceof ApiError && error.status === 402
-          ? "Complete your plan checkout to enable calendar sync."
+          ? "An active subscription is required for calendar sync — subscribe at mytradeportal.co.uk."
           : "Could not load your calendar link. Please try again."
       );
     } finally {
