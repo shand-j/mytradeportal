@@ -22,9 +22,12 @@ const MONTHS = [
 ];
 
 // Week-grid time window: appointments outside it are clamped to the edges.
+// The week grid fits the viewport (7 equal-flex columns, no horizontal
+// scroll), so it uses a compressed hour height and a narrow time gutter.
 const GRID_START_HOUR = 7;
 const GRID_END_HOUR = 19;
-const HOUR_HEIGHT = 52;
+const HOUR_HEIGHT = 40;
+const TIME_GUTTER_WIDTH = 32;
 const DEFAULT_DURATION_MIN = 60;
 
 export type CalendarScreenProps = {
@@ -422,115 +425,100 @@ export function CalendarScreen(_props: CalendarScreenProps) {
 
       {viewMode === "week" && (
         <ScrollView className="flex-1" contentContainerStyle={{ paddingBottom: 24 }}>
-          <ScrollView horizontal showsHorizontalScrollIndicator>
-            <View>
-              {/* Day header row */}
-              <View className="flex-row">
-                <View style={{ width: 44 }} />
-                {weekDays.map((date) => {
-                  const isToday = isSameDay(date, today);
-                  return (
+          <View>
+            {/* Day header row — 7 equal-flex columns, all days on screen */}
+            <View className="flex-row">
+              <View style={{ width: TIME_GUTTER_WIDTH }} />
+              {weekDays.map((date) => {
+                const isToday = isSameDay(date, today);
+                return (
+                  <View
+                    key={toIsoDate(date)}
+                    className={`flex-1 items-center gap-0.5 border-b border-gray-200 px-0.5 py-2 ${isToday ? "bg-primary-50" : ""}`}
+                  >
+                    <Text variant="caption" weight={isToday ? "bold" : "semibold"} align="center" style={{ fontSize: 10 }}>
+                      {DAYS[(date.getDay() + 6) % 7]}
+                    </Text>
                     <View
-                      key={toIsoDate(date)}
-                      className={`items-center gap-0.5 border-b border-gray-200 p-2 ${isToday ? "bg-primary-50" : ""}`}
-                      style={{ width: 132 }}
+                      className={`h-6 w-6 items-center justify-center rounded-full ${isToday ? "bg-primary" : ""}`}
                     >
-                      <Text variant="caption" weight={isToday ? "bold" : "semibold"} align="center">
-                        {DAYS[(date.getDay() + 6) % 7]}
-                      </Text>
-                      <View
-                        className={`h-7 w-7 items-center justify-center rounded-full ${isToday ? "bg-primary" : ""}`}
+                      <Text
+                        variant="caption"
+                        align="center"
+                        style={[{ fontSize: 10 }, isToday ? { color: "#FFFFFF" } : undefined]}
+                        color={isToday ? undefined : "secondary"}
                       >
-                        <Text
-                          variant="caption"
-                          align="center"
-                          style={isToday ? { color: "#FFFFFF" } : undefined}
-                          color={isToday ? undefined : "secondary"}
-                        >
-                          {date.getDate()}
-                        </Text>
-                      </View>
-                    </View>
-                  );
-                })}
-              </View>
-
-              {/* Time grid */}
-              <View className="flex-row">
-                <View style={{ width: 44 }}>
-                  {Array.from({ length: GRID_END_HOUR - GRID_START_HOUR }, (_, i) => (
-                    <View key={i} style={{ height: HOUR_HEIGHT }} className="items-end pr-1">
-                      <Text variant="caption" color="secondary" style={{ fontSize: 10 }}>
-                        {String(GRID_START_HOUR + i).padStart(2, "0")}:00
+                        {date.getDate()}
                       </Text>
                     </View>
-                  ))}
-                </View>
-                {weekDays.map((date) => {
-                  const isToday = isSameDay(date, today);
-                  const dayJobs = jobsByDay.get(toIsoDate(date)) ?? [];
-                  return (
-                    <View
-                      key={toIsoDate(date)}
-                      className={`border-l border-gray-100 ${isToday ? "bg-primary-50/40" : ""}`}
-                      style={{
-                        width: 132,
-                        height: (GRID_END_HOUR - GRID_START_HOUR) * HOUR_HEIGHT,
-                        position: "relative",
-                      }}
-                    >
-                      {Array.from({ length: GRID_END_HOUR - GRID_START_HOUR }, (_, i) => (
-                        <View
-                          key={i}
-                          className="border-t border-gray-100"
-                          style={{ position: "absolute", top: i * HOUR_HEIGHT, left: 0, right: 0 }}
-                        />
-                      ))}
-                      {dayJobs.map((job) => {
-                        const startMin = parseMinutes(job.time);
-                        if (startMin === null) return null;
-                        const endMin = job.endTime
-                          ? parseMinutes(job.endTime) ?? startMin + DEFAULT_DURATION_MIN
-                          : startMin + DEFAULT_DURATION_MIN;
-                        const clampedStart = Math.max(startMin, GRID_START_HOUR * 60);
-                        const clampedEnd = Math.min(Math.max(endMin, clampedStart + 30), GRID_END_HOUR * 60);
-                        const top = ((clampedStart - GRID_START_HOUR * 60) / 60) * HOUR_HEIGHT;
-                        const height = Math.max(((clampedEnd - clampedStart) / 60) * HOUR_HEIGHT, 28);
-                        return (
-                          <Pressable
-                            key={job.id}
-                            testID={`booking-${job.id}`}
-                            onPress={() => router.push(`/(trade)/job/${job.id}`)}
-                            style={{ position: "absolute", top, left: 3, right: 3, height }}
-                          >
-                            <View className="flex-1 gap-0.5 overflow-hidden rounded-lg border border-primary-200 bg-primary-50 p-1.5">
-                              <Text variant="caption" weight="semibold" numberOfLines={1} style={{ fontSize: 11 }}>
-                                {job.time}
-                              </Text>
-                              <Text variant="caption" color="secondary" numberOfLines={2} style={{ fontSize: 11 }}>
-                                {job.title}
-                              </Text>
-                              {job.address || job.postcode ? (
-                                <Text
-                                  testID={`booking-address-${job.id}`}
-                                  variant="caption"
-                                  color="secondary"
-                                  numberOfLines={1}
-                                  style={{ fontSize: 10 }}
-                                >
-                                  {job.address || job.postcode}
-                                </Text>
-                              ) : null}
-                            </View>
-                          </Pressable>
-                        );
-                      })}
-                    </View>
-                  );
-                })}
-              </View>
+                  </View>
+                );
+              })}
             </View>
-          </ScrollView>
+
+            {/* Time grid */}
+            <View className="flex-row">
+              <View style={{ width: TIME_GUTTER_WIDTH }}>
+                {Array.from({ length: GRID_END_HOUR - GRID_START_HOUR }, (_, i) => (
+                  <View key={i} style={{ height: HOUR_HEIGHT }} className="items-end pr-1">
+                    <Text variant="caption" color="secondary" style={{ fontSize: 9 }}>
+                      {String(GRID_START_HOUR + i).padStart(2, "0")}:00
+                    </Text>
+                  </View>
+                ))}
+              </View>
+              {weekDays.map((date) => {
+                const isToday = isSameDay(date, today);
+                const dayJobs = jobsByDay.get(toIsoDate(date)) ?? [];
+                return (
+                  <View
+                    key={toIsoDate(date)}
+                    className={`flex-1 border-l border-gray-100 ${isToday ? "bg-primary-50/40" : ""}`}
+                    style={{
+                      height: (GRID_END_HOUR - GRID_START_HOUR) * HOUR_HEIGHT,
+                      position: "relative",
+                    }}
+                  >
+                    {Array.from({ length: GRID_END_HOUR - GRID_START_HOUR }, (_, i) => (
+                      <View
+                        key={i}
+                        className="border-t border-gray-100"
+                        style={{ position: "absolute", top: i * HOUR_HEIGHT, left: 0, right: 0 }}
+                      />
+                    ))}
+                    {dayJobs.map((job) => {
+                      const startMin = parseMinutes(job.time);
+                      if (startMin === null) return null;
+                      const endMin = job.endTime
+                        ? parseMinutes(job.endTime) ?? startMin + DEFAULT_DURATION_MIN
+                        : startMin + DEFAULT_DURATION_MIN;
+                      const clampedStart = Math.max(startMin, GRID_START_HOUR * 60);
+                      const clampedEnd = Math.min(Math.max(endMin, clampedStart + 30), GRID_END_HOUR * 60);
+                      const top = ((clampedStart - GRID_START_HOUR * 60) / 60) * HOUR_HEIGHT;
+                      const height = Math.max(((clampedEnd - clampedStart) / 60) * HOUR_HEIGHT, 24);
+                      return (
+                        <Pressable
+                          key={job.id}
+                          testID={`booking-${job.id}`}
+                          onPress={() => router.push(`/(trade)/job/${job.id}`)}
+                          style={{ position: "absolute", top, left: 1, right: 1, height }}
+                        >
+                          <View className="flex-1 gap-0.5 overflow-hidden rounded-md border border-primary-200 bg-primary-50 p-1">
+                            <Text variant="caption" weight="semibold" numberOfLines={1} style={{ fontSize: 9 }}>
+                              {job.time}
+                            </Text>
+                            <Text variant="caption" color="secondary" numberOfLines={3} style={{ fontSize: 9 }}>
+                              {job.title}
+                            </Text>
+                          </View>
+                        </Pressable>
+                      );
+                    })}
+                  </View>
+                );
+              })}
+            </View>
+          </View>
 
           {unscheduledJobs.length > 0 && (
             <View className="mt-4 gap-2">

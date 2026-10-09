@@ -255,8 +255,9 @@ class QuoteLineItemCreate(BaseModel):
     quantity: Decimal = Decimal("1.00")
     unit_price: Decimal = Decimal("0.00")
     unit: str = "ea"
-    # Clients must round-trip this flag when editing line items, otherwise an
-    # edit silently strips the AI lineage and refine/analytics misbehave.
+    # AI lineage flag. The server re-derives it on update: a line only keeps
+    # ai_generated=True when it still matches an existing AI-drafted line
+    # exactly, so edits (which refine must preserve) cannot be claimed as AI.
     ai_generated: bool = False
 
 

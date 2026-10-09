@@ -2,6 +2,7 @@
 
 import asyncio
 import time
+from collections import Counter
 from dataclasses import replace
 from datetime import date, datetime, timedelta
 from decimal import Decimal
@@ -320,9 +321,32 @@ async def update_quote(
 
     if "line_items" in update_data:
         new_items = update_data.pop("line_items")
+        # An ``ai_generated`` flag is only honoured when the line still matches
+        # an existing AI-drafted line exactly (description, quantity, price,
+        # unit). Anything the electrician changed or added is manual —
+        # otherwise /quotes/{id}/refine would regenerate over the edit.
+        existing_ai_keys: Counter[tuple[str, Decimal, Decimal, str]] = Counter(
+            (li.description.strip().lower(), li.quantity, li.unit_price, li.unit)
+            for li in quote.line_items
+            if li.ai_generated
+        )
         for item in list(quote.line_items):
             await db.delete(item)
-        quote.line_items = [QuoteLineItem(tenant_id=tenant.id, **item) for item in new_items]
+        rebuilt_items = []
+        for item in new_items:
+            line_key = (
+                item["description"].strip().lower(),
+                item["quantity"],
+                item["unit_price"],
+                item.get("unit") or "ea",
+            )
+            ai_generated = bool(item.get("ai_generated")) and existing_ai_keys[line_key] > 0
+            if ai_generated:
+                existing_ai_keys[line_key] -= 1
+            rebuilt_items.append(
+                QuoteLineItem(tenant_id=tenant.id, **{**item, "ai_generated": ai_generated})
+            )
+        quote.line_items = rebuilt_items
         totals_dirty = True
 
     if totals_dirty:
