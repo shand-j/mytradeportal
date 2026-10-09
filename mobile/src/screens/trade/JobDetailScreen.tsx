@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
-import { Alert, Image, KeyboardAvoidingView, Linking, Modal, Platform, Pressable, ScrollView, TextInput, View } from "react-native";
+import { Alert, KeyboardAvoidingView, Linking, Modal, Platform, Pressable, ScrollView, TextInput, View } from "react-native";
 import DateTimePicker from "@react-native-community/datetimepicker";
 import { useQuery } from "@tanstack/react-query";
+import { AuthenticatedImage } from "../../components/ui/AuthenticatedImage";
 import { Button } from "../../components/ui/Button";
 import { FormField } from "../../components/ui/FormField";
 import { Header } from "../../components/ui/Header";
@@ -607,11 +608,12 @@ export function JobDetailScreen({
                   <ScrollView horizontal showsHorizontalScrollIndicator={false}>
                     <View className="flex-row gap-2">
                       {group.map((photo, index) => (
-                        <Image
+                        <AuthenticatedImage
                           key={photo.id}
                           testID={`job-photo-${kind}-${index}`}
-                          source={{ uri: photo.url }}
-                          className="h-24 w-24 rounded-xl"
+                          uri={photo.url}
+                          style={{ width: 96, height: 96, borderRadius: 12 }}
+                          contentFit="cover"
                           accessibilityLabel={`${PHOTO_KIND_LABELS[kind]} photo ${index + 1}`}
                         />
                       ))}
