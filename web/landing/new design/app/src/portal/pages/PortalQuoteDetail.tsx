@@ -300,7 +300,7 @@ function QuoteDetail({ id }: { id: string }) {
         )}
 
         {quote.status === 'approved' && (
-          <p className="mt-[var(--space-md)] border-2 border-[var(--ink)] bg-[var(--accent)] p-4 text-[14px] font-semibold leading-relaxed text-[var(--ink-deep)]" role="status">
+          <p className="mt-[var(--space-md)] border-2 border-[var(--ink)] bg-[var(--accent)] p-4 text-[14px] font-semibold leading-relaxed text-white" role="status">
             Booking request sent — {config.name} will confirm your visit.
           </p>
         )}

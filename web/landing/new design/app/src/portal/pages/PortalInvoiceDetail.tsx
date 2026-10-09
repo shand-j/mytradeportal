@@ -77,7 +77,7 @@ function InvoiceDetail({ id }: { id: string }) {
         </div>
 
         {paymentReturning && unpaid && (
-          <p role="status" className="mt-[var(--space-md)] border-2 border-[var(--ink)] bg-[var(--accent)] p-4 text-[14px] font-semibold leading-relaxed text-[var(--ink-deep)]">
+          <p role="status" className="mt-[var(--space-md)] border-2 border-[var(--ink)] bg-[var(--accent)] p-4 text-[14px] font-semibold leading-relaxed text-white">
             Thank you — your payment is being confirmed. This page will show the invoice as paid
             shortly.
           </p>
@@ -132,7 +132,7 @@ function InvoiceDetail({ id }: { id: string }) {
         </dl>
 
         {invoice.status === 'paid' && (
-          <p className="mt-[var(--space-xl)] border-2 border-[var(--ink)] bg-[var(--accent)] p-4 text-[14px] font-semibold leading-relaxed text-[var(--ink-deep)]">
+          <p className="mt-[var(--space-xl)] border-2 border-[var(--ink)] bg-[var(--accent)] p-4 text-[14px] font-semibold leading-relaxed text-white">
             This invoice is paid — thank you.
           </p>
         )}
