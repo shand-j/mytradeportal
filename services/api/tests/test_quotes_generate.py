@@ -416,6 +416,141 @@ async def test_refine_quote_replaces_ai_lines_and_keeps_manual_lines(
 
 
 @pytest.mark.asyncio
+async def test_edited_ai_line_survives_refine(client: AsyncClient, db: AsyncSession) -> None:
+    """DEFECT-007 regression: editing an AI line's price via PATCH (the mobile
+    auto-save round-trips ai_generated=True) must flip the line to manual so a
+    later refine preserves the edit instead of regenerating over it."""
+    tenant = await _create_tenant(client, f"sparky-{uuid4().hex[:8]}")
+    await _mark_vat_registered(db, tenant["id"])
+    contact = await _create_contact(client, tenant["id"], "Refine Customer")
+
+    generated_v1 = {
+        "line_items": [
+            {
+                "description": "Supply and fit consumer unit",
+                "kind": "labour",
+                "unit": "ea",
+                "quantity": 1,
+                "unit_price": 65.00,
+            },
+            {
+                "description": "Consumer unit materials",
+                "kind": "material",
+                "unit": "ea",
+                "quantity": 1,
+                "unit_price": 120.00,
+            },
+        ],
+        "notes": "",
+    }
+
+    with (
+        patch(
+            "app.routers.quotes.search_cost_items_with_status",
+            new=AsyncMock(return_value=([], "no_index")),
+        ),
+        patch(
+            "app.routers.quotes.generate_quote_from_prompt",
+            new=AsyncMock(return_value=generated_v1),
+        ),
+    ):
+        created = await client.post(
+            "/quotes/generate",
+            headers={"X-Tenant-ID": tenant["id"]},
+            json={
+                "contact_id": contact["id"],
+                "description": "Replace consumer unit",
+                "use_ocerp": False,
+            },
+        )
+    assert created.status_code == 201, created.text
+    quote = created.json()
+    quote_id = quote["id"]
+
+    # Simulate the mobile auto-save: the electrician reprices line 1 but the
+    # client round-trips ai_generated=True for both lines.
+    patched = await client.patch(
+        f"/quotes/{quote_id}",
+        headers={"X-Tenant-ID": tenant["id"]},
+        json={
+            "line_items": [
+                {
+                    "description": "Supply and fit consumer unit",
+                    "quantity": 1,
+                    "unit_price": 72.50,
+                    "unit": "ea",
+                    "ai_generated": True,
+                },
+                {
+                    "description": "Consumer unit materials",
+                    "quantity": 1,
+                    "unit_price": 120.00,
+                    "unit": "ea",
+                    "ai_generated": True,
+                },
+            ]
+        },
+    )
+    assert patched.status_code == 200, patched.text
+    patched_lines = {li["description"]: li for li in patched.json()["line_items"]}
+    assert patched_lines["Supply and fit consumer unit"]["ai_generated"] is False
+    # Untouched lines keep their AI lineage.
+    assert patched_lines["Consumer unit materials"]["ai_generated"] is True
+
+    generated_v2 = {
+        "line_items": [
+            {
+                "description": "Consumer unit materials",
+                "kind": "material",
+                "unit": "ea",
+                "quantity": 1,
+                "unit_price": 130.00,
+            },
+            {
+                "description": "2 double sockets",
+                "kind": "material",
+                "unit": "ea",
+                "quantity": 2,
+                "unit_price": 80.00,
+            },
+        ],
+        "notes": "Refined per instructions",
+    }
+
+    with (
+        patch(
+            "app.routers.quotes.search_cost_items_with_status",
+            new=AsyncMock(return_value=([], "no_index")),
+        ),
+        patch(
+            "app.routers.quotes.generate_quote_from_prompt",
+            new=AsyncMock(return_value=generated_v2),
+        ),
+    ):
+        refined = await client.post(
+            f"/quotes/{quote_id}/refine",
+            headers={"X-Tenant-ID": tenant["id"]},
+            json={"instructions": "add 2 double sockets"},
+        )
+
+    assert refined.status_code == 200, refined.text
+    body = refined.json()
+    by_description = {li["description"]: li for li in body["line_items"]}
+
+    # The manual edit survives refinement at the edited price, exactly once.
+    edited = [
+        li for li in body["line_items"] if li["description"] == "Supply and fit consumer unit"
+    ]
+    assert len(edited) == 1
+    assert Decimal(edited[0]["unit_price"]) == Decimal("72.50")
+    assert edited[0]["ai_generated"] is False
+    # The AI lines were regenerated as instructed.
+    assert "2 double sockets" in by_description
+    assert Decimal(by_description["Consumer unit materials"]["unit_price"]) == Decimal("130.00")
+    assert by_description["Consumer unit materials"]["ai_generated"] is True
+
+
+@pytest.mark.asyncio
 async def test_refine_quote_validates_instructions(client: AsyncClient, db: AsyncSession) -> None:
     tenant = await _create_tenant(client, f"sparky-{uuid4().hex[:8]}")
     await _mark_vat_registered(db, tenant["id"])

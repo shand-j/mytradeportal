@@ -53,9 +53,16 @@ export function TeamSettingsScreen({ onClose }: TeamSettingsScreenProps) {
       if (err instanceof NetworkError) {
         setError("Can't reach the server. Check your connection and try again.");
       } else if (err instanceof ApiError && err.status === 403) {
-        // Structured seat_limit_reached payload — detail doesn't survive
-        // ApiError's string flattening, so show our own upgrade copy.
-        setSeatLimitHit(true);
+        // Two distinct 403s: seat_limit_reached (structured payload, surfaced
+        // as err.code by apiClient) → upgrade copy; anything else is the RBAC
+        // gate (plain "Insufficient permissions") → say so, don't upsell.
+        if (err.code === "seat_limit_reached") {
+          setSeatLimitHit(true);
+        } else {
+          setError(
+            "You don't have permission to invite team members — ask an admin or office manager to send the invite."
+          );
+        }
       } else if (err instanceof ApiError && err.status === 409) {
         setError("That email is already on your team.");
       } else if (err instanceof ApiError) {

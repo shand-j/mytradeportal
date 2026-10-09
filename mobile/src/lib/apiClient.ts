@@ -139,12 +139,27 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
         )
         .join("; ");
     } else if (raw && typeof raw === "object") {
-      const structured = raw as { code?: unknown; reason?: unknown };
-      code = typeof structured.code === "string" ? structured.code : null;
+      // Two structured shapes: {code, reason} (dispatch guardrails) and the
+      // plan-gate payloads {detail: "<machine code>", upgrade_hint, ...}
+      // (seat_limit_reached, feature_not_in_plan).
+      const structured = raw as {
+        code?: unknown;
+        reason?: unknown;
+        detail?: unknown;
+        upgrade_hint?: unknown;
+      };
+      code =
+        typeof structured.code === "string"
+          ? structured.code
+          : typeof structured.detail === "string"
+            ? structured.detail
+            : null;
       detail =
         typeof structured.reason === "string"
           ? structured.reason
-          : (code ?? JSON.stringify(raw));
+          : typeof structured.upgrade_hint === "string"
+            ? structured.upgrade_hint
+            : (code ?? JSON.stringify(raw));
     }
     // 402 subscription_required: flag globally so the app routes staff to the
     // paywall. The billing endpoints themselves are exempt server-side, so

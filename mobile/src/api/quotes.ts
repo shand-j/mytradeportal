@@ -199,7 +199,8 @@ export async function updateQuote(
       description: li.description,
       quantity: parseFloat(li.qty) || 0,
       unitPrice: parseFloat(li.unitPrice) || 0,
-      // Round-trip the AI lineage flag: dropping it breaks refine/analytics.
+      // Round-trip the AI lineage flag (edits clear it in updateItem); the
+      // server re-derives it by diffing against the AI-drafted baseline.
       aiGenerated: li.aiGenerated,
     })),
     vatRate,

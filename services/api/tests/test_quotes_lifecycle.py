@@ -452,12 +452,27 @@ async def test_refine_drops_duplicated_manual_lines(client: AsyncClient) -> None
     assert any("duplicate" in w.lower() for w in body["ai_warnings"]), body["ai_warnings"]
 
 
-async def test_update_quote_preserves_ai_generated_flags(client: AsyncClient) -> None:
-    """Round-tripping line items through PATCH must keep ai_generated lineage."""
+async def test_update_quote_preserves_ai_generated_flags(
+    client: AsyncClient, db: AsyncSession
+) -> None:
+    """Round-tripping an unchanged AI-drafted line through PATCH keeps its
+    ai_generated lineage; the server re-derives the flag by content match."""
     tenant = await _create_tenant(client, f"quote-{uuid4().hex[:8]}")
     contact = await _create_contact(client, tenant["id"], "Lineage Keeper")
     quote = await _create_quote(client, tenant["id"], contact["id"])
     line = quote["line_items"][0]
+
+    # Mark the existing line AI-drafted (as the generate endpoint would).
+    from app.models import QuoteLineItem
+    from sqlalchemy import update as sa_update
+
+    await set_tenant_in_session(db, UUID(tenant["id"]))
+    await db.execute(
+        sa_update(QuoteLineItem)
+        .where(QuoteLineItem.quote_id == UUID(quote["id"]))
+        .values(ai_generated=True)
+    )
+    await db.commit()
 
     response = await client.patch(
         f"/quotes/{quote['id']}",

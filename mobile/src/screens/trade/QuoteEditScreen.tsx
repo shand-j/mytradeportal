@@ -358,7 +358,11 @@ export function QuoteEditScreen({
   }, [items, vatRate, roundingIncrement]);
 
   const updateItem = (id: string, field: keyof QuoteLineItem, value: string) => {
-    setItems((prev) => prev.map((item) => (item.id === id ? { ...item, [field]: value } : item)));
+    // Editing a line makes it manual: clear the AI flag so a later refine
+    // preserves it instead of regenerating over the edit.
+    setItems((prev) =>
+      prev.map((item) => (item.id === id ? { ...item, [field]: value, aiGenerated: false } : item))
+    );
   };
 
   const addLine = () => {
