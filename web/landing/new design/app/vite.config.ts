@@ -36,6 +36,11 @@ export default defineConfig({
         target: "http://localhost:8000",
         changeOrigin: true,
       },
+      // /subscribe page — plans catalog, checkout creation, subscription read.
+      "/billing": {
+        target: "http://localhost:8000",
+        changeOrigin: true,
+      },
       "/tenants": {
         target: "http://localhost:8000",
         changeOrigin: true,

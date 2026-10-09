@@ -3,6 +3,7 @@ import { Navigate, Route, Routes } from 'react-router'
 import Home from './pages/Home'
 import ResetPassword from './pages/ResetPassword'
 import AcceptInvite from './pages/AcceptInvite'
+import Subscribe from './pages/Subscribe'
 import ViewQuote from './pages/ViewQuote'
 import ViewInvoice from './pages/ViewInvoice'
 import PayInvoice from './pages/PayInvoice'
@@ -58,6 +59,7 @@ export default function App() {
       <Route path="/code" element={<CodeEntryPage />} />
       <Route path="/reset-password" element={<ResetPassword />} />
       <Route path="/accept-invite" element={<AcceptInvite />} />
+      <Route path="/subscribe" element={<Subscribe />} />
       <Route path="/quote/:token" element={<ViewQuote />} />
       <Route path="/invoice/:token" element={<ViewInvoice />} />
       <Route path="/pay/:token" element={<PayInvoice />} />

@@ -157,14 +157,26 @@ export default function Pricing() {
                     </li>
                   ))}
                 </ul>
-                <a
-                  href={TESTFLIGHT_URL}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className={`chip mt-[var(--space-xl)] justify-center ${tier.featured ? 'chip--on-dark' : ''}`}
-                >
-                  Join the beta
-                </a>
+                <div className="mt-[var(--space-xl)] flex flex-col items-stretch gap-[var(--space-sm)]">
+                  <Link
+                    to={`/subscribe?plan=${tier.id}&interval=${frequency}`}
+                    className={`chip justify-center ${tier.featured ? 'chip--accent' : 'chip--fill'}`}
+                  >
+                    Subscribe{frequency === 'year' ? ' yearly' : ''} — {shown}
+                  </Link>
+                  <a
+                    href={TESTFLIGHT_URL}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className={`text-center text-[12px] font-semibold uppercase tracking-[0.1em] underline decoration-2 underline-offset-4 transition-colors duration-[length:var(--dur-micro)] ${
+                      tier.featured
+                        ? 'text-[var(--paper-on-dark-muted)] decoration-transparent hover:text-[var(--paper-on-dark)] hover:decoration-[var(--accent)]'
+                        : 'text-[var(--muted)] decoration-transparent hover:text-[var(--ink)] hover:decoration-[var(--accent)]'
+                    }`}
+                  >
+                    Free during beta — get the app on TestFlight
+                  </a>
+                </div>
               </div>
             )
           })}
