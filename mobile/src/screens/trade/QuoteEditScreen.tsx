@@ -119,6 +119,10 @@ export type QuoteEditScreenProps = {
   onConvertToJob?: () => Promise<void>;
   /** Id of the job already created from this quote, when one exists. */
   existingJobId?: string | null;
+  /** True when the existing job is the tentative draft hold created at quote
+   * acceptance — convert-to-job adopts and confirms it in place, so the
+   * convert affordance stays offered (as "Confirm booking") for drafts. */
+  existingJobIsDraft?: boolean;
   /** True after convert-to-job 409'd without a resolvable job (legacy quote). */
   jobConvertFailed?: boolean;
   /** True once a sent/paid invoice exists for this quote: edit + refine lock. */
@@ -132,6 +136,7 @@ export function QuoteEditScreen({
   onConvertToInvoice,
   onConvertToJob,
   existingJobId,
+  existingJobIsDraft,
   jobConvertFailed,
   invoicedReadOnly,
 }: QuoteEditScreenProps) {
@@ -285,15 +290,21 @@ export function QuoteEditScreen({
   };
 
   // iOS: one "Convert to…" button opens an ActionSheet; Job navigates to the
-  // prefilled new-job page, Invoice converts in place.
+  // prefilled new-job page, Invoice converts in place. A draft hold (created
+  // at acceptance) is confirmed in place instead — convert-to-job adopts it.
   const handleConvertSheet = () => {
     if (!seedQuote) return;
     const actions: { label: string; run: () => void }[] = [];
     if (canCreateJobFromQuote) {
-      actions.push({
-        label: "Job",
-        run: () => router.push({ pathname: "/(trade)/job/new", params: { quoteId: seedQuote.id } }),
-      });
+      actions.push(
+        existingJobIsDraft
+          ? { label: "Confirm booking", run: () => void handleConvertToJob() }
+          : {
+              label: "Job",
+              run: () =>
+                router.push({ pathname: "/(trade)/job/new", params: { quoteId: seedQuote.id } }),
+            }
+      );
     }
     if (showConvertToInvoice) {
       actions.push({ label: "Invoice", run: () => void handleConvertToInvoice() });
@@ -391,14 +402,26 @@ export function QuoteEditScreen({
     seedQuote?.status !== "draft" &&
     !existingJobId &&
     (!isAccepted || !!jobConvertFailed);
+  // An acceptance-time draft hold never suppresses convert-to-job: the
+  // endpoint adopts and confirms the draft in place (DEFECT-005). Only a real
+  // (non-draft) existing job hides it.
   const showConvertToJob =
-    !!onConvertToJob && !isTerminal && isAccepted && !existingJobId && !jobConvertFailed;
+    !!onConvertToJob &&
+    !isTerminal &&
+    isAccepted &&
+    (!existingJobId || !!existingJobIsDraft) &&
+    !jobConvertFailed;
   // The iOS sheet's Job option routes to the prefilled job-create page, which
   // marks off-app-agreed sent quotes as accepted during conversion — so it can
   // be offered for sent quotes too. The web convert-to-job button converts in
-  // place and stays approved-only.
+  // place and stays approved-only. Draft holds take the same in-place confirm
+  // on both platforms.
   const canCreateJobFromQuote =
-    !!onConvertToJob && !isTerminal && (isAccepted || isSent) && !existingJobId && !jobConvertFailed;
+    !!onConvertToJob &&
+    !isTerminal &&
+    (isAccepted || isSent) &&
+    (!existingJobId || !!existingJobIsDraft) &&
+    !jobConvertFailed;
 
   // Collapsed AI details badge: one per rendered line.
   const aiDetailCount =
@@ -849,7 +872,9 @@ export function QuoteEditScreen({
             {showConvertToJob && (
               <Button
                 testID="quote-convert-job"
-                title={converting ? "Converting…" : "Convert to job"}
+                title={
+                  converting ? "Converting…" : existingJobIsDraft ? "Confirm booking" : "Convert to job"
+                }
                 disabled={converting}
                 onPress={handleConvertToJob}
               />

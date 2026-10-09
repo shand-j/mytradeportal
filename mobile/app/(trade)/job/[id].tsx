@@ -8,6 +8,7 @@ import {
   useJobDetail,
   useJobActions,
   useUpdateJob,
+  useConvertQuoteToJob,
   type JobPhotoKind,
 } from "../../../src/api/jobs";
 import { uploadFileToApi } from "../../../src/api/uploads";
@@ -24,6 +25,7 @@ export default function JobDetailRoute() {
   const { job: realJob, raw } = useJobDetail(id);
   const { start, complete } = useJobActions(id);
   const updateJob = useUpdateJob(id);
+  const convertToJob = useConvertQuoteToJob();
   const { users } = useUsersList();
   const invoicesQuery = useQuery({ queryKey: ["invoices"], queryFn: fetchInvoices });
   // The job's invoice inherits the source quote's VAT rate server-side; the
@@ -118,6 +120,17 @@ export default function JobDetailRoute() {
       onExitToDashboard={() => router.replace("/(trade)/dashboard")}
       onStart={() => start.mutateAsync().then(() => undefined)}
       onComplete={() => complete.mutateAsync().then(() => undefined)}
+      // A draft hold (auto-created at quote acceptance) is confirmed by
+      // converting its quote — the backend adopts the draft in place, so the
+      // returned job keeps this screen's id.
+      onConfirmDraft={
+        raw.quoteId
+          ? async () => {
+              const confirmed = await convertToJob.mutateAsync({ quoteId: raw.quoteId as string });
+              queryClient.invalidateQueries({ queryKey: ["job", confirmed.id] });
+            }
+          : undefined
+      }
       busy={start.isPending || complete.isPending}
       onSubmitInvoice={handleSubmitInvoice}
       onCreateInvoiceAi={handleCreateInvoiceAi}

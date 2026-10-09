@@ -178,6 +178,42 @@ test.describe.serial("S — Acceptance date reconfirmation", () => {
     await expect(panel).toContainText(dateB);
   });
 
+  test("G28: the acceptance-time draft job is confirmable from quote and job screens", async ({
+    page,
+  }) => {
+    await loginAsTradeOwner(page, tenant);
+
+    // The draft hold no longer suppresses convert-to-job on the quote screen —
+    // it surfaces as "Confirm booking" and adopts the draft in place.
+    await page.goto(`/(trade)/quote/${quoteId}`, { waitUntil: "networkidle" });
+    await waitText(page, "Review quote");
+    await tap(page, "quote-more-actions");
+    const convertButton = page.locator('[data-testid="quote-convert-job"]');
+    await expect(convertButton).toBeVisible({ timeout: 30_000 });
+    await expect(convertButton).toContainText("Confirm booking");
+
+    // The draft job itself explains the hold, shows the customer's preferred
+    // dates and offers "Confirm & schedule".
+    const jobs = (await api(tenant, "/jobs")) as Array<{
+      id: string;
+      quote_id: string;
+      status: string;
+    }>;
+    const draft = jobs.find((j) => j.quote_id === quoteId);
+    expect(draft, "acceptance did not create a draft job").toBeTruthy();
+    expect(draft!.status).toBe("draft");
+
+    await page.goto(`/(trade)/job/${draft!.id}`, { waitUntil: "networkidle" });
+    await waitText(page, "Job detail");
+    const notice = page.locator('[data-testid="job-draft-notice"]');
+    await expect(notice).toBeVisible({ timeout: 30_000 });
+    await expect(notice).toContainText(dateA);
+    await expect(notice).toContainText(dateB);
+    await expect(page.locator('[data-testid="job-confirm-draft"]')).toBeVisible();
+    // No other lifecycle action leaks into the draft state.
+    await expect(page.locator('[data-testid="job-start"]')).toHaveCount(0);
+  });
+
   test("G28: converting to a job prefills the earliest date and carries the dates into the job", async ({
     page,
   }) => {
