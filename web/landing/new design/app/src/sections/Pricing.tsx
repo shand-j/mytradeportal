@@ -6,7 +6,8 @@ import { PricingTiers } from '@/constants/pricing-tiers'
 import { TESTFLIGHT_URL } from '@/lib/site'
 
 /**
- * Pricing — flat per business, unlimited users, AI unmetered on every plan.
+ * Pricing — flat per business, seat-capped tiers (1 / 5 / 15 users), AI
+ * unmetered on every plan.
  * Prices are pulled live from Paddle (PricePreview), localised to the
  * visitor's country with tax handled by Paddle, falling back to static GBP
  * launch prices when Paddle isn't configured. During beta every plan is
@@ -44,9 +45,9 @@ export default function Pricing() {
             </h2>
             <p className="reveal mt-[var(--space-md)] max-w-[44ch] text-[15.5px] leading-[1.75] text-[var(--muted)]" style={{ ['--i' as string]: 1 }}>
               Free while we&apos;re in beta — join TestFlight and every plan is
-              unlocked. At launch: one price for your whole business —
-              unlimited users, and AI included on every plan. No credits, no
-              counting.
+              unlocked. At launch: one flat price per business — seats for
+              your team on every plan, and AI included throughout. No
+              credits, no counting.
             </p>
           </div>
 

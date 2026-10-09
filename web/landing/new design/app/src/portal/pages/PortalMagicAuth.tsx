@@ -77,7 +77,7 @@ export default function PortalMagicAuth() {
 
         {status === 'sent' ? (
           <div className="mt-[var(--space-lg)]" role="status">
-            <p className="border-2 border-[var(--ink)] bg-[var(--accent)] p-4 text-[14px] font-semibold leading-relaxed text-[var(--ink-deep)]">
+            <p className="border-2 border-[var(--ink)] bg-[var(--accent)] p-4 text-[14px] font-semibold leading-relaxed text-white">
               Check your inbox — we've emailed you a new sign-in link.
             </p>
           </div>

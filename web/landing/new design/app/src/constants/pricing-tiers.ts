@@ -14,9 +14,10 @@ export interface Tier {
 }
 
 /**
- * Launch pricing: flat per business, unlimited users, AI unmetered on every
- * plan (subject to the fair-use policy at /fair-use). Provisional until the
- * beta evidence review.
+ * Launch pricing: flat per business with seat-capped tiers (Sole Trader 1
+ * user, Pro up to 5, Team up to 15 — mirrors GET /billing/plans), AI
+ * unmetered on every plan (subject to the fair-use policy at /fair-use).
+ * Provisional until the beta evidence review.
  */
 export const PricingTiers: Tier[] = [
   {
@@ -26,6 +27,7 @@ export const PricingTiers: Tier[] = [
     audience: 'For self-employed tradespeople',
     highlight: 'Everything you need to quote, win the job, and get paid.',
     features: [
+      '1 user',
       'Customer portal',
       'AI quote drafting',
       'AI intake briefs',
@@ -48,6 +50,7 @@ export const PricingTiers: Tier[] = [
     highlight: 'Adds the AI that does the looking — photos, drawings, and customer chat.',
     features: [
       'Everything in Sole Trader',
+      'Up to 5 users',
       'Photo & drawing analysis',
       'Customer-facing AI chat assistant',
       'Certificates',
@@ -67,9 +70,10 @@ export const PricingTiers: Tier[] = [
     id: 'team',
     tagline: 'Firms with multiple jobs on the go.',
     audience: 'For growing firms with people to coordinate',
-    highlight: 'Runs the whole firm — every user included at no extra cost.',
+    highlight: 'Runs the whole firm — up to 15 users included at no extra cost.',
     features: [
       'Everything in Pro',
+      'Up to 15 users',
       'Multi-user scheduling',
       'Roles & permissions',
       'Shared customer portal',
