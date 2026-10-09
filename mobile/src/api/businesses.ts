@@ -5,6 +5,7 @@ import { camelizeKeys } from "../lib/case";
 import { config } from "../lib/config";
 import { tokenStorage } from "../lib/tokenStorage";
 import { BusinessConfig } from "../types";
+import { postMultipartNative } from "./uploads";
 
 type PublicConfigResponse = {
   slug: string;
@@ -155,28 +156,29 @@ export async function uploadTenantLogo(asset: LogoAsset): Promise<BusinessConfig
     tokenStorage.getToken(),
     tokenStorage.getTenantId(),
   ]);
-  const form = new FormData();
-  // Native FormData accepts the {uri, name, type} file shape and sets the
-  // part's Content-Type from `type` — the server 415s without it. Hermes
-  // polyfills File/Blob, so `typeof File` cannot detect the platform; the
-  // fetch→blob path also drops the mime type, so it only runs on web.
-  if (Platform.OS === "web") {
-    const fetched = await fetch(asset.uri).then((r) => r.blob());
-    const file =
-      typeof File !== "undefined"
-        ? new File([fetched], asset.name, { type: asset.type || fetched.type })
-        : fetched;
-    form.append("file", file, asset.name);
-  } else {
-    form.append("file", {
-      uri: asset.uri,
-      name: asset.name,
-      type: asset.type,
-    } as unknown as Blob);
-  }
   const headers: Record<string, string> = {};
   if (token) headers["Authorization"] = `Bearer ${token}`;
   if (tenantId) headers["X-Tenant-ID"] = tenantId;
+  // Native: uploadAsync (see postMultipartNative) — SDK 57's fetch rejects RN
+  // FormData file parts, and fetch→blob drops the mime type the server 415s
+  // on. Web: typed File so the part's Content-Type survives.
+  if (Platform.OS !== "web") {
+    const data = camelizeKeys(
+      await postMultipartNative<CurrentTenantResponse>(
+        `${config.apiBaseUrl}/tenants/me/logo`,
+        asset,
+        headers
+      )
+    ) as CurrentTenantResponse;
+    return normalizeTenant(data);
+  }
+  const fetched = await fetch(asset.uri).then((r) => r.blob());
+  const file =
+    typeof File !== "undefined"
+      ? new File([fetched], asset.name, { type: asset.type || fetched.type })
+      : fetched;
+  const form = new FormData();
+  form.append("file", file, asset.name);
   const response = await fetch(`${config.apiBaseUrl}/tenants/me/logo`, {
     method: "POST",
     headers,

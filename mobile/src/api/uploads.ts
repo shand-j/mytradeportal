@@ -1,4 +1,5 @@
 import { Platform } from "react-native";
+import * as FileSystem from "expo-file-system/legacy";
 import { api } from "../lib/apiClient";
 import { config } from "../lib/config";
 import { tokenStorage } from "../lib/tokenStorage";
@@ -11,6 +12,44 @@ export type StagedPhoto = {
   type: string;
   sizeBytes?: number;
 };
+
+/**
+ * Native multipart POST via expo-file-system. SDK 57's fetch rejects RN
+ * FormData file parts ("Unsupported FormDataPart implementation") and the
+ * fetch→blob path drops the mime type; uploadAsync streams a real RFC 2387
+ * multipart body with filename + Content-Type on the file part. All file
+ * endpoints (logo, files/upload, customer/files/upload) name the part "file".
+ *
+ * Throws Error with the server's `detail` message when present. Web callers
+ * must use fetch + a typed File instead (uploadAsync is native-only).
+ */
+export async function postMultipartNative<T>(
+  url: string,
+  file: { uri: string; name: string; type: string },
+  headers: Record<string, string>
+): Promise<T> {
+  const result = await FileSystem.uploadAsync(url, file.uri, {
+    httpMethod: "POST",
+    uploadType: FileSystem.FileSystemUploadType.MULTIPART,
+    fieldName: "file",
+    mimeType: file.type,
+    headers,
+  });
+  let payload: (T & { detail?: unknown }) | null = null;
+  try {
+    payload = JSON.parse(result.body) as T & { detail?: unknown };
+  } catch {
+    // Non-JSON body — fall through to the status-based handling below.
+  }
+  if (result.status < 200 || result.status >= 300) {
+    const detail = payload?.detail ? String(payload.detail) : `Upload failed (${result.status})`;
+    throw new Error(detail);
+  }
+  if (payload === null) {
+    throw new Error(`Upload failed (${result.status}): unreadable response`);
+  }
+  return payload;
+}
 
 /** Staged photos captured in the quote-request media step. */
 export function stagedPhotosFromMedia(media: MediaItem[]): StagedPhoto[] {
@@ -34,29 +73,28 @@ export async function uploadFileToApi(
   file: { uri: string; name: string; type: string }
 ): Promise<{ key: string; url: string }> {
   const token = await tokenStorage.getToken();
-  const form = new FormData();
-  // Native FormData accepts the {uri, name, type} file shape and sets the
-  // part's Content-Type from `type`; the fetch→blob path drops the mime type
-  // (Hermes polyfills File/Blob, so `typeof File` cannot detect the platform)
-  // and the object would be stored as application/octet-stream. Web needs
-  // real File/Blob objects instead.
-  if (Platform.OS === "web") {
-    const fetched = await fetch(file.uri).then((r) => r.blob());
-    const typed =
-      typeof File !== "undefined"
-        ? new File([fetched], file.name, { type: file.type || fetched.type })
-        : fetched;
-    form.append("file", typed, file.name);
-  } else {
-    form.append("file", {
-      uri: file.uri,
-      name: file.name,
-      type: file.type,
-    } as unknown as Blob);
+  const headers: Record<string, string> = {};
+  if (token) headers["Authorization"] = `Bearer ${token}`;
+  if (Platform.OS !== "web") {
+    const data = await postMultipartNative<{ key: string; url: string }>(
+      `${config.apiBaseUrl}${path}`,
+      file,
+      headers
+    );
+    return { key: data.key, url: `${config.apiBaseUrl}${data.url}` };
   }
+  // Web: real File/Blob objects, wrapped in a typed File so the part's
+  // Content-Type survives (an untyped blob stores as application/octet-stream).
+  const fetched = await fetch(file.uri).then((r) => r.blob());
+  const typed =
+    typeof File !== "undefined"
+      ? new File([fetched], file.name, { type: file.type || fetched.type })
+      : fetched;
+  const form = new FormData();
+  form.append("file", typed, file.name);
   const response = await fetch(`${config.apiBaseUrl}${path}`, {
     method: "POST",
-    headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+    headers,
     body: form,
   });
   if (!response.ok) {
