@@ -1,3 +1,4 @@
+import { Platform } from "react-native";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "../lib/apiClient";
 import { camelizeKeys } from "../lib/case";
@@ -155,13 +156,24 @@ export async function uploadTenantLogo(asset: LogoAsset): Promise<BusinessConfig
     tokenStorage.getTenantId(),
   ]);
   const form = new FormData();
-  // React Native and web File / Blob shapes differ; both are accepted by
-  // FormData under `any` here without runtime pain.
-  const blob =
-    typeof File !== "undefined"
-      ? await fetch(asset.uri).then((r) => r.blob())
-      : ({ uri: asset.uri, name: asset.name, type: asset.type } as unknown as Blob);
-  form.append("file", blob as Blob, asset.name);
+  // Native FormData accepts the {uri, name, type} file shape and sets the
+  // part's Content-Type from `type` — the server 415s without it. Hermes
+  // polyfills File/Blob, so `typeof File` cannot detect the platform; the
+  // fetch→blob path also drops the mime type, so it only runs on web.
+  if (Platform.OS === "web") {
+    const fetched = await fetch(asset.uri).then((r) => r.blob());
+    const file =
+      typeof File !== "undefined"
+        ? new File([fetched], asset.name, { type: asset.type || fetched.type })
+        : fetched;
+    form.append("file", file, asset.name);
+  } else {
+    form.append("file", {
+      uri: asset.uri,
+      name: asset.name,
+      type: asset.type,
+    } as unknown as Blob);
+  }
   const headers: Record<string, string> = {};
   if (token) headers["Authorization"] = `Bearer ${token}`;
   if (tenantId) headers["X-Tenant-ID"] = tenantId;
