@@ -23,6 +23,12 @@
  *     devices never talk to it — file traffic is proxied through the API.)
  *     Until then the `*_RAILWAY_PUBLIC_DOMAIN` references below stay empty.
  *   - Register custom domains (dashboard only, then `railway config pull`).
+ *     Production has `api.mytradeportal.co.uk` attached to `api` (2026-10-09)
+ *     and `mytradeportal.co.uk` + `*.mytradeportal.co.uk` attached to
+ *     `landing`; the wildcard is intentional — it powers the tenant portal
+ *     subdomains (ADR-004) and must NOT be removed to "fix" api.*.
+ *     Railway routes each hostname by its own CNAME target, so api.* serves
+ *     the api service once its DNS records (CNAME + ownership TXT) land.
  *
  * Secrets use preserve(): they are set once in the dashboard and are never
  * overwritten by applies.
@@ -217,7 +223,11 @@ export default defineRailway(() => {
       // Calendar feed (webcal/.ics) links must resolve to THIS service's
       // public origin — APP_PUBLIC_URL points at the back office, where the
       // feed path 404s as HTML and iOS rejects the subscription.
-      CALENDAR_FEED_BASE_URL: "https://api-production-65db.up.railway.app",
+      // Branded API custom domain (issue #181). Attached to the api service in
+      // production; only valid once the founder's DNS CNAME + ownership TXT
+      // are in place and Railway has issued the cert — until then the domain
+      // still serves the landing SPA via the *.mytradeportal.co.uk wildcard.
+      CALENDAR_FEED_BASE_URL: "https://api.mytradeportal.co.uk",
       // Where password-reset email links point: the landing site's
       // /reset-password page (NOT the back office).
       PASSWORD_RESET_BASE_URL: "https://www.mytradeportal.co.uk",
