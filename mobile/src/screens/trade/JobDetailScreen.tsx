@@ -89,6 +89,9 @@ type JobDetailScreenProps = {
   onCreateInvoiceAi?: () => void;  /** Persist status transitions on the backend. */
   onStart?: () => Promise<void>;
   onComplete?: () => Promise<void>;
+  /** Confirm an acceptance-time draft hold in place (the backend's
+   * convert-to-job adopts it, keeping the customer's preferred dates). */
+  onConfirmDraft?: () => Promise<void>;
   /** Id of the invoice already created for this job's quote, when one exists. */
   existingInvoiceId?: string | null;
   /** VAT rate applied to ad-hoc invoice previews (from the source quote). */
@@ -128,6 +131,7 @@ export function JobDetailScreen({
   onCreateInvoiceAi,
   onStart,
   onComplete,
+  onConfirmDraft,
   existingInvoiceId,
   vatRate,
   onViewInvoice,
@@ -157,6 +161,7 @@ export function JobDetailScreen({
   const [savingAssignee, setSavingAssignee] = useState(false);
   const [items, setItems] = useState<InvoiceItem[]>([]);
   const [submitting, setSubmitting] = useState(false);
+  const [confirmingDraft, setConfirmingDraft] = useState(false);
   const [showSchedDatePicker, setShowSchedDatePicker] = useState(false);
   const [showSchedTimePicker, setShowSchedTimePicker] = useState(false);
   const [showSchedModal, setShowSchedModal] = useState(false);
@@ -220,6 +225,19 @@ export function JobDetailScreen({
       setStatus("completed");
     } catch (err) {
       Alert.alert("Couldn't complete the job", errorMessage(err, "Please try again."));
+    }
+  };
+
+  const handleConfirmDraft = async () => {
+    if (!onConfirmDraft) return;
+    setConfirmingDraft(true);
+    try {
+      await onConfirmDraft();
+      setStatus("confirmed");
+    } catch (err) {
+      Alert.alert("Couldn't confirm the booking", errorMessage(err, "Please try again."));
+    } finally {
+      setConfirmingDraft(false);
     }
   };
 
@@ -487,7 +505,11 @@ export function JobDetailScreen({
                 {job.endTime ? ` – ${job.endTime}` : ""}
               </Text>
               <Text variant="caption" color="secondary">
-                {status === "confirmed" ? "Confirmed with customer" : "Status updated in app"}
+                {status === "confirmed"
+                  ? "Confirmed with customer"
+                  : status === "draft"
+                    ? "Tentative — not on the calendar until confirmed"
+                    : "Status updated in app"}
               </Text>
               {onUpdateJob && status !== "cancelled" && status !== "completed" && (
                 <Button
@@ -519,6 +541,32 @@ export function JobDetailScreen({
             </>
           )}
         </View>
+
+        {status === "draft" && (
+          <View
+            testID="job-draft-notice"
+            className="rounded-2xl border border-amber-200 bg-amber-50 p-4 gap-2"
+          >
+            <Text variant="body" weight="semibold">
+              Draft booking
+            </Text>
+            <Text variant="caption" color="secondary">
+              Drafted automatically from the customer's first choice when they accepted the
+              quote. Confirm it to book the job in, or reschedule first — it never blocks the
+              calendar until then.
+            </Text>
+            {(sourceQuote?.acceptedDates ?? []).length > 0 && (
+              <>
+                <Text variant="caption" weight="semibold" color="secondary">
+                  Customer's preferred dates
+                </Text>
+                <Text testID="job-draft-preferred-dates" variant="caption" color="secondary">
+                  {(sourceQuote?.acceptedDates ?? []).join(", ")}
+                </Text>
+              </>
+            )}
+          </View>
+        )}
 
         <View className="rounded-2xl bg-slate-100 p-4 gap-2">
           <Text variant="body" weight="semibold">
@@ -877,6 +925,14 @@ export function JobDetailScreen({
       </ScrollView>
 
       <View className="border-t border-slate-200 bg-white pt-4 pb-2 gap-3">
+        {status === "draft" && onConfirmDraft && (
+          <Button
+            testID="job-confirm-draft"
+            title={confirmingDraft ? "Confirming…" : "Confirm & schedule"}
+            disabled={confirmingDraft}
+            onPress={() => void handleConfirmDraft()}
+          />
+        )}
         {status === "confirmed" && (
           <Button
             testID="job-start"

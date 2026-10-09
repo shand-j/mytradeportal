@@ -19,8 +19,8 @@ export default function QuoteDetailRoute() {
   const invoicesQuery = useQuery({ queryKey: ["invoices"], queryFn: fetchInvoices });
   const [jobConvertFailed, setJobConvertFailed] = useState(false);
 
-  const existingJobId = useMemo(
-    () => jobsQuery.data?.find((j) => j.quoteId === id)?.id ?? null,
+  const existingJob = useMemo(
+    () => jobsQuery.data?.find((j) => j.quoteId === id) ?? null,
     [jobsQuery.data, id]
   );
 
@@ -67,7 +67,10 @@ export default function QuoteDetailRoute() {
       onClose={() => router.back()}
       onConvertToInvoice={handleConvertToInvoice}
       onConvertToJob={handleConvertToJob}
-      existingJobId={existingJobId}
+      existingJobId={existingJob?.id ?? null}
+      // The tentative hold auto-created at acceptance is confirmable: the
+      // screen offers "Confirm booking" for it instead of hiding convert.
+      existingJobIsDraft={existingJob?.status === "draft"}
       jobConvertFailed={jobConvertFailed}
       invoicedReadOnly={invoicedReadOnly}
     />
