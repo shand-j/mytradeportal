@@ -595,13 +595,19 @@ test.describe.serial("G — Fresh business signup", () => {
     await tap(page, "onboarding-card-payments-no");
     await tap(page, "onboarding-card-payments-continue");
 
-    // The plan step must render the plan options with no internal-error
-    // surface. Paddle checkout itself stays manual (device checklist).
+    // The plan step is read-only (App Store 3.1.1 — subscriptions are sold on
+    // the web): plan cards with pricing render, the website mention is plain
+    // text, and continuing finishes onboarding with no checkout call.
     await waitText(page, "Choose your plan", 60000);
     await page.locator('[data-testid="plan-sole_trader"]').waitFor({ state: "visible", timeout: 30000 });
     await page.locator('[data-testid="plan-pro"]').waitFor({ state: "visible", timeout: 30000 });
     await page.locator('[data-testid="plan-team"]').waitFor({ state: "visible", timeout: 30000 });
+    await waitText(page, "Subscribe at mytradeportal.co.uk", 30000);
     expect(await bodyText(page)).not.toMatch(/internal server error|\b500\b|payment setup failed/i);
+    await tap(page, "plan-continue");
+    // Onboarding completes; without a subscription the tenant lands on the
+    // dashboard and the paywall intercepts on the first gated call.
+    await page.waitForURL(/dashboard|paywall/, { timeout: 60000 });
   });
 });
 

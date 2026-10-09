@@ -1,5 +1,6 @@
 /**
- * 18 — Trade settings: identity + plan card, billing screen shows plans,
+ * 18 — Trade settings: identity + read-only subscription card, no in-app
+ * billing purchase path (web-first billing, App Store 3.1.1),
  * business profile fields persist from the API (contact phone/address),
  * branding colour picker persists via PATCH /tenants/me and survives a
  * relaunch, then the original colour is restored. Logout returns to entry.
@@ -75,30 +76,21 @@ describe("18: trade settings, branding, billing, logout", () => {
     await waitForText("Settings");
     await waitForId("settings-logout");
     await waitForText(TRADE_EMAIL, 15000);
-    // Either an active plan card ("… plan") or the choose-plan CTA.
+    // Read-only subscription card (App Store 3.1.1): either an active plan
+    // ("… plan") or plain-text web-subscription guidance — never a CTA.
     const hasPlan = await byId("settings-subscription-plan").isExisting();
-    const hasCta = await byId("settings-choose-plan").isExisting();
-    const hasRestart = await byId("settings-restart-checkout").isExisting();
-    expect(hasPlan || hasCta || hasRestart).toBe(true);
+    const hasWebGuidance = await textElContains("mytradeportal.co.uk").isExisting();
+    expect(hasPlan || hasWebGuidance).toBe(true);
   });
 
-  it("billing screen shows the plan options", async () => {
-    const cta = (await byId("settings-choose-plan").isExisting())
-      ? "settings-choose-plan"
-      : (await byId("settings-restart-checkout").isExisting())
-        ? "settings-restart-checkout"
-        : null;
-    if (!cta) {
-      console.log("SKIP: no billing CTA on settings (subscription state unknown)");
-      return;
-    }
-    await tapId(cta);
-    await waitForText("Choose your plan", 25000);
-    await waitForId("plan-sole_trader", 15000);
-    await waitForId("plan-pro", 15000);
-    await waitForId("plan-team", 15000);
-    await tapId("back-button", 8000);
-    await waitForText("Settings", 15000);
+  it("settings has no in-app billing purchase path", async () => {
+    // Web-first billing (App Store 3.1.1): the "Choose a plan" /
+    // "Manage subscription" CTAs and the Paddle portal/checkout testIDs are
+    // gone. The read-only plan cards on /(trade)/billing are covered by the
+    // web-build E2E (mobile/e2e/regression.spec.ts plan-step section).
+    expect(await byId("settings-choose-plan").isExisting()).toBe(false);
+    expect(await byId("settings-restart-checkout").isExisting()).toBe(false);
+    expect(await byId("settings-manage-subscription").isExisting()).toBe(false);
   });
 
   it("business profile shows contact details persisted via the API", async () => {

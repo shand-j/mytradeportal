@@ -1,20 +1,15 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { api } from "../lib/apiClient";
 
 export type PlanKey = "starter" | "pro" | "business";
 
-// Current tier keys from GET /billing/plans. The checkout endpoint still
-// speaks the legacy keys until the W2-B Paddle catalog work lands, so plan
-// selections are mapped back when creating a checkout.
+// Current tier keys from GET /billing/plans. Subscriptions are created and
+// managed on the web (mytradeportal.co.uk) — App Store Guideline 3.1.1 means
+// the app carries no purchase flow, so the plan-key mapping below only goes
+// one way: a subscription's legacy plan key → its display tier.
 export type BillingPlanKey = "sole_trader" | "pro" | "team";
 
-export const CHECKOUT_PLAN_KEY: Record<BillingPlanKey, PlanKey> = {
-  sole_trader: "starter",
-  pro: "pro",
-  team: "business",
-};
-
-/** Inverse of CHECKOUT_PLAN_KEY — a subscription's legacy plan key → tier. */
+/** A subscription's legacy plan key → tier. */
 export const SUBSCRIPTION_TIER_KEY: Record<PlanKey, BillingPlanKey> = {
   starter: "sole_trader",
   pro: "pro",
@@ -76,56 +71,21 @@ export type SubscriptionRead = {
   seatsInUse: number;
 };
 
-export type BillingCheckoutRead = {
-  transactionId: string;
-  checkoutUrl: string;
-};
-
-export async function createBillingCheckout(
-  planKey: PlanKey,
-  successUrl?: string
-): Promise<BillingCheckoutRead> {
-  return api.post<BillingCheckoutRead>("/billing/checkout", {
-    planKey,
-    successUrl,
-  });
-}
-
 export async function getSubscription(): Promise<SubscriptionRead | null> {
   return api.get<SubscriptionRead | null>("/billing/subscription");
-}
-
-export type BillingPortalSessionRead = {
-  portalUrl: string;
-};
-
-/** Mint a short-lived Paddle customer-portal URL (manage/cancel subscription). */
-export async function createPortalSession(): Promise<BillingPortalSessionRead> {
-  return api.post<BillingPortalSessionRead>("/billing/portal-session");
 }
 
 export function useSubscription() {
   return useQuery({
     queryKey: ["billing", "subscription"],
     queryFn: getSubscription,
-    // A completed Paddle checkout arrives via webhook — poll for a few
-    // seconds after the user returns from the checkout URL.
+    // A web subscription arrives via the Paddle webhook — poll for a few
+    // seconds after the user subscribes on mytradeportal.co.uk and returns.
     refetchInterval: (query) => {
       const data = query.state.data;
       if (!data) return false;
       if (data.status === "incomplete") return 3000;
       return false;
-    },
-  });
-}
-
-export function useCreateBillingCheckout() {
-  const client = useQueryClient();
-  return useMutation({
-    mutationFn: ({ planKey, successUrl }: { planKey: PlanKey; successUrl?: string }) =>
-      createBillingCheckout(planKey, successUrl),
-    onSuccess: () => {
-      void client.invalidateQueries({ queryKey: ["billing", "subscription"] });
     },
   });
 }
