@@ -195,7 +195,7 @@ export default function PortalClaim() {
             <h1 className="mt-[var(--space-xs)] font-display text-[clamp(1.6rem,3.5vw,2.25rem)] font-extrabold uppercase leading-tight tracking-[0.02em]">
               Your account is ready
             </h1>
-            <p className="mt-[var(--space-sm)] border-2 border-[var(--ink)] bg-[var(--accent)] p-4 text-[14px] font-semibold leading-relaxed text-[var(--ink-deep)]">
+            <p className="mt-[var(--space-sm)] border-2 border-[var(--ink)] bg-[var(--accent)] p-4 text-[14px] font-semibold leading-relaxed text-white">
               Welcome{customerName ? `, ${customerName}` : ''} — you’re signed in to your{' '}
               {config.name} customer portal.
             </p>
@@ -224,7 +224,7 @@ export default function PortalClaim() {
         {status === 'sent' ? (
           <div role="status">
             <p className="spec-label text-[var(--muted)]">Secure sign-in</p>
-            <p className="mt-[var(--space-lg)] border-2 border-[var(--ink)] bg-[var(--accent)] p-4 text-[14px] font-semibold leading-relaxed text-[var(--ink-deep)]">
+            <p className="mt-[var(--space-lg)] border-2 border-[var(--ink)] bg-[var(--accent)] p-4 text-[14px] font-semibold leading-relaxed text-white">
               Check your inbox — we've emailed you a new sign-in link.
             </p>
           </div>

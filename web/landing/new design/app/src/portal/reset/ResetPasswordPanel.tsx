@@ -167,7 +167,7 @@ export function ResetPasswordPanel() {
 
       {status === 'success' && (
         <div className="mt-[var(--space-lg)]" role="status">
-          <p className="border-2 border-[var(--ink)] bg-[var(--accent)] p-4 text-[14px] font-semibold leading-relaxed text-[var(--ink-deep)]">
+          <p className="border-2 border-[var(--ink)] bg-[var(--accent)] p-4 text-[14px] font-semibold leading-relaxed text-white">
             Password updated for {email}.
           </p>
           <p className="mt-[var(--space-md)] text-[14.5px] leading-relaxed">

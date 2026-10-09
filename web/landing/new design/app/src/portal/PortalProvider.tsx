@@ -86,10 +86,13 @@ export function PortalProvider({ slug, children }: { slug: string; children: Rea
     const root = document.documentElement
     const previous = root.style.getPropertyValue('--accent')
     root.style.setProperty('--accent', config.primary_color)
+    /* Lets CSS scope portal-only overrides (e.g. white text on accent hover). */
+    root.classList.add('portal-mode')
     const previousTitle = document.title
     document.title = `${config.name} — customer portal`
     return () => {
       root.style.setProperty('--accent', previous)
+      root.classList.remove('portal-mode')
       document.title = previousTitle
     }
   }, [config])
