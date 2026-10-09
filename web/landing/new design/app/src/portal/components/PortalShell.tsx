@@ -32,12 +32,12 @@ function SessionExpiredBanner() {
     <div role="alert" className="border-b-2 border-[var(--ink)] bg-[var(--accent)] px-5 py-3">
       <div className="mx-auto flex w-full max-w-[720px] flex-wrap items-center gap-3">
         {sent ? (
-          <p className="text-[13.5px] font-semibold leading-relaxed text-[var(--ink-deep)]">
+          <p className="text-[13.5px] font-semibold leading-relaxed text-white">
             Check your inbox — we've emailed you a new sign-in link.
           </p>
         ) : (
           <>
-            <p className="text-[13.5px] font-semibold leading-relaxed text-[var(--ink-deep)]">
+            <p className="text-[13.5px] font-semibold leading-relaxed text-white">
               Your session has expired.
             </p>
             <form onSubmit={handleSend} className="flex flex-1 flex-wrap items-center gap-2">
@@ -65,7 +65,7 @@ function SessionExpiredBanner() {
           type="button"
           onClick={dismissSessionExpired}
           aria-label="Dismiss"
-          className="ml-auto text-[18px] font-bold leading-none text-[var(--ink-deep)]"
+          className="ml-auto text-[18px] font-bold leading-none text-white"
         >
           ×
         </button>

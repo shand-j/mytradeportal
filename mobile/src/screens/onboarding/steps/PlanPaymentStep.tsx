@@ -97,17 +97,20 @@ const TAGLINES: Record<BillingPlanKey, string> = {
 };
 
 function toDisplayPlan(plan: BillingPlan): Plan {
-  // Flat pricing: per business, unlimited users, AI included on every plan.
+  // Flat pricing per business, seat-capped tiers (1 / 5 / 15 users), AI
+  // included on every plan.
   const aiLine = "AI included on every plan — no credits, no counting";
+  const seatLine = plan.seats === 1 ? "1 user" : `Up to ${plan.seats} users`;
   const featuresByKey: Record<BillingPlanKey, string[]> = {
-    sole_trader: ["Unlimited users", aiLine, "Unlimited quote requests", "Calendar & jobs"],
+    sole_trader: [seatLine, aiLine, "Unlimited quote requests", "Calendar & jobs"],
     pro: [
       "Everything in Sole Trader",
+      seatLine,
       "Invoicing & payments",
       "Team assignment",
       "Branded customer portal",
     ],
-    team: ["Everything in Pro", "Priority support"],
+    team: ["Everything in Pro", seatLine, "Priority support"],
   };
   return {
     key: plan.key,
