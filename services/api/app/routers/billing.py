@@ -15,6 +15,7 @@ from datetime import datetime, timedelta
 from typing import Annotated, Any
 from uuid import UUID
 
+import httpx
 import structlog
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import HTMLResponse
@@ -84,6 +85,20 @@ _CHECKOUT_PAGE = """<!doctype html>
   if (!txn) {
     fail("Missing checkout transaction.");
   } else {
+    // Paddle.js auto-opens a checkout for the _ptxn query parameter at
+    // Initialize time — with DEFAULT settings (variant "multi-page"), which
+    // cardless-trial payment-method transactions reject ("only supported by
+    // one-page checkout variant"). Strip _ptxn before initializing so the
+    // only open is the explicit one below, and set the one-page variant as
+    // the Initialize-level default too, so any open on this page — auto or
+    // explicit — uses it.
+    if (window.history.replaceState) {
+      var params = new URLSearchParams(location.search);
+      params.delete("_ptxn");
+      var cleaned = location.pathname +
+        (params.toString() ? "?" + params.toString() : "") + location.hash;
+      window.history.replaceState(null, "", cleaned);
+    }
     // paddle.js v2 initialization: the page loads /paddle/v2/paddle.js, whose
     // entry point is Paddle.Initialize (Paddle.Setup is the retired v1 API —
     // initializing v1-style leaves the checkout session half-initialized, the
@@ -96,6 +111,7 @@ _CHECKOUT_PAGE = """<!doctype html>
     if (PADDLE_ENV === "sandbox") { Paddle.Environment.set("sandbox"); }
     var init = {
       token: PADDLE_TOKEN,
+      checkout: { settings: { variant: "one-page" } },
       eventCallback: function (event) {
         if (event.name === "checkout.completed") {
           document.getElementById("status").textContent = "You're all set!";
@@ -211,6 +227,7 @@ async def _cardless_trial_checkout(
     subscription: Subscription,
     customer_id: str,
     tenant_row: Tenant | None,
+    postcode: str | None = None,
 ) -> dict[str, str]:
     """Hosted checkout for a cardless-trial plan.
 
@@ -235,11 +252,37 @@ async def _cardless_trial_checkout(
     if paddle_subscription_id and subscription.status in ("trialing", "past_due"):
         return await get_payment_method_update_transaction(paddle_subscription_id)
 
-    postcode = (tenant_row.settings or {}).get("postcode") if tenant_row else None
-    address_id = await create_customer_address(
-        customer_id,
-        postal_code=str(postcode) if postcode else None,
+    # Paddle requires postal_code for GB addresses, so a cardless-trial
+    # checkout cannot be created for a tenant with no postcode — fail fast
+    # with a stable 400 code (same style as "subscription_required") so
+    # clients can collect a postcode and retry, instead of Paddle's 400
+    # surfacing as an opaque 502 retry loop. A postcode supplied with the
+    # checkout request is persisted into the tenant settings so later
+    # checkouts don't ask again.
+    billing_postcode = (postcode or "").strip() or (
+        str((tenant_row.settings or {}).get("postcode") or "").strip() if tenant_row else ""
     )
+    if not billing_postcode:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="postcode_required",
+        )
+    if tenant_row is not None and (tenant_row.settings or {}).get("postcode") != billing_postcode:
+        tenant_row.settings = {**(tenant_row.settings or {}), "postcode": billing_postcode}
+    try:
+        address_id = await create_customer_address(
+            customer_id,
+            postal_code=billing_postcode,
+        )
+    except httpx.HTTPStatusError as exc:
+        if exc.response.status_code == 400:
+            # Paddle rejected the postcode itself — a client-fixable input
+            # problem, not a provider outage.
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="postcode_invalid",
+            ) from exc
+        raise
     transaction_id = await create_cardless_trial_transaction(
         price_id=price_id,
         tenant_id=str(tenant_id),
@@ -324,6 +367,7 @@ async def create_checkout(
                 subscription=subscription,
                 customer_id=customer_id,
                 tenant_row=tenant_row,
+                postcode=data.postcode,
             )
         else:
             checkout = await create_subscription_transaction(
@@ -335,6 +379,10 @@ async def create_checkout(
                 discount_id=settings.paddle_beta_discount_id or None,
                 customer_id=customer_id,
             )
+    except HTTPException:
+        # Client-fixable failures raised deliberately (e.g. postcode_required)
+        # must keep their status — the catch-all below is for Paddle failures.
+        raise
     except Exception as exc:
         logger.error(
             "billing_checkout_failed",
