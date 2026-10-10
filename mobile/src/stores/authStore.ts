@@ -18,6 +18,7 @@ import {
 import { ApiError, NetworkError } from "../lib/apiClient";
 import { tokenStorage } from "../lib/tokenStorage";
 import { useBusinessStore } from "./businessStore";
+import { usePaywallStore } from "./paywallStore";
 
 /** A tenant is fully onboarded once the backend marks it active (launched). */
 async function fetchOnboardingComplete(): Promise<boolean> {
@@ -168,6 +169,10 @@ export const useAuthStore = create<AuthState>((set) => ({
 
   logout: () => {
     void logoutToken();
+    // The paywall flag is per-tenant session state — drop it so the "sign in
+    // with a different account" flow doesn't bounce an active tenant through
+    // /paywall on a stale 402 flag.
+    usePaywallStore.getState().setRequired(false);
     set({ role: "guest", user: null, onboardingComplete: false, isRegistering: false });
   },
 

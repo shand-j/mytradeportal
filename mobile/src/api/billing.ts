@@ -16,6 +16,16 @@ export const SUBSCRIPTION_TIER_KEY: Record<PlanKey, BillingPlanKey> = {
   business: "team",
 };
 
+/**
+ * Map a (possibly legacy) subscription plan_key onto a current tier key —
+ * mirrors resolve_plan_key in services/api/app/plans.py. Beta subscriptions
+ * carry starter|pro|business; new ones store the tier key directly, so both
+ * key sets must resolve.
+ */
+export function resolvePlanKey(key: string): BillingPlanKey {
+  return SUBSCRIPTION_TIER_KEY[key as PlanKey] ?? (key as BillingPlanKey);
+}
+
 export type BillingPlan = {
   key: BillingPlanKey;
   name: string;
@@ -53,7 +63,8 @@ export function useBillingPlans() {
 
 export type SubscriptionRead = {
   id: string;
-  planKey: PlanKey;
+  /** Legacy (starter|pro|business) or current tier key — use resolvePlanKey. */
+  planKey: PlanKey | BillingPlanKey;
   status: "incomplete" | "trialing" | "active" | "past_due" | "paused" | "canceled";
   paddleSubscriptionId: string | null;
   paddleCustomerId: string | null;
@@ -101,6 +112,6 @@ export function useMultiSeatPlan(): boolean {
   const plans = useBillingPlans();
   const planKey = subscription.data?.planKey;
   if (!planKey) return false;
-  const tier = plans.data?.find((p) => p.key === SUBSCRIPTION_TIER_KEY[planKey]);
+  const tier = plans.data?.find((p) => p.key === resolvePlanKey(planKey));
   return (tier?.seats ?? 1) > 1;
 }

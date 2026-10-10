@@ -1,10 +1,25 @@
-import { Stack, usePathname } from "expo-router";
+import { Stack, useRouter } from "expo-router";
+import { useEffect } from "react";
 import { View } from "react-native";
 import { BottomTabBar } from "../../src/components/navigation/BottomTabBar";
 import { NotificationWatcher } from "../../src/components/notifications/NotificationWatcher";
+import { usePaywallStore } from "../../src/stores/paywallStore";
 
 export default function TradeLayout() {
   const showTabBar = true;
+  const router = useRouter();
+  const paywallRequired = usePaywallStore((s) => s.required);
+
+  // Global billing enforcement. index.tsx only routes to /paywall when a 402
+  // lands before it unmounts; a canceled tenant's first gated call 402s after
+  // the dashboard has mounted (and route restoration skips index entirely), so
+  // the gate lives here — it stays mounted for every trade screen and sends
+  // the user to /paywall the moment any API call sets the flag.
+  useEffect(() => {
+    if (paywallRequired) {
+      router.replace("/paywall");
+    }
+  }, [paywallRequired, router]);
 
   return (
     <View className="flex-1">
