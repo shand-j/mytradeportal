@@ -5,16 +5,16 @@ import { Button } from "../../components/ui/Button";
 import { Icon } from "../../components/ui/Icon";
 import { Screen } from "../../components/ui/Screen";
 import { Text } from "../../components/ui/Text";
-import { SUBSCRIPTION_TIER_KEY, useBillingPlans, useSubscription, type PlanKey } from "../../api/billing";
+import { resolvePlanKey, useBillingPlans, useSubscription, type BillingPlanKey } from "../../api/billing";
 import { useAuth } from "../../contexts/AuthContext";
 import { useBusiness } from "../../theme/ThemeProvider";
 import { usePaywallStore } from "../../stores/paywallStore";
 import { FALLBACK_PLANS } from "../onboarding/steps/PlanPaymentStep";
 
-const PLAN_NAMES: Record<PlanKey, string> = {
-  starter: "Starter",
+const PLAN_NAMES: Record<BillingPlanKey, string> = {
+  sole_trader: "Sole Trader",
   pro: "Pro",
-  business: "Business",
+  team: "Team",
 };
 
 /**
@@ -32,10 +32,13 @@ export function PaywallScreen() {
   const { data: subscription } = useSubscription();
   const plansQuery = useBillingPlans();
 
+  // The server returns tier keys directly for new subscriptions and legacy
+  // keys for beta ones; resolvePlanKey normalises both onto the tier catalog.
   const planKey = subscription?.planKey ?? "pro";
-  const tierKey = subscription ? SUBSCRIPTION_TIER_KEY[planKey] : undefined;
+  const tierKey = subscription ? resolvePlanKey(planKey) : undefined;
   const catalog = plansQuery.data ?? FALLBACK_PLANS;
   const tier = tierKey ? catalog.find((p) => p.key === tierKey) : undefined;
+  const planName = tier?.name ?? (tierKey ? PLAN_NAMES[tierKey] : undefined);
 
   // useSubscription polls every 3s while status is "incomplete".
   const active = subscription && ["trialing", "active", "past_due"].includes(subscription.status);
@@ -63,7 +66,7 @@ export function PaywallScreen() {
         </Text>
         <Text variant="body" color="secondary" align="center">
           This feature needs an active My Trade Portal subscription
-          {subscription ? ` — your ${PLAN_NAMES[planKey]} plan isn't active yet` : ""}. Subscribe on
+          {subscription ? ` — your ${planName ?? "current"} plan isn't active yet` : ""}. Subscribe on
           our website and this screen clears itself as soon as your plan activates.
         </Text>
         {tier && (
