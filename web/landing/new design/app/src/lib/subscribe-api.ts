@@ -147,16 +147,34 @@ export interface CheckoutResponse {
   checkout_url: string
 }
 
+/** Tenant profile fields the subscribe flow needs (subset of GET /tenants/me). */
+export interface TenantProfile {
+  postcode: string | null
+}
+
+/** GET /tenants/me — used to learn whether the tenant has a billing postcode. */
+export async function fetchTenantProfile(session: TradeSession): Promise<TenantProfile> {
+  const res = await fetch(`${API}/tenants/me`, { headers: authedHeaders(session) })
+  if (!res.ok) await parseError(res)
+  return (await res.json()) as TenantProfile
+}
+
 export async function createCheckout(
   session: TradeSession,
   planKey: string,
   interval: 'month' | 'year',
   successUrl: string,
+  postcode?: string,
 ): Promise<CheckoutResponse> {
   const res = await fetch(`${API}/billing/checkout`, {
     method: 'POST',
     headers: { ...authedHeaders(session), 'Content-Type': 'application/json' },
-    body: JSON.stringify({ plan_key: planKey, interval, success_url: successUrl }),
+    body: JSON.stringify({
+      plan_key: planKey,
+      interval,
+      success_url: successUrl,
+      ...(postcode ? { postcode } : {}),
+    }),
   })
   if (!res.ok) await parseError(res)
   return (await res.json()) as CheckoutResponse

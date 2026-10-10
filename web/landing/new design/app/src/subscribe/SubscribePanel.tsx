@@ -11,6 +11,7 @@ import {
   createPortalSession,
   fetchBillingPlans,
   fetchSubscription,
+  fetchTenantProfile,
   loginTrade,
   type BillingPlan,
   type SubscriptionState,
@@ -24,7 +25,10 @@ import {
  * Views:
  * - login: email + password → POST /auth/token (bare-domain tenant resolution).
  * - plans: tiers from GET /billing/plans, monthly/yearly toggle (same pattern
- *   as the Pricing section). Subscribe → POST /billing/checkout → the
+ *   as the Pricing section). When the tenant profile (GET /tenants/me) has no
+ *   postcode, a billing-postcode field appears — Paddle requires postal_code
+ *   for GB addresses, and checkout 400s with `postcode_required` without one
+ *   (DEFECT-015). Subscribe → POST /billing/checkout → the
  *   returned checkout_url is this page with ?_ptxn=<txn> appended by Paddle
  *   (the transaction's checkout.url is our success_url), so the browser
  *   redirects back here into the checkout view.
@@ -273,6 +277,11 @@ function PlansView({
 }) {
   const [plans, setPlans] = useState<BillingPlan[] | null>(null)
   const [subscription, setSubscription] = useState<SubscriptionState | null>(null)
+  // undefined = profile fetch failed/unknown (don't ask upfront, rely on the
+  // 400 fallback); null = loaded and the tenant has no postcode on file.
+  const [tenantPostcode, setTenantPostcode] = useState<string | null | undefined>(undefined)
+  const [postcode, setPostcode] = useState('')
+  const [postcodeForced, setPostcodeForced] = useState(false)
   const [loadError, setLoadError] = useState('')
   const [checkoutError, setCheckoutError] = useState('')
   const [busyPlan, setBusyPlan] = useState<string | null>(null)
@@ -280,11 +289,21 @@ function PlansView({
 
   useEffect(() => {
     let cancelled = false
-    Promise.all([fetchBillingPlans(), fetchSubscription(session)])
-      .then(([planList, sub]) => {
+    Promise.all([
+      fetchBillingPlans(),
+      fetchSubscription(session),
+      // Best-effort: if the profile fetch fails the plans flow still works —
+      // a missing postcode then surfaces via the checkout 400 fallback.
+      fetchTenantProfile(session).catch(() => undefined),
+    ])
+      .then(([planList, sub, tenant]) => {
         if (cancelled) return
         setPlans(planList)
         setSubscription(sub)
+        if (tenant !== undefined) {
+          const stored = tenant.postcode?.trim() ?? ''
+          setTenantPostcode(stored || null)
+        }
       })
       .catch((err) => {
         if (cancelled) return
@@ -305,23 +324,54 @@ function PlansView({
   const activeSubscription =
     subscription && ACTIVE_SUBSCRIPTION_STATUSES.has(subscription.status) ? subscription : null
 
+  const postcodeNeeded = postcodeForced || tenantPostcode === null
+
   const subscribe = async (planKey: string) => {
     setBusyPlan(planKey)
     setCheckoutError('')
+    const trimmedPostcode = postcode.trim()
+    if (postcodeNeeded && !trimmedPostcode) {
+      setCheckoutError(
+        'Enter your billing postcode first — Paddle needs it to set up your subscription.',
+      )
+      setBusyPlan(null)
+      return
+    }
     try {
       // This page doubles as the Paddle checkout host: Paddle appends
       // ?_ptxn=<txn> to the transaction's checkout.url, so the browser comes
       // straight back here and the checkout view opens the overlay. The
       // ?done=1 marks the success redirect target.
       const successUrl = `${window.location.origin}/subscribe?done=1`
-      const checkout = await createCheckout(session, planKey, interval, successUrl)
+      const checkout = await createCheckout(
+        session,
+        planKey,
+        interval,
+        successUrl,
+        postcodeNeeded ? trimmedPostcode : undefined,
+      )
       window.location.assign(checkout.checkout_url)
     } catch (err) {
-      setCheckoutError(
-        err instanceof SubscribeApiError
-          ? err.message
-          : 'Checkout couldn’t be started — please try again.',
-      )
+      if (
+        err instanceof SubscribeApiError &&
+        err.status === 400 &&
+        err.message.startsWith('postcode')
+      ) {
+        // DEFECT-015: the tenant profile has no billing postcode (or Paddle
+        // rejected the one sent) — reveal the field and let the user retry.
+        setPostcodeForced(true)
+        setCheckoutError(
+          err.message === 'postcode_invalid'
+            ? 'Paddle didn’t accept that postcode — check it and try again.'
+            : 'We need your billing postcode to set up the subscription — enter it below and try again.',
+        )
+      } else {
+        setCheckoutError(
+          err instanceof SubscribeApiError
+            ? err.message
+            : 'Checkout couldn’t be started — please try again.',
+        )
+      }
       setBusyPlan(null)
     }
   }
@@ -455,6 +505,27 @@ function PlansView({
             </p>
           )}
 
+          {postcodeNeeded && (
+            <div className="mt-[var(--space-md)] w-fit border-2 border-[var(--ink)] bg-[var(--paper)] p-4 md:p-5">
+              <label htmlFor="subscribe-postcode" className="spec-label text-[var(--muted)]">
+                Billing postcode
+              </label>
+              <input
+                id="subscribe-postcode"
+                type="text"
+                autoComplete="postal-code"
+                placeholder="e.g. E1 6AN"
+                value={postcode}
+                onChange={(e) => setPostcode(e.target.value)}
+                className="mt-[var(--space-2xs)] block w-full max-w-[220px] border-2 border-[var(--ink)] bg-[var(--paper)] px-3.5 py-2.5 text-[15px] uppercase focus:outline-none focus-visible:outline-2 focus-visible:outline-[var(--accent-dark)]"
+              />
+              <p className="mt-[var(--space-xs)] max-w-[52ch] text-[13px] leading-relaxed text-[var(--muted)]">
+                Paddle (our payment provider) needs your business postcode to set up the
+                subscription. It’s saved to your business profile for next time.
+              </p>
+            </div>
+          )}
+
           {checkoutError && (
             <p
               role="alert"
@@ -582,11 +653,30 @@ function CheckoutView({ txn, onCompleted }: { txn: string; onCompleted: () => vo
       return
     }
     let cancelled = false
+    // Paddle.js auto-opens a checkout for the _ptxn query parameter at
+    // Initialize time — with DEFAULT settings (variant "multi-page"), which
+    // cardless-trial payment-method transactions reject ("only supported by
+    // one-page checkout variant") — and the explicit open below is then
+    // dropped because a checkout is already opening (DEFECT-016). Strip _ptxn
+    // from the URL before initializing so the explicit Checkout.open is the
+    // only open, and set the one-page variant as the Initialize-level default
+    // too, so any checkout opened on this page uses it. This matches the
+    // proven pattern on the API-hosted checkout page
+    // (services/api/app/routers/billing.py _CHECKOUT_PAGE).
+    const params = new URLSearchParams(window.location.search)
+    params.delete('_ptxn')
+    const cleanedQuery = params.toString()
+    window.history.replaceState(
+      null,
+      '',
+      window.location.pathname + (cleanedQuery ? `?${cleanedQuery}` : '') + window.location.hash,
+    )
     initializePaddle({
       token,
       ...(import.meta.env.VITE_PADDLE_ENV
         ? { environment: import.meta.env.VITE_PADDLE_ENV as Environments }
         : {}),
+      checkout: { settings: { variant: 'one-page' } },
       eventCallback: (event: { name?: string }) => {
         if (event.name === 'checkout.completed') {
           onCompleted()

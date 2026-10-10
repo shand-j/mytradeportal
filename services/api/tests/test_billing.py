@@ -2,9 +2,11 @@
 
 from typing import Any
 from unittest.mock import AsyncMock, patch
+from uuid import UUID
 
+import httpx
 import pytest
-from app.models import Subscription
+from app.models import Subscription, Tenant
 from httpx import AsyncClient
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -209,7 +211,9 @@ async def test_checkout_cardless_trial_creates_subscription_then_payment_method_
         patch("app.routers.billing.get_payment_method_update_transaction", new=payment_method_txn),
         patch("app.routers.billing.create_subscription_transaction") as standard_mock,
     ):
-        response = await admin_client.post("/billing/checkout", json={"plan_key": "pro"})
+        response = await admin_client.post(
+            "/billing/checkout", json={"plan_key": "pro", "postcode": "SW1A 1AA"}
+        )
 
     assert response.status_code == 200, response.text
     assert response.json()["transaction_id"] == "txn_pm"
@@ -224,6 +228,14 @@ async def test_checkout_cardless_trial_creates_subscription_then_payment_method_
     await_subscription.assert_awaited_once_with("txn_trial_1")
     payment_method_txn.assert_awaited_once_with("sub_new")
 
+    # Paddle requires postal_code for GB addresses — the postcode sent with
+    # the checkout request feeds the address create and is persisted into the
+    # tenant settings so later checkouts don't ask again.
+    create_address.assert_awaited_once_with("ctm_test_1", postal_code="SW1A 1AA")
+    tenant_row = await db.get(Tenant, UUID(tenant_id))
+    assert tenant_row is not None
+    assert (tenant_row.settings or {}).get("postcode") == "SW1A 1AA"
+
     # Webhook events key on custom_data.tenant_id — stamped onto the
     # subscription at creation, and mirrored onto our local row.
     stamp_args, _ = stamp_custom_data.call_args
@@ -236,11 +248,124 @@ async def test_checkout_cardless_trial_creates_subscription_then_payment_method_
     assert tenant_sub.paddle_transaction_id == "txn_pm"
 
 
+async def test_checkout_cardless_trial_without_postcode_returns_400(
+    admin_client: AsyncClient,
+    monkeypatch: pytest.MonkeyPatch,
+    paddle_customer: AsyncMock,
+    paddle_price: AsyncMock,
+) -> None:
+    """DEFECT-015: a tenant with no postcode on file and none in the request
+    gets a clear 400 (Paddle requires postal_code for GB addresses) instead of
+    a 502 retry loop; no Paddle address create is attempted."""
+    monkeypatch.setattr("app.routers.billing.settings.paddle_price_id_pro", "pri_test_pro")
+    paddle_price.return_value = _CARDLESS_PRICE
+
+    create_address = AsyncMock(return_value="add_1")
+    with patch("app.routers.billing.create_customer_address", new=create_address):
+        response = await admin_client.post("/billing/checkout", json={"plan_key": "pro"})
+
+    assert response.status_code == 400, response.text
+    assert response.json()["detail"] == "postcode_required"
+    create_address.assert_not_awaited()
+
+
+async def test_checkout_cardless_trial_uses_stored_tenant_postcode(
+    admin_client: AsyncClient,
+    db: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+    paddle_customer: AsyncMock,
+    paddle_price: AsyncMock,
+) -> None:
+    """A postcode already on the tenant profile (set via PATCH /tenants/me or
+    an earlier checkout) is used for the Paddle address — no need to resend."""
+    monkeypatch.setattr("app.routers.billing.settings.paddle_price_id_pro", "pri_test_pro")
+    paddle_price.return_value = _CARDLESS_PRICE
+
+    tenant_id = UUID(admin_client.headers["X-Tenant-ID"])
+    tenant_row = await db.get(Tenant, tenant_id)
+    assert tenant_row is not None
+    tenant_row.settings = {**(tenant_row.settings or {}), "postcode": "E1 6AN"}
+    await db.commit()
+
+    create_address = AsyncMock(return_value="add_1")
+    with (
+        patch("app.routers.billing.create_customer_address", new=create_address),
+        patch(
+            "app.routers.billing.create_cardless_trial_transaction",
+            new=AsyncMock(return_value="txn_trial_1"),
+        ),
+        patch(
+            "app.routers.billing.await_transaction_subscription_id",
+            new=AsyncMock(return_value="sub_new"),
+        ),
+        patch("app.routers.billing.update_subscription_custom_data", new=AsyncMock()),
+        patch(
+            "app.routers.billing.get_payment_method_update_transaction",
+            new=AsyncMock(
+                return_value={
+                    "transaction_id": "txn_pm",
+                    "checkout_url": "https://pay.paddle.com/pm",
+                }
+            ),
+        ),
+    ):
+        response = await admin_client.post("/billing/checkout", json={"plan_key": "pro"})
+
+    assert response.status_code == 200, response.text
+    create_address.assert_awaited_once_with("ctm_test_1", postal_code="E1 6AN")
+
+
+async def test_checkout_cardless_trial_paddle_postcode_rejection_returns_400(
+    admin_client: AsyncClient,
+    monkeypatch: pytest.MonkeyPatch,
+    paddle_customer: AsyncMock,
+    paddle_price: AsyncMock,
+) -> None:
+    """DEFECT-015: Paddle rejecting the postcode (400 on the address create)
+    is a client-fixable input problem — surface 400, not a 502 outage."""
+    monkeypatch.setattr("app.routers.billing.settings.paddle_price_id_pro", "pri_test_pro")
+    paddle_price.return_value = _CARDLESS_PRICE
+
+    request = httpx.Request("POST", "https://sandbox-api.paddle.com/customers/ctm_test_1/addresses")
+    paddle_response = httpx.Response(
+        400,
+        request=request,
+        json={"error": {"detail": "postal_code is required for the selected country"}},
+    )
+    create_address = AsyncMock(
+        side_effect=httpx.HTTPStatusError("400", request=request, response=paddle_response)
+    )
+    with patch("app.routers.billing.create_customer_address", new=create_address):
+        response = await admin_client.post(
+            "/billing/checkout", json={"plan_key": "pro", "postcode": "ZZ9 9ZZ"}
+        )
+
+    assert response.status_code == 400, response.text
+    assert response.json()["detail"] == "postcode_invalid"
+
+
 async def test_get_subscription_returns_none_when_missing(admin_client: AsyncClient) -> None:
     """New tenants with no sub row see ``null`` — a legitimate state."""
     response = await admin_client.get("/billing/subscription")
     assert response.status_code == 200
     assert response.json() is None
+
+
+async def test_checkout_page_forces_one_page_variant(
+    client: AsyncClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """DEFECT-016 regression: paddle.js auto-opens a checkout for the ``_ptxn``
+    query parameter with DEFAULT settings (variant multi-page), which Paddle
+    rejects for cardless-trial payment-method transactions. The hosted page
+    must strip ``_ptxn`` before Initialize (so only the explicit open fires)
+    and declare the one-page variant as the Initialize-level default."""
+    monkeypatch.setattr("app.routers.billing.settings.paddle_client_token", "test_client_token")
+    response = await client.get("/billing/checkout-page")
+    assert response.status_code == 200
+    html = response.text
+    assert 'params.delete("_ptxn")' in html
+    assert 'checkout: { settings: { variant: "one-page" } }' in html
+    assert 'Paddle.Checkout.open({ transactionId: txn, settings: { variant: "one-page" } })' in html
 
 
 async def test_get_subscription_returns_state_when_present(

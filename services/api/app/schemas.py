@@ -1036,6 +1036,11 @@ class BillingCheckoutCreate(BaseModel):
     plan_key: str  # sole_trader | pro | team (legacy: starter | pro | business)
     success_url: str | None = None
     interval: Literal["month", "year"] = "month"
+    # Billing postcode collected by the web subscribe page when the tenant
+    # profile lacks one — Paddle requires postal_code for GB addresses, so a
+    # cardless-trial checkout cannot be created without it. Persisted into the
+    # tenant settings when supplied.
+    postcode: str | None = Field(default=None, min_length=3, max_length=16)
     # Deprecated and ignored: flat pricing has no per-seat tiers (one
     # subscription per business). Kept because stale clients still send it.
     seats: int | None = Field(default=None, ge=1, le=100)
