@@ -46,6 +46,10 @@ export type ApiQuote = {
   aiAssumptions?: string[];
   aiNotes?: string | null;
   retrievalStatus?: string | null;
+  /** Server-side amends summary of the last refine (LLM or diff fallback). */
+  aiRefineSummary?: string | null;
+  /** The electrician's thumbs up/down on the last refine, when rated. */
+  aiRefineRating?: "up" | "down" | null;
   /** Server-estimated total working hours (string-encoded Decimal, nullable). */
   estimatedHours?: string | null;
   /** True when estimatedHours exceeds the tenant's daily working hours. */
@@ -199,12 +203,24 @@ export async function updateQuote(
       description: li.description,
       quantity: parseFloat(li.qty) || 0,
       unitPrice: parseFloat(li.unitPrice) || 0,
+      // Round-trip the unit: omitting it used to reset non-"ea" units and
+      // break the server's AI-lineage match, which made refine a no-op.
+      unit: li.unit,
       // Round-trip the AI lineage flag (edits clear it in updateItem); the
       // server re-derives it by diffing against the AI-drafted baseline.
       aiGenerated: li.aiGenerated,
     })),
     vatRate,
   });
+}
+
+/**
+ * Rate the output of an AI refine (POST /quotes/{id}/refine-rating).
+ * Recorded in the audit log and the AI quality telemetry pipeline.
+ */
+export async function rateQuoteRefinement(id: string, rating: "up" | "down"): Promise<Quote> {
+  const q = await api.post<ApiQuote>(`/quotes/${id}/refine-rating`, { rating });
+  return mapQuote(q);
 }
 
 /** Approve or reject a quote (POST /quotes/{id}/approve). */
@@ -257,6 +273,19 @@ export function useRefineQuote() {
       qc.invalidateQueries({ queryKey: ["quotes"] });
       qc.invalidateQueries({ queryKey: ["quote", id] });
       qc.invalidateQueries({ queryKey: ["my-quotes"] });
+    },
+  });
+}
+
+/** Mutation: rate an AI refine's output and refresh the quote caches. */
+export function useRateQuoteRefinement() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, rating }: { id: string; rating: "up" | "down" }) =>
+      rateQuoteRefinement(id, rating),
+    onSuccess: (_data, { id }) => {
+      qc.invalidateQueries({ queryKey: ["quotes"] });
+      qc.invalidateQueries({ queryKey: ["quote", id] });
     },
   });
 }
@@ -335,6 +364,8 @@ export function mapQuote(q: ApiQuote): Quote {
     aiAssumptions: q.aiAssumptions ?? [],
     aiNotes: q.aiNotes ?? null,
     retrievalStatus: q.retrievalStatus ?? null,
+    aiRefineSummary: q.aiRefineSummary ?? null,
+    aiRefineRating: q.aiRefineRating ?? null,
     sentAt: q.sentAt ?? undefined,
     expiresAt: q.validUntil ?? undefined,
     acceptedDates: q.acceptedDates ?? [],

@@ -5,7 +5,7 @@ import time
 from collections import Counter
 from dataclasses import replace
 from datetime import date, datetime, timedelta
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 from io import BytesIO
 from typing import Annotated, Any
 from urllib.parse import parse_qs, urlparse
@@ -29,10 +29,12 @@ from app.ai_telemetry import (
     FEATURE_MEDIA_OBSERVATION,
     FEATURE_QUOTE_DRAFT,
     FEATURE_QUOTE_REFINE,
+    FEATURE_QUOTE_REFINE_RATING,
     AiCallContext,
     get_last_event_id,
     get_or_create_trace_id,
     next_attempt_no,
+    record_ai_event,
     record_quote_outcome,
     set_last_event_id,
 )
@@ -102,6 +104,7 @@ from app.schemas import (
     QuoteGenerateAsyncResponse,
     QuoteGenerateRequest,
     QuoteRead,
+    QuoteRefineRatingRequest,
     QuoteRefineRequest,
     QuoteTrainingEventRead,
     QuoteUpdate,
@@ -221,7 +224,10 @@ async def create_quote(
         estimated_hours=data.estimated_hours,
     )
     quote.line_items = [
-        QuoteLineItem(tenant_id=tenant.id, **item.model_dump()) for item in data.line_items
+        # QuoteLineItemCreate.unit is None when the client omits it; the column
+        # is NOT NULL, so coalesce to the "ea" default here.
+        QuoteLineItem(tenant_id=tenant.id, **{**item.model_dump(), "unit": item.unit or "ea"})
+        for item in data.line_items
     ]
     calculate_quote_totals(quote)
     apply_quote_rounding(quote, tenant.settings)
@@ -325,26 +331,56 @@ async def update_quote(
         # an existing AI-drafted line exactly (description, quantity, price,
         # unit). Anything the electrician changed or added is manual —
         # otherwise /quotes/{id}/refine would regenerate over the edit.
-        existing_ai_keys: Counter[tuple[str, Decimal, Decimal, str]] = Counter(
-            (li.description.strip().lower(), li.quantity, li.unit_price, li.unit)
-            for li in quote.line_items
-            if li.ai_generated
-        )
+        #
+        # Unit matching is lenient for clients that omit the field entirely
+        # (``unit`` arrives as None — the mobile/web auto-save payloads carry
+        # no unit): the line keeps its lineage AND its stored unit. Without
+        # this, every AI line drafted in a non-"ea" unit ("job", "hour",
+        # "each", ...) silently flipped to manual on the next save and refine
+        # became a no-op.
+        existing_ai_exact: Counter[tuple[str, Decimal, Decimal, str]] = Counter()
+        existing_ai_units: dict[tuple[str, Decimal, Decimal], Counter[str]] = {}
+        for li in quote.line_items:
+            if not li.ai_generated:
+                continue
+            content_key = (li.description.strip().lower(), li.quantity, li.unit_price)
+            existing_ai_exact[(*content_key, li.unit)] += 1
+            existing_ai_units.setdefault(content_key, Counter())[li.unit] += 1
         for item in list(quote.line_items):
             await db.delete(item)
         rebuilt_items = []
         for item in new_items:
-            line_key = (
+            content_key = (
                 item["description"].strip().lower(),
                 item["quantity"],
                 item["unit_price"],
-                item.get("unit") or "ea",
             )
-            ai_generated = bool(item.get("ai_generated")) and existing_ai_keys[line_key] > 0
-            if ai_generated:
-                existing_ai_keys[line_key] -= 1
+            sent_unit = item.get("unit")
+            ai_generated = False
+            unit = sent_unit
+            if item.get("ai_generated"):
+                if sent_unit is not None and existing_ai_exact[(*content_key, sent_unit)] > 0:
+                    # Exact match including the unit the client sent.
+                    existing_ai_exact[(*content_key, sent_unit)] -= 1
+                    existing_ai_units[content_key][sent_unit] -= 1
+                    ai_generated = True
+                elif sent_unit is None and any(
+                    n > 0 for n in existing_ai_units.get(content_key, {}).values()
+                ):
+                    # Unit omitted: preserve lineage and the stored unit.
+                    units = existing_ai_units[content_key]
+                    stored_unit = next(u for u, n in units.items() if n > 0)
+                    units[stored_unit] -= 1
+                    existing_ai_exact[(*content_key, stored_unit)] -= 1
+                    unit = stored_unit
+                    ai_generated = True
+                # A sent unit that doesn't match the stored AI line's unit is a
+                # genuine unit edit: the line correctly falls through to manual.
             rebuilt_items.append(
-                QuoteLineItem(tenant_id=tenant.id, **{**item, "ai_generated": ai_generated})
+                QuoteLineItem(
+                    tenant_id=tenant.id,
+                    **{**item, "unit": unit or "ea", "ai_generated": ai_generated},
+                )
             )
         quote.line_items = rebuilt_items
         totals_dirty = True
@@ -573,22 +609,46 @@ async def refine_quote(
 
     # Snapshot pre-refine so the training event keeps the pre-edit state.
     lines_before = _line_items_snapshot(quote)
+    total_before = quote.total
 
     ai_items = [li for li in quote.line_items if li.ai_generated]
     manual_items = [li for li in quote.line_items if not li.ai_generated]
 
+    if not ai_items and _heal_ai_lineage_from_baseline(quote):
+        # Quotes drafted before the unit-lenient lineage fix (or saved by a
+        # client that omits ``unit``) lost every ai_generated flag on PATCH,
+        # which made refine a no-op. Recover lineage from the stored AI draft
+        # baseline: lines still matching it are AI-drafted and refinable;
+        # anything else (genuine manual additions/edits) stays manual.
+        ai_items = [li for li in quote.line_items if li.ai_generated]
+        manual_items = [li for li in quote.line_items if not li.ai_generated]
+
+    previous_rag = (quote.extra_data or {}).get("rag")
+    previous_rag = previous_rag if isinstance(previous_rag, dict) else {}
+    # Photo observations belong to the lead, not to a single generation: they
+    # are carried across the refine below and re-fed to the model so the
+    # regeneration stays conditioned on what the customer's photos show (#198).
+    image_observations = previous_rag.get("observations") or []
+
     current_ai_lines = "\n".join(
-        f"- {li.description} | quantity {li.quantity} | unit price £{li.unit_price}"
+        f"- {li.description} | quantity {li.quantity} | unit {li.unit} | unit price £{li.unit_price}"
         for li in ai_items
     )
-    description = (
-        f"Quote: {quote.title}\n"
-        f"{quote.description or ''}\n\n"
-        f"AI-drafted line items to regenerate:\n{current_ai_lines or '(none)'}\n\n"
-    )
+    description = f"Quote: {quote.title}\n{quote.description or ''}\n"
+    # Customer context: the original generation saw the lead's contact and
+    # intake data, so the refine must too (e.g. "make it cheaper" needs the
+    # same grounding).
+    if quote.contact is not None:
+        customer_bits = [quote.contact.name]
+        if quote.contact.postcode:
+            customer_bits.append(f"postcode {quote.contact.postcode}")
+        description += f"Customer: {', '.join(b for b in customer_bits if b)}\n"
+    if quote.notes:
+        description += f"Internal notes: {quote.notes}\n"
+    description += f"\nAI-drafted line items to regenerate:\n{current_ai_lines or '(none)'}\n\n"
     if manual_items:
         manual_lines = "\n".join(
-            f"- {li.description} | quantity {li.quantity} | unit price £{li.unit_price}"
+            f"- {li.description} | quantity {li.quantity} | unit {li.unit} | unit price £{li.unit_price}"
             for li in manual_items
         )
         description += (
@@ -597,7 +657,9 @@ async def refine_quote(
         )
     description += (
         f"Electrician's refinement instructions (apply these to the line items):\n"
-        f"{data.instructions}"
+        f"{data.instructions}\n\n"
+        "Also return a ``refine_summary`` key: one short sentence describing what "
+        "you changed and why (shown to the electrician with the refined quote)."
     )
 
     started = time.perf_counter()
@@ -633,6 +695,7 @@ async def refine_quote(
                 job_description=description,
                 cost_items=retrieved,
                 tenant_settings=tenant.settings,
+                image_observations=image_observations or None,
                 model=refine_model,
                 api_base=refine_api_base,
                 api_key=refine_api_key,
@@ -713,7 +776,14 @@ async def refine_quote(
         lines_before,
         extra={"instructions": data.instructions},
     )
-    previous_rag = (quote.extra_data or {}).get("rag")
+    # The amends summary surfaced with the refined quote: prefer the model's
+    # own ``refine_summary``; fall back to a deterministic server-side diff of
+    # the before/after line items so the electrician always sees what changed.
+    refine_summary = generated.get("refine_summary")
+    if not isinstance(refine_summary, str) or not refine_summary.strip():
+        refine_summary = _summarise_refine_amends(
+            lines_before, quote.line_items, total_before, quote.total
+        )
     quote.extra_data = {
         **(quote.extra_data or {}),
         "rag": {
@@ -723,14 +793,18 @@ async def refine_quote(
             "notes": validated["notes"],
             "retrieval_status": retrieval_status,
             "generation_seconds": round(time.perf_counter() - started, 2),
+            "refine_summary": refine_summary.strip(),
         },
     }
     # Photo observations belong to the lead, not to a single generation, so
     # carry them across the refine that replaces the rest of the rag record.
-    if isinstance(previous_rag, dict) and previous_rag.get("observations"):
+    if previous_rag.get("observations"):
         quote.extra_data["rag"]["observations"] = previous_rag["observations"]
+    # A prior refine rating judged the previous output, so it is NOT carried
+    # across: the fresh refine resets it (the rating history lives on the
+    # append-only ai_call_events rows written by /refine-rating).
     llm_usage = _accumulate_llm_usage(
-        previous_rag if isinstance(previous_rag, dict) else {},
+        previous_rag,
         generated.get("usage"),
         generated.get("model"),
     )
@@ -753,8 +827,65 @@ async def refine_quote(
             "instructions_chars": len(data.instructions),
             "retrieval_status": retrieval_status,
             "confidence": validated["confidence"],
+            "refine_summary": refine_summary.strip(),
             "total": str(quote.total),
         },
+    )
+    await db.commit()
+    return QuoteRead.model_validate(await _get_quote(db, tenant.id, quote.id))
+
+
+@router.post("/{quote_id}/refine-rating")
+async def rate_quote_refine(
+    quote_id: UUID,
+    data: QuoteRefineRatingRequest,
+    tenant: TenantDep,
+    current_user: CurrentUserDep,
+    db: DbDep,
+) -> QuoteRead:
+    """Record the electrician's thumbs up/down on an AI-refined quote.
+
+    Writes an audit-log entry (``quote.refine_rated``) and an
+    ``ai_call_events`` quality row (``quote_refine_rating``) linked to the
+    quote's trace id, so the rating shows up in cost/quality analytics
+    alongside the refine's spend. The latest rating is also stored on the
+    quote's rag record and surfaced as ``ai_refine_rating``.
+    """
+    quote = await _get_quote(db, tenant.id, quote_id)
+    rag = (quote.extra_data or {}).get("rag")
+    if not isinstance(rag, dict) or not rag.get("refine_summary"):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="This quote has no AI refinement to rate.",
+        )
+
+    quote.extra_data = {
+        **(quote.extra_data or {}),
+        "rag": {**rag, "refine_rating": data.rating},
+    }
+    await db.flush()
+    await write_audit_log(
+        db,
+        tenant_id=tenant.id,
+        actor=current_user,
+        action=Actions.QUOTE_REFINE_RATED,
+        entity_type="quote",
+        entity_id=quote.id,
+        payload={"rating": data.rating, "refine_summary": rag.get("refine_summary")},
+    )
+    # Quality signal for the telemetry pipeline: joins the refine's cost rows
+    # via trace_id/parent_event_id. Fail-open by design (record_ai_event).
+    await record_ai_event(
+        db,
+        feature=FEATURE_QUOTE_REFINE_RATING,
+        tenant_id=tenant.id,
+        user_id=current_user.id if current_user is not None else None,
+        trace_id=(quote.ai_metadata or {}).get("trace_id"),
+        parent_event_id=get_last_event_id(quote),
+        quote_id=quote.id,
+        quote_request_id=quote.quote_request_id,
+        confidence=1.0 if data.rating == "up" else 0.0,
+        raw_payload={"rating": data.rating, "refine_summary": rag.get("refine_summary")},
     )
     await db.commit()
     return QuoteRead.model_validate(await _get_quote(db, tenant.id, quote.id))
@@ -794,12 +925,98 @@ def _snapshot_ai_draft(quote: Quote) -> None:
                     "description": item.description,
                     "quantity": str(item.quantity),
                     "unit_price": str(item.unit_price),
+                    "unit": item.unit,
                 }
                 for item in quote.line_items
             ],
             "total": str(quote.total),
         },
     }
+
+
+def _heal_ai_lineage_from_baseline(quote: Quote) -> bool:
+    """Re-derive lost ``ai_generated`` flags from the stored AI draft baseline.
+
+    Quotes whose flags were wiped by a unitless PATCH (see ``update_quote``)
+    would otherwise make refine a no-op. Lines whose content still matches the
+    baseline snapshot are AI-drafted and refinable; anything else (genuine
+    manual additions/edits) stays manual. Returns True when any flag changed.
+    """
+    draft = (quote.extra_data or {}).get("ai_draft")
+    if not isinstance(draft, dict):
+        return False
+    baseline: Counter[tuple[str, Decimal, Decimal]] = Counter()
+    for raw in draft.get("line_items") or []:
+        if not isinstance(raw, dict):
+            continue
+        try:
+            key = (
+                str(raw.get("description", "")).strip().lower(),
+                Decimal(str(raw.get("quantity", "0") or "0")),
+                Decimal(str(raw.get("unit_price", "0") or "0")),
+            )
+        except InvalidOperation:
+            continue
+        baseline[key] += 1
+    if not baseline:
+        return False
+    healed = False
+    for li in quote.line_items:
+        if li.ai_generated:
+            continue
+        key = (li.description.strip().lower(), li.quantity, li.unit_price)
+        if baseline[key] > 0:
+            baseline[key] -= 1
+            li.ai_generated = True
+            healed = True
+    return healed
+
+
+def _summarise_refine_amends(
+    before: list[dict[str, Any]],
+    after: list[QuoteLineItem],
+    total_before: Decimal,
+    total_after: Decimal,
+) -> str:
+    """Short human-readable amends summary for a refine, diffed server-side.
+
+    Fallback for when the model doesn't return its own ``refine_summary`` so
+    the electrician always sees what the refinement actually changed.
+    """
+
+    def _key(desc: Any, qty: Any, price: Any, unit: Any) -> tuple[str, Decimal, Decimal, str]:
+        return (
+            " ".join(str(desc).strip().lower().split()),
+            Decimal(str(qty)),
+            Decimal(str(price)),
+            str(unit or "ea"),
+        )
+
+    before_keys = Counter(
+        _key(li["description"], li["quantity"], li["unit_price"], li.get("unit")) for li in before
+    )
+    after_keys = Counter(_key(li.description, li.quantity, li.unit_price, li.unit) for li in after)
+    removed = before_keys - after_keys
+    added = after_keys - before_keys
+    # A removal+addition pair sharing a description is one line updated.
+    removed_descs = Counter(k[0] for k, n in removed.items() for _ in range(n))
+    added_descs = Counter(k[0] for k, n in added.items() for _ in range(n))
+    n_updated = sum((removed_descs & added_descs).values())
+    n_removed = sum(removed.values()) - n_updated
+    n_added = sum(added.values()) - n_updated
+    parts = []
+    if n_updated:
+        parts.append(f"{n_updated} line{'s' if n_updated != 1 else ''} updated")
+    if n_added:
+        parts.append(f"{n_added} line{'s' if n_added != 1 else ''} added")
+    if n_removed:
+        parts.append(f"{n_removed} line{'s' if n_removed != 1 else ''} removed")
+    if not parts:
+        parts.append("no line changes")
+    summary = "Refined: " + ", ".join(parts)
+    if total_before != total_after:
+        summary += f"; total £{total_before:.2f} → £{total_after:.2f} incl. VAT"
+    return summary
 
 
 def _line_items_snapshot(quote: Quote) -> list[dict[str, Any]]:

@@ -254,7 +254,12 @@ class QuoteLineItemCreate(BaseModel):
     description: str
     quantity: Decimal = Decimal("1.00")
     unit_price: Decimal = Decimal("0.00")
-    unit: str = "ea"
+    # None = the client did not send a unit (both first-party clients omit it
+    # when round-tripping line items). Create coalesces to "ea"; update
+    # preserves the stored line's unit so a unitless PATCH can neither reset
+    # the unit nor break the AI-lineage match (which included the unit and
+    # silently flipped every non-"ea" AI line to manual — the refine no-op).
+    unit: str | None = None
     # AI lineage flag. The server re-derives it on update: a line only keeps
     # ai_generated=True when it still matches an existing AI-drafted line
     # exactly, so edits (which refine must preserve) cannot be claimed as AI.
@@ -508,6 +513,11 @@ class QuoteRead(BaseModel):
     ai_observations: list[str] = Field(default_factory=list)
     ai_notes: str | None = None
     retrieval_status: str | None = None
+    # One-sentence summary of what the last /refine changed (LLM-supplied when
+    # available, otherwise a server-side diff of the before/after line items).
+    ai_refine_summary: str | None = None
+    # The electrician's thumbs up/down on the last refine, when rated.
+    ai_refine_rating: str | None = None
     # Uplift from the tenant's quote-rounding setting (0 when off). ``total``
     # already includes it; the UI shows a "rounded up" indicator when > 0.
     rounding_adjustment: Decimal = Decimal("0.00")
@@ -556,6 +566,8 @@ class QuoteRead(BaseModel):
             "ai_observations": rag.get("observations") or [],
             "ai_notes": rag.get("notes"),
             "retrieval_status": rag.get("retrieval_status"),
+            "ai_refine_summary": rag.get("refine_summary"),
+            "ai_refine_rating": rag.get("refine_rating"),
             "is_multi_day": multi_day,
         }
         if isinstance(value, dict):
@@ -622,6 +634,12 @@ class QuoteRefineRequest(BaseModel):
     """Electrician's free-text instructions for refining an AI-generated quote."""
 
     instructions: str = Field(..., min_length=1, max_length=2000)
+
+
+class QuoteRefineRatingRequest(BaseModel):
+    """Thumbs up/down on the output of an AI refine (``POST /quotes/{id}/refine-rating``)."""
+
+    rating: Literal["up", "down"]
 
 
 class QuoteGenerateAsyncResponse(BaseModel):

@@ -12,7 +12,7 @@ import { Text } from "../../components/ui/Text";
 import { VoiceInputButton } from "../../components/ui/VoiceInputButton";
 import { ContactCustomerCard } from "../../components/trade/ContactCustomerCard";
 import { Lead, Quote, QuoteLineItem } from "../../types";
-import { updateQuote, useRefineQuote, useSendQuote, useUpdateQuote } from "../../api/quotes";
+import { updateQuote, useRateQuoteRefinement, useRefineQuote, useSendQuote, useUpdateQuote } from "../../api/quotes";
 import { useQuoteRoundingIncrement } from "../../api/businesses";
 import { useLead } from "../../api/quoteRequests";
 import { startDirectThread } from "../../api/communications";
@@ -151,6 +151,16 @@ export function QuoteEditScreen({
   const refineQuoteMutation = useRefineQuote();
   const [refineInstructions, setRefineInstructions] = useState("");
   const [refineError, setRefineError] = useState<string | null>(null);
+  // Post-refine feedback: amends summary + refreshed confidence from the
+  // refine response, plus the electrician's thumbs up/down (recorded via
+  // POST /quotes/{id}/refine-rating). Dismissable; reappears after each refine.
+  const rateRefinementMutation = useRateQuoteRefinement();
+  const [refineOutcome, setRefineOutcome] = useState<{
+    summary: string | null;
+    confidence: number | null;
+  } | null>(null);
+  const [refineRating, setRefineRating] = useState<"up" | "down" | null>(null);
+  const [refineRatingDismissed, setRefineRatingDismissed] = useState(false);
   // AI assumptions/warnings and the secondary action buttons both start
   // collapsed so the quote itself fills the screen (issue #221).
   const [aiDetailsExpanded, setAiDetailsExpanded] = useState(false);
@@ -329,7 +339,16 @@ export function QuoteEditScreen({
         id: seedQuote.id,
         instructions: refineInstructions.trim(),
       });
+      // mapQuote carries the refined line items plus the refreshed AI metadata
+      // (aiConfidence, aiRefineSummary) — apply both so the review UI and the
+      // feedback card reflect what the server actually stored.
       setItems(updated.lineItems);
+      setRefineOutcome({
+        summary: updated.aiRefineSummary ?? null,
+        confidence: updated.aiConfidence ?? null,
+      });
+      setRefineRating(null);
+      setRefineRatingDismissed(false);
       setRefineInstructions("");
     } catch (err) {
       const message =
@@ -339,6 +358,17 @@ export function QuoteEditScreen({
             ? err.detail
             : "Couldn't refine the quote. Please try again.";
       setRefineError(message);
+    }
+  };
+
+  const handleRefineRating = async (rating: "up" | "down") => {
+    if (!seedQuote) return;
+    // Optimistic: a failed POST reverts so the electrician can retry.
+    setRefineRating(rating);
+    try {
+      await rateRefinementMutation.mutateAsync({ id: seedQuote.id, rating });
+    } catch {
+      setRefineRating(null);
     }
   };
 
@@ -700,6 +730,74 @@ export function QuoteEditScreen({
             />
           </View>
         )}
+
+        {!readOnly &&
+          isRealQuote &&
+          !refineRatingDismissed &&
+          (refineOutcome?.summary ?? seedQuote?.aiRefineSummary) != null && (
+            <View
+              testID="refine-feedback-card"
+              className="rounded-2xl border border-slate-200 bg-white p-3 gap-2"
+            >
+              <View className="flex-row items-center justify-between">
+                <View className="flex-row items-center gap-1.5">
+                  <Icon name="sparkles" size={14} color="#D97706" />
+                  <Text variant="body" weight="semibold">
+                    Refined by AI
+                  </Text>
+                </View>
+                <IconButton
+                  icon="close"
+                  size={16}
+                  color="#6B7280"
+                  onPress={() => setRefineRatingDismissed(true)}
+                  accessibilityLabel="Dismiss refine feedback"
+                />
+              </View>
+              <Text testID="refine-summary" variant="caption" color="secondary">
+                {refineOutcome?.summary ?? seedQuote?.aiRefineSummary}
+              </Text>
+              {(refineOutcome?.confidence ?? seedQuote?.aiConfidence) != null && (
+                <Text testID="refine-confidence" variant="caption" color="secondary">
+                  AI confidence{" "}
+                  {Math.round(
+                    ((refineOutcome?.confidence ?? seedQuote?.aiConfidence) as number) * 100
+                  )}
+                  %
+                </Text>
+              )}
+              {(refineRating ?? (refineOutcome == null ? (seedQuote?.aiRefineRating ?? null) : null)) !=
+              null ? (
+                <Text testID="refine-rating-thanks" variant="caption" color="secondary">
+                  Thanks — your feedback was recorded.
+                </Text>
+              ) : (
+                <View className="flex-row items-center gap-2">
+                  <Text variant="caption" color="secondary">
+                    Was this refine helpful?
+                  </Text>
+                  <Pressable
+                    testID="refine-rate-up"
+                    accessibilityLabel="Rate refine thumbs up"
+                    disabled={rateRefinementMutation.isPending}
+                    onPress={() => void handleRefineRating("up")}
+                    className="h-8 w-8 items-center justify-center rounded-full border border-slate-200"
+                  >
+                    <Icon name="thumbs-up" size={16} color="#059669" />
+                  </Pressable>
+                  <Pressable
+                    testID="refine-rate-down"
+                    accessibilityLabel="Rate refine thumbs down"
+                    disabled={rateRefinementMutation.isPending}
+                    onPress={() => void handleRefineRating("down")}
+                    className="h-8 w-8 items-center justify-center rounded-full border border-slate-200"
+                  >
+                    <Icon name="thumbs-down" size={16} color="#DC2626" />
+                  </Pressable>
+                </View>
+              )}
+            </View>
+          )}
       </ScrollView>
 
       <View className="border-t border-slate-200 bg-white pt-3 pb-2 gap-3">
