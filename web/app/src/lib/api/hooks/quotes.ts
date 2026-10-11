@@ -213,10 +213,11 @@ function toBackendQuoteCreate(data: CreateQuotePayload): Record<string, unknown>
     contact_id: data.customerId,
     title: data.reference,
     description: [data.serviceType, data.propertyAddress].filter(Boolean).join(' - ') || null,
-    line_items: data.lineItems.map(({ description, quantity, unitPrice }) => ({
+    line_items: data.lineItems.map(({ description, quantity, unitPrice, unit }) => ({
       description,
       quantity,
       unit_price: unitPrice,
+      unit,
     })),
   };
 }
@@ -242,10 +243,15 @@ function toBackendQuoteUpdate(data: Partial<Quote>): Record<string, unknown> {
     payload.description = [data.serviceType, data.propertyAddress].filter(Boolean).join(' - ') || null;
   }
   if ('lineItems' in data && data.lineItems != null) {
-    payload.line_items = data.lineItems.map(({ description, quantity, unitPrice }) => ({
+    // Round-trip unit + ai_generated: omitting the unit used to reset non-"ea"
+    // units server-side and break the AI-lineage match, which made /refine a
+    // no-op; the server re-derives ai_generated against its AI-draft baseline.
+    payload.line_items = data.lineItems.map(({ description, quantity, unitPrice, unit, aiGenerated }) => ({
       description,
       quantity,
       unit_price: unitPrice,
+      unit,
+      ai_generated: aiGenerated,
     }));
   }
   if ('status' in data && data.status != null) {

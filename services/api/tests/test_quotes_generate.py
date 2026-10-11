@@ -10,7 +10,17 @@ from uuid import UUID, uuid4
 
 import pytest
 from app.config import settings
-from app.models import Contact, Customer, Notification, Quote, QuoteLineItem, QuoteRequest, Tenant
+from app.models import (
+    AiCallEvent,
+    AuditLog,
+    Contact,
+    Customer,
+    Notification,
+    Quote,
+    QuoteLineItem,
+    QuoteRequest,
+    Tenant,
+)
 from app.rls import set_tenant_in_session
 from httpx import AsyncClient
 from mtp_shared import BoQGenerateResponse, BoQLineItem
@@ -548,6 +558,405 @@ async def test_edited_ai_line_survives_refine(client: AsyncClient, db: AsyncSess
     assert "2 double sockets" in by_description
     assert Decimal(by_description["Consumer unit materials"]["unit_price"]) == Decimal("130.00")
     assert by_description["Consumer unit materials"]["ai_generated"] is True
+
+
+@pytest.mark.asyncio
+async def test_refine_regenerates_ai_lines_after_unitless_autosave(
+    client: AsyncClient, db: AsyncSession
+) -> None:
+    """Founder defect: "Refine with AI shows loading then displays the original
+    quote".
+
+    The mobile auto-save PATCHes line items WITHOUT the ``unit`` field (the
+    client only round-trips description/quantity/unit_price/ai_generated). LLM
+    drafts commonly use units like "job"/"hour"/"each", so #268's exact-match
+    re-derivation (description, quantity, unit_price, unit) finds no match and
+    flips every AI line to manual. With zero ``ai_generated`` lines, refine has
+    nothing to regenerate: the re-emitted lines are dropped as duplicates of
+    the "manual" lines and the quote comes back unchanged."""
+    tenant = await _create_tenant(client, f"sparky-{uuid4().hex[:8]}")
+    await _mark_vat_registered(db, tenant["id"])
+    contact = await _create_contact(client, tenant["id"], "Refine Customer")
+
+    generated_v1 = {
+        "line_items": [
+            {
+                "description": "Garden lighting labour",
+                "kind": "labour",
+                "unit": "job",
+                "quantity": 1,
+                "unit_price": 300.00,
+            },
+            {
+                "description": "Spike lights and cable",
+                "kind": "material",
+                "unit": "each",
+                "quantity": 4,
+                "unit_price": 30.00,
+            },
+        ],
+        "notes": "",
+    }
+
+    with (
+        patch(
+            "app.routers.quotes.search_cost_items_with_status",
+            new=AsyncMock(return_value=([], "no_index")),
+        ),
+        patch(
+            "app.routers.quotes.generate_quote_from_prompt",
+            new=AsyncMock(return_value=generated_v1),
+        ),
+    ):
+        created = await client.post(
+            "/quotes/generate",
+            headers={"X-Tenant-ID": tenant["id"]},
+            json={
+                "contact_id": contact["id"],
+                "description": "Install garden lighting",
+                "use_ocerp": False,
+            },
+        )
+    assert created.status_code == 201, created.text
+    quote_id = created.json()["id"]
+
+    # Mobile auto-save: round-trips the lines with ai_generated=True but NO
+    # unit field (mobile/src/api/quotes.ts updateQuote payload).
+    patched = await client.patch(
+        f"/quotes/{quote_id}",
+        headers={"X-Tenant-ID": tenant["id"]},
+        json={
+            "line_items": [
+                {
+                    "description": "Garden lighting labour",
+                    "quantity": 1,
+                    "unit_price": 300.00,
+                    "ai_generated": True,
+                },
+                {
+                    "description": "Spike lights and cable",
+                    "quantity": 4,
+                    "unit_price": 30.00,
+                    "ai_generated": True,
+                },
+            ]
+        },
+    )
+    assert patched.status_code == 200, patched.text
+
+    generated_v2 = {
+        "line_items": [
+            {
+                "description": "Garden lighting labour incl. containment",
+                "kind": "labour",
+                "unit": "job",
+                "quantity": 1,
+                "unit_price": 350.00,
+            },
+            {
+                "description": "Spike lights and cable",
+                "kind": "material",
+                "unit": "each",
+                "quantity": 6,
+                "unit_price": 30.00,
+            },
+        ],
+        "notes": "Refined per instructions",
+    }
+
+    with (
+        patch(
+            "app.routers.quotes.search_cost_items_with_status",
+            new=AsyncMock(return_value=([], "no_index")),
+        ),
+        patch(
+            "app.routers.quotes.generate_quote_from_prompt",
+            new=AsyncMock(return_value=generated_v2),
+        ),
+    ):
+        refined = await client.post(
+            f"/quotes/{quote_id}/refine",
+            headers={"X-Tenant-ID": tenant["id"]},
+            json={"instructions": "Add containment, bump to 6 lights"},
+        )
+
+    assert refined.status_code == 200, refined.text
+    body = refined.json()
+    by_description = {li["description"]: li for li in body["line_items"]}
+
+    # The AI draft was actually regenerated — not returned unchanged.
+    assert "Garden lighting labour" not in by_description
+    assert "Garden lighting labour incl. containment" in by_description
+    assert by_description["Garden lighting labour incl. containment"]["ai_generated"] is True
+    assert Decimal(by_description["Spike lights and cable"]["quantity"]) == Decimal("6")
+
+    # The mock returned no refine_summary, so the server diffs old vs new
+    # lines into a human-readable amends summary stored on the rag record.
+    assert body["ai_refine_summary"] is not None
+    assert body["ai_refine_summary"].startswith("Refined:")
+    assert "updated" in body["ai_refine_summary"]
+    # Refreshed confidence rides along on the response.
+    assert body["ai_confidence"] is not None
+
+
+@pytest.mark.asyncio
+async def test_refine_feeds_photo_observations_and_customer_context_to_llm(
+    client: AsyncClient, db: AsyncSession
+) -> None:
+    """The refine prompt must carry everything the original generation saw:
+    the customer's photo observations (stored on the rag record by #198) are
+    re-fed as image_observations, and the customer context is in the prompt."""
+    tenant = await _create_tenant(client, f"sparky-{uuid4().hex[:8]}")
+    await _mark_vat_registered(db, tenant["id"])
+    contact = await _create_contact(client, tenant["id"], "Observant Customer")
+
+    generated_v1 = {
+        "line_items": [
+            {
+                "description": "Fuse board replacement",
+                "kind": "labour",
+                "unit": "job",
+                "quantity": 1,
+                "unit_price": 450.00,
+            }
+        ],
+        "notes": "",
+    }
+    with (
+        patch(
+            "app.routers.quotes.search_cost_items_with_status",
+            new=AsyncMock(return_value=([], "no_index")),
+        ),
+        patch(
+            "app.routers.quotes.generate_quote_from_prompt",
+            new=AsyncMock(return_value=generated_v1),
+        ),
+    ):
+        created = await client.post(
+            "/quotes/generate",
+            headers={"X-Tenant-ID": tenant["id"]},
+            json={
+                "contact_id": contact["id"],
+                "description": "Replace fuse board",
+                "use_ocerp": False,
+            },
+        )
+    assert created.status_code == 201, created.text
+    quote_id = created.json()["id"]
+
+    # Simulate the vision step's output from the original generation (#198).
+    await set_tenant_in_session(db, UUID(tenant["id"]))
+    quote = await db.get(Quote, UUID(quote_id))
+    assert quote is not None
+    extra = dict(quote.extra_data or {})
+    rag = dict(extra.get("rag") or {})
+    rag["observations"] = ["Photo shows a dated rewireable fuse board"]
+    extra["rag"] = rag
+    quote.extra_data = extra
+    await db.commit()
+
+    generated_v2 = {
+        "line_items": [
+            {
+                "description": "Fuse board replacement, RCBO board",
+                "kind": "labour",
+                "unit": "job",
+                "quantity": 1,
+                "unit_price": 520.00,
+            }
+        ],
+        "notes": "",
+    }
+    mock_generate = AsyncMock(return_value=generated_v2)
+    with (
+        patch(
+            "app.routers.quotes.search_cost_items_with_status",
+            new=AsyncMock(return_value=([], "no_index")),
+        ),
+        patch("app.routers.quotes.generate_quote_from_prompt", new=mock_generate),
+    ):
+        refined = await client.post(
+            f"/quotes/{quote_id}/refine",
+            headers={"X-Tenant-ID": tenant["id"]},
+            json={"instructions": "Upgrade to RCBO board"},
+        )
+
+    assert refined.status_code == 200, refined.text
+    kwargs = mock_generate.call_args.kwargs
+    assert kwargs["image_observations"] == ["Photo shows a dated rewireable fuse board"]
+    assert "Observant Customer" in kwargs["job_description"]
+
+
+async def _generate_and_refine_quote(client: AsyncClient, tenant_id: str, contact_id: str) -> str:
+    """Generate a quote and run one mocked refine; return the quote id."""
+    generated_v1 = {
+        "line_items": [
+            {
+                "description": "Garden lighting labour",
+                "kind": "labour",
+                "unit": "job",
+                "quantity": 1,
+                "unit_price": 300.00,
+            }
+        ],
+        "notes": "",
+    }
+    with (
+        patch(
+            "app.routers.quotes.search_cost_items_with_status",
+            new=AsyncMock(return_value=([], "no_index")),
+        ),
+        patch(
+            "app.routers.quotes.generate_quote_from_prompt",
+            new=AsyncMock(return_value=generated_v1),
+        ),
+    ):
+        created = await client.post(
+            "/quotes/generate",
+            headers={"X-Tenant-ID": tenant_id},
+            json={
+                "contact_id": contact_id,
+                "description": "Install garden lighting",
+                "use_ocerp": False,
+            },
+        )
+    assert created.status_code == 201, created.text
+    quote_id = created.json()["id"]
+
+    generated_v2 = {
+        "line_items": [
+            {
+                "description": "Garden lighting labour incl. containment",
+                "kind": "labour",
+                "unit": "job",
+                "quantity": 1,
+                "unit_price": 350.00,
+            }
+        ],
+        "notes": "Refined per instructions",
+        "refine_summary": "Added containment to the labour line.",
+    }
+    with (
+        patch(
+            "app.routers.quotes.search_cost_items_with_status",
+            new=AsyncMock(return_value=([], "no_index")),
+        ),
+        patch(
+            "app.routers.quotes.generate_quote_from_prompt",
+            new=AsyncMock(return_value=generated_v2),
+        ),
+    ):
+        refined = await client.post(
+            f"/quotes/{quote_id}/refine",
+            headers={"X-Tenant-ID": tenant_id},
+            json={"instructions": "Add containment"},
+        )
+    assert refined.status_code == 200, refined.text
+    return str(created.json()["id"])
+
+
+@pytest.mark.asyncio
+async def test_refine_uses_llm_summary_when_returned(client: AsyncClient, db: AsyncSession) -> None:
+    """When the model returns its own ``refine_summary``, it is stored on the
+    rag record and surfaced on the response instead of the server-side diff."""
+    tenant = await _create_tenant(client, f"sparky-{uuid4().hex[:8]}")
+    await _mark_vat_registered(db, tenant["id"])
+    contact = await _create_contact(client, tenant["id"], "Summary Customer")
+    quote_id = await _generate_and_refine_quote(client, tenant["id"], contact["id"])
+
+    quote = await client.get(f"/quotes/{quote_id}", headers={"X-Tenant-ID": tenant["id"]})
+    assert quote.status_code == 200
+    assert quote.json()["ai_refine_summary"] == "Added containment to the labour line."
+
+
+@pytest.mark.asyncio
+async def test_refine_rating_writes_audit_log_and_telemetry(
+    client: AsyncClient, db: AsyncSession
+) -> None:
+    """Thumbs up/down on a refined quote is recorded in the audit log AND as
+    an ai_call_events quality signal linked to the quote's trace."""
+    tenant = await _create_tenant(client, f"sparky-{uuid4().hex[:8]}")
+    await _mark_vat_registered(db, tenant["id"])
+    contact = await _create_contact(client, tenant["id"], "Rating Customer")
+    quote_id = await _generate_and_refine_quote(client, tenant["id"], contact["id"])
+
+    rated = await client.post(
+        f"/quotes/{quote_id}/refine-rating",
+        headers={"X-Tenant-ID": tenant["id"]},
+        json={"rating": "up"},
+    )
+    assert rated.status_code == 200, rated.text
+    assert rated.json()["ai_refine_rating"] == "up"
+
+    await set_tenant_in_session(db, UUID(tenant["id"]))
+    audit_rows = (
+        (
+            await db.execute(
+                select(AuditLog).where(
+                    AuditLog.entity_type == "quote",
+                    AuditLog.entity_id == UUID(quote_id),
+                    AuditLog.action == "quote.refine_rated",
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
+    assert len(audit_rows) == 1
+    assert audit_rows[0].payload["rating"] == "up"
+
+    telemetry_rows = (
+        (
+            await db.execute(
+                select(AiCallEvent).where(
+                    AiCallEvent.quote_id == UUID(quote_id),
+                    AiCallEvent.feature == "quote_refine_rating",
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
+    assert len(telemetry_rows) == 1
+    assert telemetry_rows[0].raw_payload["rating"] == "up"
+    assert telemetry_rows[0].trace_id  # joins the refine's cost rows
+
+
+@pytest.mark.asyncio
+async def test_refine_rating_rejects_bad_value(client: AsyncClient, db: AsyncSession) -> None:
+    tenant = await _create_tenant(client, f"sparky-{uuid4().hex[:8]}")
+    await _mark_vat_registered(db, tenant["id"])
+    contact = await _create_contact(client, tenant["id"], "Rating Customer")
+    quote_id = await _generate_and_refine_quote(client, tenant["id"], contact["id"])
+
+    response = await client.post(
+        f"/quotes/{quote_id}/refine-rating",
+        headers={"X-Tenant-ID": tenant["id"]},
+        json={"rating": "meh"},
+    )
+    assert response.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_refine_rating_requires_a_prior_refine(client: AsyncClient, db: AsyncSession) -> None:
+    """A quote that was never AI-refined has nothing to rate."""
+    tenant = await _create_tenant(client, f"sparky-{uuid4().hex[:8]}")
+    await _mark_vat_registered(db, tenant["id"])
+    contact = await _create_contact(client, tenant["id"], "Rating Customer")
+    created = await client.post(
+        "/quotes",
+        headers={"X-Tenant-ID": tenant["id"]},
+        json={"contact_id": contact["id"], "title": "Manual quote"},
+    )
+    assert created.status_code == 201
+    quote_id = created.json()["id"]
+
+    response = await client.post(
+        f"/quotes/{quote_id}/refine-rating",
+        headers={"X-Tenant-ID": tenant["id"]},
+        json={"rating": "down"},
+    )
+    assert response.status_code == 409
 
 
 @pytest.mark.asyncio
