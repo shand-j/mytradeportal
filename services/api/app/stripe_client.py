@@ -373,7 +373,11 @@ def construct_event(body: bytes, signature_header: str) -> dict[str, Any]:
     and :class:`ValueError` when the signature does not verify — the router
     maps those to 503 and 400 respectively.
     """
-    secrets = [s for s in (config.STRIPE_WEBHOOK_SECRET, config.STRIPE_CONNECT_WEBHOOK_SECRET) if s]
+    secrets = [
+        s
+        for s in (config.STRIPE_PLATFORM_WEBHOOK_SECRET, config.STRIPE_CONNECT_WEBHOOK_SECRET)
+        if s
+    ]
     if not secrets:
         raise PaymentsNotConfiguredError()
     stripe = _stripe()
