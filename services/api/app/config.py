@@ -120,10 +120,16 @@ PLATFORM_STAFF_EMAILS: str = os.environ.get("PLATFORM_STAFF_EMAILS", "").strip()
 # feature: staff endpoints answer 503 ``payments_not_configured`` and public
 # invoice pages simply omit the Pay button.
 STRIPE_SECRET_KEY: str = os.environ.get("STRIPE_SECRET_KEY", "").strip()
-STRIPE_WEBHOOK_SECRET: str = os.environ.get("STRIPE_WEBHOOK_SECRET", "").strip()
-# Connect destination charges need a second webhook endpoint (the Connect
-# channel carries account.updated + payout.paid from connected accounts) with
-# its own signing secret — the verifier accepts either.
+# Webhook signing secrets — two Stripe endpoints share the /webhooks/stripe
+# URL: the platform channel (payment_intent/charge events from destination
+# charges) and the Connect channel (account.updated + payout.paid from
+# connected accounts). Each endpoint has its own signing secret; the verifier
+# accepts either. STRIPE_WEBHOOK_SECRET is the legacy name for the platform
+# secret — still read as a fallback so existing envs keep working.
+STRIPE_PLATFORM_WEBHOOK_SECRET: str = os.environ.get(
+    "STRIPE_PLATFORM_WEBHOOK_SECRET", os.environ.get("STRIPE_WEBHOOK_SECRET", "")
+).strip()
+STRIPE_WEBHOOK_SECRET: str = STRIPE_PLATFORM_WEBHOOK_SECRET  # legacy alias
 STRIPE_CONNECT_WEBHOOK_SECRET: str = os.environ.get("STRIPE_CONNECT_WEBHOOK_SECRET", "").strip()
 # Connect client id (ca_...) — reserved for future OAuth-style onboarding
 # links; Express account links work without it.

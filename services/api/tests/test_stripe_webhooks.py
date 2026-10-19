@@ -372,7 +372,7 @@ async def _get_invoice(invoice_id: UUID) -> Invoice:
 
 async def test_webhook_503_when_unconfigured(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr("app.config.STRIPE_SECRET_KEY", "")
-    monkeypatch.setattr("app.config.STRIPE_WEBHOOK_SECRET", "")
+    monkeypatch.setattr("app.config.STRIPE_PLATFORM_WEBHOOK_SECRET", "")
     response = await _post_event(payout_paid_event("evt_unconfigured", payout_id="po_1"))
     assert response.status_code == 503
     assert response.json()["detail"] == "payments_not_configured"
@@ -380,7 +380,7 @@ async def test_webhook_503_when_unconfigured(monkeypatch: pytest.MonkeyPatch) ->
 
 async def test_webhook_rejects_bad_signature(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr("app.config.STRIPE_SECRET_KEY", "sk_test_x")
-    monkeypatch.setattr("app.config.STRIPE_WEBHOOK_SECRET", "whsec_test")
+    monkeypatch.setattr("app.config.STRIPE_PLATFORM_WEBHOOK_SECRET", "whsec_test")
     body = b'{"id":"evt_bad","type":"payout.paid","data":{"object":{}}}'
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         response = await client.post(
@@ -411,7 +411,7 @@ async def test_construct_event_verifies_real_signature_and_returns_plain_dict(
     from app.stripe_client import construct_event
 
     monkeypatch.setattr("app.config.STRIPE_SECRET_KEY", "sk_test_x")
-    monkeypatch.setattr("app.config.STRIPE_WEBHOOK_SECRET", "whsec_test_123")
+    monkeypatch.setattr("app.config.STRIPE_PLATFORM_WEBHOOK_SECRET", "whsec_test_123")
     payload = {
         "id": "evt_real_sig",
         "object": "event",
@@ -437,7 +437,7 @@ async def test_construct_event_accepts_connect_channel_secret(
     from app.stripe_client import construct_event
 
     monkeypatch.setattr("app.config.STRIPE_SECRET_KEY", "sk_test_x")
-    monkeypatch.setattr("app.config.STRIPE_WEBHOOK_SECRET", "whsec_platform")
+    monkeypatch.setattr("app.config.STRIPE_PLATFORM_WEBHOOK_SECRET", "whsec_platform")
     monkeypatch.setattr("app.config.STRIPE_CONNECT_WEBHOOK_SECRET", "whsec_connect")
     payload = {
         "id": "evt_connect_sig",
@@ -460,7 +460,7 @@ async def test_construct_event_rejects_forged_signature(monkeypatch: pytest.Monk
     from app.stripe_client import construct_event
 
     monkeypatch.setattr("app.config.STRIPE_SECRET_KEY", "sk_test_x")
-    monkeypatch.setattr("app.config.STRIPE_WEBHOOK_SECRET", "whsec_test_123")
+    monkeypatch.setattr("app.config.STRIPE_PLATFORM_WEBHOOK_SECRET", "whsec_test_123")
     body = b'{"id":"evt_forged","type":"payout.paid","data":{"object":{}}}'
 
     with pytest.raises(ValueError, match="invalid stripe webhook signature"):

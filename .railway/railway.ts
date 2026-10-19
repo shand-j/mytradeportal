@@ -281,9 +281,11 @@ export default defineRailway(() => {
       // Express destination charges. Paddle stays subscription-only. Blank
       // defaults; set once in the Railway dashboard, preserved across applies.
       STRIPE_SECRET_KEY: preserve(),
+      // Webhook signing secrets: platform endpoint (payment_intent/charge)
+      // and Connect endpoint (account.updated/payout.paid) — the verifier
+      // accepts either. STRIPE_WEBHOOK_SECRET is the legacy platform name.
+      STRIPE_PLATFORM_WEBHOOK_SECRET: preserve(),
       STRIPE_WEBHOOK_SECRET: preserve(),
-      // Connect-channel webhook signing secret (account.updated/payout.paid
-      // from connected accounts) — the verifier accepts either secret.
       STRIPE_CONNECT_WEBHOOK_SECRET: preserve(),
       STRIPE_CONNECT_CLIENT_ID: preserve(),
       // Tenant portal (ADR-004): customer-facing pages at
