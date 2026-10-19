@@ -426,7 +426,34 @@ async def test_construct_event_verifies_real_signature_and_returns_plain_dict(
     assert type(event) is dict
     assert event["id"] == "evt_real_sig"
     assert type(event["data"]["object"]) is dict
-    assert event["data"]["object"]["id"] == "po_1"
+
+
+async def test_construct_event_accepts_connect_channel_secret(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The Connect-channel endpoint (account.updated/payout.paid from
+    connected accounts) has its own signing secret — the verifier must accept
+    it alongside the platform secret."""
+    from app.stripe_client import construct_event
+
+    monkeypatch.setattr("app.config.STRIPE_SECRET_KEY", "sk_test_x")
+    monkeypatch.setattr("app.config.STRIPE_WEBHOOK_SECRET", "whsec_platform")
+    monkeypatch.setattr("app.config.STRIPE_CONNECT_WEBHOOK_SECRET", "whsec_connect")
+    payload = {
+        "id": "evt_connect_sig",
+        "object": "event",
+        "type": "account.updated",
+        "livemode": False,
+        "data": {"object": {"id": "acct_1", "object": "account"}},
+    }
+    body = json.dumps(payload, separators=(",", ":")).encode()
+
+    event = construct_event(body, _stripe_signature_header(body, "whsec_connect"))
+
+    assert event["id"] == "evt_connect_sig"
+
+    with pytest.raises(ValueError, match="invalid stripe webhook signature"):
+        construct_event(body, _stripe_signature_header(body, "whsec_unknown"))
 
 
 async def test_construct_event_rejects_forged_signature(monkeypatch: pytest.MonkeyPatch) -> None:

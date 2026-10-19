@@ -364,21 +364,28 @@ async def create_refund(payment_intent_id: str) -> dict[str, Any]:
 def construct_event(body: bytes, signature_header: str) -> dict[str, Any]:
     """Verify the Stripe-Signature header and return the event payload.
 
+    Connect destination charges need two webhook endpoints at the same URL —
+    the platform channel (payment_intent/charge events) and the Connect
+    channel (account.updated/payout.paid from connected accounts) — each with
+    its own signing secret. Verify against every configured secret.
+
     Raises :class:`PaymentsNotConfiguredError` when no webhook secret is set
     and :class:`ValueError` when the signature does not verify — the router
     maps those to 503 and 400 respectively.
     """
-    if not config.STRIPE_WEBHOOK_SECRET:
+    secrets = [s for s in (config.STRIPE_WEBHOOK_SECRET, config.STRIPE_CONNECT_WEBHOOK_SECRET) if s]
+    if not secrets:
         raise PaymentsNotConfiguredError()
     stripe = _stripe()
-    try:
-        event = stripe.Webhook.construct_event(
-            body,
-            signature_header,
-            config.STRIPE_WEBHOOK_SECRET,
-        )
-    except stripe.SignatureVerificationError as exc:
-        raise ValueError("invalid stripe webhook signature") from exc
+    event = None
+    for secret in secrets:
+        try:
+            event = stripe.Webhook.construct_event(body, signature_header, secret)
+            break
+        except stripe.SignatureVerificationError:
+            continue
+    if event is None:
+        raise ValueError("invalid stripe webhook signature")
     # stripe-python >= 15 no longer subclasses dict (``dict(event)`` raises
     # TypeError); ``to_dict()`` exists across the pinned ``stripe>=10`` range,
     # with ``dict()`` kept as the fallback for any older release lacking it.
