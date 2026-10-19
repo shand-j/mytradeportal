@@ -121,6 +121,10 @@ PLATFORM_STAFF_EMAILS: str = os.environ.get("PLATFORM_STAFF_EMAILS", "").strip()
 # invoice pages simply omit the Pay button.
 STRIPE_SECRET_KEY: str = os.environ.get("STRIPE_SECRET_KEY", "").strip()
 STRIPE_WEBHOOK_SECRET: str = os.environ.get("STRIPE_WEBHOOK_SECRET", "").strip()
+# Connect destination charges need a second webhook endpoint (the Connect
+# channel carries account.updated + payout.paid from connected accounts) with
+# its own signing secret — the verifier accepts either.
+STRIPE_CONNECT_WEBHOOK_SECRET: str = os.environ.get("STRIPE_CONNECT_WEBHOOK_SECRET", "").strip()
 # Connect client id (ca_...) — reserved for future OAuth-style onboarding
 # links; Express account links work without it.
 STRIPE_CONNECT_CLIENT_ID: str = os.environ.get("STRIPE_CONNECT_CLIENT_ID", "").strip()

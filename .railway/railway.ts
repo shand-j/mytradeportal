@@ -282,6 +282,9 @@ export default defineRailway(() => {
       // defaults; set once in the Railway dashboard, preserved across applies.
       STRIPE_SECRET_KEY: preserve(),
       STRIPE_WEBHOOK_SECRET: preserve(),
+      // Connect-channel webhook signing secret (account.updated/payout.paid
+      // from connected accounts) — the verifier accepts either secret.
+      STRIPE_CONNECT_WEBHOOK_SECRET: preserve(),
       STRIPE_CONNECT_CLIENT_ID: preserve(),
       // Tenant portal (ADR-004): customer-facing pages at
       // https://{slug}.mytradeportal.co.uk. Literal product constant, like
