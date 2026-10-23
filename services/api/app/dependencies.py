@@ -66,6 +66,17 @@ def _extract_tenant_slug(host: str | None) -> str | None:
         return None
     if host.startswith("www."):
         host = host[4:]
+    # The API's own custom domain is not a tenant subdomain either — without
+    # this, api.<base-domain> resolves as the slug "api" and every bare login
+    # through the branded API host 401s.
+    from urllib.parse import urlparse
+
+    from app.config import PUBLIC_API_BASE_URL
+
+    if PUBLIC_API_BASE_URL:
+        api_host = urlparse(PUBLIC_API_BASE_URL).hostname
+        if api_host and host == api_host:
+            return None
     parts = host.split(".")
     # e.g. demo.localhost, demo.mytradeportal.local, demo.mytradeportal.co.uk
     if len(parts) >= 2:
