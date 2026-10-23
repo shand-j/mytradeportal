@@ -11,6 +11,7 @@ import { useSubscription } from "../../api/billing";
 import { api, ApiError } from "../../lib/apiClient";
 import { openCalendarSubscription } from "../../api/calendar";
 import { config } from "../../lib/config";
+import { parseServerDate } from "../../lib/datetime";
 import { openInAppBrowser } from "../../lib/inAppBrowser";
 import { PortalQrSheet } from "../../components/trade/PortalQrSheet";
 
@@ -44,17 +45,17 @@ function SubscriptionCard() {
 
   const trialLeft =
     data.status === "trialing" && data.trialEndsAt
-      ? `Trial ends ${new Date(data.trialEndsAt).toLocaleDateString("en-GB", {
+      ? `Trial ends ${parseServerDate(data.trialEndsAt)?.toLocaleDateString("en-GB", {
           day: "numeric",
           month: "short",
-        })}`
+        }) ?? "—"}`
       : null;
   const renewsAt =
     (data.status === "active" || data.status === "past_due") && data.currentPeriodEnd
-      ? `Renews ${new Date(data.currentPeriodEnd).toLocaleDateString("en-GB", {
+      ? `Renews ${parseServerDate(data.currentPeriodEnd)?.toLocaleDateString("en-GB", {
           day: "numeric",
           month: "short",
-        })}`
+        }) ?? "—"}`
       : null;
   const statusLabel: Record<string, string> = {
     incomplete: "Setup incomplete",
