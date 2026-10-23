@@ -7,7 +7,6 @@ from datetime import datetime, timedelta
 from typing import Any
 from uuid import UUID
 
-import httpx
 import structlog
 from fastapi import APIRouter, HTTPException, Query, Request, Response, status
 from sqlalchemy import func, select, update
@@ -37,12 +36,6 @@ from app.security import (
     get_password_hash,
     set_auth_cookie,
     verify_password,
-)
-from app.supabase import (
-    admin_create_user,
-    admin_update_password,
-    is_supabase_configured,
-    sign_in_with_password,
 )
 
 router = APIRouter(prefix="/auth", tags=["Auth"])
@@ -160,8 +153,8 @@ async def _authenticate(request: Request, data: UserLogin, db: DbDep) -> tuple[T
     """Resolve the tenant and verify credentials, or raise 401.
 
     Shared by the cookie-based ``/login`` (web) and token-based ``/token``
-    (native) endpoints so both apply identical tenant resolution and
-    Supabase/bcrypt credential checks.
+    (native) endpoints so both apply identical tenant resolution and local
+    bcrypt credential checks.
     """
     tenant, user = await _resolve_login_tenant(request, data, db)
     await set_tenant_in_session(db, tenant.id)
@@ -175,46 +168,14 @@ async def _authenticate(request: Request, data: UserLogin, db: DbDep) -> tuple[T
         )
         user = user_result.scalar_one_or_none()
 
-    authenticated = False
-    supabase_enabled = is_supabase_configured()
-
-    if supabase_enabled and user is not None and user.supabase_uid:
-        # Supabase-provisioned account: hosted auth is authoritative. A clean
-        # rejection returns None (401 below); an outage falls back to the local
-        # hash so migrated users are not locked out by a Supabase blip.
-        try:
-            sb_response = await sign_in_with_password(data.email, data.password)
-        except (httpx.HTTPError, OSError) as exc:
-            logger.warning("supabase_auth_unavailable", error_type=type(exc).__name__)
-            sb_response = None
-            if user.password_hash is not None:
-                authenticated = verify_password(data.password, user.password_hash)
-        else:
-            authenticated = sb_response is not None
-    elif user is not None and user.password_hash is not None:
-        # Not yet provisioned in Supabase (or Supabase not configured): local
-        # bcrypt. On success with Supabase configured, migrate seamlessly by
-        # provisioning the hosted account with the password just verified.
-        authenticated = verify_password(data.password, user.password_hash)
-        if authenticated and supabase_enabled and not user.supabase_uid:
-            try:
-                sb_user = admin_create_user(
-                    user.email,
-                    data.password,
-                    full_name=user.full_name,
-                    role=user.role,
-                    tenant_id=str(user.tenant_id),
-                )
-                user.supabase_uid = sb_user.get("id")
-                await db.commit()
-                logger.info("supabase_user_migrated", user_id=str(user.id))
-            except Exception as exc:
-                # Migration must never break a valid login; next login retries.
-                logger.warning(
-                    "supabase_migration_failed",
-                    user_id=str(user.id),
-                    error_type=type(exc).__name__,
-                )
+    # Local bcrypt is the only credential check. Rows without a local hash
+    # (legacy accounts that only ever had a hosted identity) fail closed here
+    # and recover via /auth/password-reset, which sets a hash.
+    authenticated = (
+        user is not None
+        and user.password_hash is not None
+        and verify_password(data.password, user.password_hash)
+    )
 
     if not authenticated or user is None or not user.is_active:
         raise HTTPException(
@@ -488,19 +449,6 @@ async def password_reset_confirm(
         if user is None:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Account missing")
         user.password_hash = new_hash
-        if user.supabase_uid and is_supabase_configured():
-            try:
-                admin_update_password(user.supabase_uid, data.new_password)
-            except Exception as exc:
-                # Keep the account consistent: if the hosted update failed,
-                # drop the link so login stays on bcrypt with the fresh hash
-                # (the next successful login re-migrates with it).
-                logger.warning(
-                    "supabase_password_sync_failed",
-                    user_id=str(user.id),
-                    error_type=type(exc).__name__,
-                )
-                user.supabase_uid = None
     else:
         customer = await db.get(Customer, record.owner_id)
         if customer is None:

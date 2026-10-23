@@ -289,11 +289,6 @@ class Settings(BaseSettings):
     # for keeping it populated); never for customer billing.
     fx_usd_gbp_fallback_rate: float = Field(default=0.79)
 
-    # Supabase Auth (optional — when set, email/password login is handled by Supabase)
-    supabase_url: str = Field(default="")
-    supabase_anon_key: str = Field(default="")
-    supabase_service_role_key: str = Field(default="")
-
     # Setup / bootstrap token required to create the first tenant in production.
     setup_token: str = Field(default="")
 

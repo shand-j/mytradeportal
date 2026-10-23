@@ -10,8 +10,8 @@
 # dev stack on :8000). To point the iOS Simulator at the MAIN seeded stack instead:
 #   EXPO_PUBLIC_API_BASE_URL=http://localhost:8000 pnpm ios
 #
-# Local bcrypt/JWT auth is used by default so no Supabase instance is required.
-# To use Supabase Auth instead, set SUPABASE_URL and the two keys in your .env.
+# Local bcrypt/JWT auth is the only auth mechanism — no external identity
+# provider is required.
 # IMPORTANT: separate compose project name. Without this, the project defaults
 # to the directory name — the same as docker-compose.yml — and the two files
 # fight over service names (`api`, `postgres`, ...), each `up` replacing the
@@ -110,10 +110,6 @@ services:
       APP_ROLE_NAME: ${APP_ROLE_NAME:-mtp_app}
       APP_ROLE_PASSWORD: ${APP_ROLE_PASSWORD:-mtp_app}
       SETUP_TOKEN: ${SETUP_TOKEN:-}
-      # Default to local bcrypt/JWT auth. Override in .env to use Supabase Auth.
-      SUPABASE_URL: ${SUPABASE_URL:-}
-      SUPABASE_ANON_KEY: ${SUPABASE_ANON_KEY:-}
-      SUPABASE_SERVICE_ROLE_KEY: ${SUPABASE_SERVICE_ROLE_KEY:-}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       EMBEDDING_MODEL: ${EMBEDDING_MODEL:-text-embedding-3-small}
       EMBEDDING_API_BASE: ${EMBEDDING_API_BASE:-}

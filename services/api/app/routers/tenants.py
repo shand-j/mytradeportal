@@ -4,7 +4,6 @@ from datetime import UTC, datetime, timedelta
 from typing import Annotated, Any
 from uuid import UUID, uuid4
 
-import httpx
 import structlog
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request, UploadFile, status
 from mtp_shared import get_settings
@@ -46,7 +45,6 @@ from app.schemas import (
     UserRead,
 )
 from app.security import get_password_hash
-from app.supabase import admin_create_user, is_supabase_configured
 from app.utils.tenant_code import generate_unique_tenant_code
 
 logger = structlog.get_logger("api.tenants")
@@ -196,42 +194,15 @@ async def create_tenant(
         # this session operates on before inserting the first user.
         await set_tenant_in_session(db, tenant.id)
 
-        password_hash: str | None = None
-        supabase_uid: str | None = None
-        if is_supabase_configured():
-            try:
-                sb_user = admin_create_user(
-                    data.admin_email,
-                    data.admin_password,
-                    full_name=data.admin_name,
-                    role="admin",
-                    tenant_id=str(tenant.id),
-                )
-            except httpx.HTTPError as exc:
-                # Network-level failure talking to Supabase Auth.
-                raise HTTPException(
-                    status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                    detail="Authentication provider is unavailable; please try again shortly",
-                ) from exc
-            except RuntimeError as exc:
-                # Supabase rejected the signup (e.g. password policy, malformed
-                # payload). Without this guard the exception surfaced as a bare
-                # 500 during onboarding plan selection.
-                raise HTTPException(
-                    status_code=status.HTTP_502_BAD_GATEWAY,
-                    detail="Could not create the login account with the authentication provider",
-                ) from exc
-            supabase_uid = sb_user.get("id")
-        else:
-            password_hash = get_password_hash(data.admin_password)
-
+        # Local bcrypt is the only auth mechanism — no external provider is
+        # involved, so bootstrap can never fail on a third-party outage.
         admin_user = User(
             tenant_id=tenant.id,
             email=data.admin_email,
             full_name=data.admin_name,
             role="admin",
-            password_hash=password_hash,
-            supabase_uid=supabase_uid,
+            password_hash=get_password_hash(data.admin_password),
+            supabase_uid=None,
             is_active=True,
         )
         db.add(admin_user)
