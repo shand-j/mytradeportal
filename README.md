@@ -48,5 +48,7 @@ cd mobile && pnpm install && pnpm ios
 
 - `AGENTS.md` — the detailed contributor reference: stack, conventions,
   build/test/run commands, deployment, and known issues.
-- `docs/` — product and architecture documentation.
+- `docs/` — product and architecture documentation; `docs/user-journeys.md`
+  maps every implemented user journey (per persona) to its screens and API
+  endpoints.
 - `.env.example` — environment variable template.

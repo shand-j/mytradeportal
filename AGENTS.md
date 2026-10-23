@@ -472,6 +472,7 @@ mytradeportal/
 │       └── playwright*.config.ts
 │
 ├── docs/                     # Active documentation
+│   ├── user-journeys.md      # Implemented user journeys map (per persona → screens + API)
 │   ├── prd-beta.md           # Beta scope PRD (historical spec — see banner)
 │   ├── beta-test-plan.md     # October-cohort verification map (current)
 │   ├── go-live-runbook.md    # Deploy/runbook for go-live and redeploys
@@ -846,6 +847,8 @@ followed by `pnpm install` usually resolves it.
 - `mobile/README.md` — setup, run, and EAS build/submit instructions for the iOS app.
 - `web/app/README.md` — Vite template README.
 - `security/README.md` — security test suite documentation.
+- `docs/user-journeys.md` — implemented user journeys per persona, mapped to
+  screens and API endpoints, with evidence status.
 - `docs/prd-beta.md` — Beta scope PRD (historical spec; see the status banner).
 - `docs/beta-test-plan.md` — current verification map for the October beta cohort.
 - `docs/go-live-runbook.md` — deploy order, production env wiring, rollback.
