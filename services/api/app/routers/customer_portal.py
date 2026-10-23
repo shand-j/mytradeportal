@@ -42,6 +42,7 @@ from app.models import (
     QuoteRequest,
     Tenant,
 )
+from app.payment_details import tenant_payment_details
 from app.portal_links import (
     flip_preferred_contact_to_app,
     hash_portal_token,
@@ -119,6 +120,10 @@ class CustomerInvoiceRead(BaseModel):
     # Stripe /pay page URL for unpaid invoices when the tenant takes card
     # payments; null when card payment is unavailable or already settled.
     payment_url: str | None = None
+    # Bank-transfer fallback (same block as the invoice email and the public
+    # /invoice page) so the portal can show how to pay when payment_url is
+    # null; null when the tenant has no bank details configured.
+    payment_details: dict[str, str] | None = None
 
 
 class CustomerInvoicePayResponse(BaseModel):
@@ -146,6 +151,11 @@ def _customer_invoice_read(invoice: Invoice, tenant: Tenant | None) -> CustomerI
         business_name=tenant.name if tenant is not None else "Your electrician",
         business_logo_url=tenant.logo_url if tenant is not None else None,
         business_primary_color=tenant.primary_color if tenant is not None else "#D4650A",
+        payment_details=(
+            tenant_payment_details(tenant.settings, reference=invoice.invoice_number)
+            if tenant is not None
+            else None
+        ),
     )
 
 

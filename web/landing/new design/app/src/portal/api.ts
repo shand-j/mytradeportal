@@ -338,6 +338,13 @@ export interface CustomerQuote {
   line_items: CustomerLineItem[]
 }
 
+export interface CustomerInvoicePaymentDetails {
+  account_name: string
+  sort_code: string
+  account_number: string
+  reference: string
+}
+
 export interface CustomerInvoice {
   id: string
   invoice_number: string
@@ -354,6 +361,8 @@ export interface CustomerInvoice {
   /** Pending backend: online-pay handoff for the portal pay flow. */
   payment_url?: string | null
   payment_client_secret?: string | null
+  /** Bank-transfer details to show when there is no card pay URL. */
+  payment_details?: CustomerInvoicePaymentDetails | null
 }
 
 export interface CustomerQuoteRequest {
