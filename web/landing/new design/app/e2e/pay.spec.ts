@@ -89,10 +89,12 @@ test("invoice list and detail render without a card option for a non-connected t
   await expect(page.getByText(/VAT \(20%\)/)).toBeVisible();
   await expect(page.getByText("Total").last()).toBeVisible();
 
-  // Graceful pay shell: no Stripe connection → no card form, no pay button —
-  // the fallback copy points at the invoice email link / phone.
+  // Graceful pay shell: no Stripe connection → no card form, no pay button,
+  // and the fallback copy must not point at an emailed pay link the tenant
+  // never sent — it offers bank transfer / phone instead.
+  await expect(page.getByText(/secure pay link in your invoice email/)).toHaveCount(0);
   await expect(
-    page.getByText(/To pay online, use the secure pay link in your invoice email/),
+    page.getByText(/Card payment isn't available for this invoice|Pay by bank transfer/),
   ).toBeVisible();
   await expect(page.getByRole("button", { name: /Pay securely/ })).toHaveCount(0);
   await expect(page.locator(".StripeElement, [data-testid='card-element']")).toHaveCount(0);
@@ -115,6 +117,24 @@ test("view-only /invoice/:token page opens with no account", async ({ page }) =>
   await expect(page.getByText(/Outstanding|Awaiting response|Sent|Issued/i).first()).toBeVisible();
   // No portal sign-in gate on the public document page.
   await expect(page.getByText("Sign in to continue")).toHaveCount(0);
+});
+
+test("bare /pay/:token (no PaymentIntent params) falls back to the invoice view", async ({
+  page,
+}) => {
+  // Issue #286: swapping /invoice/ → /pay/ on a valid token must not show
+  // "link invalid" — with no ?pi=/?cs= the page renders the invoice summary
+  // and the bank-transfer / paid state instead of the card form.
+  const mail = await waitForEmail(customerEmail, { subjectIncludes: "Invoice" });
+  const docPath = extractDocumentPath(mail, "invoice");
+  const payPath = docPath.replace("/invoice/", "/pay/");
+
+  await page.goto(payPath, { waitUntil: "domcontentloaded" });
+  await expect(page.getByText(/Invoice INV-/)).toBeVisible();
+  await expect(page.getByText("Total").last()).toBeVisible();
+  await expect(page.getByText(/invalid or has expired/)).toHaveCount(0);
+  // No card-payment UI without intent params.
+  await expect(page.locator(".StripeElement, [data-testid='card-element']")).toHaveCount(0);
 });
 
 test.fixme("Stripe-connected tenant: card pay shell → sandbox card → paid", async () => {

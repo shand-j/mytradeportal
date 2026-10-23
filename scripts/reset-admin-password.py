@@ -1,7 +1,9 @@
-"""Reset a trade user's local bcrypt password (development helper).
+"""Reset a trade user's local bcrypt password (development/ops helper).
 
-Useful when a tenant/admin user was created while Supabase Auth was configured
-but unreachable, leaving password_hash NULL and preventing local login.
+Local bcrypt is the only auth mechanism; this sets (or repairs) the local
+``password_hash`` — e.g. for legacy accounts that only ever had a hosted
+Supabase identity and therefore have ``password_hash NULL``. The self-service
+``/auth/password-reset`` flow is the normal recovery path.
 
 Usage:
     python scripts/reset-admin-password.py admin@example.com new-password-123

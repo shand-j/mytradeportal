@@ -1,0 +1,80 @@
+[
+  {
+    "i": 0,
+    "tag": "nav",
+    "id": null,
+    "cls": "ml-auto hidden md:block"
+  },
+  {
+    "i": 1,
+    "tag": "section",
+    "id": "try-ai",
+    "cls": "border-b-2 border-[var(--ink)]"
+  },
+  {
+    "i": 2,
+    "tag": "section",
+    "id": null,
+    "cls": "border-b-2 border-[var(--ink)] bg-[var(--ink)]"
+  },
+  {
+    "i": 3,
+    "tag": "section",
+    "id": null,
+    "cls": "border-b-2 border-[var(--ink)] bg-[var(--paper-2)]"
+  },
+  {
+    "i": 4,
+    "tag": "section",
+    "id": null,
+    "cls": "border-b-2 border-[var(--ink)]"
+  },
+  {
+    "i": 5,
+    "tag": "section",
+    "id": null,
+    "cls": "border-b-2 border-[var(--ink)] bg-[var(--ink)] text-[var(--paper-on-dark)]"
+  },
+  {
+    "i": 6,
+    "tag": "section",
+    "id": "features",
+    "cls": "border-b-2 border-[var(--ink)]"
+  },
+  {
+    "i": 7,
+    "tag": "section",
+    "id": null,
+    "cls": "border-b-2 border-[var(--ink)] bg-[var(--ink)] text-[var(--paper-on-dark)]"
+  },
+  {
+    "i": 8,
+    "tag": "section",
+    "id": "how",
+    "cls": "border-b-2 border-[var(--ink)] bg-[var(--paper-2)]"
+  },
+  {
+    "i": 9,
+    "tag": "section",
+    "id": "pricing",
+    "cls": "border-b-2 border-[var(--ink)]"
+  },
+  {
+    "i": 10,
+    "tag": "section",
+    "id": "reviews",
+    "cls": "border-b-2 border-[var(--ink)] bg-[var(--paper-2)]"
+  },
+  {
+    "i": 11,
+    "tag": "section",
+    "id": "cta",
+    "cls": "border-b-2 border-[var(--ink)] bg-[var(--ink-deep)] text-[var(--paper-on-dark)]"
+  },
+  {
+    "i": 12,
+    "tag": "footer",
+    "id": null,
+    "cls": "bg-[var(--ink-deep)] text-[var(--paper-on-dark)]"
+  }
+]
