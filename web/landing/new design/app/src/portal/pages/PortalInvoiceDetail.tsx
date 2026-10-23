@@ -10,6 +10,37 @@ import { buildElementsOptions, getStripe, PUBLISHABLE_KEY } from '../pay/stripe'
 import { PaymentForm } from '../pay/PaymentForm'
 import { DocumentLoading, formatDate, formatMoney, StatusBadge } from '../../pages/ViewQuote'
 
+function BankTransferDetails({ invoice, businessName }: { invoice: CustomerInvoice; businessName: string }) {
+  const details = invoice.payment_details
+  if (!details) return null
+  const rows: [string, string][] = [
+    ['Account name', details.account_name],
+    ['Sort code', details.sort_code],
+    ['Account number', details.account_number],
+    ['Payment reference', details.reference],
+  ].filter((row): row is [string, string] => row[1] !== '')
+  if (rows.length === 0) return null
+  return (
+    <>
+      <p className="text-[14px] font-semibold">Pay by bank transfer</p>
+      <p className="mt-1 text-[13px] leading-relaxed text-[var(--muted)]">
+        Use the payment reference so {businessName} can match your transfer to this invoice.
+      </p>
+      <dl className="mt-[var(--space-sm)] text-[14px]">
+        {rows.map(([label, value]) => (
+          <div
+            key={label}
+            className="flex flex-wrap justify-between gap-2 border-b border-[var(--rule)] py-1.5 last:border-b-0"
+          >
+            <dt className="text-[var(--muted)]">{label}</dt>
+            <dd className="font-semibold">{value}</dd>
+          </div>
+        ))}
+      </dl>
+    </>
+  )
+}
+
 function InvoiceDetail({ id }: { id: string }) {
   const { slug, config, sessionVersion } = usePortal()
   const [searchParams] = useSearchParams()
@@ -165,10 +196,17 @@ function InvoiceDetail({ id }: { id: string }) {
               </>
             ) : (
               <>
-                <p className="text-[14px] leading-relaxed">
-                  To pay online, use the secure pay link in your invoice email — or call{' '}
-                  {config.name} to pay another way.
-                </p>
+                {/* No card-payment URL (tenant not on Stripe Connect or the
+                    invoice opted out) — the invoice email carries no pay link
+                    either, so point at bank transfer / phone instead. */}
+                {invoice.payment_details ? (
+                  <BankTransferDetails invoice={invoice} businessName={config.name} />
+                ) : (
+                  <p className="text-[14px] leading-relaxed">
+                    Card payment isn't available for this invoice — contact {config.name} to pay
+                    another way.
+                  </p>
+                )}
                 {config.phone && (
                   <a href={`tel:${config.phone}`} className="chip mt-[var(--space-md)] justify-center">
                     Call {config.phone}
