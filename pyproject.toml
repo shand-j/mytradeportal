@@ -69,6 +69,10 @@ dev = [
     "django-environ>=0.11.2",
     "httpx>=0.27.0",
     "pip-audit>=2.7.0",
+    # Pin the setuptools in dev/CI environments above the fixed releases for
+    # PYSEC-2026-3447 (<83.0.0) and GHSA-xmj3-9gf7-h52w (<84.1.0); pip-audit
+    # audits the whole environment, including the build backend.
+    "setuptools>=84.1.0",
 ]
 
 [tool.setuptools.packages.find]
