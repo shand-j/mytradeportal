@@ -30,7 +30,6 @@ from app import config, stripe_client
 from app.database import get_db
 from app.dependencies import CurrentUserDep, TenantDep
 from app.models import StripeAccount, Tenant
-from app.portal_links import portal_base_url
 from app.rls import set_tenant_in_session
 from app.routers.invoices import _get_invoice
 from app.schemas import PaymentRead
@@ -185,7 +184,6 @@ async def _provision_account(
             phone=tenant.phone or None,
             postcode=tenant.postcode,
             entity_type=_tenant_entity_type(tenant),
-            business_url=portal_base_url(tenant),
         )
     except stripe_client.PaymentsNotConfiguredError as exc:
         raise HTTPException(

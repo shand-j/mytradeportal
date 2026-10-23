@@ -140,16 +140,18 @@ async def create_connected_account_v2(
     phone: str | None = None,
     postcode: str | None = None,
     entity_type: str | None = None,
-    business_url: str | None = None,
 ) -> dict[str, Any]:
-    """Create a v2 connected Account with the recipient configuration (ADR-003).
+    """Create a v2 connected Account (ADR-003).
 
     Marketplace defaults per the Accounts v2 guidance: ``dashboard: "express"``
-    with the platform as both fees and losses collector (``"application"``),
-    and the ``stripe_balance.stripe_transfers`` capability requested on the
-    recipient configuration — the v2 go-live check for destination charges.
-    No ``merchant``/``card_payments`` configuration is requested (that would
-    only lengthen onboarding; the platform remains merchant of record).
+    with the platform as both fees and losses collector (``"application"``).
+    Capabilities: ``stripe_balance.stripe_transfers`` on the recipient
+    configuration plus ``card_payments`` on the merchant configuration — the
+    pinned preview REQUIRES the pair (requesting transfers alone 400s with
+    ``capability_not_available_without_other_capability`` on live; sandbox
+    historically accepted recipient-only, which is how the original shape
+    shipped). The platform remains merchant of record; the merchant capability
+    exists only to satisfy the coupling rule.
     Returns ``{"id": ...}``.
 
     Everything we already know about the tradie is pre-filled (contact email,
@@ -158,12 +160,11 @@ async def create_connected_account_v2(
     identity enum: ``"individual"`` for sole traders, ``"company"`` for
     ltd/LLP — passed only when known, never guessed.
 
-    ``business_url`` (the tenant's customer portal URL) is pre-filled as the
-    account's business website so hosted onboarding doesn't block tradespeople
-    who have no site of their own. The v2 home for it is
-    ``defaults.profile.url``: ``identity.business_details.url`` was removed in
-    the 2025-09-30.clover preview, which the pinned ``STRIPE_V2_API_VERSION``
-    post-dates.
+    No business-website prefill: there is no URL field on the pinned preview
+    (``identity.business_details.url`` was removed in clover and
+    ``defaults.profile.url`` never existed there — passing it 400s with
+    ``invalid_fields``). Onboarding collects the website; tenants without one
+    use their customer portal URL.
     """
     identity: dict[str, Any] = {"country": "gb"}
     if entity_type:
@@ -191,6 +192,11 @@ async def create_connected_account_v2(
                     "stripe_balance": {"stripe_transfers": {"requested": True}},
                 },
             },
+            "merchant": {
+                "capabilities": {
+                    "card_payments": {"requested": True},
+                },
+            },
         },
         "metadata": {"tenant_id": tenant_id or ""},
         "include": ["configuration.recipient", "requirements"],
@@ -199,8 +205,6 @@ async def create_connected_account_v2(
         payload["contact_email"] = email
     if phone:
         payload["contact_phone"] = phone
-    if business_url:
-        payload["defaults"]["profile"] = {"url": business_url}
     account = await _v2_request(
         "POST",
         "/core/accounts",
