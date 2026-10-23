@@ -57,7 +57,8 @@
           "microphonePermission": "Allow My Trade Portal to use the microphone so you can dictate job descriptions and quote notes.",
           "speechRecognitionPermission": "Allow My Trade Portal to transcribe your voice on-device into job descriptions and quote notes."
         }
-      ]
+      ],
+      "@stripe/stripe-react-native"
     ],
     "extra": {
       "eas": {

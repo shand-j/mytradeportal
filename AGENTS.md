@@ -166,18 +166,24 @@ reschedule/reassignment).
 
 ### Stripe Connect onboarding and the public URL surface (issues #204/#218/#220/#230)
 
-Tradesperson receivables run on Stripe Connect Express (ADR-003). Connect
-onboarding happens in an in-app browser: Stripe's AccountLink API only
-accepts http(s) URLs, so the API substitutes the landing site's
-`/payments/stripe-bounce` page (`PUBLIC_DOCS_BASE_URL`) which bounces back
-into the app's `mtp://` deep link (mobile mirrors the helper in
-`mobile/src/api/payments.ts::stripeBounceUrl`). New connected accounts are
-pre-filled from the tenant record — including the tenant's customer-portal
-URL as the account's business website, so hosted onboarding doesn't block
-tradespeople who have no site. `GET /payments/status` re-syncs the mirrored
-account flags from Stripe on every read, so the app shows fresh state the
-moment the tradie returns from onboarding (degrades to the last mirrored
+Tradesperson receivables run on Stripe Connect Express (ADR-003). Current
+mobile builds use Stripe's native embedded `account_onboarding` component,
+driven by `POST /payments/connect/session`. Its optional `components` body
+parameter defaults to `onboarding`; `dashboard` instead enables the web
+`notification_banner`, `payouts` and `balances` components for
+`/payments/dashboard` on the landing site (opened from Settings → Payments).
+AccountSession secrets are short-lived, so clients fetch fresh sessions as
+needed. New connected accounts are pre-filled from the tenant record —
+including the tenant's customer-portal URL as the account's business website.
+`GET /payments/status` re-syncs the mirrored account flags from Stripe on
+every read after embedded onboarding exits (degrading to the last mirrored
 flags on a Stripe outage).
+
+The hosted AccountLink flow remains for older mobile builds: Stripe's
+AccountLink API only accepts http(s) URLs, so the API substitutes the landing
+site's `/payments/stripe-bounce` page (`PUBLIC_DOCS_BASE_URL`) which bounces
+back into the app's `mtp://` deep link (mobile mirrors the helper in
+`mobile/src/api/payments.ts::stripeBounceUrl`).
 
 `APP_PUBLIC_URL` is the back-office origin only — never used for
 customer-facing links. The public URL surface resolves on

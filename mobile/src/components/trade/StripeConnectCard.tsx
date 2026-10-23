@@ -23,12 +23,11 @@ function statusDetail(status: PaymentsStatus): string {
 /**
  * Stripe connection status + connect button, shared by app onboarding (the
  * card-payments gate) and Settings → Payments so both surfaces show the same
- * in-app onboarding view. Connecting opens Stripe in the in-app browser (see
- * useStripeConnectOnboarding); status re-syncs automatically on return.
+ * native embedded onboarding. Status re-syncs automatically when it closes.
  */
 export function StripeConnectCard() {
   const statusQuery = usePaymentsStatus();
-  const { start, connecting, error } = useStripeConnectOnboarding();
+  const { start, connecting, error, onboarding } = useStripeConnectOnboarding();
   const status = statusQuery.data;
 
   return (
@@ -89,6 +88,7 @@ export function StripeConnectCard() {
           </Text>
         </View>
       )}
+      {onboarding}
     </View>
   );
 }
