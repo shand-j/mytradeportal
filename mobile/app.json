@@ -58,7 +58,13 @@
           "speechRecognitionPermission": "Allow My Trade Portal to transcribe your voice on-device into job descriptions and quote notes."
         }
       ],
-      "@stripe/stripe-react-native"
+      [
+        "@stripe/stripe-react-native",
+        {
+          "merchantIdentifier": [],
+          "enableGooglePay": false
+        }
+      ]
     ],
     "extra": {
       "eas": {
