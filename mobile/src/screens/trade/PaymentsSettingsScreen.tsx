@@ -4,8 +4,14 @@ import { Header } from "../../components/ui/Header";
 import { Screen } from "../../components/ui/Screen";
 import { Text } from "../../components/ui/Text";
 import { StripeConnectCard } from "../../components/trade/StripeConnectCard";
-import { usePaymentsStatus, useUpdatePaymentsSettings } from "../../api/payments";
+import { Button } from "../../components/ui/Button";
+import {
+  STRIPE_DASHBOARD_URL,
+  usePaymentsStatus,
+  useUpdatePaymentsSettings,
+} from "../../api/payments";
 import { NetworkError } from "../../lib/apiClient";
+import { openInAppBrowser } from "../../lib/inAppBrowser";
 
 export type PaymentsSettingsScreenProps = {
   onClose: () => void;
@@ -15,6 +21,7 @@ export function PaymentsSettingsScreen({ onClose }: PaymentsSettingsScreenProps)
   const statusQuery = usePaymentsStatus();
   const settingsMutation = useUpdatePaymentsSettings();
   const [error, setError] = useState<string | null>(null);
+  const [openingDashboard, setOpeningDashboard] = useState(false);
 
   const status = statusQuery.data;
   // The default toggle is the primary control for card payments and must only
@@ -36,6 +43,18 @@ export function PaymentsSettingsScreen({ onClose }: PaymentsSettingsScreenProps)
         },
       }
     );
+  };
+
+  const openDashboard = async () => {
+    setError(null);
+    setOpeningDashboard(true);
+    try {
+      await openInAppBrowser(STRIPE_DASHBOARD_URL);
+    } catch {
+      setError("Couldn't open your Stripe activity. Please try again.");
+    } finally {
+      setOpeningDashboard(false);
+    }
   };
 
   return (
@@ -66,6 +85,24 @@ export function PaymentsSettingsScreen({ onClose }: PaymentsSettingsScreenProps)
             onChange={toggleDefault}
           />
         </View>
+
+        {status?.connected && (
+          <View className="rounded-2xl bg-slate-100 p-4 gap-3">
+            <Text variant="body" weight="semibold">
+              Stripe activity
+            </Text>
+            <Text variant="caption" color="secondary">
+              Check your balance, upcoming payouts and any actions Stripe needs from you.
+            </Text>
+            <Button
+              testID="payments-view-stripe-activity"
+              title={openingDashboard ? "Opening Stripe…" : "View payouts & Stripe activity"}
+              variant="outline"
+              disabled={openingDashboard}
+              onPress={() => void openDashboard()}
+            />
+          </View>
+        )}
 
         {error && (
           <View className="rounded-2xl bg-amber-50 p-3">

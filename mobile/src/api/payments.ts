@@ -18,6 +18,21 @@ export type ConnectStripeRead = {
   onboardingUrl: string;
 };
 
+export type ConnectSessionRead = {
+  clientSecret: string;
+  expiresAt: number;
+  stripeAccountId: string;
+  publishableKey: string;
+};
+
+export const STRIPE_DASHBOARD_URL = "https://www.mytradeportal.co.uk/payments/dashboard";
+
+export async function createConnectSession(
+  components: "onboarding" | "dashboard" = "onboarding"
+): Promise<ConnectSessionRead> {
+  return api.post<ConnectSessionRead>("/payments/connect/session", { components });
+}
+
 /** Public landing origin hosting the Stripe deep-link bounce page. */
 const LANDING_BASE_URL = "https://www.mytradeportal.co.uk";
 

@@ -65,7 +65,7 @@ export const articles: HelpArticle[] = [
           '**Branding** — your colour and logo (you can skip and do it later).',
           '**Review** — check everything, then launch. Your business is created here.',
           '**Bank details** — sort code and account number. These print on every invoice so customers can pay by bank transfer.',
-          '**Card payments** — “Will you take card payments?” Say yes to connect Stripe now (takes a few minutes, in the app), or **Not now** and do it later from **Settings → Payments**.',
+          '**Card payments** — “Will you take card payments?” Say yes to complete Stripe’s secure setup without leaving the app (takes a few minutes), or **Not now** and do it later from **Settings → Payments**.',
           '**Plan** — see the plans and prices. Subscribing happens on our website (mytradeportal.co.uk), not in the app.',
         ],
       },
@@ -236,6 +236,10 @@ export const articles: HelpArticle[] = [
       {
         type: 'p',
         text: 'Card payments go into your own Stripe account and pay out to your bank automatically on Stripe’s normal schedule (typically a few working days). Stripe’s card processing fees come out of the payment; we don’t take a cut of your invoices.',
+      },
+      {
+        type: 'p',
+        text: 'When you connect Stripe, its secure setup opens inside the app — there’s no Safari detour. Stripe tells you if anything else is needed. Later, use **Settings → Payments → View payouts & Stripe activity** to sign in and see your balance, payouts and any Stripe actions in the in-app browser.',
       },
       {
         type: 'p',

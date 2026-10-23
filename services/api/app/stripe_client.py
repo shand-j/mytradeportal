@@ -28,7 +28,7 @@ crash — callers translate that to a 503 / a ``null`` payment URL.
 import asyncio
 import contextlib
 import sys
-from typing import Any
+from typing import Any, Literal
 
 import httpx
 import structlog
@@ -237,20 +237,24 @@ async def create_account_link(
     return str(link["url"])
 
 
-async def create_account_session(account_id: str) -> dict[str, Any]:
-    """Create an AccountSession for the embedded onboarding component.
-
-    Returns ``{"client_secret": ..., "expires_at": ...}`` — the client secret
-    authorises Stripe's embedded Connect components (RN SDK / Stripe.js) to
-    run account onboarding natively in-app for this connected account. Only
-    the ``account_onboarding`` component is enabled; payouts/balances stay in
-    Stripe's hosted Express dashboard.
-    """
+async def create_account_session(
+    account_id: str, *, component_set: Literal["onboarding", "dashboard"] = "onboarding"
+) -> dict[str, Any]:
+    """Create an AccountSession for embedded onboarding or the account dashboard."""
+    components = (
+        {"account_onboarding": {"enabled": True}}
+        if component_set == "onboarding"
+        else {
+            "notification_banner": {"enabled": True},
+            "payouts": {"enabled": True},
+            "balances": {"enabled": True},
+        }
+    )
     stripe = _stripe()
     session = await asyncio.to_thread(
         stripe.AccountSession.create,
         account=account_id,
-        components={"account_onboarding": {"enabled": True}},
+        components=components,
     )
     return {"client_secret": session["client_secret"], "expires_at": int(session["expires_at"])}
 

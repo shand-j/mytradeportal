@@ -21,6 +21,9 @@ overrides:
   '@xmldom/xmldom@>=0.7.0 <0.9.0': '~0.8.15'
   '@xmldom/xmldom@>=0.9.0 <0.9.12': '~0.9.12'
   'deepmerge-ts@<8.0.0': '>=8.0.0'
+  # vite <7.3.7 (GHSA-587h-7wmj-h5pm — dev-server existence-check bypass,
+  # Windows only; dev tooling, not a runtime surface).
+  'vite@>=7.0.0 <7.3.7': '>=7.3.7'
   # Second wave (PR #262) — same pattern, still all dev/build/e2e tooling:
   # shell-quote via react-devtools-core, undici via webdriverio→cheerio,
   # brace-expansion via glob/minimatch (expo cli + wdio), compression via

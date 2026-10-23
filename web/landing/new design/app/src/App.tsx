@@ -9,6 +9,7 @@ import ViewInvoice from './pages/ViewInvoice'
 import PayInvoice from './pages/PayInvoice'
 import FairUse from './pages/FairUse'
 import StripeBounce from './pages/StripeBounce'
+import PaymentsDashboard from './pages/PaymentsDashboard'
 import BlogIndex from './pages/blog/BlogIndex'
 import BlogPost from './pages/blog/BlogPost'
 import HelpIndex from './pages/help/HelpIndex'
@@ -65,6 +66,7 @@ export default function App() {
       <Route path="/pay/:token" element={<PayInvoice />} />
       <Route path="/fair-use" element={<FairUse />} />
       <Route path="/payments/stripe-bounce" element={<StripeBounce />} />
+      <Route path="/payments/dashboard" element={<PaymentsDashboard />} />
       <Route path="/blog" element={<BlogIndex />} />
       <Route path="/blog/:slug" element={<BlogPost />} />
       <Route path="/help" element={<HelpIndex />} />

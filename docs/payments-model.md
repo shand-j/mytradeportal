@@ -42,7 +42,29 @@ balance, and subscription billing never touches Stripe Connect.
 - Card details are entered into Stripe-hosted fields (Stripe Payment Element,
   Apple Pay / Google Pay). Card numbers never touch platform servers.
 
-### 2.2 Payout timing
+### 2.2 Embedded onboarding and account dashboard
+
+- **Account creation and onboarding:** the iOS app mounts Stripe's embedded
+  `account_onboarding` component. Tapping Connect Stripe asks
+  `POST /payments/connect/session` for a short-lived AccountSession; the API
+  creates or reuses the tradesperson's Accounts v2 recipient account and
+  enables only the onboarding component by default. The app re-mints a session
+  once if the initial secret has expired. Stripe owns the identity-verification,
+  service-agreement and bank-details experience.
+- **Ongoing compliance:** Stripe manages onboarding and subsequent account
+  requirements. The account dashboard includes Stripe's `notification_banner`
+  so new requirements and risk interventions are presented directly by Stripe;
+  My Trade Portal does not build a parallel KYC or compliance workflow.
+- **Dashboard:** Settings → Payments opens `/payments/dashboard` in the in-app
+  browser. After trade login, connect-js renders Stripe's notification banner,
+  balances and payouts components using the session endpoint's
+  `{"components":"dashboard"}` variant. This is account access for real-world
+  trade-payment services, not an app subscription or digital-goods purchase;
+  it does not call or depend on Paddle subscription endpoints.
+- The hosted AccountLink onboarding endpoint and bounce page remain available
+  for older app builds. They are not used by the current embedded mobile flow.
+
+### 2.3 Payout timing
 
 - Stripe settles funds from each charge to the tradesperson's Stripe balance
   and pays out to the tradesperson's nominated UK bank account on Stripe's
@@ -54,7 +76,7 @@ balance, and subscription billing never touches Stripe Connect.
   standing, not by the platform. The platform surfaces payout status
   (e.g. `payout.paid` webhook events) for reconciliation only.
 
-### 2.3 Refunds
+### 2.4 Refunds
 
 - Refunds of card-paid invoices are **initiated by the tradesperson** from the
   invoice view. The platform instructs Stripe to refund the original charge;
@@ -67,7 +89,7 @@ balance, and subscription billing never touches Stripe Connect.
 - Payments made outside Stripe (bank transfer, cash) are refunded directly
   between tradesperson and customer; the platform has no involvement.
 
-### 2.4 Disputes (chargebacks)
+### 2.5 Disputes (chargebacks)
 
 - A cardholder dispute is a matter between the cardholder, their bank, and the
   tradesperson as the payee of record. The disputed amount plus Stripe's
@@ -78,7 +100,7 @@ balance, and subscription billing never touches Stripe Connect.
   and alerts the tradesperson, but does not manage or adjudicate disputes and
   bears no liability for their outcome.
 
-### 2.5 Surcharging
+### 2.6 Surcharging
 
 - Consumer (B2C) card surcharging is banned in the UK and is disabled on the
   platform. Any B2B surcharging is off by default and would require legal

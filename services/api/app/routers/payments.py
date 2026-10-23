@@ -1,7 +1,7 @@
 """Stripe Connect payment endpoints (customer → tradie card payments, ADR-003).
 
 Staff-only, tenant-scoped. Covers Express onboarding (connect/status/return),
-the AccountSession endpoint for embedded in-app onboarding
+the AccountSession endpoint for embedded onboarding and account dashboards
 (connect/session), the tenant-level accept-card default, and listing recorded
 payments for an invoice. Online card checkout itself is created from the public document
 endpoint (``app.routers.public_docs``) and settled via
@@ -15,7 +15,7 @@ unavailable) yield 503 ``payments_unavailable`` with a ``connect_failed`` log
 event — never a 500.
 """
 
-from typing import Annotated, Any, cast
+from typing import Annotated, Any, Literal, cast
 from urllib.parse import quote, urlsplit
 from uuid import UUID
 
@@ -58,6 +58,10 @@ class ConnectRequest(BaseModel):
 
 class ConnectRead(BaseModel):
     onboarding_url: str
+
+
+class ConnectSessionRequest(BaseModel):
+    components: Literal["onboarding", "dashboard"] = "onboarding"
 
 
 class ConnectSessionRead(BaseModel):
@@ -295,15 +299,13 @@ async def create_connect_session(
     tenant: TenantDep,
     current_user: CurrentUserDep,
     db: DbDep,
+    data: ConnectSessionRequest | None = None,
 ) -> ConnectSessionRead:
-    """Create an AccountSession for Stripe's embedded onboarding component.
+    """Create an AccountSession for embedded onboarding or the web dashboard.
 
-    This is the backend half of fully in-app Connect onboarding: the client
-    (RN SDK / Stripe.js embedded components) mounts the account-onboarding
-    component with this client secret instead of bouncing to a hosted
-    AccountLink URL. The tenant's connected account is provisioned first when
-    absent, reusing the same Accounts v2 recipient configuration as
-    ``/payments/connect``.
+    The default enables only account onboarding for the native app. The
+    dashboard variant enables the notification banner, payouts and balances
+    components. Both variants provision the connected account when absent.
     """
     if not stripe_client.is_configured():
         raise HTTPException(
@@ -314,7 +316,10 @@ async def create_connect_session(
     account = await _provision_account(db, tenant, current_user)
 
     try:
-        session = await stripe_client.create_account_session(account.stripe_account_id)
+        session = await stripe_client.create_account_session(
+            account.stripe_account_id,
+            component_set=data.components if data else "onboarding",
+        )
     except Exception as exc:
         if not stripe_client.is_stripe_error(exc):
             raise

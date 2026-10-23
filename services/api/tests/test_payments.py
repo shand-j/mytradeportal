@@ -9,8 +9,9 @@ functions are mocked throughout.
 import re
 from datetime import datetime
 from decimal import Decimal
+from types import SimpleNamespace
 from typing import Any
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, Mock
 from uuid import UUID, uuid4
 
 import pytest
@@ -336,6 +337,50 @@ async def test_connect_session_creates_account_and_returns_client_secret(
     assert response.status_code == 200
     create_account.assert_awaited_once()
     assert account_session.await_count == 2
+    assert account_session.await_args is not None
+    assert account_session.await_args.kwargs["component_set"] == "onboarding"
+
+
+async def test_connect_session_dashboard_enables_dashboard_components(
+    admin_client: AsyncClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr("app.config.STRIPE_SECRET_KEY", "sk_test_x")
+    monkeypatch.setattr(
+        "app.stripe_client.create_connected_account_v2",
+        AsyncMock(return_value={"id": "acct_dashboard_1"}),
+    )
+    account_session = AsyncMock(
+        return_value={"client_secret": "accs_secret_dashboard", "expires_at": 1730000000}
+    )
+    monkeypatch.setattr("app.stripe_client.create_account_session", account_session)
+
+    response = await admin_client.post(
+        "/payments/connect/session", json={"components": "dashboard"}
+    )
+
+    assert response.status_code == 200
+    assert response.json()["client_secret"] == "accs_secret_dashboard"
+    assert account_session.await_args is not None
+    assert account_session.await_args.kwargs["component_set"] == "dashboard"
+
+
+async def test_account_session_dashboard_component_payload(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app import stripe_client
+
+    create = Mock(return_value={"client_secret": "accs_secret_dashboard", "expires_at": 1})
+    stripe = SimpleNamespace(AccountSession=SimpleNamespace(create=create))
+    monkeypatch.setattr(stripe_client, "_stripe", lambda: stripe)
+
+    await stripe_client.create_account_session("acct_dashboard_1", component_set="dashboard")
+
+    assert create.call_args is not None
+    assert create.call_args.kwargs["components"] == {
+        "notification_banner": {"enabled": True},
+        "payouts": {"enabled": True},
+        "balances": {"enabled": True},
+    }
 
 
 async def test_connect_session_503_payments_unavailable_when_stripe_rejects(
