@@ -35,7 +35,6 @@ from app.schemas import (
     UserUpdate,
 )
 from app.security import get_password_hash
-from app.supabase import admin_create_user, is_supabase_configured
 
 router = APIRouter(prefix="/users", tags=["Users"])
 logger = structlog.get_logger("api.users")
@@ -81,37 +80,14 @@ async def create_user(
             detail="A user with this email already exists",
         )
 
-    password_hash: str | None = None
-    supabase_uid: str | None = None
-    if is_supabase_configured():
-        # Same provisioning as tenant bootstrap: the hosted account is created
-        # with the password the admin set, so the invitee can sign in at once.
-        # Supabase emails are global per project — if this email already has a
-        # hosted account (e.g. another tenant), fall back to local auth; the
-        # login-time migration will link them when possible.
-        try:
-            sb_user = admin_create_user(
-                data.email,
-                data.password,
-                full_name=data.full_name,
-                role=data.role,
-                tenant_id=str(current_user.tenant_id),
-            )
-            supabase_uid = sb_user.get("id")
-        except Exception:
-            logger.warning("supabase_invite_provision_failed")
-            password_hash = get_password_hash(data.password)
-    else:
-        password_hash = get_password_hash(data.password)
-
     user = User(
         tenant_id=current_user.tenant_id,
         email=data.email,
         full_name=data.full_name,
         role=data.role,
         phone=data.phone,
-        password_hash=password_hash,
-        supabase_uid=supabase_uid,
+        password_hash=get_password_hash(data.password),
+        supabase_uid=None,
     )
     db.add(user)
     await db.commit()

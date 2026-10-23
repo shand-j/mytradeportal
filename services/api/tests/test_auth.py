@@ -342,165 +342,78 @@ async def test_create_user_requires_admin(
     assert data["role"] == "technician"
 
 
-async def test_login_with_supabase_user(
-    client: AsyncClient, db: AsyncSession, monkeypatch: pytest.MonkeyPatch
+async def test_login_rejects_legacy_account_without_local_password_hash(
+    client: AsyncClient, db: AsyncSession
 ) -> None:
-    """When Supabase Auth is configured, login succeeds via Supabase identity."""
+    """Legacy accounts that only ever had a hosted Supabase identity carry no
+    local ``password_hash``; they must fail closed with a generic 401 (the
+    recovery path is the password-reset flow, covered below)."""
     tenant = Tenant(slug=f"test-{uuid4().hex[:8]}", name="Test Electrical")
     db.add(tenant)
     await db.flush()
     await set_tenant_in_session(db, tenant.id)
 
-    supabase_uid = str(uuid4())
     user = User(
         tenant_id=tenant.id,
-        email="sbuser@test.local",
-        full_name="Supabase User",
+        email="legacy@test.local",
+        full_name="Legacy User",
         role="admin",
         password_hash=None,
-        supabase_uid=supabase_uid,
+        supabase_uid=str(uuid4()),
         is_active=True,
     )
     db.add(user)
     await db.commit()
-
-    monkeypatch.setattr("app.routers.auth.is_supabase_configured", lambda: True)
-
-    async def _sign_in(email: str, password: str) -> dict[str, Any]:
-        return {"user": {"id": supabase_uid}}
-
-    monkeypatch.setattr("app.routers.auth.sign_in_with_password", _sign_in)
 
     response = await client.post(
         "/auth/login",
         headers={"host": f"{tenant.slug}.localhost"},
         json={"email": user.email, "password": "any-password"},
     )
-    assert response.status_code == 200
-    assert response.json()["email"] == user.email
-    assert "session" in response.cookies
-
-
-async def test_login_fails_when_supabase_rejects_credentials(
-    client: AsyncClient,
-    admin_credentials: dict[str, Any],
-    db: AsyncSession,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """A Supabase-linked account rejected by Supabase gets a 401 — no local
-    fallback on a clean rejection (only outages fall back)."""
-    monkeypatch.setattr("app.routers.auth.is_supabase_configured", lambda: True)
-
-    async def _sign_in(email: str, password: str) -> None:
-        return None
-
-    monkeypatch.setattr("app.routers.auth.sign_in_with_password", _sign_in)
-
-    # Link the fixture user to a hosted Supabase identity first.
-    await set_tenant_in_session(db, UUID(admin_credentials["tenant_id"]))
-    from sqlalchemy import update as sql_update
-
-    await db.execute(
-        sql_update(User)
-        .where(User.email == admin_credentials["email"])
-        .values(supabase_uid=str(uuid4()))
-    )
-    await db.commit()
-
-    response = await client.post(
-        "/auth/login",
-        headers={"host": admin_credentials["host"]},
-        json={
-            "email": admin_credentials["email"],
-            "password": admin_credentials["password"],
-        },
-    )
     assert response.status_code == 401
+    assert response.json()["detail"] == "Invalid credentials"
 
 
-async def test_login_falls_back_to_bcrypt_when_supabase_unreachable(
-    client: AsyncClient, admin_credentials: dict[str, Any], monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """A Supabase outage must not 500 login: users with a local password hash
-    still authenticate via bcrypt. Bad credentials are unaffected — a clean
-    Supabase rejection returns None and never reaches the fallback."""
-    import httpx
-
-    monkeypatch.setattr("app.routers.auth.is_supabase_configured", lambda: True)
-
-    async def _sign_in(email: str, password: str) -> None:
-        raise httpx.ConnectError("All connection attempts failed")
-
-    monkeypatch.setattr("app.routers.auth.sign_in_with_password", _sign_in)
-
-    response = await client.post(
-        "/auth/login",
-        headers={"host": admin_credentials["host"]},
-        json={
-            "email": admin_credentials["email"],
-            "password": admin_credentials["password"],
-        },
-    )
-    assert response.status_code == 200
-    assert response.json()["email"] == admin_credentials["email"]
-
-
-async def test_login_migrates_bcrypt_user_to_supabase(
+async def test_legacy_account_without_local_hash_recovers_via_password_reset(
     client: AsyncClient,
-    admin_credentials: dict[str, Any],
     db: AsyncSession,
-    monkeypatch: pytest.MonkeyPatch,
+    deterministic_reset_token: str,
 ) -> None:
-    """A pre-Supabase account (bcrypt only, no uid) logs in locally, then is
-    provisioned in Supabase with the password just verified."""
-    monkeypatch.setattr("app.routers.auth.is_supabase_configured", lambda: True)
+    """A legacy Supabase-only account (no local hash) sets a bcrypt hash via
+    the reset flow and can then log in with the new password."""
+    tenant = Tenant(slug=f"test-{uuid4().hex[:8]}", name="Test Electrical")
+    db.add(tenant)
+    await db.flush()
+    await set_tenant_in_session(db, tenant.id)
 
-    new_uid = str(uuid4())
-    created: list[tuple[str, str]] = []
-
-    def _admin_create(email: str, password: str, **kwargs: Any) -> dict[str, Any]:
-        created.append((email, password))
-        return {"id": new_uid}
-
-    monkeypatch.setattr("app.routers.auth.admin_create_user", _admin_create)
-
-    response = await client.post(
-        "/auth/login",
-        headers={"host": admin_credentials["host"]},
-        json={
-            "email": admin_credentials["email"],
-            "password": admin_credentials["password"],
-        },
+    user = User(
+        tenant_id=tenant.id,
+        email="legacy-reset@test.local",
+        full_name="Legacy User",
+        role="admin",
+        password_hash=None,
+        supabase_uid=str(uuid4()),
+        is_active=True,
     )
-    assert response.status_code == 200
-    assert created == [(admin_credentials["email"], admin_credentials["password"])]
+    db.add(user)
+    await db.commit()
+    host = f"{tenant.slug}.localhost"
 
-    await set_tenant_in_session(db, UUID(admin_credentials["tenant_id"]))
-    user = await db.scalar(select(User).where(User.email == admin_credentials["email"]))
-    assert user is not None
-    assert user.supabase_uid == new_uid
-
-
-async def test_login_migration_failure_does_not_block_login(
-    client: AsyncClient, admin_credentials: dict[str, Any], monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """If Supabase provisioning fails mid-migration, the valid login stands."""
-    monkeypatch.setattr("app.routers.auth.is_supabase_configured", lambda: True)
-
-    def _admin_create(email: str, password: str, **kwargs: Any) -> dict[str, Any]:
-        raise RuntimeError("supabase down mid-write")
-
-    monkeypatch.setattr("app.routers.auth.admin_create_user", _admin_create)
-
-    response = await client.post(
-        "/auth/login",
-        headers={"host": admin_credentials["host"]},
-        json={
-            "email": admin_credentials["email"],
-            "password": admin_credentials["password"],
-        },
+    await client.post("/auth/password-reset/request", json={"email": user.email})
+    confirm = await client.post(
+        "/auth/password-reset/confirm",
+        json={"token": deterministic_reset_token, "new_password": "RecoveredP@ssw0rd!"},
     )
-    assert response.status_code == 200
+    assert confirm.status_code == 200
+
+    login = await client.post(
+        "/auth/login",
+        headers={"host": host},
+        json={"email": user.email, "password": "RecoveredP@ssw0rd!"},
+    )
+    assert login.status_code == 200
+    assert login.json()["email"] == user.email
+    assert "session" in login.cookies
 
 
 # --------------------------------------------------------------------------
@@ -596,44 +509,6 @@ async def test_password_reset_confirm_updates_password(
         json={"email": admin_credentials["email"], "password": new_password},
     )
     assert new.status_code == 200
-
-
-async def test_password_reset_confirm_syncs_supabase_password(
-    client: AsyncClient,
-    admin_credentials: dict[str, Any],
-    db: AsyncSession,
-    deterministic_reset_token: str,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """A Supabase-linked staff account gets its hosted password updated too;
-    if that call fails the link is dropped so login stays consistent."""
-    await set_tenant_in_session(db, UUID(admin_credentials["tenant_id"]))
-    uid = str(uuid4())
-    from sqlalchemy import update as sql_update
-
-    await db.execute(
-        sql_update(User).where(User.email == admin_credentials["email"]).values(supabase_uid=uid)
-    )
-    await db.commit()
-
-    monkeypatch.setattr("app.routers.auth.is_supabase_configured", lambda: True)
-    updated: list[tuple[str, str]] = []
-
-    def _admin_update(supabase_uid: str, password: str) -> None:
-        updated.append((supabase_uid, password))
-
-    monkeypatch.setattr("app.routers.auth.admin_update_password", _admin_update)
-
-    await client.post(
-        "/auth/password-reset/request",
-        json={"email": admin_credentials["email"]},
-    )
-    confirm = await client.post(
-        "/auth/password-reset/confirm",
-        json={"token": deterministic_reset_token, "new_password": "NewSecureP@ssw0rd!"},
-    )
-    assert confirm.status_code == 200
-    assert updated == [(uid, "NewSecureP@ssw0rd!")]
 
 
 async def test_password_reset_confirm_rejects_invalid_token(client: AsyncClient) -> None:
