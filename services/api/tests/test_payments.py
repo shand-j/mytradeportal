@@ -435,7 +435,7 @@ async def test_connect_prefills_known_business_fields(
     assert kwargs["phone"] == "+447700900123"
     assert kwargs["postcode"] == "SK8 3NJ"
     assert kwargs["entity_type"] == "individual"
-    assert kwargs["business_url"] == f"https://{tenant.slug}.mytradeportal.co.uk"
+    assert "business_url" not in kwargs
 
 
 # ---------------------------------------------------------------------------
