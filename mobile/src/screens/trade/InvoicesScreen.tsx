@@ -7,6 +7,7 @@ import { LiveBadge } from "../../components/ui/LiveBadge";
 import { Screen } from "../../components/ui/Screen";
 import { Text } from "../../components/ui/Text";
 import { useInvoicesList } from "../../api/invoices";
+import { parseServerDate } from "../../lib/datetime";
 
 export type InvoicesScreenProps = {
   onBack: () => void;
@@ -79,8 +80,8 @@ export function InvoicesScreen({ onBack }: InvoicesScreenProps) {
               </Text>
               <Text variant="caption" color="secondary">
                 {invoice.status === "paid"
-                  ? `Paid ${new Date(invoice.paidAt ?? invoice.dueDate).toLocaleDateString()}`
-                  : `Due ${new Date(invoice.dueDate).toLocaleDateString()}`}
+                  ? `Paid ${parseServerDate(invoice.paidAt ?? invoice.dueDate)?.toLocaleDateString() ?? "—"}`
+                  : `Due ${parseServerDate(invoice.dueDate)?.toLocaleDateString() ?? "—"}`}
               </Text>
             </View>
           </Pressable>

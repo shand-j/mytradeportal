@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, ApiError } from "../lib/apiClient";
+import { parseServerDate, toLocalIsoDate } from "../lib/datetime";
 import { ApiContact } from "./quotes";
 import { Job, JobStatus } from "../types";
 
@@ -180,16 +181,12 @@ const STATUS_MAP: Record<string, JobStatus> = {
   cancelled: "cancelled",
 };
 
-/** Local (not UTC) calendar date, so jobs bucket into the day the user sees. */
-function toLocalIsoDate(d: Date): string {
-  const pad = (n: number) => String(n).padStart(2, "0");
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
-}
-
 /** Map a backend job into the app's display `Job` shape. */
 function mapJob(j: ApiJob): Job {
-  const start = j.scheduledStart ? new Date(j.scheduledStart) : null;
-  const end = j.scheduledEnd ? new Date(j.scheduledEnd) : null;
+  // Server datetimes are naive UTC — parseServerDate pins them to UTC so
+  // local rendering isn't offset by the device timezone.
+  const start = parseServerDate(j.scheduledStart);
+  const end = parseServerDate(j.scheduledEnd);
   const formatTime = (d: Date) =>
     d.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" });
   return {

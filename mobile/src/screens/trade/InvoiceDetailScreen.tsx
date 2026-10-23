@@ -8,6 +8,7 @@ import { IconButton } from "../../components/ui/IconButton";
 import { Screen } from "../../components/ui/Screen";
 import { Text } from "../../components/ui/Text";
 import { ApiError } from "../../lib/apiClient";
+import { parseServerDate } from "../../lib/datetime";
 import { formatMoneyGBP } from "../../lib/format";
 import { Invoice, InvoiceStatus } from "../../types";
 
@@ -426,14 +427,14 @@ export function InvoiceDetailScreen({
             Dates
           </Text>
           <Text variant="body" color="secondary">
-            Sent {invoice.sentAt ? new Date(invoice.sentAt).toLocaleDateString() : "—"}
+            Sent {parseServerDate(invoice.sentAt)?.toLocaleDateString() ?? "—"}
           </Text>
           <Text variant="body" color="secondary">
-            Due {new Date(invoice.dueDate).toLocaleDateString()}
+            Due {parseServerDate(invoice.dueDate)?.toLocaleDateString() ?? "—"}
           </Text>
           {paidAt && (
             <Text variant="body" color="secondary">
-              Paid {new Date(paidAt).toLocaleDateString()}
+              Paid {parseServerDate(paidAt)?.toLocaleDateString() ?? "—"}
             </Text>
           )}
         </View>

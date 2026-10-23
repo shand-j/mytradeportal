@@ -12,16 +12,13 @@ import { fetchQuote } from "../../api/quotes";
 import { JobPhotoKind, MeasurementEntry } from "../../api/jobs";
 import { useQuoteRoundingIncrement } from "../../api/businesses";
 import { ApiError } from "../../lib/apiClient";
+import { parseServerDate, toLocalIsoDate } from "../../lib/datetime";
 import { formatMoneyGBP, roundUpToIncrement } from "../../lib/format";
 import { openNavigation } from "../../lib/navigation";
 import { Job, JobStatus } from "../../types";
 
 function pad(n: number): string {
   return String(n).padStart(2, "0");
-}
-
-function toLocalIsoDate(d: Date): string {
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 }
 
 function toHHMM(d: Date): string {
@@ -305,15 +302,17 @@ export function JobDetailScreen({
 
   // Rescheduling keeps the job's current span; an unscheduled job gets 2h.
   const scheduleDurationMs = useMemo(() => {
-    if (scheduledStart && scheduledEnd) {
-      const span = new Date(scheduledEnd).getTime() - new Date(scheduledStart).getTime();
+    const start = parseServerDate(scheduledStart);
+    const end = parseServerDate(scheduledEnd);
+    if (start && end) {
+      const span = end.getTime() - start.getTime();
       if (span > 0) return span;
     }
     return 2 * 60 * 60 * 1000;
   }, [scheduledStart, scheduledEnd]);
 
   const openSchedulePicker = () => {
-    const base = scheduledStart ? new Date(scheduledStart) : new Date();
+    const base = parseServerDate(scheduledStart) ?? new Date();
     setPendingSchedDate(base);
     setSchedDate(toLocalIsoDate(base));
     setSchedTime(toHHMM(base));

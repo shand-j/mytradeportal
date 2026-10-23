@@ -3,6 +3,8 @@
  * Centralised so screens stop rendering US-style dates and raw enum values.
  */
 
+import { parseServerDate } from "./datetime";
+
 const dateFormatter = new Intl.DateTimeFormat("en-GB", {
   day: "2-digit",
   month: "short",
@@ -17,8 +19,8 @@ const gbpFormatter = new Intl.NumberFormat("en-GB", {
 /** Format a date as "02 Sep 2026" (en-GB). Returns "—" for missing/invalid input. */
 export function formatDateUK(value: string | Date | null | undefined): string {
   if (!value) return "—";
-  const date = value instanceof Date ? value : new Date(value);
-  if (Number.isNaN(date.getTime())) return "—";
+  const date = value instanceof Date ? value : parseServerDate(value);
+  if (!date) return "—";
   return dateFormatter.format(date);
 }
 
