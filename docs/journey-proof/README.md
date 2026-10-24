@@ -23,6 +23,48 @@ api.mytradeportal.co.uk) with Playwright Chromium.
 | E8 Guest chat thread | inline in `web/e5-portal-intake/` steps 4–5 | PASS |
 | I.1 Outbound email evidence (6 templates) | `web/i1-email-evidence/` | PASS |
 
+## mobile/ — iOS app journeys (captured 2026-10-23/24, wave 2)
+
+Captured on an iPhone 17 Pro simulator (iOS 26.5), dev-client of `main@598cb93`,
+driven by Appium/XCUITest against production. Rig note: an isolated simulator +
+dedicated Appium server were used after another agent's session proved to be
+driving the shared booted simulator.
+
+| Journey | Folder | Result |
+|---|---|---|
+| A3 Onboarding stepper (12 steps, real tenant provisioned) | `mobile/a3-onboarding/` | PASS — trial subscription verified server-side |
+| A4 Billing/paywall (trialing + active tenants) | `mobile/a4-billing/` | PASS with QE-M2-4/5 |
+| A8 Trade password-reset request | `mobile/a8-password-reset/` | PASS (request side) |
+| C4 Certificates (EICR) prototype | `mobile/c4-certificates/` | PASS (prototype documented; QE-M2-6 needs manual check) |
+| E1–E4 customer journeys | `mobile/e*/` | in progress at PR open |
+
+## Defects found (mobile pass, 2026-10-24)
+
+- **QE-M2-1 (S2)** — In-app Stripe Connect onboarding cannot render: `react-native-webview`
+  is a peer dependency of `@stripe/stripe-react-native@0.64.0` Connect embedded
+  components but is not installed in `mobile/`. "Connect Stripe" → "Opening Stripe…" →
+  "Stripe setup" modal spins forever; a red "Failed to import react-native-webview"
+  error toast then persists on unrelated screens. The server side works: the account
+  was created and shows "Connected — restricted" (the DEFECT-017 503 is fixed by
+  `3e1facc`). Evidence: `mobile/a3-onboarding/23..25`.
+- **QE-M2-2 (S3)** — The Review & launch checklist is hardcoded
+  (`ReviewLaunchStep.tsx` `LAUNCH_GATE_ITEMS`): Branding shows "To do" even after the
+  branding step is completed, and Team/Pricing/Quote-defaults/Payments/Data-import can
+  never be "Done" because no wizard steps write them.
+- **QE-M2-3 (S4)** — Step-count confusion: the wizard is 12 steps, the welcome screen
+  advertises a "6-step launch preview", and 5 built step components
+  (PricingSetup/QuoteDefaults/TeamCapacity/PaymentsIntegrations/DataImport) are not
+  wired in.
+- **QE-M2-4 (S3)** — `/(trade)/billing` always shows the new-customer plan pitch
+  ("14-day free trial…") even on an active paying Team tenant; no current-plan or
+  manage affordance. Evidence: `mobile/a4-billing/08` vs `07`.
+- **QE-M2-5 (S4)** — Settings subscription card prints the raw plan key
+  ("Sole_trader plan"). Evidence: `mobile/a4-billing/02`.
+- **QE-M2-6 (S3, needs manual device check)** — EICR circuit form's bottom buttons
+  (save/cancel) accept no synthetic taps under XCUITest (invisible keyboard window
+  over the lower screen band is the suspected simulator cause). Live BS 7671
+  validation works. Evidence: `mobile/c4-certificates/04..06`.
+
 ## Defects found (web pass, 2026-10-23)
 
 - **QE-W1 (S3)** — `/pay/:token` without `?pi=`/`?cs=` renders "This invoice link is invalid or has expired" even when the token is valid. Repro: open a valid `/invoice/:token`, then swap `/invoice/` for `/pay/` in the URL. Expected: redirect to the invoice page or show bank-transfer fallback. Evidence: `web/h5-invoice-token/03-pay-desktop.png` vs `01-invoice-desktop.png` (same token).
@@ -38,3 +80,9 @@ api.mytradeportal.co.uk) with Playwright Chromium.
 - Token URLs were obtained from real production emails (Resend) received at a QE-controlled disposable inbox; email HTML is preserved under `web/i1-email-evidence/`.
 - Portal customer session for E7 was established via `POST /customer/register` against the same email as the CRM contact (register links by email) and independently via a real magic-link round-trip (E6).
 - Sticky nav bars appearing mid-page in some full-page screenshots are a capture artifact, not a layout bug.
+
+### Mobile wave-2 method notes
+
+- Onboarding needs `EXPO_PUBLIC_SETUP_TOKEN` in the JS bundle; Metro was restarted with it set (registration would otherwise 401).
+- Uninstall+reinstall on the simulator did **not** clear the app's stored session (signed straight back into the previous account); an explicit in-app log out was used for fresh-state captures.
+- The onboarding wizard holds all state in memory until the Review step — a mid-wizard app kill (observed twice: dev-server switch, simulator TCC permission grant) loses everything entered.
