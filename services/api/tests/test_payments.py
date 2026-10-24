@@ -495,6 +495,127 @@ async def test_status_tolerates_stripe_sync_failure(
 
 
 # ---------------------------------------------------------------------------
+# POST /invoices/{id}/mark-paid — manual settlement records a Payment row (#309)
+# ---------------------------------------------------------------------------
+
+
+async def test_mark_paid_records_manual_payment_row(
+    admin_client: AsyncClient, db: AsyncSession
+) -> None:
+    tenant_id = _tenant_id(admin_client)
+    invoice = await _create_invoice(admin_client, tenant_id)
+
+    response = await admin_client.post(f"/invoices/{invoice['id']}/mark-paid")
+    assert response.status_code == 200
+    assert response.json()["status"] == "paid"
+    assert response.json()["paid_via"] == "manual"
+
+    await set_tenant_in_session(db, tenant_id)
+    payments = (
+        await db.scalars(select(Payment).where(Payment.invoice_id == UUID(invoice["id"])))
+    ).all()
+    assert len(payments) == 1
+    payment = payments[0]
+    assert payment.tenant_id == tenant_id
+    # Same shape as the Stripe-webhook rows: full invoice total, completed.
+    assert payment.amount == Decimal(invoice["total"])
+    assert payment.currency_code == "GBP"
+    assert payment.status == "completed"
+    assert payment.provider == "manual"
+    assert payment.provider_transaction_id is None
+    assert payment.paid_at is not None
+
+    # The create/mark-paid calls cached the invoice's payments collection in
+    # the shared session's identity map; expire so the endpoint re-queries.
+    db.expire_all()
+    listed = await admin_client.get(f"/payments/invoice/{invoice['id']}")
+    assert listed.status_code == 200
+    assert [p["id"] for p in listed.json()] == [str(payment.id)]
+
+
+async def test_mark_paid_bank_transfer_method(admin_client: AsyncClient, db: AsyncSession) -> None:
+    tenant_id = _tenant_id(admin_client)
+    invoice = await _create_invoice(admin_client, tenant_id)
+
+    response = await admin_client.post(
+        f"/invoices/{invoice['id']}/mark-paid", json={"paid_via": "bank_transfer"}
+    )
+    assert response.status_code == 200
+    assert response.json()["paid_via"] == "bank_transfer"
+
+    await set_tenant_in_session(db, tenant_id)
+    payment = await db.scalar(select(Payment).where(Payment.invoice_id == UUID(invoice["id"])))
+    assert payment is not None
+    assert payment.provider == "bank_transfer"
+    assert payment.amount == Decimal(invoice["total"])
+
+
+async def test_mark_paid_twice_does_not_duplicate_payment(
+    admin_client: AsyncClient, db: AsyncSession
+) -> None:
+    tenant_id = _tenant_id(admin_client)
+    invoice = await _create_invoice(admin_client, tenant_id)
+
+    first = await admin_client.post(f"/invoices/{invoice['id']}/mark-paid")
+    assert first.status_code == 200
+    second = await admin_client.post(f"/invoices/{invoice['id']}/mark-paid")
+    assert second.status_code == 200
+
+    await set_tenant_in_session(db, tenant_id)
+    payments = (
+        await db.scalars(select(Payment).where(Payment.invoice_id == UUID(invoice["id"])))
+    ).all()
+    assert len(payments) == 1
+    # The repeat call must not move the settlement metadata.
+    assert second.json()["paid_at"] == first.json()["paid_at"]
+    assert second.json()["paid_via"] == "manual"
+
+
+async def test_mark_paid_after_stripe_settlement_does_not_clobber(
+    admin_client: AsyncClient, db: AsyncSession
+) -> None:
+    """A Stripe-webhook-settled invoice marked paid by staff afterwards keeps
+    the stripe Payment row and paid_via — no duplicate manual row."""
+    tenant_id = _tenant_id(admin_client)
+    invoice = await _create_invoice(admin_client, tenant_id)
+
+    await set_tenant_in_session(db, tenant_id)
+    row = await db.get(Invoice, UUID(invoice["id"]))
+    assert row is not None
+    row.status = "paid"
+    row.paid_via = "stripe"
+    row.stripe_payment_intent_id = "pi_settled_1"
+    row.paid_at = datetime.utcnow()
+    db.add(
+        Payment(
+            tenant_id=tenant_id,
+            invoice_id=row.id,
+            amount=row.total,
+            currency_code="GBP",
+            status="completed",
+            provider="stripe",
+            provider_transaction_id="pi_settled_1",
+            provider_payload={"id": "pi_settled_1"},
+            paid_at=row.paid_at,
+        )
+    )
+    await db.commit()
+
+    response = await admin_client.post(f"/invoices/{invoice['id']}/mark-paid")
+    assert response.status_code == 200
+    assert response.json()["paid_via"] == "stripe"
+
+    db.expire_all()
+    await set_tenant_in_session(db, tenant_id)
+    payments = (
+        await db.scalars(select(Payment).where(Payment.invoice_id == UUID(invoice["id"])))
+    ).all()
+    assert len(payments) == 1
+    assert payments[0].provider == "stripe"
+    assert payments[0].provider_transaction_id == "pi_settled_1"
+
+
+# ---------------------------------------------------------------------------
 # POST /invoices/{id}/refund
 # ---------------------------------------------------------------------------
 
