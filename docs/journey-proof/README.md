@@ -36,7 +36,10 @@ driving the shared booted simulator.
 | A4 Billing/paywall (trialing + active tenants) | `mobile/a4-billing/` | PASS with QE-M2-4/5 |
 | A8 Trade password-reset request | `mobile/a8-password-reset/` | PASS (request side) |
 | C4 Certificates (EICR) prototype | `mobile/c4-certificates/` | PASS (prototype documented; QE-M2-6 needs manual check) |
-| E1–E4 customer journeys | `mobile/e*/` | in progress at PR open |
+| E1 Customer login (invalid + success) | `mobile/e1-customer-login/` | PASS |
+| E2 Customer quote-request flow (all 11 steps captured) | `mobile/e2-quote-request/` | **FAIL — QE-M2-7: submission never reaches the backend, success screen shown regardless** |
+| E3 Customer requests + chat (message sent) | `mobile/e3-requests-chat/` | PASS |
+| E4 Customer calendar/invoices/profile/notifications | `mobile/e4-customer-surfaces/` | PASS (data API-seeded — see folder README) |
 
 ## Defects found (mobile pass, 2026-10-24)
 
@@ -64,6 +67,14 @@ driving the shared booted simulator.
   (save/cancel) accept no synthetic taps under XCUITest (invisible keyboard window
   over the lower screen band is the suspected simulator cause). Live BS 7671
   validation works. Evidence: `mobile/c4-certificates/04..06`.
+- **QE-M2-7 (S1)** — Guest in-app quote requests never reach the backend, but the
+  customer is told they were received. Two full drives of the E2 flow both ended at
+  "Shand 1 Electrical has your request" while `GET /quote-requests` showed no new
+  request and the account step rendered blank (`submittedAck` null).
+  `CustomerQuoteRequestFlow.submitToBackend` swallows all submit errors
+  (`catch {}`) and always advances to the confirmation screen. The same endpoint +
+  payload shape succeeds via curl (201, appears in the trade list). Evidence:
+  `mobile/e2-quote-request/22..24`.
 
 ## Defects found (web pass, 2026-10-23)
 

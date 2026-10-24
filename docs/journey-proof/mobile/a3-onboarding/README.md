@@ -65,11 +65,14 @@ user `qe-w2-1792795020@example.com`.
 
 ## Validation states
 
-Bank-details server validation captured in shot 19. The account-step validation
-states (duplicate-email inline banner with "Log in instead" link; weak-password
-strength meter + disabled Continue) were captured on the first drive of this
-wizard and re-verified on a second run — see `99-account-validation/` notes in the
-wave-2 report (screenshots taken pre-isolation; recaptured copies may follow).
+- `19-step10-bank-validation-error.png` — server-side bank-details validation
+  ("Sort code must be 6 digits").
+- `30-validation-account-email-taken.png` — account step with a known email:
+  inline "An account with this email already exists." banner with a
+  "Log in instead" link, Continue disabled (captured on a second partial drive
+  that did not register).
+- `31-validation-account-weak-password.png` — 3-character password: "Weak"
+  strength meter, Continue disabled.
 
 ## Environment / method notes
 
