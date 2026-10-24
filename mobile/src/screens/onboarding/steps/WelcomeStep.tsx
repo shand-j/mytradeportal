@@ -44,7 +44,7 @@ export function WelcomeStep({ onNext }: WelcomeStepProps) {
 
       <View style={styles.preview}>
         <Text variant="caption" weight="semibold" color="secondary" align="center">
-          6-step launch preview
+          A short, guided setup
         </Text>
         <View style={styles.dots}>
           {LAUNCH_PREVIEW_STEPS.map((step, index) => (
