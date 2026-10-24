@@ -124,6 +124,37 @@ driving the shared booted simulator.
 - Uninstall+reinstall on the simulator did **not** clear the app's stored session (signed straight back into the previous account); an explicit in-app log out was used for fresh-state captures.
 - The onboarding wizard holds all state in memory until the Review step — a mid-wizard app kill (observed twice: dev-server switch, simulator TCC permission grant) loses everything entered.
 
+## admin/ + integrations/ — wave 3 (captured 2026-10-24)
+
+Django admin journeys (G) and system integrations (I.1 remaining emails, I.3
+webhooks, I.5 New Relic). Admin: Playwright Chromium 1440x900 against
+`admin-production-d0f5.up.railway.app`, superuser login. Emails: triggered against
+prod with a QE-controlled mail.tm inbox as the customer; raw HTML + rendered PNG
+committed. Webhooks: read-only psql against the prod DB (`processed_webhooks`,
+`email_failure_alerts`, `reminders` ledgers) committed as query output.
+
+| Journey | Folder | Result |
+|---|---|---|
+| G Django admin: login, tenant list/detail, cross-tenant filter, quote drill-down w/ line items, invoice + payment inlines, AuditLog (incl. `tenant.created` from wave-2 onboarding), AI cost rollups (AiRollupUserDay/AiRollupOrgDay/AiCallEvent), communications | [admin/](admin/) | PASS (with QE-I-1) |
+| I.1 Emails: `triage_question` (captured via BOTH paths — low-confidence auto-draft + staff ai-followup), `booking_confirmed`, `chat_message`, `payment_received` (mark-paid path), `invoice_sent` re-capture | [integrations/email-wave3/](integrations/email-wave3/) | PASS |
+| I.1 `quote_reminder` / `invoice_reminder` | — | NOT-CAPTURABLE — no manual send endpoint; scheduler tick is hourly but eligibility needs a sent quote ≥3d / overdue invoice ≥7d old and prod has none; `reminders` ledger empty as expected |
+| I.1 `email_failure_staff_alert` | [integrations/webhooks/resend-bounce-staff-alerts.txt](integrations/webhooks/resend-bounce-staff-alerts.txt) | PASS by prod evidence — 5 real ledger rows (2 Resend-webhook bounces, 3 send-time failures); not deliberately re-triggered |
+| I.3 Webhooks: Stripe + Paddle processed-event ledger | [integrations/webhooks/](integrations/webhooks/) | PASS — 113 Paddle (latest 2026-10-24 00:51) + 7 Stripe events; Stripe `payment_intent.succeeded` correlates to Payment row `pi_3UOKUI5pCtc1F7Y714AqdL2D` settling INV-001 |
+| I.5 New Relic | [integrations/README.md](integrations/README.md#i5-new-relic) | PASS (config-level) — `NEW_RELIC_LICENSE_KEY` + app names set on api+admin, both images wrap the server with `newrelic-admin run-program`, `newrelic>=9.0.0` declared; dashboard receipt unverifiable without NR account access |
+
+### Defects found (wave 3)
+
+- **QE-I-1 (S3)** — Manually marked-paid invoices leave no payment audit trail.
+  `POST /invoices/{id}/mark-paid` sets `status=paid`/`paid_at`/`paid_via="manual"`
+  and writes an `invoice.paid` audit row, but never inserts a `payments` row — so
+  the Django admin Payments inline and any payment-level reporting miss every
+  non-Stripe settlement. Stripe-settled invoices do get a row (INV-001 →
+  `pi_3UOKUI5pCtc1F7Y714AqdL2D`). Repro: create invoice → issue → send →
+  mark-paid → open the invoice in Django admin; the Payments inline is empty.
+  Evidence: [admin/08-invoice-detail-inlines.png](admin/08-invoice-detail-inlines.png)
+  (INV-006, paid, empty Payments inline) + DB join in
+  [integrations/README.md](integrations/README.md).
+
 ## mobile/ — re-verification of #298/#299/#307 (captured 2026-10-24)
 
 iPhone 17 Pro simulator (iOS 26.5), dev-client build **with** the

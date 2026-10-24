@@ -27,7 +27,17 @@ from app.database import get_db
 from app.dependencies import CurrentUserDep, TenantDep
 from app.email import resolve_customer_magic_link, send_customer_email, tenant_reply_to
 from app.email_templates import invoice_sent as invoice_sent_template
-from app.models import Contact, Invoice, InvoiceLineItem, Job, Quote, QuoteRequest, Reminder, Tenant
+from app.models import (
+    Contact,
+    Invoice,
+    InvoiceLineItem,
+    Job,
+    Payment,
+    Quote,
+    QuoteRequest,
+    Reminder,
+    Tenant,
+)
 from app.payment_details import tenant_payment_details
 from app.payment_notifications import send_payment_received_email
 from app.push import notify_customer, notify_staff
@@ -37,7 +47,7 @@ from app.routers.public_docs import (
     issue_document_token,
     public_document_url,
 )
-from app.schemas import InvoiceCreate, InvoiceRead, InvoiceUpdate
+from app.schemas import InvoiceCreate, InvoiceMarkPaid, InvoiceRead, InvoiceUpdate
 from app.sms import normalize_phone, normalize_sender, send_sms, sms_configured, sms_segment_limit
 
 router = APIRouter(prefix="/invoices", tags=["Invoices"])
@@ -627,6 +637,7 @@ async def mark_invoice_paid(
     tenant: TenantDep,
     current_user: CurrentUserDep,
     db: DbDep,
+    data: InvoiceMarkPaid | None = None,
 ) -> InvoiceRead:
     """Mark an invoice as paid.
 
@@ -634,11 +645,38 @@ async def mark_invoice_paid(
     the customer: the same ``payment_received`` confirmation (+ review
     prompt) the Stripe webhook sends goes out with the non-card copy variant.
     Best-effort — a dispatch failure never blocks the mark-paid.
+
+    A ``payments`` row is recorded (provider = ``paid_via``, amount = invoice
+    total, status ``completed``) so manual settlements show up in the Django
+    admin Payments inline and payment-level reporting exactly like
+    Stripe-settled ones. Idempotent: a repeat mark-paid (or a mark-paid
+    against an invoice the Stripe webhook already settled) never duplicates
+    the row and never clobbers the original ``paid_via``/``paid_at``.
     """
     invoice = await _get_invoice(db, tenant.id, invoice_id)
-    invoice.status = "paid"
-    invoice.paid_at = datetime.utcnow()
-    invoice.paid_via = "manual"
+    if invoice.status != "paid":
+        invoice.status = "paid"
+        invoice.paid_at = datetime.utcnow()
+        invoice.paid_via = data.paid_via if data is not None else "manual"
+    # Count directly rather than trusting invoice.payments: a repeat mark-paid
+    # in the same session would otherwise see the selectinloaded (stale empty)
+    # collection and duplicate the row.
+    existing_payments = await db.scalar(
+        select(func.count(Payment.id)).where(Payment.invoice_id == invoice.id)
+    )
+    if not existing_payments:
+        db.add(
+            Payment(
+                tenant_id=tenant.id,
+                invoice_id=invoice.id,
+                amount=invoice.total,
+                currency_code="GBP",
+                status="completed",
+                provider=invoice.paid_via or "manual",
+                provider_payload={"recorded_via": "mark_paid"},
+                paid_at=invoice.paid_at or datetime.utcnow(),
+            )
+        )
     await db.flush()
     await write_audit_log(
         db,

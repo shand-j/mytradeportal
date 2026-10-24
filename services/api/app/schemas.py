@@ -977,6 +977,17 @@ class QuoteConvertToInvoice(BaseModel):
     _normalize_due_date = field_validator("due_date", mode="after")(_strip_tz)
 
 
+class InvoiceMarkPaid(BaseModel):
+    """Optional body for POST /invoices/{id}/mark-paid.
+
+    ``paid_via`` records how the customer settled off-platform. It is written
+    to the invoice and used as the Payment row's provider, so manual
+    settlements appear in payment reporting alongside Stripe ones.
+    """
+
+    paid_via: Literal["manual", "bank_transfer"] = "manual"
+
+
 class InvoiceRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -997,7 +1008,7 @@ class InvoiceRead(BaseModel):
     # never re-rounded) or applied once at creation for scratch invoices.
     rounding_adjustment: Decimal = Decimal("0.00")
     paid_at: datetime | None
-    # "manual" / "stripe" / None — how the invoice was settled.
+    # "manual" / "bank_transfer" / "stripe" / None — how the invoice was settled.
     paid_via: str | None
     # Per-invoice card-payment override; None = inherit the tenant default.
     accept_card_payments: bool | None
