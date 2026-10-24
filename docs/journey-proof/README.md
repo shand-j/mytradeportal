@@ -154,3 +154,23 @@ committed. Webhooks: read-only psql against the prod DB (`processed_webhooks`,
   Evidence: [admin/08-invoice-detail-inlines.png](admin/08-invoice-detail-inlines.png)
   (INV-006, paid, empty Payments inline) + DB join in
   [integrations/README.md](integrations/README.md).
+
+## mobile/ — re-verification of #298/#299/#307 (captured 2026-10-24)
+
+iPhone 17 Pro simulator (iOS 26.5), dev-client build **with** the
+`react-native-webview` native module, serving latest-`main` JS (`c0cce05`)
+via Metro against production. Driven with Appium/XCUITest.
+
+| Item | Folder | Result |
+|---|---|---|
+| #298 happy path — guest quote request reaches server, real reference shown | [mobile/reverify-298-299-307](mobile/reverify-298-299-307/) | PASS (ref 037A0849 verified via `GET /quote-requests`) |
+| #298 failure path — blocked submit shows error + Retry, no fake confirmation; retry succeeds | [mobile/reverify-298-299-307](mobile/reverify-298-299-307/) | PASS (403 `customer_blocked` repro; new ref E80AFD6E after unblock) |
+| #299 — Stripe Connect embedded onboarding renders in-app | [mobile/reverify-298-299-307](mobile/reverify-298-299-307/) | PASS (no infinite spinner, no webview error toast) |
+| #307 — "Team plan" display name + read-only `/billing` on subscribed tenant | [mobile/reverify-298-299-307](mobile/reverify-298-299-307/) | PASS |
+
+### Defects found (re-verification pass)
+
+- **QE-RV-1 (S4, transient)** — Settings → Payments Stripe card briefly rendered
+  "Not connected" on first visit after fresh login although the tenant's Connect
+  account exists server-side; a later visit showed the correct "Connected —
+  restricted". Evidence: `mobile/reverify-298-299-307/08` vs `10`.
