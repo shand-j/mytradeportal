@@ -79,6 +79,13 @@ export function useStripeConnectOnboarding(): StripeConnectOnboarding {
     setError("Stripe setup couldn't load. Please try again.");
   };
 
+  const handleUnavailable = useCallback(() => {
+    setSession(null);
+    setError(
+      "Stripe setup isn't available in this version of the app. Please update the app and try again."
+    );
+  }, []);
+
   return {
     start,
     connecting,
@@ -90,6 +97,7 @@ export function useStripeConnectOnboarding(): StripeConnectOnboarding {
         fetchClientSecret={fetchClientSecret}
         onExit={() => void finish()}
         onLoadError={handleLoadError}
+        onUnavailable={handleUnavailable}
       />
     ) : null,
   };
