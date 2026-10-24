@@ -101,7 +101,7 @@ describe("02 onboarding: wizard walk-through (stops before tenant creation)", ()
     await waitForTextContains("Get leads from QR codes");
     await waitForTextContains("AI drafts quotes");
     await waitForTextContains("Certificates, invoices, and accounts");
-    await waitForText("6-step launch preview");
+    await waitForText("A short, guided setup");
     for (const label of ["Account", "Business", "Address", "Tax", "Compliance", "Services"]) {
       await waitForText(label);
     }
@@ -239,11 +239,14 @@ describe("02 onboarding: wizard walk-through (stops before tenant creation)", ()
 
   it("step 9 Review: summary reflects entered data; plan entry point renders", async () => {
     await waitForText("Check the details below, then choose your plan to go live.");
-    // Launch-gate checklist renders completed + pending items.
+    // Launch-gate checklist is data-driven (#300): completed wizard steps
+    // show Done, and the post-review steps (bank details, card payments,
+    // plan) show as upcoming. Untracked items (team/pricing/data import)
+    // were removed — there is no wizard state to track them against.
     await waitForText("Account created");
     await waitForText("Business identity");
-    await waitForText("Team & capacity");
-    await waitForText("Data import");
+    await waitForText("Bank details");
+    await waitForText("Card payments");
     // Compliance summary shows the step-6 data.
     //
     // KNOWN APP DEFECT (fixed in app code, pending a new device build): the

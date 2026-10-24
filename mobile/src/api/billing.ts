@@ -26,6 +26,23 @@ export function resolvePlanKey(key: string): BillingPlanKey {
   return SUBSCRIPTION_TIER_KEY[key as PlanKey] ?? (key as BillingPlanKey);
 }
 
+/**
+ * Tier display names — mirrors the `name` field of GET /billing/plans and the
+ * pricing page (web/landing …/constants/pricing-tiers.ts). Use this instead
+ * of prettifying the raw plan key ("sole_trader" → "Sole Trader", not
+ * "Sole_trader").
+ */
+export const PLAN_DISPLAY_NAMES: Record<BillingPlanKey, string> = {
+  sole_trader: "Sole Trader",
+  pro: "Pro",
+  team: "Team",
+};
+
+/** Display name for any (legacy or tier) subscription plan key. */
+export function planDisplayName(key: string): string {
+  return PLAN_DISPLAY_NAMES[resolvePlanKey(key)] ?? key;
+}
+
 export type BillingPlan = {
   key: BillingPlanKey;
   name: string;

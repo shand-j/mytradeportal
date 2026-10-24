@@ -5,17 +5,16 @@ import { Button } from "../../components/ui/Button";
 import { Icon } from "../../components/ui/Icon";
 import { Screen } from "../../components/ui/Screen";
 import { Text } from "../../components/ui/Text";
-import { resolvePlanKey, useBillingPlans, useSubscription, type BillingPlanKey } from "../../api/billing";
+import {
+  PLAN_DISPLAY_NAMES,
+  resolvePlanKey,
+  useBillingPlans,
+  useSubscription,
+} from "../../api/billing";
 import { useAuth } from "../../contexts/AuthContext";
 import { useBusiness } from "../../theme/ThemeProvider";
 import { usePaywallStore } from "../../stores/paywallStore";
 import { FALLBACK_PLANS } from "../onboarding/steps/PlanPaymentStep";
-
-const PLAN_NAMES: Record<BillingPlanKey, string> = {
-  sole_trader: "Sole Trader",
-  pro: "Pro",
-  team: "Team",
-};
 
 /**
  * Shown when the backend answers 402 subscription_required: the tenant has no
@@ -38,7 +37,7 @@ export function PaywallScreen() {
   const tierKey = subscription ? resolvePlanKey(planKey) : undefined;
   const catalog = plansQuery.data ?? FALLBACK_PLANS;
   const tier = tierKey ? catalog.find((p) => p.key === tierKey) : undefined;
-  const planName = tier?.name ?? (tierKey ? PLAN_NAMES[tierKey] : undefined);
+  const planName = tier?.name ?? (tierKey ? PLAN_DISPLAY_NAMES[tierKey] : undefined);
 
   // useSubscription polls every 3s while status is "incomplete".
   const active = subscription && ["trialing", "active", "past_due"].includes(subscription.status);

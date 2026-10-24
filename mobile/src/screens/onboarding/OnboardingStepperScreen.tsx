@@ -122,6 +122,7 @@ export function OnboardingStepperScreen() {
           compliance: "compliance",
           services: "services",
           branding: "branding",
+          tax: "tax",
           plan: "plan",
         };
         const prefill: Record<string, unknown> = {};
@@ -281,10 +282,12 @@ export function OnboardingStepperScreen() {
             key={stepIndex}
             // Steps normally receive only their own slice of the wizard state.
             // ReviewLaunchStep is the exception: it summarises earlier steps,
-            // so it needs the root state (compliance/services/etc.).
+            // so it needs the root state (compliance/services/etc.) plus the
+            // resume flag (its checklist marks the account complete when the
+            // tenant already exists server-side).
             data={
               (STEPS[stepIndex].key === "review"
-                ? data
+                ? { ...data, __resume: isResume }
                 : data[STEPS[stepIndex].key]) as Record<string, unknown>
             }
             emailTaken={emailConflict}

@@ -11,16 +11,16 @@ import { useSubscription } from "../../api/billing";
 import { api, ApiError } from "../../lib/apiClient";
 import { openCalendarSubscription } from "../../api/calendar";
 import { config } from "../../lib/config";
-import { parseServerDate } from "../../lib/datetime";
 import { openInAppBrowser } from "../../lib/inAppBrowser";
 import { PortalQrSheet } from "../../components/trade/PortalQrSheet";
+import { SubscriptionCard } from "../../components/trade/SubscriptionCard";
 
 /**
  * Read-only subscription status (App Store Guideline 3.1.1): plans are bought
- * and managed on the website, so the card only reports state. The website
+ * and managed on the website, so this section only reports state. The website
  * mentions below are plain text on purpose; they must never become links.
  */
-function SubscriptionCard() {
+function SubscriptionSection() {
   const { data, isLoading } = useSubscription();
 
   if (isLoading) {
@@ -43,67 +43,7 @@ function SubscriptionCard() {
     );
   }
 
-  const trialLeft =
-    data.status === "trialing" && data.trialEndsAt
-      ? `Trial ends ${parseServerDate(data.trialEndsAt)?.toLocaleDateString("en-GB", {
-          day: "numeric",
-          month: "short",
-        }) ?? "—"}`
-      : null;
-  const renewsAt =
-    (data.status === "active" || data.status === "past_due") && data.currentPeriodEnd
-      ? `Renews ${parseServerDate(data.currentPeriodEnd)?.toLocaleDateString("en-GB", {
-          day: "numeric",
-          month: "short",
-        }) ?? "—"}`
-      : null;
-  const statusLabel: Record<string, string> = {
-    incomplete: "Setup incomplete",
-    trialing: "Free trial",
-    active: "Active",
-    past_due: "Payment past due",
-    paused: "Paused",
-    canceled: "Cancelled",
-  };
-  const planLabel = data.planKey.charAt(0).toUpperCase() + data.planKey.slice(1);
-
-  return (
-    <View className="rounded-2xl bg-slate-100 p-4 gap-2">
-      <View className="flex-row items-center justify-between">
-        <Text variant="body" weight="semibold">
-          Subscription
-        </Text>
-        <View className="rounded-full bg-white px-2 py-0.5">
-          <Text testID="settings-subscription-status" variant="caption" weight="semibold">
-            {statusLabel[data.status] ?? data.status}
-          </Text>
-        </View>
-      </View>
-      <Text testID="settings-subscription-plan" variant="body">
-        {planLabel} plan
-      </Text>
-      {trialLeft && (
-        <Text variant="caption" color="secondary">
-          {trialLeft}
-        </Text>
-      )}
-      {renewsAt && (
-        <Text variant="caption" color="secondary">
-          {renewsAt}
-        </Text>
-      )}
-      {data.status === "incomplete" && (
-        <Text variant="caption" color="warning">
-          Your subscription isn't active yet — finish setting it up on our website.
-        </Text>
-      )}
-      {(data.status === "incomplete" || data.status === "canceled") && (
-        <Text variant="caption" color="secondary">
-          Manage your subscription at mytradeportal.co.uk
-        </Text>
-      )}
-    </View>
-  );
+  return <SubscriptionCard subscription={data} />;
 }
 
 export function SettingsScreen() {
@@ -237,7 +177,7 @@ export function SettingsScreen() {
           </View>
         ) : null}
 
-        <SubscriptionCard />
+        <SubscriptionSection />
 
         <View className="rounded-2xl bg-slate-100 p-4 gap-3">
           <Text variant="body" weight="semibold">
