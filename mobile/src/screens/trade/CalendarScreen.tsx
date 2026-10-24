@@ -8,7 +8,7 @@ import { LiveBadge } from "../../components/ui/LiveBadge";
 import { Screen } from "../../components/ui/Screen";
 import { Text } from "../../components/ui/Text";
 import { useJobsList } from "../../api/jobs";
-import { useAppointmentsList } from "../../api/appointments";
+import { CalendarAppointment, useAppointmentsList } from "../../api/appointments";
 import { useMultiSeatPlan } from "../../api/billing";
 import { openNavigation } from "../../lib/navigation";
 import { useAuthStore } from "../../stores/authStore";
@@ -112,6 +112,22 @@ export function CalendarScreen(_props: CalendarScreenProps) {
     return map;
   }, [jobs, weekDays]);
 
+  // Appointments (incl. multi-day job continuation blocks) render alongside
+  // jobs in the day and week views — until now they only fed month-view dots.
+  const appointmentsByDay = useMemo(() => {
+    const map = new Map<string, CalendarAppointment[]>();
+    weekDays.forEach((d) => map.set(toIsoDate(d), []));
+    for (const appointment of appointments) {
+      if (!appointment.date) continue;
+      const bucket = map.get(appointment.date);
+      if (bucket) bucket.push(appointment);
+    }
+    for (const bucket of map.values()) {
+      bucket.sort((a, b) => (parseMinutes(a.time) ?? 0) - (parseMinutes(b.time) ?? 0));
+    }
+    return map;
+  }, [appointments, weekDays]);
+
   const unscheduledJobs = useMemo(() => jobs.filter((job) => !job.date), [jobs]);
 
   /** First of the month currently shown in month view. */
@@ -184,10 +200,36 @@ export function CalendarScreen(_props: CalendarScreenProps) {
   };
 
   const selectedDate = weekDays[selectedDay];
-  const dayBookings = jobsByDay.get(toIsoDate(selectedDate)) ?? [];
+  /** Day-view rows: jobs and appointments merged and sorted by start time. */
+  const dayEntries = useMemo(() => {
+    const iso = toIsoDate(selectedDate);
+    const entries: (
+      | { kind: "job"; job: Job }
+      | { kind: "appointment"; appointment: CalendarAppointment }
+    )[] = [
+      ...(jobsByDay.get(iso) ?? []).map((job) => ({ kind: "job" as const, job })),
+      ...(appointmentsByDay.get(iso) ?? []).map((appointment) => ({
+        kind: "appointment" as const,
+        appointment,
+      })),
+    ];
+    entries.sort((a, b) => {
+      const aTime = a.kind === "job" ? a.job.time : a.appointment.time;
+      const bTime = b.kind === "job" ? b.job.time : b.appointment.time;
+      return (parseMinutes(aTime) ?? 0) - (parseMinutes(bTime) ?? 0);
+    });
+    return entries;
+  }, [selectedDate, jobsByDay, appointmentsByDay]);
   const weekBookingCount = useMemo(
-    () => weekDays.reduce((sum, d) => sum + (jobsByDay.get(toIsoDate(d))?.length ?? 0), 0),
-    [weekDays, jobsByDay]
+    () =>
+      weekDays.reduce(
+        (sum, d) =>
+          sum +
+          (jobsByDay.get(toIsoDate(d))?.length ?? 0) +
+          (appointmentsByDay.get(toIsoDate(d))?.length ?? 0),
+        0
+      ),
+    [weekDays, jobsByDay, appointmentsByDay]
   );
 
   const rangeLabel = `${formatDay(weekDays[0])} – ${formatDay(weekDays[6])}`;
@@ -228,7 +270,7 @@ export function CalendarScreen(_props: CalendarScreenProps) {
               ? `${weekBookingCount} booking${weekBookingCount === 1 ? "" : "s"} this week`
               : viewMode === "month"
                 ? `${monthBookingCount} booking${monthBookingCount === 1 ? "" : "s"} this month`
-                : `${dayBookings.length} booking${dayBookings.length === 1 ? "" : "s"}`}
+                : `${dayEntries.length} booking${dayEntries.length === 1 ? "" : "s"}`}
           </Text>
         </View>
         <View className="flex-row gap-1.5">
@@ -334,33 +376,62 @@ export function CalendarScreen(_props: CalendarScreenProps) {
             <Text variant="body" weight="semibold">
               Bookings
             </Text>
-            {dayBookings.map((booking) => (
-              <Pressable key={booking.id} onPress={() => router.push(`/(trade)/job/${booking.id}`)}>
-                <View testID={`booking-${booking.id}`} className="flex-row items-center gap-3 rounded-2xl border border-gray-200 bg-white p-4">
-                  <View className="h-10 w-1 rounded bg-accent-500" />
-                  <View className="flex-1">
-                    <Text variant="body" weight="semibold">
-                      {booking.time}
-                    </Text>
-                    <Text variant="body">{booking.title}</Text>
-                    <Text variant="caption" color="secondary">
-                      {booking.customerName} · {booking.postcode}
-                    </Text>
+            {dayEntries.map((entry) =>
+              entry.kind === "job" ? (
+                <Pressable
+                  key={entry.job.id}
+                  onPress={() => router.push(`/(trade)/job/${entry.job.id}`)}
+                >
+                  <View testID={`booking-${entry.job.id}`} className="flex-row items-center gap-3 rounded-2xl border border-gray-200 bg-white p-4">
+                    <View className="h-10 w-1 rounded bg-accent-500" />
+                    <View className="flex-1">
+                      <Text variant="body" weight="semibold">
+                        {entry.job.time}
+                      </Text>
+                      <Text variant="body">{entry.job.title}</Text>
+                      <Text variant="caption" color="secondary">
+                        {entry.job.customerName} · {entry.job.postcode}
+                      </Text>
+                    </View>
+                    {entry.job.address || entry.job.postcode ? (
+                      <IconButton
+                        testID={`booking-navigate-${entry.job.id}`}
+                        icon="navigate"
+                        size={20}
+                        color="#0F1E26"
+                        accessibilityLabel={`Get directions to ${entry.job.title}`}
+                        onPress={() => void handleNavigate(entry.job)}
+                      />
+                    ) : null}
                   </View>
-                  {booking.address || booking.postcode ? (
-                    <IconButton
-                      testID={`booking-navigate-${booking.id}`}
-                      icon="navigate"
-                      size={20}
-                      color="#0F1E26"
-                      accessibilityLabel={`Get directions to ${booking.title}`}
-                      onPress={() => void handleNavigate(booking)}
-                    />
-                  ) : null}
-                </View>
-              </Pressable>
-            ))}
-            {dayBookings.length === 0 && (
+                </Pressable>
+              ) : (
+                <Pressable
+                  key={entry.appointment.id}
+                  disabled={!entry.appointment.jobId}
+                  onPress={() =>
+                    entry.appointment.jobId &&
+                    router.push(`/(trade)/job/${entry.appointment.jobId}`)
+                  }
+                >
+                  <View testID={`appointment-${entry.appointment.id}`} className="flex-row items-center gap-3 rounded-2xl border border-gray-200 bg-white p-4">
+                    <View className="h-10 w-1 rounded bg-primary-300" />
+                    <View className="flex-1">
+                      <Text variant="body" weight="semibold">
+                        {entry.appointment.time}
+                        {entry.appointment.endTime ? ` – ${entry.appointment.endTime}` : ""}
+                      </Text>
+                      <Text variant="body">{entry.appointment.title}</Text>
+                      <Text variant="caption" color="secondary">
+                        Appointment
+                        {entry.appointment.address ? ` · ${entry.appointment.address}` : ""}
+                      </Text>
+                    </View>
+                  </View>
+                </Pressable>
+              )
+            )}
+            {dayEntries.length === 0 && (
               <Text variant="caption" color="secondary">
                 No bookings on this day.
               </Text>
@@ -470,6 +541,7 @@ export function CalendarScreen(_props: CalendarScreenProps) {
               {weekDays.map((date) => {
                 const isToday = isSameDay(date, today);
                 const dayJobs = jobsByDay.get(toIsoDate(date)) ?? [];
+                const dayAppointments = appointmentsByDay.get(toIsoDate(date)) ?? [];
                 return (
                   <View
                     key={toIsoDate(date)}
@@ -509,6 +581,39 @@ export function CalendarScreen(_props: CalendarScreenProps) {
                             </Text>
                             <Text variant="caption" color="secondary" numberOfLines={3} style={{ fontSize: 9 }}>
                               {job.title}
+                            </Text>
+                          </View>
+                        </Pressable>
+                      );
+                    })}
+                    {/* Appointment blocks (incl. multi-day job day-2+ continuations) —
+                        same grid math as jobs, slate tint instead of primary. */}
+                    {dayAppointments.map((appointment) => {
+                      const startMin = parseMinutes(appointment.time);
+                      if (startMin === null) return null;
+                      const endMin = appointment.endTime
+                        ? parseMinutes(appointment.endTime) ?? startMin + DEFAULT_DURATION_MIN
+                        : startMin + DEFAULT_DURATION_MIN;
+                      const clampedStart = Math.max(startMin, GRID_START_HOUR * 60);
+                      const clampedEnd = Math.min(Math.max(endMin, clampedStart + 30), GRID_END_HOUR * 60);
+                      const top = ((clampedStart - GRID_START_HOUR * 60) / 60) * HOUR_HEIGHT;
+                      const height = Math.max(((clampedEnd - clampedStart) / 60) * HOUR_HEIGHT, 24);
+                      return (
+                        <Pressable
+                          key={appointment.id}
+                          testID={`appointment-${appointment.id}`}
+                          disabled={!appointment.jobId}
+                          onPress={() =>
+                            appointment.jobId && router.push(`/(trade)/job/${appointment.jobId}`)
+                          }
+                          style={{ position: "absolute", top, left: 1, right: 1, height }}
+                        >
+                          <View className="flex-1 gap-0.5 overflow-hidden rounded-md border border-slate-300 bg-slate-100 p-1">
+                            <Text variant="caption" weight="semibold" numberOfLines={1} style={{ fontSize: 9 }}>
+                              {appointment.time}
+                            </Text>
+                            <Text variant="caption" color="secondary" numberOfLines={3} style={{ fontSize: 9 }}>
+                              {appointment.title}
                             </Text>
                           </View>
                         </Pressable>

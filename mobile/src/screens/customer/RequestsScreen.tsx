@@ -16,6 +16,7 @@ import { useMyRequests, CustomerRequest } from "../../api/quoteRequests";
 import { useAcceptCustomerQuote, useRejectCustomerQuote } from "../../api/quotes";
 import { useCreateCustomerAppointment } from "../../api/appointments";
 import { StagedPhoto, uploadCustomerPhotos } from "../../api/uploads";
+import { parseServerDate } from "../../lib/datetime";
 import type { Quote, QuoteStatus } from "../../types";
 
 type CustomerQuoteStatus = "awaiting_review" | "open" | "accepted" | "rejected" | "expired";
@@ -346,7 +347,7 @@ function CustomerQuoteView({
           </View>
           <Text variant="caption" color="secondary">
             {quote.postcode} · Valid until{" "}
-            {quote.expiresAt ? new Date(quote.expiresAt).toLocaleDateString() : "—"}
+            {parseServerDate(quote.expiresAt)?.toLocaleDateString() ?? "—"}
           </Text>
         </View>
 
@@ -640,7 +641,7 @@ function CustomerRequestCard({
         </Text>
       ) : null}
       <Text variant="caption" color="secondary">
-        Submitted {new Date(request.createdAt).toLocaleDateString()}
+        Submitted {parseServerDate(request.createdAt)?.toLocaleDateString() ?? "—"}
       </Text>
       <AddRequestPhotos requestId={request.id} />
     </View>
@@ -694,7 +695,7 @@ function QuoteCard({
 
         {isAwaiting ? (
           <Text variant="caption" color="secondary">
-            Submitted {quote.sentAt ? new Date(quote.sentAt).toLocaleDateString() : "today"} ·
+            Submitted {parseServerDate(quote.sentAt)?.toLocaleDateString() ?? "today"} ·
             Awaiting review
           </Text>
         ) : (
@@ -704,7 +705,7 @@ function QuoteCard({
             </Text>
             <Text variant="caption" color="secondary">
               Valid until{" "}
-              {quote.expiresAt ? new Date(quote.expiresAt).toLocaleDateString() : "—"}
+              {parseServerDate(quote.expiresAt)?.toLocaleDateString() ?? "—"}
             </Text>
           </>
         )}

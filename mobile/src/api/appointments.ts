@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "../lib/apiClient";
+import { parseServerDate, toLocalIsoDate } from "../lib/datetime";
 
 /** Camelized AppointmentRead (subset the app uses). */
 export type ApiAppointment = {
@@ -10,6 +11,8 @@ export type ApiAppointment = {
   status: string;
   address: string | null;
   notes: string | null;
+  /** Set on multi-day job continuation blocks (day 2+ of a job). */
+  jobId: string | null;
 };
 
 /** App-facing appointment shape. */
@@ -34,13 +37,13 @@ function formatTime(date: Date): string {
 }
 
 function mapAppointment(a: ApiAppointment): Appointment {
-  const start = new Date(a.startAt);
-  const end = new Date(a.endAt);
+  const start = parseServerDate(a.startAt);
+  const end = parseServerDate(a.endAt);
   return {
     id: a.id,
     title: a.title,
-    date: start.toLocaleDateString(),
-    time: `${formatTime(start)} – ${formatTime(end)}`,
+    date: start ? start.toLocaleDateString() : "",
+    time: start && end ? `${formatTime(start)} – ${formatTime(end)}` : "",
     address: a.address ?? "",
     status: STATUS_MAP[a.status] ?? "confirmed",
   };
@@ -55,17 +58,34 @@ export async function fetchAppointments(assignedUserId?: string): Promise<ApiApp
   return api.get<ApiAppointment[]>(`/appointments${query}`);
 }
 
-/** Appointment reduced to what the trade calendar needs to bucket it by day. */
+/** Appointment reduced to what the trade calendar needs to place it in a day. */
 export type CalendarAppointment = {
   id: string;
   /** Local "YYYY-MM-DD" date, so entries bucket into the day the user sees. */
   date: string;
+  title: string;
+  /** Local "HH:MM" start/end, for day/week grid placement. */
+  time: string;
+  endTime: string;
+  address: string;
+  /** Linked job for multi-day continuation blocks — tapping opens the job. */
+  jobId: string | null;
 };
 
-/** Local (not UTC) calendar date — same rule as jobs (see api/jobs.ts). */
-function toLocalIsoDate(d: Date): string {
-  const pad = (n: number) => String(n).padStart(2, "0");
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+function toCalendarAppointment(a: ApiAppointment): CalendarAppointment {
+  // Server datetimes are naive UTC — parseServerDate pins them to UTC so the
+  // local day bucket and grid position aren't offset by the device timezone.
+  const start = parseServerDate(a.startAt);
+  const end = parseServerDate(a.endAt);
+  return {
+    id: a.id,
+    date: start ? toLocalIsoDate(start) : "",
+    title: a.title,
+    time: start ? formatTime(start) : "",
+    endTime: end ? formatTime(end) : "",
+    address: a.address ?? "",
+    jobId: a.jobId ?? null,
+  };
 }
 
 /**
@@ -84,7 +104,7 @@ export function useAppointmentsList(filter?: { assignedUserId?: string | null })
   return {
     appointments: (query.data ?? [])
       .filter((a) => a.status !== "cancelled" && a.status !== "no_show")
-      .map((a): CalendarAppointment => ({ id: a.id, date: toLocalIsoDate(new Date(a.startAt)) })),
+      .map(toCalendarAppointment),
     isConnected: query.isSuccess,
     isLoading: query.isLoading,
   };

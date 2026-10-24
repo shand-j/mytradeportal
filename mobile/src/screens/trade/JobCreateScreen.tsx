@@ -22,6 +22,7 @@ import { ApiQuote, fetchQuotes, setQuoteApproval, useApiQuote } from "../../api/
 import { fetchAvailability, useAvailability } from "../../api/appointments";
 import { useUsersList } from "../../api/users";
 import { ApiError } from "../../lib/apiClient";
+import { parseServerDate, toLocalIsoDate } from "../../lib/datetime";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
@@ -57,10 +58,6 @@ export function parseQuotePreference(entry: string): QuoteDatePreference | null 
 
 function pad(n: number): string {
   return String(n).padStart(2, "0");
-}
-
-function toLocalIsoDate(d: Date): string {
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 }
 
 function toHHMM(d: Date): string {
@@ -102,8 +99,10 @@ async function suggestFirstSlot(): Promise<{ date: string; time: string } | null
     const iso = toLocalIsoDate(day);
     try {
       const slots = await fetchAvailability(iso);
-      if (slots.length > 0) {
-        return { date: iso, time: toHHMM(new Date(slots[0])) };
+      // Availability slots are server datetimes (naive UTC).
+      const first = slots.length > 0 ? parseServerDate(slots[0]) : null;
+      if (first) {
+        return { date: iso, time: toHHMM(first) };
       }
     } catch {
       return null;
@@ -228,7 +227,8 @@ export function JobCreateScreen({ onClose, initialQuoteId }: JobCreateScreenProp
       } else {
         void fetchAvailability(firstChoice.date)
           .then((slots) => {
-            if (slots.length > 0) setTime(toHHMM(new Date(slots[0])));
+            const first = slots.length > 0 ? parseServerDate(slots[0]) : null;
+            if (first) setTime(toHHMM(first));
           })
           .catch(() => {});
       }
@@ -261,7 +261,8 @@ export function JobCreateScreen({ onClose, initialQuoteId }: JobCreateScreenProp
     }
     void fetchAvailability(parsed.date)
       .then((slots) => {
-        if (slots.length > 0) setTime(toHHMM(new Date(slots[0])));
+        const first = slots.length > 0 ? parseServerDate(slots[0]) : null;
+        if (first) setTime(toHHMM(first));
       })
       .catch(() => {});
   };
@@ -280,6 +281,8 @@ export function JobCreateScreen({ onClose, initialQuoteId }: JobCreateScreenProp
     DATE_RE.test(date.trim()) ? date.trim() : null
   );
   const suggestedSlot = availableSlots[0] ?? null;
+  // Availability slots are server datetimes (naive UTC) — parse as UTC.
+  const suggestedSlotDate = suggestedSlot ? parseServerDate(suggestedSlot) : null;
 
   const openPicker = (kind: "date" | "time") => {
     const base =
@@ -889,11 +892,15 @@ export function JobCreateScreen({ onClose, initialQuoteId }: JobCreateScreenProp
               ) : suggestedSlot ? (
                 <Pressable
                   testID="job-create-suggested-slot"
-                  onPress={() => setTime(toHHMM(new Date(suggestedSlot)))}
+                  onPress={() => {
+                    if (suggestedSlotDate) setTime(toHHMM(suggestedSlotDate));
+                  }}
                 >
                   <View className="rounded-xl border border-primary-100 bg-primary-50 p-3">
                     <Text variant="caption" color="secondary">
-                      First free slot that day: {toHHMM(new Date(suggestedSlot))} — tap to use it.
+                      First free slot that day:{" "}
+                      {suggestedSlotDate ? toHHMM(suggestedSlotDate) : suggestedSlot} — tap to use
+                      it.
                     </Text>
                   </View>
                 </Pressable>
