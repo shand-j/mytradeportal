@@ -1,4 +1,4 @@
-import { useMemo, type ComponentProps } from "react";
+import { useEffect, useMemo, useState, type ComponentProps } from "react";
 import {
   ConnectAccountOnboarding,
   ConnectComponentsProvider,
@@ -15,6 +15,7 @@ type EmbeddedStripeOnboardingProps = {
   fetchClientSecret: () => Promise<string>;
   onExit: () => void;
   onLoadError: (event: ConnectLoadError) => void;
+  onUnavailable: () => void;
 };
 
 export function EmbeddedStripeOnboarding({
@@ -22,21 +23,48 @@ export function EmbeddedStripeOnboarding({
   fetchClientSecret,
   onExit,
   onLoadError,
+  onUnavailable,
 }: EmbeddedStripeOnboardingProps) {
+  // The Stripe Connect embedded components render inside react-native-webview; if the
+  // native module is missing the SDK spins forever, so probe for it up front.
+  const [webviewAvailable, setWebviewAvailable] = useState<boolean | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    import("react-native-webview")
+      .then(() => {
+        if (!cancelled) setWebviewAvailable(true);
+      })
+      .catch(() => {
+        if (!cancelled) setWebviewAvailable(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (webviewAvailable === false) onUnavailable();
+  }, [webviewAvailable, onUnavailable]);
+
   const connectInstance = useMemo(
     () =>
-      loadConnectAndInitialize({
-        publishableKey: session.publishableKey,
-        fetchClientSecret,
-        appearance: {
-          variables: {
-            colorPrimary: "#0F172A",
-            colorBackground: "#FFFFFF",
-          },
-        },
-      }),
-    [fetchClientSecret, session.publishableKey]
+      webviewAvailable
+        ? loadConnectAndInitialize({
+            publishableKey: session.publishableKey,
+            fetchClientSecret,
+            appearance: {
+              variables: {
+                colorPrimary: "#0F172A",
+                colorBackground: "#FFFFFF",
+              },
+            },
+          })
+        : null,
+    [fetchClientSecret, session.publishableKey, webviewAvailable]
   );
+
+  if (!connectInstance) return null;
 
   return (
     <ConnectComponentsProvider connectInstance={connectInstance}>
