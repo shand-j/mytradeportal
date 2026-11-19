@@ -49,7 +49,43 @@ fixture is ever added (e.g. under `services/api/tests/fixtures/`), extend the
 job to restore it and run `init_db.py` against the restored dump before
 declaring this fully covered.
 
-## 3. Feature flags for unfinished user-visible work
+## 3. Railway IaC deployment requires manual intervention
+
+The `deploy-production` job in `ci.yml` runs `railway config apply` to sync
+infrastructure changes (e.g. service image updates, volume mounts, environment
+variables) defined in `.railway/railway.ts`. **This step fails silently when
+the CI project token is rejected** by Railway CLI v5.28+.
+
+**What this means:**
+- ✅ Code deploys work: Railway's GitHub integration rebuilds services on every
+  push to main (verified on 2026-09-16).
+- ❌ Infrastructure changes do NOT apply automatically:
+  - Service image swaps (MinIO → RustFS, etc.)
+  - Volume/environment config updates
+  - Region corrections
+
+**When you change `.railway/railway.ts`:**
+1. The PR/commit is safe — it only updates the configuration file
+2. After merge to main, **manually run** (locally with Railway CLI):
+   ```bash
+   cd .railway
+   railway login
+   railway link  # if needed
+   railway config apply --confirm-destructive
+   ```
+3. See `docs/runbooks/deploy-rustfs-iac.md` for a detailed walkthrough
+
+**Why this limitation exists:**
+Railway CLI v5.28+ rejects project-scoped tokens (required for CI) but accepts
+browser-authenticated sessions. A fix would require either:
+- Upgrading the Railway IaC framework to use a new token format
+- Switching to the Railway GraphQL API (not currently used in CI)
+- Using a human-scoped token (not secure for CI)
+
+This limitation is documented in the CI workflow as a yellow warning (not a
+failure) so code deploys are never blocked.
+
+## 4. Feature flags for unfinished user-visible work
 
 Anything user-visible that ships before it is fully baked goes behind a
 feature flag (`services/api/app/feature_flags.py`, covered by
