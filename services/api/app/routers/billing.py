@@ -1,18 +1,21 @@
 """Subscription / billing endpoints for the tenant paywall.
 
-Flat pricing model: one subscription per business, three flat tiers, unlimited
-users, AI unmetered on every tier. There is no seat, quantity or overage
-logic anywhere in this module. The 14-day trial is handled by Paddle /
+Flat pricing model: one subscription per business, three flat tiers that
+differ by capability plus a staff seat cap (``Plan.seats``), AI unmetered on
+every tier. There is no quantity or overage logic anywhere in this module;
+the subscription read model exposes the plan's seat count and current usage
+so clients can gate team-only UI. The 14-day trial is handled by Paddle /
 ``app.trial``. This module owns the checkout-URL creation and the
 subscription read model; state mutations happen exclusively via webhooks
 (:mod:`app.routers.webhooks`).
 """
 
 import os
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Annotated, Any
 from uuid import UUID
 
+import httpx
 import structlog
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import HTMLResponse
@@ -21,16 +24,29 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
 from app.database import get_db
-from app.dependencies import CurrentUserDep, TenantDep
+from app.dependencies import CurrentUserDep, TenantDep, seats_in_use
 from app.models import Subscription, Tenant
 from app.paddle_client import (
+    await_transaction_subscription_id,
+    create_cardless_trial_transaction,
+    create_customer_address,
     create_customer_portal_session,
     create_subscription_transaction,
     get_or_create_customer,
+    get_payment_method_update_transaction,
+    get_price,
+    update_subscription,
+    update_subscription_custom_data,
 )
 from app.plans import PLAN_CATALOG, get_plan, plan_to_public_dict
 from app.rls import set_tenant_in_session
-from app.schemas import BillingCheckoutCreate, BillingCheckoutRead, SubscriptionRead
+from app.routers.webhooks import _upsert_subscription
+from app.schemas import (
+    BillingCheckoutCreate,
+    BillingCheckoutRead,
+    BillingPlanChangeCreate,
+    SubscriptionRead,
+)
 
 router = APIRouter(prefix="/billing", tags=["Billing"])
 DbDep = Annotated[AsyncSession, Depends(get_db)]
@@ -69,9 +85,33 @@ _CHECKOUT_PAGE = """<!doctype html>
   if (!txn) {
     fail("Missing checkout transaction.");
   } else {
+    // Paddle.js auto-opens a checkout for the _ptxn query parameter at
+    // Initialize time — with DEFAULT settings (variant "multi-page"), which
+    // cardless-trial payment-method transactions reject ("only supported by
+    // one-page checkout variant"). Strip _ptxn before initializing so the
+    // only open is the explicit one below, and set the one-page variant as
+    // the Initialize-level default too, so any open on this page — auto or
+    // explicit — uses it.
+    if (window.history.replaceState) {
+      var params = new URLSearchParams(location.search);
+      params.delete("_ptxn");
+      var cleaned = location.pathname +
+        (params.toString() ? "?" + params.toString() : "") + location.hash;
+      window.history.replaceState(null, "", cleaned);
+    }
+    // paddle.js v2 initialization: the page loads /paddle/v2/paddle.js, whose
+    // entry point is Paddle.Initialize (Paddle.Setup is the retired v1 API —
+    // initializing v1-style leaves the checkout session half-initialized, the
+    // transaction-checkout request 403s, and cardless-trial transactions are
+    // rejected with "only supported by one-page checkout variant" even though
+    // settings.variant is one-page). The sandbox switch is Paddle.Environment.set
+    // BEFORE Initialize — passing environment inside Initialize is rejected by
+    // the sandbox build ("Unknown option parameter 'environment'") and poisons
+    // the whole initialization.
     if (PADDLE_ENV === "sandbox") { Paddle.Environment.set("sandbox"); }
-    Paddle.Setup({
+    var init = {
       token: PADDLE_TOKEN,
+      checkout: { settings: { variant: "one-page" } },
       eventCallback: function (event) {
         if (event.name === "checkout.completed") {
           document.getElementById("status").textContent = "You're all set!";
@@ -85,7 +125,8 @@ _CHECKOUT_PAGE = """<!doctype html>
           fail("Checkout couldn't load. Please try again.");
         }
       }
-    });
+    };
+    Paddle.Initialize(init);
     Paddle.Checkout.open({ transactionId: txn, settings: { variant: "one-page" } });
   }
 </script>
@@ -166,14 +207,107 @@ async def _get_or_create_subscription(
     return existing
 
 
+async def _price_is_cardless_trial(price_id: str) -> bool:
+    """True when the Paddle price carries a trial that needs no payment method.
+
+    Paddle rejects a rendered checkout for such prices ("Cardless trial
+    transaction is not linked to a subscription"), so these go through the
+    server-side cardless-trial flow instead of a standard transaction.
+    """
+    price = await get_price(price_id)
+    trial_period = price.get("trial_period") or {}
+    return bool(trial_period) and trial_period.get("requires_payment_method") is False
+
+
+async def _cardless_trial_checkout(
+    *,
+    price_id: str,
+    tenant_id: UUID,
+    plan_key: str,
+    subscription: Subscription,
+    customer_id: str,
+    tenant_row: Tenant | None,
+    postcode: str | None = None,
+) -> dict[str, str]:
+    """Hosted checkout for a cardless-trial plan.
+
+    Paddle never renders a signup checkout for a cardless-trial price. The
+    supported lifecycle (per Paddle's cardless-trials docs):
+
+    - A live-but-unpaid subscription already exists in Paddle (``trialing``, or
+      ``past_due`` while dunning) → hand the client the subscription-linked
+      payment-method-update transaction (zero-value; must be opened with the
+      one-page Paddle.js variant, which the checkout page does). The stored
+      payment method takes over billing at trial end.
+    - No usable Paddle subscription yet (local trial only, or a canceled one
+      being reactivated) → create the subscription server-side (a ``billed``
+      transaction auto-completes and Paddle creates the trialing subscription),
+      stamp it with our ``tenant_id`` custom_data so webhook events key onto
+      our mirror row, then build the payment-method-update checkout for it.
+
+    Returns the same ``{transaction_id, checkout_url}`` contract as a standard
+    checkout; the transaction id is the one the checkout page opens.
+    """
+    paddle_subscription_id = subscription.paddle_subscription_id
+    if paddle_subscription_id and subscription.status in ("trialing", "past_due"):
+        return await get_payment_method_update_transaction(paddle_subscription_id)
+
+    # Paddle requires postal_code for GB addresses, so a cardless-trial
+    # checkout cannot be created for a tenant with no postcode — fail fast
+    # with a stable 400 code (same style as "subscription_required") so
+    # clients can collect a postcode and retry, instead of Paddle's 400
+    # surfacing as an opaque 502 retry loop. A postcode supplied with the
+    # checkout request is persisted into the tenant settings so later
+    # checkouts don't ask again.
+    billing_postcode = (postcode or "").strip() or (
+        str((tenant_row.settings or {}).get("postcode") or "").strip() if tenant_row else ""
+    )
+    if not billing_postcode:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="postcode_required",
+        )
+    if tenant_row is not None and (tenant_row.settings or {}).get("postcode") != billing_postcode:
+        tenant_row.settings = {**(tenant_row.settings or {}), "postcode": billing_postcode}
+    try:
+        address_id = await create_customer_address(
+            customer_id,
+            postal_code=billing_postcode,
+        )
+    except httpx.HTTPStatusError as exc:
+        if exc.response.status_code == 400:
+            # Paddle rejected the postcode itself — a client-fixable input
+            # problem, not a provider outage.
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="postcode_invalid",
+            ) from exc
+        raise
+    transaction_id = await create_cardless_trial_transaction(
+        price_id=price_id,
+        tenant_id=str(tenant_id),
+        plan_key=plan_key,
+        customer_id=customer_id,
+        address_id=address_id,
+    )
+    paddle_subscription_id = await await_transaction_subscription_id(transaction_id)
+    await update_subscription_custom_data(
+        paddle_subscription_id,
+        {"tenant_id": str(tenant_id), "plan_key": plan_key},
+    )
+    subscription.paddle_subscription_id = paddle_subscription_id
+    subscription.paddle_customer_id = customer_id
+    return await get_payment_method_update_transaction(paddle_subscription_id)
+
+
 @router.get("/plans")
 async def list_plans() -> list[dict[str, Any]]:
     """Return the subscription tier catalog for clients (mobile onboarding).
 
     Public by design — the onboarding plan step renders before checkout and
     must never be blocked by auth/tenant state. Each tier carries its key,
-    display name, flat monthly/annual GBP list prices (per business —
-    unlimited users on every tier), the env var NAMES that hold the Paddle
+    display name, flat monthly/annual GBP list prices (per business — not per
+    seat), staff seat cap, the env var NAMES that hold the Paddle
     price IDs (the IDs themselves stay server-side), the capability list, the
     featured flag, and trial terms. There are deliberately no AI-usage
     numbers: AI is unmetered on every tier. Mobile renders from this and
@@ -196,6 +330,12 @@ async def create_checkout(
     mobile app opens it in the system browser and Paddle bounces back to
     ``success_url`` (or the app default) on completion. Subscription state is
     written by the webhook, not here.
+
+    Prices with a cardless trial (``requires_payment_method: false``) cannot
+    use a rendered signup checkout — Paddle rejects it at render time. For
+    those, the subscription is created (or continued) server-side and the
+    returned URL is a subscription-linked payment-method-update checkout
+    (see :func:`_cardless_trial_checkout`).
     """
     price_id = _price_id_for_plan(data.plan_key, data.interval)
     if current_user is None:
@@ -216,15 +356,33 @@ async def create_checkout(
         customer_id = await get_or_create_customer(
             customer_email, name=current_user.full_name or None
         )
-        checkout = await create_subscription_transaction(
-            price_id=price_id,
-            tenant_id=str(tenant.id),
-            plan_key=data.plan_key,
-            customer_email=customer_email,
-            success_url=data.success_url,
-            discount_id=settings.paddle_beta_discount_id or None,
-            customer_id=customer_id,
-        )
+        if await _price_is_cardless_trial(price_id):
+            # Prices whose trial needs no card can't go through a rendered
+            # signup checkout at all — create/continue the subscription
+            # server-side and hand back the payment-method-update checkout.
+            checkout = await _cardless_trial_checkout(
+                price_id=price_id,
+                tenant_id=tenant.id,
+                plan_key=data.plan_key,
+                subscription=subscription,
+                customer_id=customer_id,
+                tenant_row=tenant_row,
+                postcode=data.postcode,
+            )
+        else:
+            checkout = await create_subscription_transaction(
+                price_id=price_id,
+                tenant_id=str(tenant.id),
+                plan_key=data.plan_key,
+                customer_email=customer_email,
+                success_url=data.success_url,
+                discount_id=settings.paddle_beta_discount_id or None,
+                customer_id=customer_id,
+            )
+    except HTTPException:
+        # Client-fixable failures raised deliberately (e.g. postcode_required)
+        # must keep their status — the catch-all below is for Paddle failures.
+        raise
     except Exception as exc:
         logger.error(
             "billing_checkout_failed",
@@ -254,17 +412,110 @@ async def create_checkout(
     )
 
 
+@router.post("/plan-change")
+async def change_plan(
+    data: BillingPlanChangeCreate,
+    tenant: TenantDep,
+    current_user: CurrentUserDep,
+    db: DbDep,
+) -> SubscriptionRead:
+    """Change the tenant's plan mid-cycle with immediate proration.
+
+    One flat subscription per business, so a plan change is a single-item
+    replace on the Paddle subscription (the new tier's price at the chosen
+    interval), billed ``prorated_immediately``: Paddle charges or credits the
+    difference for the rest of the current period and the new plan applies
+    now. The response entity is mirrored through the same
+    :func:`app.routers.webhooks._upsert_subscription` path the webhooks use,
+    so the plan key / tier entitlements re-derive from the new price id and
+    stay consistent with the paywall gate. If the prorated charge fails
+    Paddle keeps the old plan (``prevent_change``) and this surfaces as 502.
+    """
+    if current_user is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authentication required",
+        )
+    tenant_id = tenant.id  # capture before any rollback expires the ORM object
+    await set_tenant_in_session(db, tenant_id)
+    sub = await db.scalar(select(Subscription).where(Subscription.tenant_id == tenant_id))
+    if sub is None or not sub.paddle_subscription_id:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="No active Paddle subscription for this business",
+        )
+    price_id = _price_id_for_plan(data.plan_key, data.interval)
+
+    try:
+        updated = await update_subscription(sub.paddle_subscription_id, price_id)
+    except Exception as exc:
+        logger.error(
+            "billing_plan_change_failed",
+            tenant_id=str(tenant.id),
+            plan_key=data.plan_key,
+            paddle_subscription_id=sub.paddle_subscription_id,
+            error_type=type(exc).__name__,
+            error=str(exc)[:300],
+        )
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Payment provider is unavailable. Try again shortly.",
+        ) from exc
+
+    # Mirror through the webhook upsert so plan/status/period re-derive from
+    # the price id exactly as they do for a subscription.updated event.
+    await _upsert_subscription("subscription.updated", updated)
+
+    # The upsert commits on its own engine session; this request session's
+    # snapshot predates it. Roll back (nothing of ours to keep) and re-read.
+    await db.rollback()
+    sub = await db.scalar(select(Subscription).where(Subscription.tenant_id == tenant_id))
+    if sub is None:  # pragma: no cover - defensive; the upsert just wrote it
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Subscription failed to sync. Try again shortly.",
+        )
+    logger.info(
+        "billing_plan_change_applied",
+        tenant_id=str(tenant_id),
+        plan_key=sub.plan_key,
+        paddle_subscription_id=sub.paddle_subscription_id,
+    )
+    return await _subscription_read(db, sub)
+
+
+async def _subscription_read(db: AsyncSession, sub: Subscription) -> SubscriptionRead:
+    """Serialise a subscription with its plan's seat context.
+
+    ``seats`` comes from the plan catalog (legacy plan keys resolved), so it
+    is never stored on the row; ``seats_in_use`` counts active users plus
+    pending invites — the same number ``POST /users/invite`` gates on.
+    """
+    plan = get_plan(sub.plan_key)
+    return SubscriptionRead.model_validate(
+        {
+            **sub.__dict__,
+            "seats": plan.seats,
+            "seats_in_use": await seats_in_use(db, sub.tenant_id),
+        }
+    )
+
+
 @router.get("/subscription")
 async def get_subscription(
     tenant: TenantDep,
     db: DbDep,
 ) -> SubscriptionRead | None:
-    """Return the tenant's current subscription state (or ``null`` if none)."""
+    """Return the tenant's current subscription state (or ``null`` if none).
+
+    Carries the plan's seat count and current seat usage so clients can gate
+    team-only UI (assignee pickers, team invites) without a second request.
+    """
     await set_tenant_in_session(db, tenant.id)
     sub = await db.scalar(select(Subscription).where(Subscription.tenant_id == tenant.id))
     if sub is None:
         return None
-    return SubscriptionRead.model_validate(sub)
+    return await _subscription_read(db, sub)
 
 
 @router.post("/portal-session")
@@ -311,18 +562,33 @@ async def create_portal_session(
 # Re-exported for tests / other modules that want the same "still-good" gate.
 ACTIVE_STATUSES = frozenset({"trialing", "active", "past_due"})
 
+# Past-due grace: while a failed payment is in dunning (Paddle retrying in
+# the background, our dunning emails going out) the tenant keeps app access.
+# The grace is anchored on the failed period's end (the date the payment came
+# due) and after it expires the C22 paywall re-engages (402 until resolved).
+PAST_DUE_GRACE_DAYS = 7
+
 
 def is_subscription_active(subscription: Subscription | None) -> bool:
     """Beta gate: any status where we still let the tenant use the app.
 
-    Excludes ``paused`` and ``canceled``. Past-due gets grace so we don't kick
-    tenants during Paddle's dunning window. Not currently enforced anywhere
-    because beta = track only.
+    Excludes ``paused`` and ``canceled``. ``past_due`` passes only within
+    :data:`PAST_DUE_GRACE_DAYS` of the failed period's end date — grace while
+    Paddle/our dunning chases the payment, then the paywall re-engages. A
+    past-due row with no known period end keeps the permissive beta default
+    (access allowed) rather than kicking a tenant on incomplete data. Not
+    currently enforced anywhere because beta = track only.
     """
     if subscription is None:
         return False
     if subscription.status not in ACTIVE_STATUSES:
         return False
+    if subscription.status == "past_due":
+        if subscription.current_period_end is None:
+            return True
+        return datetime.utcnow() <= subscription.current_period_end + timedelta(
+            days=PAST_DUE_GRACE_DAYS
+        )
     if subscription.trial_ends_at is not None and subscription.status == "trialing":
         return subscription.trial_ends_at > datetime.utcnow()
     return True

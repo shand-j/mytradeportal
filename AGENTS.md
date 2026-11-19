@@ -1,13 +1,12 @@
 # AGENTS.md — My Trade Portal
 
 This file is written for AI coding agents who need to understand the project as it
-exists in the working tree. The repository is currently mid-pivot: the backend
-services (`services/api`, `services/admin`, `services/data-pipeline`) are present
-again after the provider-agnostic LLM / guide-priced AI quotes work, while the old
-`services/pwa` Expo app has been replaced by a new React Native + Expo iOS app under
-`mobile/`. Some root config files still reference genuinely deleted services
-(`services/ocerp`, `services/pwa`), so treat this document as the source of truth
-for the *current* layout.
+exists in the working tree. The pivot is complete: the backend services
+(`services/api`, `services/admin`, `services/data-pipeline`) are present, and the
+old `services/pwa` Expo app has been replaced by the React Native + Expo iOS app
+under `mobile/`. The only remaining references to deleted services are
+commented-out `services/ocerp` blocks (see "Known issues"), so treat this document
+as the source of truth for the *current* layout.
 
 ---
 
@@ -46,9 +45,11 @@ settings, logging, tenancy helpers), installed as an editable package via
 - **`security/`** — security testing harness (OWASP, multi-tenancy, SOC2 evidence).
 It targets the FastAPI API, so it is most useful when run against a live deployed
 backend.
-- **`docs/`** — active documentation. Currently holds the React Native stack report
-(`electrician-app-rn-stack-report.md`) and the SOC2 controls catalogue
-(`soc2-controls.md`). Legacy docs remain in `docs/archived/`.
+- **`docs/`** — active documentation: the Beta PRD (`prd-beta.md`), the October
+beta test plan (`beta-test-plan.md` — the current verification map), the go-live
+runbook, testing accounts/seeded estate, payments money model, data retention,
+CI hard rules, the SOC2 controls catalogue, the RN stack report, and alert
+runbooks in `docs/runbooks/`. Legacy docs remain in `docs/archived/`.
 
 ### AI quote pipeline
 
@@ -59,16 +60,24 @@ endpoint (Kimi/Moonshot via `LLM_API_BASE`). Recent additions:
 - `QuoteRead` now exposes AI metadata: `ai_generated`, `ai_confidence`,
 `ai_warnings`, `ai_assumptions`, `ai_notes`, and `retrieval_status`
 (derived from the per-line flag and `quote.extra_data["rag"]`).
+- Photo observations (issue #186): photos attached to a quote request
+(`MediaAsset`) are captioned by a vision call in `services/api/app/rag/vision.py`
+(fail-open, model = `LLM_VISION_MODEL` or `LLM_MODEL`; MinIO objects are fetched
+server-side and inlined as base64 data URLs since MinIO is private-network-only).
+The captions are rendered into the generation prompt as confirmed site facts —
+so the draft's assumptions must not contradict them — and stored on
+`quote.extra_data["rag"]["observations"]`, surfaced on `QuoteRead` as
+`ai_observations`.
 - `POST /quotes/{id}/refine` accepts electrician instructions and regenerates the
 AI-drafted line items, preserving any manually added/edited lines. Rate limited
-like `/generate`. Refine runs on a dedicated cheap/fast route (`LLM_REFINE_MODEL`,
-default `gpt-4o-mini`) because the flagship (Kimi k2.6 at 60-120s/call) races the
-120s server-side refine budget (`asyncio.timeout`, retryable 503 on expiry); the
-customer-facing triage chat similarly uses `LLM_FOLLOWUP_MODEL` (default
-`gpt-4o-mini`) with a 30s/1-retry budget. Both resolve via
-`app/rag/generation.py::_resolve_fast_route`: a bare OpenAI-style id uses
-`OPENAI_API_KEY` with any non-OpenAI base suppressed, a `provider/model` id uses
-the configured LLM provider, and empty inherits `LLM_MODEL` (flagship opt-in).
+like `/generate`.
+- **Model routing** (issues #198/#217/#227): `LLM_MODEL` is the flagship model
+used for full quote generation. Latency-sensitive paths route to cheaper fast
+models via separate knobs — `LLM_REFINE_MODEL` for `/quotes/{id}/refine` and
+`LLM_FOLLOWUP_MODEL` for the triage follow-up chat (each with its own
+timeout/retry settings; empty inherits `LLM_MODEL`). `LLM_VISION_MODEL` covers
+photo captioning (above), and `INTAKE_TRIAGE_MODEL` the portal form's inline
+triage check.
 - `services/api/evals/` is a golden-set eval harness: 15 representative UK
 domestic jobs scored on kind coverage, keyword hit-rate, guide price band, and
 line-count sanity. It is line-style aware: `--line-style job_summary` scores
@@ -96,6 +105,124 @@ remaining consecutive working-day blocks as appointments; job reschedules
 shift those block appointments by the same delta. `GET /jobs/suggest-schedule`
 (`quote_id=` or `hours=`) returns the earliest start where the whole block
 sequence fits around existing appointments and scheduled jobs.
+
+### Quote acceptance date preferences and draft jobs (issue #179)
+
+On the emailed quote page (`/quote/:token` on the landing site) the customer
+picks up to 3 ranked date/time-window preferences against an
+availability-aware calendar. The API behind it:
+
+- `GET /public/quote/{token}/availability` — token-scoped free/busy summary
+BY DATE (`available`/`partial`/`busy`/`closed` + the quote's
+`estimated_hours`). Deliberately coarse: no booking details ever leave it.
+- `POST /public/quote/{token}/preferences` — stores the ranked choices on
+`quote.accepted_dates` ("YYYY-MM-DD" or "YYYY-MM-DD (morning)"; parser in
+`app/preferred_dates.py`), usable before or after acceptance.
+- Acceptance with preferences (`apply_quote_acceptance`) auto-creates a
+tentative DRAFT job (`status="draft"`) pre-filled with the 1st choice;
+`POST /convert-to-job` adopts and confirms it in place (other existing jobs
+still 409). Draft jobs never block the calendar and never trigger the
+booking-confirmed email — the free/busy math shared by staff and public
+availability lives in `app/availability.py` and excludes them. The mobile
+job-create screen shows the quote's preferences as tappable chips so the
+electrician lands on the 2nd/3rd choice when the 1st doesn't fit.
+
+### Team gating, invites and sole-staff auto-assignment (issues #190/#191/#192)
+
+Plan tiers cap staff seats (`Plan.seats`: sole_trader 1, pro 5, team 15 —
+enforced by `POST /users/invite`). Admins invite staff via
+`POST /users/invite` (409 when the seat cap is reached); the invitee sets
+their password from a single-use emailed link (`POST /users/accept-invite`,
+links built on `PASSWORD_RESET_BASE_URL`, TTL `INVITE_TOKEN_TTL_DAYS`, and
+requesting a fresh link via `POST /users/invite/magic-link` revokes earlier
+ones). Invite emails embed the public TestFlight link when `TESTFLIGHT_URL`
+is set. Assignment is only meaningful on multi-seat plans, so every
+job-creation path (`POST /jobs`, quote convert-to-job, the acceptance-time
+draft job) and `POST /appointments` defaults `assigned_user_id` to the
+tenant's ONLY active user when none is supplied
+(`app.dependencies.single_active_user`); explicit assignees are validated and
+always win. Seat context reaches clients via `GET /billing/subscription`,
+which now carries `seats` (plan catalog, legacy keys resolved) and
+`seats_in_use` (active users + pending invites — the same count the invite
+endpoint gates on). The mobile app gates its assignee pickers on the simpler
+equivalent signal: the pickers (job create, job detail) render only when
+`GET /users` returns more than one active user, and the calendar shows its
+All/Me assignee filter only on multi-seat plans ("Me" narrows server-side).
+
+### Telnyx SMS appointment reminders (issues #169/#243)
+
+`services/api/app/appointment_reminders.py` texts the customer AND the
+assigned electrician before each appointment (default windows 24h and 2h) via
+the Telnyx Messaging API (`app/sms.py` — fail-open like the email layer;
+UK-aware E.164 normalisation, tenant business name as alphanumeric sender ID,
+bodies kept to one SMS segment for the fair-use cost model). Env vars:
+`TELNYX_API_KEY` plus at least one of `TELNYX_FROM_NUMBER` /
+`TELNYX_MESSAGING_PROFILE_ID`; when unset, reminders degrade to email/push.
+`POST /webhooks/telnyx` (Ed25519 signature verified against
+`TELNYX_PUBLIC_KEY`, 503 until configured) handles delivery receipts —
+permanent customer-SMS failures page staff once per day via
+`app/sms_alerts.py` (sharing the email-failure dedupe ledger) — and inbound
+CTIA keywords: STOP opts the number out (`sms_opt_out` on the contact, sweep
+falls back to email), START/UNSTOP re-enables.
+
+### Dispatch guardrails (issue #237)
+
+`services/api/app/dispatch.py` is the single server-side gate every
+assignment path (job/appointment create/update, quote convert-to-job) passes
+through. Three rules, each a structured 409 (`detail.code` +
+human-toastable `detail.reason`): `schedule_conflict` (assignee already has
+a blocking booking overlapping the window — shared `app.availability` math,
+so drafts/cancellations never block and back-to-back slots are fine),
+`daily_hours_cap` (more than `DAILY_SCHEDULE_CAP_HOURS` = 10 scheduled hours
+on one calendar day), and `job_locked` (in-progress/completed jobs refuse
+reschedule/reassignment).
+
+### Stripe Connect onboarding and the public URL surface (issues #204/#218/#220/#230)
+
+Tradesperson receivables run on Stripe Connect Express (ADR-003). Current
+mobile builds use Stripe's native embedded `account_onboarding` component,
+driven by `POST /payments/connect/session`. Its optional `components` body
+parameter defaults to `onboarding`; `dashboard` instead enables the web
+`notification_banner`, `payouts` and `balances` components for
+`/payments/dashboard` on the landing site (opened from Settings → Payments).
+AccountSession secrets are short-lived, so clients fetch fresh sessions as
+needed. New connected accounts are pre-filled from the tenant record —
+including the tenant's customer-portal URL as the account's business website.
+`GET /payments/status` re-syncs the mirrored account flags from Stripe on
+every read after embedded onboarding exits (degrading to the last mirrored
+flags on a Stripe outage).
+
+The hosted AccountLink flow remains for older mobile builds: Stripe's
+AccountLink API only accepts http(s) URLs, so the API substitutes the landing
+site's `/payments/stripe-bounce` page (`PUBLIC_DOCS_BASE_URL`) which bounces
+back into the app's `mtp://` deep link (mobile mirrors the helper in
+`mobile/src/api/payments.ts::stripeBounceUrl`).
+
+`APP_PUBLIC_URL` is the back-office origin only — never used for
+customer-facing links. The public URL surface resolves on
+mytradeportal.co.uk via dedicated knobs: `PUBLIC_DOCS_BASE_URL` (quote/
+invoice token pages and the Stripe bounce page), `PASSWORD_RESET_BASE_URL`
+(`/reset-password`, `/accept-invite`), portal magic links on
+`{slug}.PORTAL_BASE_DOMAIN`, and `CALENDAR_FEED_BASE_URL` (webcal/.ics feed
+links — empty falls back to the request origin; brand it when the API custom
+domain lands, issue #181).
+
+### Tenant branding logo and offboarding (issues #232/#244)
+
+Staff upload the tenant logo via `POST /tenants/me/logo` (multipart,
+type/size validated, stored in MinIO under `tenants/{id}/branding/`;
+`DELETE /tenants/me/logo` removes it). It is served unauthenticated at
+`GET /businesses/{slug}/logo` and `settings.logo_url` carries the absolute
+URL (built on `PUBLIC_API_BASE_URL` when set) so portal/landing pages render
+it as a plain `<img>` src.
+
+Tenant offboarding is self-service for the tenant admin:
+`POST /tenants/me/offboard` with a `confirm_slug` body cancels the Paddle
+subscription and deletes the Stripe connected account (best-effort — provider
+outages never block), deactivates all staff/customer accounts, revokes
+magic-link/invite/document/reset tokens, deactivates the tenant, and
+anonymises PII in place while retaining financial records per
+`docs/data-retention.md`.
 
 ### Reminder scheduler and tenant scheduling settings
 
@@ -125,21 +252,35 @@ retro-changes the invoice. `POST /invoices` resolves the quote from
 `job.quote_id` when only `job_id` is sent, so the invoice-from-job flow always
 prefills the accepted quote lines (editable before send from the mobile
 create-invoice page).
+Per-document VAT opt-out (issue #110): `QuoteUpdate` and `InvoiceUpdate` accept
+an optional `vat_rate` (a fraction, 0–1) so VAT-registered tenants can drop VAT
+to 0 for zero-rated jobs (e.g. new builds), fulfilling the onboarding TaxVatStep
+"you'll confirm per quote" promise. The override may only lower or remove VAT —
+`vat_rate_within_tenant_limit` in `app/calculations.py` rejects (400) any rate
+above the tenant's registered rate; for a non-registered tenant that means any
+positive rate. Setting a rate re-runs the create-time totals math: quotes are
+re-rounded via `apply_quote_rounding`, invoices keep their fixed creation-time
+`rounding_adjustment`. The mobile QuoteEditScreen exposes this as a
+"VAT x% / Zero-rated 0%" chip selector, shown only for VAT-registered tenants.
 Electrician quote edits are captured as `quote_lines_edited` / `quote_refined`
 rows in `events` (before/after snapshots) for AI fine-tuning; export via
 `GET /quotes/training-events` or the SQL in that endpoint's docstring.
 
-Deleted from the working tree but still referenced in config:
+Deleted from the working tree:
 
-- `services/ocerp` (OpenConstructionERP BoQ engine)
-- `services/pwa` (old Expo app — replaced by `mobile/`)
+- `services/ocerp` (OpenConstructionERP BoQ engine) — still referenced by the
+commented-out block in `.railway/railway.ts`, the commented block in
+`docker-compose.yml`, and a dead resource-limits block in
+`docker-compose.prod-replica.yml`. The parked 501 BoQ path
+(`services/api/app/clients/ocerp.py`) remains intentionally.
+- `services/pwa` (old Expo app — replaced by `mobile/`); no config references
+remain.
 - `evals/` (old top-level golden-dataset evaluation — superseded by
 `services/api/evals/`)
 - `user-docs/` (Mintlify user docs)
 
 > **Historical context:** most of the original specification, architecture diagram, and
-> prior runbooks remain in `docs/archived/` or git history. The two active docs in
-> `docs/` were added back to the working tree.
+> prior runbooks remain in `docs/archived/` or git history.
 
 ---
 
@@ -232,17 +373,17 @@ mytradeportal/
 ├── .editorconfig             # 2-space default, 4-space Python
 ├── .gitignore
 ├── package.json              # Root workspace: Supabase CLI scripts only
-├── pnpm-workspace.yaml       # Workspace globs (includes deleted services/pwa)
+├── pnpm-workspace.yaml       # Workspace globs + pnpm overrides/audit allow-list
 ├── pnpm-lock.yaml
 ├── pyproject.toml            # Root Python packaging + ruff/mypy/pytest config
 ├── docker-compose.yml        # Local stack (all referenced app services present)
-├── conftest.py               # pytest path setup (still references deleted services/ocerp)
+├── conftest.py               # pytest path setup
 │
-├── .github/workflows/        # CI/CD (pwa-e2e.yml references deleted services/pwa)
-│   ├── ci.yml                # Python + web CI + Railway deploy (deprecated note)
-│   ├── pwa-e2e.yml           # References services/pwa
-│   ├── smoke-test.yml        # Web production smoke
-│   └── security-audit.yml    # Manual-dispatch security audit
+├── .github/workflows/        # CI/CD
+│   ├── ci.yml                # Python + mobile gates, schema-sync, Railway deploy on main
+│   ├── pr-verify.yml         # PR preview env (Railway fork) smoke + dependency audit gate
+│   ├── staging-e2e.yml       # Staging E2E suites (incl. signed-sandbox Paddle webhooks)
+│   └── security-audit.yml    # Weekly cron + manual-dispatch security audit
 │
 ├── .railway/
 │   ├── railway.ts            # IaC for legacy Railway services
@@ -349,8 +490,16 @@ mytradeportal/
 │       └── playwright*.config.ts
 │
 ├── docs/                     # Active documentation
-│   ├── electrician-app-rn-stack-report.md
-│   ├── soc2-controls.md
+│   ├── user-journeys.md      # Implemented user journeys map (per persona → screens + API)
+│   ├── prd-beta.md           # Beta scope PRD (historical spec — see banner)
+│   ├── beta-test-plan.md     # October-cohort verification map (current)
+│   ├── go-live-runbook.md    # Deploy/runbook for go-live and redeploys
+│   ├── testing-accounts.md   # Seeded demo estate + logins
+│   ├── payments-model.md     # Money-flow description (Stripe Connect + Paddle)
+│   ├── data-retention.md     # Retention schedule + offboarding behaviour
+│   ├── ci-hard-rules.md      # CI invariants (no live LLM/Paddle, schema-sync)
+│   ├── soc2-controls.md      # SOC2 controls catalogue
+│   ├── runbooks/             # Alert runbooks
 │   └── archived/             # Legacy documentation moved here
 ```
 
@@ -374,9 +523,8 @@ declared in `mobile/package.json` (e.g. `babel-preset-expo`).
 
 ### Mobile app (`mobile/`)
 
-> **Note:** the app was recently moved from `services/pwa` to `mobile/`. Several
-> shell scripts inside `mobile/` still reference `services/pwa` paths and need to
-> be updated before they work.
+> **Note:** the app was moved from `services/pwa` to `mobile/`; the shell scripts
+> inside `mobile/` now resolve their paths from the new location.
 
 ```bash
 cd mobile
@@ -410,6 +558,11 @@ npx eas-cli build --platform ios --profile preview                 # device QA (
 
 # OTA hot fix (JS-only; no store resubmission)
 npx eas-cli update --branch production --message "fix: ..."
+
+# Quota-free local build (macOS + Xcode + fastlane; EAS runs the build on your
+# machine via fastlane and prints the .ipa path — no EAS build minutes used)
+npx eas-cli build --platform ios --profile production --local
+npx eas-cli submit --platform ios --path <path-to>.ipa
 ```
 
 Runtime modes:
@@ -545,8 +698,8 @@ cd web/app
 pnpm test -- --run
 ```
 
-Currently 138 unit/integration tests pass across pages, components, hooks, API
-clients, and stores.
+Covers pages, components, hooks, API clients, and stores (the count grows
+constantly — see `docs/test-coverage.md` for the journey map).
 
 ### `web/app` — Playwright E2E
 
@@ -571,9 +724,6 @@ pnpm e2e:install
 pnpm test:e2e
 ```
 
-Known issue: `mobile/e2e/run.sh` and `mobile/e2e/start-stack.sh` still point to
-`services/pwa` and need path updates before the suite runs.
-
 ### Python tests
 
 The API test suite lives in `services/api/tests/` and runs against a local
@@ -588,8 +738,6 @@ python -m pytest tests/test_evals.py -q   # offline eval-harness tests (marker: 
 
 The root pytest config excludes the `eval` (legacy OCERP) and `security` markers
 from default runs; the `evals` marker is offline-safe and runs by default.
-Running bare `pytest` from the repo root still trips over `conftest.py` paths
-for the deleted `services/ocerp`.
 
 ### Agentic QA skills
 
@@ -635,10 +783,10 @@ pytest -m security -v --no-cov
 
 | Workflow | Status | Notes |
 |---|---|---|
-| `ci.yml` | Deprecated | Contains a FIXME noting it should be removed; targets `services/api` |
-| `pwa-e2e.yml` | Stale path | References `services/pwa` instead of `mobile/` |
-| `smoke-test.yml` | Active for `web/app` | Production smoke tests for the Vite SPA |
-| `security-audit.yml` | Manual only | Runs security suite against live backend |
+| `ci.yml` | Active | Python (ruff/mypy/pytest) + mobile tsc gates, schema-sync job, Railway IaC deploy on push to main; hard rules in `docs/ci-hard-rules.md` |
+| `pr-verify.yml` | Active | Spins up a Railway PR preview env and smokes it (health, landing token pages, quote-request submit); `pnpm audit --audit-level=high` is a hard gate here |
+| `staging-e2e.yml` | Active | Staging E2E suites; the write suite signs Paddle webhook payloads locally with the sandbox secret — never calls the live Paddle API |
+| `security-audit.yml` | Weekly cron + manual | Runs the security suite against live backend |
 
 ### Railway IaC
 
@@ -659,15 +807,23 @@ logs out on a tenant-mismatch 403.
 - **Security suite**: `security/` contains read-only/code-analysis tests and an
 agentic penetration-test orchestrator. It is safe to run but requires live target
 credentials.
-- **Dependency audits**:
+- **Dependency audits** (also run by the `dependency-audit` job in
+`pr-verify.yml` — `pnpm audit` is a hard high/critical gate there, `pip-audit`
+is report-only because it has no severity filter and some advisories against
+our tree, e.g. ecdsa CVE-2024-23342, have no fixed release):
 
 ```bash
-# Python
-pip-audit --desc --audit-level=high
+# Python (no severity filter; review output for high/critical)
+pip-audit --desc
 
-# Node
+# Node (fails on high/critical; the only accepted advisories are the
+# documented GHSA IDs in auditConfig.ignoreGhsas in pnpm-workspace.yaml)
 pnpm audit --audit-level=high
 ```
+
+Transitive Node packages with fixable advisories are pinned to patched
+releases via `overrides` in `pnpm-workspace.yaml` — add new ones there rather
+than bumping direct dependencies that aren't actually vulnerable.
 
 ---
 
@@ -679,12 +835,24 @@ Key variables (see `.env.example` for the full template):
 - `DATABASE_URL`, `REDIS_URL`, `QDRANT_URL`
 - `MINIO_ENDPOINT`, `MINIO_USE_SSL`, `MINIO_ACCESS_KEY`, `MINIO_SECRET_KEY`, `MINIO_BUCKET`
 - `AUTH_SECRET_KEY`, `AUTH_COOKIE_SECURE`
-- `OPENAI_API_KEY`, `LLM_MODEL`, `LLM_API_BASE`, `LLM_API_KEY`, `LLM_TEMPERATURE`
-- `LLM_FOLLOWUP_MODEL`, `LLM_FOLLOWUP_TIMEOUT_SECONDS`, `LLM_FOLLOWUP_MAX_RETRIES`,
-`LLM_REFINE_MODEL` — cheap/fast routes for the triage chat and quote refine
-(default `gpt-4o-mini`; empty inherits the flagship `LLM_MODEL`)
+- `OPENAI_API_KEY`, `LLM_MODEL`, `LLM_API_BASE`, `LLM_API_KEY`, `LLM_TEMPERATURE`,
+  `LLM_TIMEOUT_SECONDS`
+- `LLM_REFINE_MODEL`, `LLM_FOLLOWUP_MODEL` (+ per-route timeout/retry knobs),
+  `LLM_VISION_MODEL`, `INTAKE_TRIAGE_MODEL` — fast/vision model routes (empty
+  inherits `LLM_MODEL`)
 - `EMBEDDING_MODEL`, `EMBEDDING_API_BASE`, `EMBEDDING_API_KEY`
-- `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`
+- `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `STRIPE_CONNECT_CLIENT_ID`,
+  `STRIPE_PUBLISHABLE_KEY` — tradesperson receivables (Connect Express)
+- `PADDLE_API_KEY`, `PADDLE_WEBHOOK_SECRET`, `PADDLE_CLIENT_TOKEN`, `PADDLE_SANDBOX`,
+  `PADDLE_PRICE_ID_*` — SaaS billing (merchant of record)
+- `TELNYX_API_KEY`, `TELNYX_FROM_NUMBER`, `TELNYX_MESSAGING_PROFILE_ID`,
+  `TELNYX_PUBLIC_KEY` — SMS appointment reminders + inbound webhook
+- `RESEND_API_KEY`, `RESEND_FROM_EMAIL`, `RESEND_NO_REPLY_EMAIL`,
+  `RESEND_WEBHOOK_SECRET` — transactional email + bounce/failure alerts
+- Public URL knobs: `APP_PUBLIC_URL` (back-office origin only),
+  `PUBLIC_DOCS_BASE_URL`, `PASSWORD_RESET_BASE_URL`, `PORTAL_BASE_DOMAIN`,
+  `CALENDAR_FEED_BASE_URL`, `PUBLIC_API_BASE_URL`
+- `INVITE_TOKEN_TTL_DAYS`, `TESTFLIGHT_URL` — staff team invites
 - `VITE_API_BASE_URL` — web app backend URL
 - `EXPO_PUBLIC_API_BASE_URL` — mobile backend URL (required; there is no offline demo mode)
 - `EXPO_PUBLIC_BUSINESS_SLUG` — white-label target business
@@ -694,18 +862,20 @@ Key variables (see `.env.example` for the full template):
 
 ## Known issues and follow-up
 
-1. **Mid-migration state.** `services/api`, `services/admin`, and
-`services/data-pipeline` are present again; only `services/ocerp` and
-`services/pwa` are deleted but still referenced by `pnpm-workspace.yaml`,
-`.railway/railway.ts` (ocerp commented out), `.github/workflows/pwa-e2e.yml`,
-`conftest.py` (ocerp path), and `pyproject.toml` (`testpaths` still lists the
-old top-level `evals/`).
-2. **Mobile script paths.** `mobile/e2e/run.sh`, `mobile/e2e/start-stack.sh`, and
-`mobile/scripts/run-ios.sh` reference `services/pwa`.
-3. **Root README deleted.** The project currently has no root `README.md`.
-4. **CI workflows stale.** `ci.yml` and `pwa-e2e.yml` need updating to match the
-`mobile/` location.
-5. **Mobile TypeScript install.** `pnpm install` in the mobile workspace may leave
+1. **Calendar feed branded domain (issue #181).** Calendar subscription
+(webcal/.ics) links fall back to the request origin until
+`CALENDAR_FEED_BASE_URL` is pointed at a branded API domain
+(`api.mytradeportal.co.uk`) — the custom domain has not landed yet.
+2. **Live-verification residue.** Code-complete but only verifiable against
+live providers, tracked in `docs/beta-test-plan.md` §3: a real-card payment
+against live Stripe keys (go-live gate), live SMS delivery to a real handset
+(needs provisioned Telnyx number/keys), and background push delivery on a
+physical device (APNs cannot be simulated).
+3. **Dead ocerp overlay block.** `docker-compose.prod-replica.yml` carries a
+resource-limits block for the deleted `services/ocerp` (the base compose
+entry is commented out, so the overlay is inert); remove it when the file is
+next touched.
+4. **Mobile TypeScript install.** `pnpm install` in the mobile workspace may leave
 a broken `typescript` symlink on some machines; a clean `rm -rf mobile/node_modules`
 followed by `pnpm install` usually resolves it.
 
@@ -713,12 +883,20 @@ followed by `pnpm install` usually resolves it.
 
 ## Reference material
 
-- `mobile/AGENTS.md` — mobile-specific conventions (note: some paths still say
-`services/pwa`).
-- `mobile/README.md` — setup and run instructions for the iOS app (partially stale).
+- `mobile/AGENTS.md` — mobile-specific conventions.
+- `mobile/README.md` — setup, run, and EAS build/submit instructions for the iOS app.
 - `web/app/README.md` — Vite template README.
 - `security/README.md` — security test suite documentation.
-- `docs/prd-beta.md` — Beta scope PRD (mobile + existing backend integration).
+- `docs/user-journeys.md` — implemented user journeys per persona, mapped to
+  screens and API endpoints, with evidence status.
+- `docs/prd-beta.md` — Beta scope PRD (historical spec; see the status banner).
+- `docs/beta-test-plan.md` — current verification map for the October beta cohort.
+- `docs/go-live-runbook.md` — deploy order, production env wiring, rollback.
+- `docs/testing-accounts.md` — seeded demo estate, logins, manual test flows.
+- `docs/payments-model.md` — how money moves (Stripe Connect + Paddle).
+- `docs/data-retention.md` — retention schedule and tenant offboarding behaviour.
+- `docs/ci-hard-rules.md` — CI invariants.
+- `docs/runbooks/alerts.md` — alert runbooks.
 - `docs/electrician-app-rn-stack-report.md` — React Native stack report.
 - `docs/soc2-controls.md` — SOC2 controls catalogue.
 - `docs/archived/` — legacy product specs, runbooks, and compliance docs.

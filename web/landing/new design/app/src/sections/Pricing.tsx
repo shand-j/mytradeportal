@@ -6,7 +6,8 @@ import { PricingTiers } from '@/constants/pricing-tiers'
 import { TESTFLIGHT_URL } from '@/lib/site'
 
 /**
- * Pricing — flat per business, unlimited users, AI unmetered on every plan.
+ * Pricing — flat per business, seat-capped tiers (1 / 5 / 15 users), AI
+ * unmetered on every plan.
  * Prices are pulled live from Paddle (PricePreview), localised to the
  * visitor's country with tax handled by Paddle, falling back to static GBP
  * launch prices when Paddle isn't configured. During beta every plan is
@@ -44,9 +45,9 @@ export default function Pricing() {
             </h2>
             <p className="reveal mt-[var(--space-md)] max-w-[44ch] text-[15.5px] leading-[1.75] text-[var(--muted)]" style={{ ['--i' as string]: 1 }}>
               Free while we&apos;re in beta — join TestFlight and every plan is
-              unlocked. At launch: one price for your whole business —
-              unlimited users, and AI included on every plan. No credits, no
-              counting.
+              unlocked. At launch: one flat price per business — seats for
+              your team on every plan, and AI included throughout. No
+              credits, no counting.
             </p>
           </div>
 
@@ -156,14 +157,26 @@ export default function Pricing() {
                     </li>
                   ))}
                 </ul>
-                <a
-                  href={TESTFLIGHT_URL}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className={`chip mt-[var(--space-xl)] justify-center ${tier.featured ? 'chip--on-dark' : ''}`}
-                >
-                  Join the beta
-                </a>
+                <div className="mt-[var(--space-xl)] flex flex-col items-stretch gap-[var(--space-sm)]">
+                  <Link
+                    to={`/subscribe?plan=${tier.id}&interval=${frequency}`}
+                    className={`chip justify-center ${tier.featured ? 'chip--accent' : 'chip--fill'}`}
+                  >
+                    Subscribe{frequency === 'year' ? ' yearly' : ''} — {shown}
+                  </Link>
+                  <a
+                    href={TESTFLIGHT_URL}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className={`text-center text-[12px] font-semibold uppercase tracking-[0.1em] underline decoration-2 underline-offset-4 transition-colors duration-[length:var(--dur-micro)] ${
+                      tier.featured
+                        ? 'text-[var(--paper-on-dark-muted)] decoration-transparent hover:text-[var(--paper-on-dark)] hover:decoration-[var(--accent)]'
+                        : 'text-[var(--muted)] decoration-transparent hover:text-[var(--ink)] hover:decoration-[var(--accent)]'
+                    }`}
+                  >
+                    Free during beta — get the app on TestFlight
+                  </a>
+                </div>
               </div>
             )
           })}

@@ -50,6 +50,74 @@ async def _create_quote(client: AsyncClient, tenant_id: str, contact_id: str) ->
     return data
 
 
+async def test_contact_notes_flow_to_quote_and_job(client: AsyncClient) -> None:
+    """CRM contact notes merge into the quote's notes at creation (without
+    overwriting notes typed on the creation screen) and survive the
+    quote → job conversion."""
+    tenant = await _create_tenant(client, f"quote-{uuid4().hex[:8]}")
+    headers = {"X-Tenant-ID": tenant["id"]}
+    contact_response = await client.post(
+        "/contacts",
+        headers=headers,
+        json={"name": "Notes Carrier", "notes": "Gate code 4521; dog on site"},
+    )
+    assert contact_response.status_code == 201
+    contact = contact_response.json()
+
+    quote_response = await client.post(
+        "/quotes",
+        headers=headers,
+        json={
+            "contact_id": contact["id"],
+            "title": "Fuse board upgrade",
+            "notes": "Customer wants a Saturday visit",
+            "line_items": [
+                {"description": "Labour", "quantity": "1", "unit_price": "100.00"},
+            ],
+        },
+    )
+    assert quote_response.status_code == 201, quote_response.text
+    quote = quote_response.json()
+    assert quote["notes"] is not None
+    assert "Customer wants a Saturday visit" in quote["notes"]
+    assert "Gate code 4521; dog on site" in quote["notes"]
+
+    approve = await client.post(f"/quotes/{quote['id']}/approve", headers=headers, json={})
+    assert approve.status_code == 200, approve.text
+
+    convert = await client.post(
+        f"/quotes/{quote['id']}/convert-to-job",
+        headers=headers,
+        json={"notes": "Bring the long ladder"},
+    )
+    assert convert.status_code == 201, convert.text
+    job = convert.json()
+    assert "Bring the long ladder" in (job["notes"] or "")
+    assert "Customer wants a Saturday visit" in (job["notes"] or "")
+    assert "Gate code 4521; dog on site" in (job["notes"] or "")
+
+
+async def test_create_quote_accepts_tz_aware_valid_until(client: AsyncClient) -> None:
+    """Regression: Z-suffixed valid_until previously 500'd (asyncpg DataError —
+    aware datetime into a naive DateTime column). Inputs are normalised to
+    naive UTC by the schema."""
+    tenant = await _create_tenant(client, f"quote-{uuid4().hex[:8]}")
+    contact = await _create_contact(client, tenant["id"], "TZ Aware")
+
+    response = await client.post(
+        "/quotes",
+        headers={"X-Tenant-ID": tenant["id"]},
+        json={
+            "contact_id": contact["id"],
+            "title": "TZ quote",
+            "valid_until": "2026-11-01T00:00:00Z",
+            "line_items": [{"description": "Labour", "quantity": "1", "unit_price": "100.00"}],
+        },
+    )
+    assert response.status_code == 201, response.text
+    assert response.json()["valid_until"].startswith("2026-11-01T00:00:00")
+
+
 async def test_update_quote(client: AsyncClient) -> None:
     tenant = await _create_tenant(client, f"quote-{uuid4().hex[:8]}")
     contact = await _create_contact(client, tenant["id"], "Quote Updater")
@@ -384,12 +452,27 @@ async def test_refine_drops_duplicated_manual_lines(client: AsyncClient) -> None
     assert any("duplicate" in w.lower() for w in body["ai_warnings"]), body["ai_warnings"]
 
 
-async def test_update_quote_preserves_ai_generated_flags(client: AsyncClient) -> None:
-    """Round-tripping line items through PATCH must keep ai_generated lineage."""
+async def test_update_quote_preserves_ai_generated_flags(
+    client: AsyncClient, db: AsyncSession
+) -> None:
+    """Round-tripping an unchanged AI-drafted line through PATCH keeps its
+    ai_generated lineage; the server re-derives the flag by content match."""
     tenant = await _create_tenant(client, f"quote-{uuid4().hex[:8]}")
     contact = await _create_contact(client, tenant["id"], "Lineage Keeper")
     quote = await _create_quote(client, tenant["id"], contact["id"])
     line = quote["line_items"][0]
+
+    # Mark the existing line AI-drafted (as the generate endpoint would).
+    from app.models import QuoteLineItem
+    from sqlalchemy import update as sa_update
+
+    await set_tenant_in_session(db, UUID(tenant["id"]))
+    await db.execute(
+        sa_update(QuoteLineItem)
+        .where(QuoteLineItem.quote_id == UUID(quote["id"]))
+        .values(ai_generated=True)
+    )
+    await db.commit()
 
     response = await client.patch(
         f"/quotes/{quote['id']}",
@@ -457,3 +540,66 @@ async def test_convert_approved_quote_to_job(client: AsyncClient, db: AsyncSessi
         f"/quotes/{quote['id']}/convert-to-job", headers={"X-Tenant-ID": tenant["id"]}
     )
     assert again.status_code == 409
+
+
+async def test_convert_quote_to_job_carries_quote_request_photos(
+    client: AsyncClient, db: AsyncSession
+) -> None:
+    """quote → job: photos from the quote request land on the job record.
+
+    Covers both storage shapes: ``MediaAsset`` rows (customer-app uploads) and
+    the intake form's ``media_urls`` JSONB, which previously never made it onto
+    the job. A URL present in both is carried once.
+    """
+    tenant = await _create_tenant(client, f"quote-{uuid4().hex[:8]}")
+    headers = {"X-Tenant-ID": tenant["id"]}
+    contact = await _create_contact(client, tenant["id"], "Photo Convert")
+
+    from app.models import Quote as QuoteModel
+    from sqlalchemy import update as sa_update
+
+    intake_url = f"/files/download?key=tenants/{tenant['id']}/intake/{uuid4().hex}/site.jpg"
+    shared_url = f"https://api.example.com/files/download?key=tenants/{tenant['id']}/shared.jpg"
+    app_url = f"https://api.example.com/files/download?key=tenants/{tenant['id']}/app.jpg"
+
+    lead = await client.post(
+        "/quote-requests",
+        headers=headers,
+        json={
+            "contact_id": contact["id"],
+            "raw_text": "Fuse board upgrade",
+            "media_urls": [intake_url, shared_url],
+        },
+    )
+    assert lead.status_code == 201, lead.text
+    lead_id = lead.json()["id"]
+
+    # Customer-app style upload: one asset duplicating a media_url, one unique.
+    for url in (shared_url, app_url):
+        attached = await client.post(
+            f"/quote-requests/{lead_id}/media",
+            headers=headers,
+            json={"file_url": url, "source": "customer_app"},
+        )
+        assert attached.status_code == 201, attached.text
+
+    quote = await _create_quote(client, tenant["id"], contact["id"])
+    await db.execute(
+        sa_update(QuoteModel)
+        .where(QuoteModel.id == UUID(quote["id"]))
+        .values(quote_request_id=UUID(lead_id))
+    )
+    await db.commit()
+
+    approved = await client.post(f"/quotes/{quote['id']}/approve", headers=headers, json={})
+    assert approved.status_code == 200, approved.text
+
+    converted = await client.post(f"/quotes/{quote['id']}/convert-to-job", headers=headers)
+    assert converted.status_code == 201, converted.text
+    job = converted.json()
+    assert sorted(job["photos"]) == sorted([intake_url, shared_url, app_url])
+
+    # The photos survive on a fresh read of the job record.
+    fetched = await client.get(f"/jobs/{job['id']}", headers=headers)
+    assert fetched.status_code == 200
+    assert sorted(fetched.json()["photos"]) == sorted([intake_url, shared_url, app_url])

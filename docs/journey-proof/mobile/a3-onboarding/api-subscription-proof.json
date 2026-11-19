@@ -1,0 +1,17 @@
+{
+    "id": "b0cefdaf-cb9e-4a6d-a8e9-e6c767ac53c7",
+    "plan_key": "sole_trader",
+    "status": "trialing",
+    "paddle_subscription_id": null,
+    "paddle_customer_id": null,
+    "trial_ends_at": "2026-11-06T23:22:42.618984",
+    "current_period_start": null,
+    "current_period_end": null,
+    "scheduled_change_action": null,
+    "scheduled_change_at": null,
+    "canceled_at": null,
+    "created_at": "2026-10-23T23:22:42.833143",
+    "updated_at": "2026-10-23T23:22:42.833152",
+    "seats": 1,
+    "seats_in_use": 1
+}

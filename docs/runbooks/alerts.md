@@ -36,3 +36,19 @@ interrupt the day.
 - **Likely causes:** schema drift after a migration; Postgres timeout on event volume; a bad deploy touching the event schema.
 - **Action:** re-run the rollup manually after fixing; verify dashboards show yesterday's data; events are fail-open so no data was lost — only the aggregation.
 - **Escalate:** if dashboards are stale >48h or the failure recurs after a fix — lead dev; flag on the Friday one-pager, as pricing decisions depend on this data.
+
+## Email-failure staff alert (customer email bounced / failed to send)
+
+- **Means:** a customer-facing email (quote, invoice, reminder, booking confirmation) bounced or failed at send time; the tenant's staff were paged in-app and by email with a "contact them by phone instead" directive (`alert_staff_email_failure`). Two sources feed the same alert: the send-time transport failure hook in `app/email.py`, and the Resend webhook `POST /webhooks/resend` (`email.bounced` / `email.failed`).
+- **Check first:** the alert body itself — it carries the error class and, for bounces, the Resend `bounce.type` / `bounce.reason` (SMTP diagnostic); the structured logs `email_failure_alert_raised` and `resend_webhook_processed` carry the same detail, so deliverability incidents are diagnosable without opening the Resend dashboard.
+- **Likely causes:** the customer's mailbox is dead or full (hard bounce on one contact); DKIM/SPF/DMARC or domain-reputation trouble on our sending domain (soft bounces across many contacts); a Resend outage or a missing `RESEND_WEBHOOK_SECRET` (the endpoint answers 503 and Resend replays the event).
+- **Action:** a single-contact alert needs no platform action — the tradie has already been told to phone the customer. If bounces span contacts, check the sending domain's DKIM/SPF/DMARC setup per `docs/resend-config.md`. Alerts dedupe per (tenant, contact, calendar day), so a repeat page for the same contact means a new day, not a webhook retry loop.
+- **Escalate:** if bounces span multiple tenants or the bounce reason points at our domain's authentication or reputation — lead dev same day; deliverability decay silently kills the quote→invoice→paid email loop.
+
+## SMS-failure staff alert (appointment-reminder text undeliverable)
+
+- **Means:** an appointment-reminder SMS to a customer permanently failed, reported by the Telnyx delivery-receipt webhook (`POST /webhooks/telnyx`, `message.finalized` with `sending_failed` / `delivery_failed`); the tenant's staff were paged in-app and by email with a "contact them another way" directive (`app/sms_alerts.py::alert_staff_sms_failure`).
+- **Check first:** the alert body and the reminder row's `delivery_status` / `delivery_events` history; the structured logs `sms_failure_alert_raised` and the `telnyx_webhook_*` / `telnyx_receipt_*` events carry the same detail. A `401` on the webhook means `TELNYX_PUBLIC_KEY` is wrong, a `503` means it is unset and Telnyx is replaying events.
+- **Likely causes:** the customer's number is dead or a landline (one contact); the Telnyx number/messaging profile lost its sender-ID registration (failures across many contacts); a Telnyx outage.
+- **Action:** a single-contact alert needs no platform action — the sweep has already degraded that contact to email, and STOP replies set `sms_opt_out` so they are never texted again. Failures spanning contacts mean check the Telnyx number/profile in Mission Control. Dedupe shares the email-failure ledger: one page per (tenant, contact, calendar day) regardless of channel.
+- **Escalate:** if failures span multiple tenants or the messaging profile itself is suspended — lead dev same day; undelivered reminders quietly no-show appointments.

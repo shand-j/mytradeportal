@@ -1,0 +1,56 @@
+[
+ {
+  "file": "triage_question_1.html",
+  "subject": "Shand 1 Electrical has a question about your quote request",
+  "from": "quotes@mytradeportal.co.uk",
+  "to": "qe-wave3-14863@maxxspace.com",
+  "date": "2026-10-24T04:20:12+00:00",
+  "id": "6adc31fd62479fcbdd771747",
+  "intro": "Hi QE, Shand 1 Electrical is preparing your quote and needs one more detail: \"Sorry to hear that your electrics are acting up.\u2026"
+ },
+ {
+  "file": "invoice_sent_INV-008.html",
+  "subject": "Invoice INV-008 from Shand 1 Electrical",
+  "from": "quotes@mytradeportal.co.uk",
+  "to": "qe-wave3-14863@maxxspace.com",
+  "date": "2026-10-24T04:13:42+00:00",
+  "id": "6adc3076a6fcd9976c902213",
+  "intro": "Hi QE, Shand 1 Electrical has sent you invoice INV-008. Total due: \u00a360.00 Pay by bank transfer: Account name: Shand 1 Sort\u2026"
+ },
+ {
+  "file": "payment_received.html",
+  "subject": "Payment received \u2014 invoice INV-008",
+  "from": "quotes@mytradeportal.co.uk",
+  "to": "qe-wave3-14863@maxxspace.com",
+  "date": "2026-10-24T04:13:42+00:00",
+  "id": "6adc3077e8044b8339201b5e",
+  "intro": "Hi QE, Thank you \u2014 Shand 1 Electrical has received your payment of \u00a360.00 for invoice INV-008, paid on 24 Oct 2026. This email\u2026"
+ },
+ {
+  "file": "chat_message.html",
+  "subject": "New message from Shand 1 Electrical",
+  "from": "quotes@mytradeportal.co.uk",
+  "to": "qe-wave3-14863@maxxspace.com",
+  "date": "2026-10-24T04:13:41+00:00",
+  "id": "6adc30758f10aed1798b807f",
+  "intro": "Hi QE, Shand 1 Electrical sent you a message: \"Hi! Thanks for the details \u2014 could you tell me which rooms the flickering lights\u2026"
+ },
+ {
+  "file": "booking_confirmed.html",
+  "subject": "Booking confirmed \u2014 Shand 1 Electrical",
+  "from": "quotes@mytradeportal.co.uk",
+  "to": "qe-wave3-14863@maxxspace.com",
+  "date": "2026-10-24T04:13:41+00:00",
+  "id": "6adc3076a5bed665652f1696",
+  "intro": "Hi QE, Good news \u2014 Shand 1 Electrical has booked in your job 'QE wave3 \u2014 investigate flickering lights'. Date: Monday 26\u2026"
+ },
+ {
+  "file": "triage_question_2.html",
+  "subject": "Shand 1 Electrical has a question about your quote request",
+  "from": "quotes@mytradeportal.co.uk",
+  "to": "qe-wave3-14863@maxxspace.com",
+  "date": "2026-10-24T04:19:12+00:00",
+  "id": "6adc31c1a6fcd9976c90247c",
+  "intro": "Hi QE, Shand 1 Electrical is preparing your quote and needs one more detail: \"Sorry to hear your electrics are acting up. Can\u2026"
+ }
+]

@@ -16,6 +16,7 @@ import { useMyRequests, CustomerRequest } from "../../api/quoteRequests";
 import { useAcceptCustomerQuote, useRejectCustomerQuote } from "../../api/quotes";
 import { useCreateCustomerAppointment } from "../../api/appointments";
 import { StagedPhoto, uploadCustomerPhotos } from "../../api/uploads";
+import { parseServerDate } from "../../lib/datetime";
 import type { Quote, QuoteStatus } from "../../types";
 
 type CustomerQuoteStatus = "awaiting_review" | "open" | "accepted" | "rejected" | "expired";
@@ -106,7 +107,8 @@ function BookDateView({
       }, 0),
     [quote]
   );
-  const total = subtotal * (1 + quote.vatRate);
+  // Prefer the server total — it includes the tenant's rounding uplift.
+  const total = quote.total ?? subtotal * (1 + quote.vatRate);
 
   const nextDays = useMemo(() => {
     const days = [];
@@ -306,7 +308,7 @@ function CustomerQuoteView({
   const { business } = useBusiness();
   const [confirmingDates, setConfirmingDates] = useState(false);
   const [selectedDates, setSelectedDates] = useState<string[]>([]);
-  const subtotal = useMemo(
+  const computedSubtotal = useMemo(
     () =>
       quote.lineItems.reduce((sum, item) => {
         const qty = parseFloat(item.qty) || 0;
@@ -315,8 +317,10 @@ function CustomerQuoteView({
       }, 0),
     [quote]
   );
-  const vat = subtotal * quote.vatRate;
-  const total = subtotal + vat;
+  // Prefer the server totals — they include the tenant's rounding uplift.
+  const subtotal = quote.subtotal ?? computedSubtotal;
+  const vat = quote.vatAmount ?? subtotal * quote.vatRate;
+  const total = quote.total ?? subtotal + vat;
   const isOpen = status === "open";
   const isAccepted = status === "accepted";
   const isRejected = status === "rejected";
@@ -343,7 +347,7 @@ function CustomerQuoteView({
           </View>
           <Text variant="caption" color="secondary">
             {quote.postcode} · Valid until{" "}
-            {quote.expiresAt ? new Date(quote.expiresAt).toLocaleDateString() : "—"}
+            {parseServerDate(quote.expiresAt)?.toLocaleDateString() ?? "—"}
           </Text>
         </View>
 
@@ -637,7 +641,7 @@ function CustomerRequestCard({
         </Text>
       ) : null}
       <Text variant="caption" color="secondary">
-        Submitted {new Date(request.createdAt).toLocaleDateString()}
+        Submitted {parseServerDate(request.createdAt)?.toLocaleDateString() ?? "—"}
       </Text>
       <AddRequestPhotos requestId={request.id} />
     </View>
@@ -666,7 +670,8 @@ function QuoteCard({
       }, 0),
     [quote]
   );
-  const total = subtotal * (1 + quote.vatRate);
+  // Prefer the server total — it includes the tenant's rounding uplift.
+  const total = quote.total ?? subtotal * (1 + quote.vatRate);
 
   return (
     <Pressable onPress={onPress} testID={`quote-card-${quote.id}`}>
@@ -690,7 +695,7 @@ function QuoteCard({
 
         {isAwaiting ? (
           <Text variant="caption" color="secondary">
-            Submitted {quote.sentAt ? new Date(quote.sentAt).toLocaleDateString() : "today"} ·
+            Submitted {parseServerDate(quote.sentAt)?.toLocaleDateString() ?? "today"} ·
             Awaiting review
           </Text>
         ) : (
@@ -700,7 +705,7 @@ function QuoteCard({
             </Text>
             <Text variant="caption" color="secondary">
               Valid until{" "}
-              {quote.expiresAt ? new Date(quote.expiresAt).toLocaleDateString() : "—"}
+              {parseServerDate(quote.expiresAt)?.toLocaleDateString() ?? "—"}
             </Text>
           </>
         )}

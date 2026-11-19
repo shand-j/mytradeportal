@@ -48,7 +48,7 @@ export function PaymentForm({
       <button
         type="submit"
         disabled={!stripe || !elements || processing}
-        className="chip chip--fill mt-[var(--space-lg)] w-full justify-center disabled:cursor-not-allowed disabled:opacity-60"
+        className="chip chip--fill chip--brand mt-[var(--space-lg)] w-full justify-center disabled:cursor-not-allowed disabled:opacity-60"
       >
         {processing ? 'Processing…' : submitLabel}
       </button>

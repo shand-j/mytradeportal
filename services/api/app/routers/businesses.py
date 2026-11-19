@@ -19,6 +19,7 @@ from fastapi import (
     UploadFile,
     status,
 )
+from fastapi.responses import StreamingResponse
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -30,6 +31,7 @@ from app.limiter import limiter
 from app.models import BusinessService, Communication, Contact, Customer, QuoteRequest, Tenant
 from app.quote_automation import auto_draft_quote_for_request
 from app.rls import bypass_rls_for_transaction, set_tenant_in_session
+from app.routers.contacts import BLOCKED_CUSTOMER_DETAIL, contact_is_blocked
 from app.schemas import (
     BusinessPublicConfig,
     PublicIntakeCheck,
@@ -114,6 +116,37 @@ async def get_public_config(slug: str, db: DbDep) -> BusinessPublicConfig:
     await bypass_rls_for_transaction(db)
     tenant = await _resolve_active_tenant(db, slug)
     return await _build_public_config(db, tenant)
+
+
+@router.get("/{slug}/logo")
+async def get_business_logo(slug: str, db: DbDep) -> StreamingResponse:
+    """Stream the tenant's logo (no auth) for portal/landing/app rendering.
+
+    ``settings.logo_url`` points here; the public surfaces embed it as a
+    plain ``<img>`` src, so this mirrors ``/files/download`` streaming but
+    without auth. The stored key comes from the tenant's own settings (set
+    by the authenticated upload endpoint), never from the request. Short
+    cache lifetime so a re-uploaded logo shows up quickly at the same URL.
+    """
+    from app.config import settings
+    from app.routers.files import s3_client
+
+    await bypass_rls_for_transaction(db)
+    tenant = await _resolve_active_tenant(db, slug)
+    key = (tenant.settings or {}).get("logo_key")
+    if not isinstance(key, str) or not key.startswith(f"tenants/{tenant.id}/"):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Logo not found")
+    try:
+        obj = s3_client().get_object(Bucket=settings.minio_bucket, Key=key)
+    except Exception:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Logo not found"
+        ) from None
+    return StreamingResponse(
+        obj["Body"].iter_chunks(64 * 1024),
+        media_type=obj.get("ContentType") or "image/png",
+        headers={"Cache-Control": "public, max-age=300"},
+    )
 
 
 async def _get_or_provision_customer(
@@ -216,12 +249,19 @@ async def submit_public_quote_request(
     if customer is not None and customer.contact_id:
         contact = await db.get(Contact, customer.contact_id)
     if contact is None and data.contact.email:
+        # Case-insensitive match (same idiom as customer login/registration):
+        # an exact-match lookup would let a blocked contact dodge the block
+        # below — and the dedup — by re-entering their email with new casing.
         contact = await db.scalar(
             select(Contact).where(
                 Contact.tenant_id == tenant.id,
-                Contact.email == str(data.contact.email),
+                func.lower(Contact.email) == str(data.contact.email).lower(),
             )
         )
+    # Blocked customers (N26) cannot submit via the public form either. Only a
+    # reused contact can be blocked — a brand-new one is created below.
+    if contact is not None and await contact_is_blocked(db, tenant.id, contact.id):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=BLOCKED_CUSTOMER_DETAIL)
     if contact is None:
         contact = Contact(
             tenant_id=tenant.id,
@@ -286,6 +326,7 @@ async def submit_public_quote_request(
         contact_id=contact.id,
         customer_id=customer.id if customer is not None else None,
         source="app",
+        entry_channel=data.entry_channel,
         raw_text=data.raw_text,
         structured_data=structured_data,
         urgency=data.urgency,

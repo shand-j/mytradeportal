@@ -33,6 +33,18 @@ def tenant_vat_rate(tenant: Tenant) -> Decimal:
         return DEFAULT_VAT_RATE
 
 
+def vat_rate_within_tenant_limit(tenant: Tenant, vat_rate: Decimal) -> bool:
+    """A per-document VAT override may only lower or remove VAT (issue #110).
+
+    A quote/invoice must never charge MORE VAT than the tenant's registered
+    rate via a per-document override; anything up to and including the tenant
+    rate is allowed (exactly the tenant rate is a harmless no-op). For a
+    non-registered tenant the registered rate is 0%, so any positive override
+    is rejected.
+    """
+    return vat_rate <= tenant_vat_rate(tenant)
+
+
 def quote_rounding_increment(settings: dict[str, Any] | None) -> Decimal | None:
     """Resolve the tenant's quote-total rounding increment (£5 or £10).
 

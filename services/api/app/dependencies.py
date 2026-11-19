@@ -15,7 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app import config as app_config
 from app.alerting import send_alert
 from app.database import get_db
-from app.models import AiAlertState, AiCallEvent, Customer, Subscription, Tenant, User
+from app.models import AiAlertState, AiCallEvent, Contact, Customer, Subscription, Tenant, User
 from app.plans import (
     DEFAULT_PLAN_KEY,
     Plan,
@@ -29,6 +29,14 @@ from app.security import AUTH_COOKIE_NAME, decode_access_token
 logger = structlog.get_logger("api.dependencies")
 
 settings = get_settings()
+
+# 403 detail shared by every block-enforcement point so clients can key on the
+# stable prefix and show a helpful message. Lives here (not in a router) so the
+# auth dependency can raise it without importing router modules.
+BLOCKED_CUSTOMER_DETAIL = (
+    "customer_blocked: This customer has been blocked by the business and cannot "
+    "log in, request quotes or send messages. Contact the business directly."
+)
 
 
 def _extract_token(request: Request) -> str | None:
@@ -58,6 +66,17 @@ def _extract_tenant_slug(host: str | None) -> str | None:
         return None
     if host.startswith("www."):
         host = host[4:]
+    # The API's own custom domain is not a tenant subdomain either — without
+    # this, api.<base-domain> resolves as the slug "api" and every bare login
+    # through the branded API host 401s.
+    from urllib.parse import urlparse
+
+    from app.config import PUBLIC_API_BASE_URL
+
+    if PUBLIC_API_BASE_URL:
+        api_host = urlparse(PUBLIC_API_BASE_URL).hostname
+        if api_host and host == api_host:
+            return None
     parts = host.split(".")
     # e.g. demo.localhost, demo.mytradeportal.local, demo.mytradeportal.co.uk
     if len(parts) >= 2:
@@ -75,7 +94,10 @@ async def resolve_tenant(db: AsyncSession, slug: str | None) -> Tenant:
     if slug:
         result = await db.execute(select(Tenant).where(Tenant.slug == slug))
         tenant = result.scalar_one_or_none()
-        if tenant is not None:
+        # An explicit slug must resolve to an ACTIVE tenant — an offboarded
+        # (is_active=False) tenant's subdomain must stop resolving everywhere,
+        # exactly like an unknown slug.
+        if tenant is not None and tenant.is_active:
             return tenant
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -154,8 +176,15 @@ async def get_current_user(
         return None
     try:
         user_id = UUID(claims.get("sub"))
+        tenant_id = UUID(str(claims.get("tenant_id")))
     except (ValueError, TypeError):
         return None
+    # Users are RLS tenant-scoped: establish the token's tenant context BEFORE
+    # the lookup, mirroring get_current_customer. Without this, endpoints that
+    # resolve the user without a TenantDep (e.g. /auth/me, /auth/tenant-status)
+    # only authenticated when a pooled connection happened to carry the right
+    # app.current_tenant GUC — an intermittent 401 under pool churn.
+    await set_tenant_in_session(db, tenant_id)
     user = await db.get(User, user_id)
     if user is None or not user.is_active:
         return None
@@ -208,6 +237,16 @@ async def get_current_customer(
     customer = await db.get(Customer, customer_id)
     if customer is None or not customer.is_active or customer.tenant_id != tenant_id:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Not authenticated")
+    # A blocked CRM contact (N26) revokes the customer account's access, so any
+    # bearer token minted before the block must stop authorizing here — not
+    # only at login. One extra primary-key read per authenticated request, the
+    # same cost as the Customer lookup above (no cache needed).
+    if customer.contact_id is not None:
+        contact = await db.get(Contact, customer.contact_id)
+        if contact is not None and contact.tenant_id == tenant_id and contact.is_blocked:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN, detail=BLOCKED_CUSTOMER_DETAIL
+            )
     return customer
 
 
@@ -233,17 +272,74 @@ RequireAdminDep = Annotated[User, Depends(RoleChecker({"admin"}))]
 RequireManagerDep = Annotated[User, Depends(RoleChecker({"admin", "manager"}))]
 
 
+async def get_current_platform_staff(user: ActiveUserDep) -> User:
+    """Require an authenticated platform-staff (founder/ops) caller.
+
+    Every other staff gate in the API is tenant-scoped (``RoleChecker`` on
+    the caller's tenant role), but ops endpoints such as the per-org AI cost
+    leaderboard are cross-tenant by definition and a tenant role can never
+    authorise them. The back-office (Django admin) gates on Django
+    superusers, which the API cannot reuse, so platform staff are identified
+    by the ``PLATFORM_STAFF_EMAILS`` env allowlist instead: the caller must
+    be an authenticated active user AND their email must be listed. An empty
+    allowlist rejects everyone. Rejections mirror ``RoleChecker`` (403
+    "Insufficient permissions") so the staff-gate contract is uniform.
+    """
+    allowed = {
+        email.strip().lower()
+        for email in app_config.PLATFORM_STAFF_EMAILS.split(",")
+        if email.strip()
+    }
+    if user.email.lower() not in allowed:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Insufficient permissions",
+        )
+    return user
+
+
+PlatformStaffDep = Annotated[User, Depends(get_current_platform_staff)]
+
+
 async def _tenant_plan(tenant: Tenant, db: AsyncSession) -> Plan:
     """Resolve the tenant's subscription plan; no subscription → sole_trader."""
     sub = await db.scalar(select(Subscription).where(Subscription.tenant_id == tenant.id))
     return get_plan(sub.plan_key) if sub is not None else get_plan(DEFAULT_PLAN_KEY)
 
 
+async def seats_in_use(db: AsyncSession, tenant_id: UUID) -> int:
+    """Active users plus pending invites — the count the plan seat cap applies to."""
+    used = await db.scalar(
+        select(func.count(User.id)).where(
+            User.tenant_id == tenant_id,
+            # A pending invite holds a seat; a deactivated account does not.
+            (User.is_active.is_(True)) | (User.invited_at.isnot(None)),
+        )
+    )
+    return used or 0
+
+
+async def single_active_user(db: AsyncSession, tenant_id: UUID) -> User | None:
+    """The tenant's only active staff user, or None when there are zero or several.
+
+    Single-seat plans (sole_trader) can only ever have one staff user, so a
+    job/appointment create that omits ``assigned_user_id`` unambiguously means
+    that person — the create routers default to them instead of leaving the
+    record unassigned.
+    """
+    result = await db.execute(
+        select(User).where(User.tenant_id == tenant_id, User.is_active.is_(True))
+    )
+    users = list(result.scalars().all())
+    return users[0] if len(users) == 1 else None
+
+
 def require_tier_feature(feature: str) -> Callable[[Tenant, AsyncSession], Awaitable[Tenant]]:
     """Dependency factory gating an endpoint on a plan capability.
 
-    Tiers differ by capability only (flat pricing, unlimited users, unmetered
-    AI), so this is the only enforcement dependency. A tenant without a
+    Tiers differ by capability and seat count (flat pricing, unmetered AI),
+    so this is the only capability enforcement dependency (seats are enforced
+    by ``POST /users/invite``). A tenant without a
     subscription row defaults to ``sole_trader``. Missing capability → HTTP
     403 with a structured ``feature_not_in_plan`` payload and an upgrade hint
     naming the cheapest tier that unlocks the feature. Wire in as::

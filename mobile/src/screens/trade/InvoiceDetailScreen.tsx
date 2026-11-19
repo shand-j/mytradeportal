@@ -8,6 +8,7 @@ import { IconButton } from "../../components/ui/IconButton";
 import { Screen } from "../../components/ui/Screen";
 import { Text } from "../../components/ui/Text";
 import { ApiError } from "../../lib/apiClient";
+import { parseServerDate } from "../../lib/datetime";
 import { formatMoneyGBP } from "../../lib/format";
 import { Invoice, InvoiceStatus } from "../../types";
 
@@ -43,10 +44,18 @@ export type InvoiceDetailScreenProps = {
   /** When provided (connected mode), sends/re-sends the invoice and notifies the customer. */
   onSendInvoice?: () => Promise<void>;
   sendingInvoice?: boolean;
+  /** When provided (connected mode), sends the invoice by SMS with the pay link. */
+  onSendInvoiceSms?: () => Promise<void>;
+  sendingSms?: boolean;
+  /** Backend-computed SMS eligibility — the SMS send button renders only when true. */
+  smsAvailable?: boolean;
   /** Raw line items from the API, used to seed the inline line-item editor. */
   lineItems?: ApiInvoiceLineItem[];
   /** VAT rate applied to the invoice (derived from the API amounts). */
   vatRate?: number;
+  /** Fixed rounding uplift set at creation; the backend keeps it across line
+   * edits, so the edit preview must include it in the total. */
+  roundingAdjustment?: number;
   /** When provided (connected mode), PATCHes the replacement line items. */
   onSaveLineItems?: (
     lineItems: NonNullable<UpdateInvoiceInput["lineItems"]>
@@ -56,6 +65,12 @@ export type InvoiceDetailScreenProps = {
   paidVia?: string | null;
   /** Per-invoice card-payment override; null inherits the tenant default. */
   acceptCardPayments?: boolean | null;
+  /**
+   * True only when the tenant's Stripe account is connected and able to take
+   * card payments. The per-invoice override card is hidden entirely otherwise —
+   * without Stripe the toggle can never take effect, so it must not render.
+   */
+  stripeEnabled?: boolean;
   /** When provided (connected mode), PATCHes the card-payment override. */
   onSetCardPayments?: (value: boolean | null) => Promise<void>;
   savingCardPayments?: boolean;
@@ -72,12 +87,17 @@ export function InvoiceDetailScreen({
   markingPaid,
   onSendInvoice,
   sendingInvoice,
+  onSendInvoiceSms,
+  sendingSms,
+  smsAvailable = false,
   lineItems,
   vatRate = 0.2,
+  roundingAdjustment = 0,
   onSaveLineItems,
   savingLineItems,
   paidVia = null,
   acceptCardPayments = null,
+  stripeEnabled = false,
   onSetCardPayments,
   savingCardPayments,
   onRefund,
@@ -109,8 +129,8 @@ export function InvoiceDetailScreen({
       return sum + qty * price;
     }, 0);
     const vat = subtotal * vatRate;
-    return { subtotal, vat, total: subtotal + vat };
-  }, [editItems, vatRate]);
+    return { subtotal, vat, total: subtotal + vat + roundingAdjustment };
+  }, [editItems, vatRate, roundingAdjustment]);
 
   const markPaid = async () => {
     if (onMarkPaid) {
@@ -135,6 +155,21 @@ export function InvoiceDetailScreen({
       setSendError(errorMessage(err, "Couldn't send the invoice. Please try again."));
     }
   };
+
+  /** SMS twin of sendInvoice — the button only renders when the backend says
+   * the contact is SMS-eligible; a 4xx here surfaces as the send error. */
+  const sendInvoiceSms = async () => {
+    if (!onSendInvoiceSms) return;
+    setSendError(null);
+    try {
+      await onSendInvoiceSms();
+      onClose();
+    } catch (err) {
+      setSendError(errorMessage(err, "Couldn't send the invoice by SMS. Please try again."));
+    }
+  };
+
+  const canSendSms = smsAvailable && !!onSendInvoiceSms;
 
   const startEditing = () => {
     setEditItems(toEditable(lineItems ?? []));
@@ -345,6 +380,16 @@ export function InvoiceDetailScreen({
                   {formatMoneyGBP(editTotals.vat)}
                 </Text>
               </View>
+              {roundingAdjustment > 0 && (
+                <View>
+                  <Text variant="caption" color="secondary">
+                    Rounded up
+                  </Text>
+                  <Text variant="caption" color="secondary">
+                    +{formatMoneyGBP(roundingAdjustment)}
+                  </Text>
+                </View>
+              )}
               <View className="items-end">
                 <Text variant="caption" color="secondary">
                   Total
@@ -382,19 +427,19 @@ export function InvoiceDetailScreen({
             Dates
           </Text>
           <Text variant="body" color="secondary">
-            Sent {invoice.sentAt ? new Date(invoice.sentAt).toLocaleDateString() : "—"}
+            Sent {parseServerDate(invoice.sentAt)?.toLocaleDateString() ?? "—"}
           </Text>
           <Text variant="body" color="secondary">
-            Due {new Date(invoice.dueDate).toLocaleDateString()}
+            Due {parseServerDate(invoice.dueDate)?.toLocaleDateString() ?? "—"}
           </Text>
           {paidAt && (
             <Text variant="body" color="secondary">
-              Paid {new Date(paidAt).toLocaleDateString()}
+              Paid {parseServerDate(paidAt)?.toLocaleDateString() ?? "—"}
             </Text>
           )}
         </View>
 
-        {!isPaid && status !== "refunded" && onSetCardPayments && (
+        {stripeEnabled && !isPaid && status !== "refunded" && onSetCardPayments && (
           <View style={styles.card}>
             <Text variant="body" weight="semibold">
               Card payments
@@ -520,6 +565,15 @@ export function InvoiceDetailScreen({
                   disabled={sendingInvoice}
                   onPress={() => void sendInvoice()}
                 />
+                {canSendSms && (
+                  <Button
+                    testID="invoice-send-sms-reminder"
+                    title={sendingSms ? "Sending…" : "Send reminder via SMS"}
+                    variant="outline"
+                    disabled={sendingSms}
+                    onPress={() => void sendInvoiceSms()}
+                  />
+                )}
               </>
             )}
             {(isOverdue || status === "draft") && (
@@ -530,6 +584,15 @@ export function InvoiceDetailScreen({
                   disabled={sendingInvoice}
                   onPress={() => void sendInvoice()}
                 />
+                {canSendSms && (
+                  <Button
+                    testID="invoice-send-sms"
+                    title={sendingSms ? "Sending…" : "Send via SMS"}
+                    variant="outline"
+                    disabled={sendingSms}
+                    onPress={() => void sendInvoiceSms()}
+                  />
+                )}
                 {canEdit && (
                   <Button
                     testID="invoice-edit"

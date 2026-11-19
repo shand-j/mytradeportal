@@ -11,6 +11,8 @@ import { useCustomerMe } from "../../api/auth";
 import { useMyRequests } from "../../api/quoteRequests";
 import { useAuth } from "../../contexts/AuthContext";
 import { useBusiness } from "../../theme/ThemeProvider";
+import { config } from "../../lib/config";
+import { openInAppBrowser } from "../../lib/inAppBrowser";
 
 const CONTACT_METHODS = [
   { key: "in_app_chat", label: "Online chat", icon: "message" as const },
@@ -208,6 +210,21 @@ export function ProfileScreen({ navigation }: ProfileScreenProps) {
             onChange={setEmailQuotes}
           />
           <Toggle label="SMS reminders for upcoming jobs" value={smsReminders} onChange={setSmsReminders} />
+        </View>
+
+        <View className="gap-3 rounded-2xl border border-slate-200 bg-white p-4">
+          <Text variant="body" weight="semibold">
+            Help
+          </Text>
+          <Text variant="caption" color="secondary">
+            Guides for requesting quotes, accepting them, and paying invoices.
+          </Text>
+          <Button
+            testID="profile-help-guides"
+            title="Help & guides"
+            variant="outline"
+            onPress={() => void openInAppBrowser(config.helpUrl)}
+          />
         </View>
 
         <View className="gap-3 rounded-2xl border border-slate-200 bg-white p-4">

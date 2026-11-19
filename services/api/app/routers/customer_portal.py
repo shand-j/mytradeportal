@@ -42,6 +42,7 @@ from app.models import (
     QuoteRequest,
     Tenant,
 )
+from app.payment_details import tenant_payment_details
 from app.portal_links import (
     flip_preferred_contact_to_app,
     hash_portal_token,
@@ -119,6 +120,16 @@ class CustomerInvoiceRead(BaseModel):
     # Stripe /pay page URL for unpaid invoices when the tenant takes card
     # payments; null when card payment is unavailable or already settled.
     payment_url: str | None = None
+    # Bank-transfer fallback (same block as the invoice email and the public
+    # /invoice page) so the portal can show how to pay when payment_url is
+    # null; null when the tenant has no bank details configured.
+    payment_details: dict[str, str] | None = None
+
+
+class CustomerInvoicePayResponse(BaseModel):
+    """Stripe /pay page URL for a customer-initiated card payment."""
+
+    payment_url: str
 
 
 def _customer_invoice_read(invoice: Invoice, tenant: Tenant | None) -> CustomerInvoiceRead:
@@ -140,6 +151,11 @@ def _customer_invoice_read(invoice: Invoice, tenant: Tenant | None) -> CustomerI
         business_name=tenant.name if tenant is not None else "Your electrician",
         business_logo_url=tenant.logo_url if tenant is not None else None,
         business_primary_color=tenant.primary_color if tenant is not None else "#D4650A",
+        payment_details=(
+            tenant_payment_details(tenant.settings, reference=invoice.invoice_number)
+            if tenant is not None
+            else None
+        ),
     )
 
 
@@ -371,14 +387,16 @@ async def register_customer(
 
     # Welcome email — transactional account mail, so platform-branded from the
     # no-reply sender (no tenant display name, no Reply-To). Best-effort: the
-    # wrapper logs and never raises.
-    from app.config import settings
-
-    app_origin = settings.app_public_url.rstrip("/") if settings.app_public_url else ""
+    # wrapper logs and never raises. The CTA is a portal magic link on the
+    # tenant's subdomain (same helper as the magic-link request flow below) —
+    # APP_PUBLIC_URL is the back-office host and must never appear in
+    # customer mail. The token mint is committed with the email-failure
+    # alert commit below.
+    login_url = await magic_link_url(db, tenant, customer, "/quotes")
     subject, html, text = account_created_template(
         name=customer.full_name.split()[0] if customer.full_name else None,
         business_name=tenant.name,
-        login_url=f"{app_origin}/customer-login" if app_origin else None,
+        login_url=login_url,
     )
     await send_customer_email(
         db,
@@ -491,6 +509,19 @@ _MAGIC_REQUEST_RESPONSE = {
 }
 
 
+def _resolve_request_slug(request: Request) -> str | None:
+    """Tenant slug from the ``X-Tenant-Slug`` header, else the Host subdomain.
+
+    The header lets non-subdomain callers (the web portal served from the
+    marketing origin, E2E) address a specific tenant; Host inference remains
+    for subdomain-served requests.
+    """
+    header_slug = request.headers.get("X-Tenant-Slug")
+    if header_slug:
+        return header_slug
+    return _extract_tenant_slug(request.headers.get("host"))
+
+
 @router.post("/auth/magic", response_model=CustomerMagicLinkTokenResponse)
 @limiter.limit("10/minute")
 async def exchange_magic_link(
@@ -515,7 +546,7 @@ async def exchange_magic_link(
     if record is None or record.revoked_at is not None or record.expires_at < datetime.now(UTC):
         raise _MAGIC_LINK_401
 
-    slug = _extract_tenant_slug(request.headers.get("host"))
+    slug = _resolve_request_slug(request)
     if slug is not None:
         host_tenant = await db.scalar(
             select(Tenant).where(Tenant.slug == slug, Tenant.is_active.is_(True))
@@ -559,7 +590,7 @@ async def request_magic_link(
     to the default tenant on bare hosts, matching ``resolve_tenant``).
     """
     await bypass_rls_for_transaction(db)
-    slug = _extract_tenant_slug(request.headers.get("host"))
+    slug = _resolve_request_slug(request)
 
     from app.config import settings
 
@@ -655,7 +686,7 @@ async def claim_account(
     if record is None or record.revoked_at is not None or record.expires_at < datetime.now(UTC):
         raise _CLAIM_401
 
-    slug = _extract_tenant_slug(request.headers.get("host"))
+    slug = _resolve_request_slug(request)
     if slug is not None:
         host_tenant = await db.scalar(
             select(Tenant).where(Tenant.slug == slug, Tenant.is_active.is_(True))
@@ -792,6 +823,7 @@ async def customer_attach_media(
         mime_type=data.mime_type,
         size_bytes=data.size_bytes,
         source=data.source,
+        kind=data.kind,
     )
     db.add(asset)
     await db.commit()
@@ -1030,17 +1062,20 @@ async def _portal_invoice_payment_url(
     return await _invoice_payment_url(db, invoice, tenant, raw)
 
 
-@router.post("/invoices/{invoice_id}/pay")
+@router.post("/invoices/{invoice_id}/pay", response_model=CustomerInvoicePayResponse)
 async def pay_my_invoice(
     invoice_id: UUID,
     customer: CurrentCustomerDep,
     db: DbDep,
-) -> None:
-    """Online invoice payment moved to Stripe Connect (ADR-003).
+) -> CustomerInvoicePayResponse:
+    """Stripe /pay page URL for paying this invoice by card (ADR-003).
 
-    Tradie receivables never touch Paddle anymore; the customer pays by card
-    on the landing-site /pay page linked from the invoice email. This endpoint
-    remains only to give older app builds a clear signal instead of a 404.
+    Mints the same kind of document-token pay link the invoice email carries;
+    the app opens it so the customer pays on the landing-site /pay page. 409
+    when card payment is not offered for this invoice (Stripe not connected,
+    charges not enabled, or the invoice opted out) — the app hides the Pay
+    action whenever the detail payload's ``payment_url`` is null, so this is
+    the belt-and-braces signal for a stale UI.
     """
     invoice = await _get_customer_invoice(db, customer, invoice_id)
     if invoice.status == "paid":
@@ -1048,7 +1083,12 @@ async def pay_my_invoice(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Invoice is already paid",
         )
-    raise HTTPException(
-        status_code=status.HTTP_410_GONE,
-        detail="Online card payment has moved — use the pay link in the invoice email.",
-    )
+    tenant = await db.get(Tenant, customer.tenant_id)
+    payment_url = await _portal_invoice_payment_url(db, invoice, tenant)
+    if payment_url is None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Card payment isn't available for this invoice — "
+            "use the bank transfer details on the invoice instead.",
+        )
+    return CustomerInvoicePayResponse(payment_url=payment_url)

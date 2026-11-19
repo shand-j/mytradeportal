@@ -1,10 +1,14 @@
 """Tests for atomic tenant + first-admin bootstrap via POST /tenants."""
 
-from uuid import uuid4
+from uuid import UUID, uuid4
 
-import httpx
 import pytest
+from app.models import User
+from app.rls import set_tenant_in_session
+from app.security import verify_password
 from httpx import AsyncClient
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 
 def _bootstrap_payload(slug: str) -> dict[str, str]:
@@ -136,35 +140,85 @@ async def test_bootstrap_rejects_duplicate_slug(client: AsyncClient) -> None:
     assert second.status_code == 409
 
 
-async def test_bootstrap_supabase_rejection_returns_502_not_500(
+async def test_email_availability_reports_available_for_unknown_email(
+    client: AsyncClient,
+) -> None:
+    email = f"free-{uuid4().hex[:8]}@example.com"
+    response = await client.get("/tenants/email-availability", params={"email": email})
+    assert response.status_code == 200
+    assert response.json() == {"email": email, "available": True}
+
+
+async def test_email_availability_reports_taken_for_existing_account(
+    client: AsyncClient,
+) -> None:
+    email = f"taken-{uuid4().hex[:8]}@example.com"
+    payload = _bootstrap_payload(f"taken-{uuid4().hex[:6]}")
+    payload["admin_email"] = email
+    created = await client.post("/tenants", json=payload)
+    assert created.status_code == 201, created.text
+
+    response = await client.get("/tenants/email-availability", params={"email": email})
+    assert response.status_code == 200
+    assert response.json() == {"email": email, "available": False}
+
+
+async def test_email_availability_lookup_is_case_insensitive(client: AsyncClient) -> None:
+    email = f"case-{uuid4().hex[:8]}@example.com"
+    payload = _bootstrap_payload(f"case-{uuid4().hex[:6]}")
+    payload["admin_email"] = email
+    created = await client.post("/tenants", json=payload)
+    assert created.status_code == 201, created.text
+
+    response = await client.get("/tenants/email-availability", params={"email": email.upper()})
+    assert response.status_code == 200
+    assert response.json()["available"] is False
+
+
+async def test_email_availability_rejects_invalid_email(client: AsyncClient) -> None:
+    response = await client.get("/tenants/email-availability", params={"email": "not-an-email"})
+    assert response.status_code == 422
+
+
+async def test_email_availability_requires_setup_token_when_configured(
     client: AsyncClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """C23 regression: when Supabase Auth is configured but rejects the admin
-    signup, the endpoint must return a clear 502 instead of a bare 500."""
-    monkeypatch.setattr("app.routers.tenants.is_supabase_configured", lambda: True)
+    monkeypatch.setattr("app.routers.tenants._settings.setup_token", "expected-token")
+    email = f"tok-{uuid4().hex[:8]}@example.com"
 
-    def _reject(*args: object, **kwargs: object) -> None:
-        raise RuntimeError("Failed to create Supabase user: 422 weak_password")
+    missing = await client.get("/tenants/email-availability", params={"email": email})
+    assert missing.status_code == 401
 
-    monkeypatch.setattr("app.routers.tenants.admin_create_user", _reject)
+    wrong = await client.get(
+        "/tenants/email-availability",
+        params={"email": email},
+        headers={"X-Setup-Token": "wrong-token"},
+    )
+    assert wrong.status_code == 401
 
-    response = await client.post("/tenants", json=_bootstrap_payload(f"sb-{uuid4().hex[:8]}"))
-    assert response.status_code == 502
-    assert "authentication provider" in response.json()["detail"].lower()
+    valid = await client.get(
+        "/tenants/email-availability",
+        params={"email": email},
+        headers={"X-Setup-Token": "expected-token"},
+    )
+    assert valid.status_code == 200
+    assert valid.json()["available"] is True
 
 
-async def test_bootstrap_supabase_unreachable_returns_503_not_500(
-    client: AsyncClient, monkeypatch: pytest.MonkeyPatch
+async def test_bootstrap_always_provisions_local_password_auth(
+    client: AsyncClient, db: AsyncSession
 ) -> None:
-    """C23 regression: a network-level failure talking to Supabase Auth must
-    return a clear 503 instead of a bare 500."""
-    monkeypatch.setattr("app.routers.tenants.is_supabase_configured", lambda: True)
+    """Local bcrypt is the only auth mechanism: bootstrap must store a usable
+    local password hash on the first admin and never depend on an external
+    identity provider (no 502/503 provider-failure path exists)."""
+    slug = f"local-{uuid4().hex[:8]}"
+    payload = _bootstrap_payload(slug)
+    response = await client.post("/tenants", json=payload)
+    assert response.status_code == 201, response.text
 
-    def _unreachable(*args: object, **kwargs: object) -> None:
-        raise httpx.ConnectError("connection refused")
-
-    monkeypatch.setattr("app.routers.tenants.admin_create_user", _unreachable)
-
-    response = await client.post("/tenants", json=_bootstrap_payload(f"sbx-{uuid4().hex[:8]}"))
-    assert response.status_code == 503
-    assert "unavailable" in response.json()["detail"].lower()
+    await set_tenant_in_session(db, UUID(response.json()["id"]))
+    user = await db.scalar(select(User).where(User.email == payload["admin_email"]))
+    assert user is not None
+    assert user.password_hash is not None
+    assert user.supabase_uid is None
+    assert verify_password(payload["admin_password"], user.password_hash)

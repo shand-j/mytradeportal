@@ -91,6 +91,55 @@ export async function seedCustomer(
 }
 
 /**
+ * Log in a registered customer and return the token response.
+ * Requires `tenant.slug` to resolve the account (single-tenant today).
+ */
+export async function loginCustomer(
+  tenant,
+  { email, password }
+) {
+  if (!tenant.slug) {
+    throw new Error("loginCustomer requires tenant.slug");
+  }
+  return api(tenant, "/customer/login", {
+    method: "POST",
+    auth: false,
+    body: { slug: tenant.slug, email, password },
+  });
+}
+
+/**
+ * Like {@link api} but never throws on non-2xx: resolves with
+ * `{ status, json }` so specs can assert negative contracts (403s, 410s).
+ */
+export async function apiRaw(
+  tenant,
+  path,
+  { method = "GET", body, auth = true, headers: extraHeaders = {} } = {}
+) {
+  const base = tenant.base ?? DEFAULT_BASE;
+  const headers = { Accept: "application/json", ...extraHeaders };
+  if (body) headers["Content-Type"] = "application/json";
+  if (auth) {
+    headers["Authorization"] = `Bearer ${tenant.token}`;
+    headers["X-Tenant-ID"] = tenant.tenantId;
+  }
+  const res = await fetch(`${base}${path}`, {
+    method,
+    headers,
+    body: body ? JSON.stringify(body) : undefined,
+  });
+  const text = await res.text();
+  let payload = null;
+  try {
+    payload = text ? JSON.parse(text) : null;
+  } catch {
+    payload = null;
+  }
+  return { status: res.status, json: payload, text };
+}
+
+/**
  * Configure the business services offered by the tenant.
  */
 export async function seedBusinessServices(
@@ -109,7 +158,7 @@ export async function seedBusinessServices(
  */
 export async function seedLead(
   tenant,
-  { title, category, contact, urgency = "this_week", structuredData = {} }
+  { title, category, contact, urgency = "this_week", structuredData = {}, preferredDates = [] }
 ) {
   if (!tenant.slug) {
     throw new Error("seedLead requires tenant.slug");
@@ -129,7 +178,8 @@ export async function seedLead(
       raw_text: structuredData.notes ?? null,
       structured_data: structuredData,
       urgency,
-      preferred_dates: [],
+      // The intake schema expects the portal shape: a list of `{date}` dicts.
+      preferred_dates: preferredDates.map((d) => ({ date: d })),
       safety_review_required: false,
       marketing_consent: false,
     },

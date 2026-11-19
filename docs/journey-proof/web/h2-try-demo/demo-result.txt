@@ -1,0 +1,82 @@
+STATE=quote
+
+Your trade.
+Your own
+
+app.
+
+Built for electricians, native on iOS. Create your account, onboard your business, share your code — your customers download the app and it puts on your brand the moment they sign in. Up and running in 2 minutes.
+
+JOIN THE BETA →
+Take the tour
+
+NOW IN BETA FOR ELECTRICIANS · OTHER TRADES AFTER BETA · ANDROID TO FOLLOW
+
+9:41
+Back
+
+Review quote
+
+Replace consumer unit in 3-bed semi, 10 circuits. Include new RCBO board, surge protection, earth bonding to gas and water, testing and certification.
+
+AI draft · guide prices · ex-VAT lines
+
+AI confidence 40%
+
+Includes labour and materials for a consumer unit replacement in a 3-bed semi with a total of 10 circuits. Assumed standard conditions and accessible locations for installations.
+
+Line 1
+AI
+
+Consumer unit replacement (labour)
+
+4 × £65.00
+£260.00
+Line 2
+AI
+
+Metal consumer unit 10-way with SPD surge protection and main switch
+
+1 × £145.00
+£145.00
+Line 3
+AI
+
+Earthing/Bonding connection to gas
+
+1 × £50.00
+£50.00
+Line 4
+AI
+
+Earthing/Bonding connection to water
+
+1 × £50.00
+£50.00
+Line 5
+AI
+
+Testing and certification of installation
+
+2 × £65.00
+£130.00
+
+Subtotal
+
+£635.00
+
+VAT (20%)
+
+£127.00
+
+Total
+
+£762.00
+
+Refine with AI
+
+Refine quote
+
+Generated in 15.6s · grounded
+
+THE REAL AI — TRY IT, NO SIGNUP

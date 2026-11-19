@@ -10,6 +10,7 @@ import { useBusiness } from "../../theme/ThemeProvider";
 import { submitPublicQuoteRequest, PublicQuoteRequestAck } from "../../api/quoteRequests";
 import { stagedPhotosFromMedia, uploadCustomerPhotos } from "../../api/uploads";
 import { fetchCustomerMe } from "../../api/auth";
+import { ApiError, NetworkError } from "../../lib/apiClient";
 import { AccountCreationStep } from "./quote-steps/AccountCreationStep";
 import { BudgetContextStep } from "./quote-steps/BudgetContextStep";
 import { ConfirmationStep } from "./quote-steps/ConfirmationStep";
@@ -56,6 +57,24 @@ const STANDARD_STEPS: StepDef[] = [
   { key: "confirmation", label: "Done" },
 ];
 
+/** Human-readable submit failure for the blocking error on the consents step. */
+function submitErrorMessage(err: unknown): string {
+  if (err instanceof NetworkError) {
+    return "No connection — check your internet and tap retry.";
+  }
+  if (err instanceof ApiError) {
+    if (err.status === 429) {
+      return "Too many attempts just now — wait a minute and tap retry.";
+    }
+    if (err.detail) {
+      // Server details can carry a stable machine prefix ("customer_blocked: …")
+      // that clients key on — drop it from the human-readable message.
+      return err.detail.replace(/^[a-z_]+:\s*/i, "");
+    }
+  }
+  return "Your request could not be sent. Please try again.";
+}
+
 export function CustomerQuoteRequestFlow({
   onClose,
   onCancel,
@@ -69,6 +88,8 @@ export function CustomerQuoteRequestFlow({
   const [showEmergency, setShowEmergency] = useState(false);
   const [serviceAreaError, setServiceAreaError] = useState<string | null>(null);
   const [submittedAck, setSubmittedAck] = useState<PublicQuoteRequestAck | null>(null);
+  const [submitting, setSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
   const prefilledRef = useRef(false);
 
   // Logged-in customers get their saved details pre-filled (still editable) so
@@ -115,13 +136,19 @@ export function CustomerQuoteRequestFlow({
     setFormData((prev) => ({ ...prev, ...patch }));
   };
 
-  const submitToBackend = async () => {
+  const submitToBackend = async (): Promise<boolean> => {
     // With a resolved business: create a real quote request so it lands as a lead
-    // in the tradesperson's dashboard. Non-blocking — the confirmation screen
-    // still shows if the network hiccups.
-    if (!business?.slug) return;
+    // in the tradesperson's dashboard. A failure must block the confirmation
+    // screen — the homeowner has to know their request never arrived.
+    if (!business?.slug) {
+      setSubmitError("We couldn't identify the business. Go back and find your electrician again.");
+      return false;
+    }
     try {
       const ack = await submitPublicQuoteRequest(business.slug, formData);
+      if (!ack?.id || !ack.reference) {
+        throw new Error("Quote request ack was missing its id/reference");
+      }
       setSubmittedAck(ack);
       // Logged-in customers already hold a token (and the request is linked to
       // their account), so staged photos can go up right away. Guests upload
@@ -133,15 +160,42 @@ export function CustomerQuoteRequestFlow({
       // request appears on both sides immediately.
       queryClient.invalidateQueries({ queryKey: ["my-requests"] });
       queryClient.invalidateQueries({ queryKey: ["quote-requests"] });
-    } catch {
-      // Swallow: capture UX should not hard-fail on a flaky submit.
+      return true;
+    } catch (err) {
+      console.error("[quote-request] submit failed", {
+        slug: business.slug,
+        error: err instanceof Error ? { name: err.name, message: err.message } : err,
+        status: err instanceof ApiError ? err.status : undefined,
+      });
+      setSubmitError(submitErrorMessage(err));
+      return false;
     }
   };
 
+  const handleConsentsNext = () => {
+    // Resubmitting after a success would create a duplicate lead — a confirmed
+    // request just moves on to the confirmation screen.
+    if (submittedAck) {
+      setStepIndex((i) => i + 1);
+      return;
+    }
+    if (submitting) return;
+    setSubmitting(true);
+    setSubmitError(null);
+    void submitToBackend().then((ok) => {
+      setSubmitting(false);
+      // Only a real ack advances past consents; failures stay put with the
+      // error + retry on the consents screen.
+      if (ok) setStepIndex((i) => i + 1);
+    });
+  };
+
   const handleNext = () => {
-    // The consents step is the last data step before confirmation; submit here.
+    // The consents step is the last data step before confirmation; submit here
+    // and gate advancement on a real acknowledgement.
     if (step.key === "consents") {
-      void submitToBackend();
+      handleConsentsNext();
+      return;
     }
     if (isLast) {
       onClose();
@@ -248,11 +302,25 @@ export function CustomerQuoteRequestFlow({
       case "budget":
         return <BudgetContextStep {...stepProps} />;
       case "consents":
-        return <ConsentsStep {...stepProps} />;
+        return <ConsentsStep {...stepProps} submitting={submitting} submitError={submitError} />;
       case "confirmation":
+        // The confirmation screen is only meaningful with a real backend ack;
+        // without one the request never arrived, so show the consents screen
+        // again (with its blocking error + retry) instead of a false success.
+        if (!submittedAck) {
+          return (
+            <ConsentsStep
+              {...stepProps}
+              onNext={handleConsentsNext}
+              submitting={submitting}
+              submitError={submitError}
+            />
+          );
+        }
         return (
           <ConfirmationStep
             {...stepProps}
+            reference={submittedAck.reference}
             showCreateAccount={needsAccount}
             onDone={needsAccount ? handleNext : onClose}
           />

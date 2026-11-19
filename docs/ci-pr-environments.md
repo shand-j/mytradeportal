@@ -113,6 +113,33 @@ business-config 404/contract, public-docs 404s on bogus tokens, Resend webhook
 rejects a bad signature, intake 404 on an unknown slug, OpenAPI docs. All are
 non-destructive and need no seeded tenant.
 
+**Deployed write suite** (`pytest services/api/tests_deployed -m deployed_write`,
+run by the `deployed-write-suite` job in `staging-e2e.yml` only): stateful
+journeys, each under its own throwaway tenant created with `TEST_SETUP_TOKEN`:
+Paddle cancel/activate webhooks driving the paywall (tenant-status + 402
+middleware), Stripe Connect onboarding mirror plus a forged
+`payment_intent.succeeded`/`charge.refunded` settlement chain (public invoice
+→ paid → payment-received email with review CTA → refunded). The public
+invoice asserts the documented fail-open degrade (`payment_url: null`): Stripe
+only grants destination-charge capability to a genuinely onboarded account,
+and the hosted KYC flow is hcaptcha-gated, so it cannot be completed
+headlessly in CI — the success-path `payment_url` contract is covered
+in-process with a mocked Stripe (`services/api/tests/test_payments.py`).
+Trial extension after 3 sent AI-drafted quotes, Resend bounce → staff alert
+(in-app + email), customer magic-link exchange/claim, and the data-export
+shape. Webhook events are forged with the environment's own webhook secrets
+(resolved at runtime by `scripts/ci/env_secrets.py`, never stored in GitHub),
+and email assertions read the shared Mailpit instance. Every test skips
+without `TEST_SETUP_TOKEN`/`TEST_*_WEBHOOK_SECRET`, so the read-only
+`pr-verify` job stays read-only.
+
+**Fresh-deploy gate**: both staging jobs run `scripts/ci/wait_for_deploy.py`
+before touching the API — the push rebuilds staging, and asserting against
+the previous deployment once produced failures only explainable by stale
+code (2026-09-16). The gate polls Railway's GraphQL API (the CLI rejects the
+CI token) until a deployment created after the job started reaches SUCCESS,
+and fails loudly if that deployment FAILS/CRASHES.
+
 **Landing/portal** (Playwright): home loads with hero/pricing/quote demo,
 `/fair-use` renders, `/quote/:token` and `/pay/:token` reach a terminal error
 state for bogus tokens (asserted as "invalid link or error alert" — see the
@@ -157,4 +184,14 @@ TEST_API_BASE_URL=https://<api-host> python -m pytest services/api/tests_deploye
 
 cd web/app
 TEST_LANDING_URL=https://<landing-host> pnpm exec playwright test --config playwright.pr.config.ts
+```
+
+Write suite against staging (needs the staging `SETUP_TOKEN`, webhook secrets
+and Mailpit credentials; resolve them with `railway variable list` or
+`scripts/ci/env_secrets.py staging api --prefix TEST_ …`):
+
+```bash
+source .venv/bin/activate
+source /tmp/ws-env.sh   # TEST_API_BASE_URL / TEST_SETUP_TOKEN / TEST_*_WEBHOOK_SECRET / MAILPIT_*
+python -m pytest services/api/tests_deployed -m deployed_write -o addopts='' -v
 ```

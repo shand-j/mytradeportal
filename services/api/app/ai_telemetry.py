@@ -49,8 +49,13 @@ logger = structlog.get_logger("api.ai_telemetry")
 # Feature vocabulary (AiCallEvent.feature).
 FEATURE_QUOTE_DRAFT = "quote_draft"
 FEATURE_QUOTE_REFINE = "quote_refine"
+# Electrician thumbs up/down on a refine's output — the quality-signal row
+# joins the refine's cost rows via trace_id for cost↔quality analytics.
+FEATURE_QUOTE_REFINE_RATING = "quote_refine_rating"
 FEATURE_TRIAGE_FOLLOWUP = "triage_followup"
+FEATURE_REMINDER_DRAFT = "reminder_draft"
 FEATURE_EMBEDDING = "embedding"
+FEATURE_MEDIA_OBSERVATION = "media_observation"
 FEATURE_DEMO_QUOTE = "demo_quote"
 FEATURE_OUTCOME = "outcome"
 
@@ -481,9 +486,12 @@ __all__ = [
     "ACTOR_SYSTEM",
     "FEATURE_DEMO_QUOTE",
     "FEATURE_EMBEDDING",
+    "FEATURE_MEDIA_OBSERVATION",
     "FEATURE_OUTCOME",
     "FEATURE_QUOTE_DRAFT",
     "FEATURE_QUOTE_REFINE",
+    "FEATURE_QUOTE_REFINE_RATING",
+    "FEATURE_REMINDER_DRAFT",
     "FEATURE_TRIAGE_FOLLOWUP",
     "STATUS_ABANDONED",
     "STATUS_ERROR",

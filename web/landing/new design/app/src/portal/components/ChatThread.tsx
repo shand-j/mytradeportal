@@ -79,7 +79,7 @@ export function ChatThread({
             <div
               className={
                 message.role === 'customer'
-                  ? 'max-w-[85%] border-2 border-[var(--ink)] bg-[var(--accent)] px-3.5 py-2.5 text-[14px] leading-relaxed text-[var(--ink-deep)]'
+                  ? 'max-w-[85%] border-2 border-[var(--ink)] bg-[var(--accent)] px-3.5 py-2.5 text-[14px] leading-relaxed text-white'
                   : 'max-w-[85%] border-2 border-[var(--rule)] bg-[var(--paper-2)] px-3.5 py-2.5 text-[14px] leading-relaxed'
               }
             >

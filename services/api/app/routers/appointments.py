@@ -8,10 +8,13 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.availability import NON_BLOCKING_APPOINTMENT_STATUSES, NON_BLOCKING_JOB_STATUSES
 from app.database import get_db
-from app.dependencies import TenantDep
+from app.dependencies import TenantDep, single_active_user
+from app.dispatch import enforce_assignment_guardrails
 from app.models import Appointment, Contact, Job
 from app.rls import set_tenant_in_session
+from app.routers.jobs import _validate_assignee
 from app.schemas import AppointmentCreate, AppointmentRead, AppointmentUpdate
 from app.work_blocks import working_hours
 
@@ -41,14 +44,26 @@ async def _get_appointment(db: AsyncSession, tenant_id: UUID, appointment_id: UU
 
 
 @router.get("")
-async def list_appointments(tenant: TenantDep, db: DbDep) -> list[AppointmentRead]:
-    """List appointments for the current tenant."""
+async def list_appointments(
+    tenant: TenantDep,
+    db: DbDep,
+    assigned_user_id: UUID | None = Query(default=None),
+) -> list[AppointmentRead]:
+    """List appointments for the current tenant.
+
+    ``assigned_user_id`` narrows the list to appointments assigned to that
+    staff member (the mobile calendar's "Me" view); omitting it returns the
+    whole team ("All").
+    """
     await set_tenant_in_session(db, tenant.id)
-    result = await db.execute(
+    query = (
         select(Appointment)
         .where(Appointment.tenant_id == tenant.id)
         .order_by(Appointment.start_at.desc())
     )
+    if assigned_user_id is not None:
+        query = query.where(Appointment.assigned_user_id == assigned_user_id)
+    result = await db.execute(query)
     return [AppointmentRead.model_validate(a) for a in result.scalars().all()]
 
 
@@ -70,7 +85,24 @@ async def create_appointment(
         if job is None or job.tenant_id != tenant.id:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid job")
 
-    appointment = Appointment(tenant_id=tenant.id, **data.model_dump())
+    # Same sole-staff default as job creation: a single-seat tenant's only
+    # active user is the implicit assignee when none is supplied.
+    assigned_user_id = data.assigned_user_id
+    if assigned_user_id is None:
+        sole_user = await single_active_user(db, tenant.id)
+        if sole_user is not None:
+            assigned_user_id = sole_user.id
+    await _validate_assignee(db, tenant.id, assigned_user_id)
+
+    # Dispatch guardrails: the new appointment must not double-book the
+    # assignee or push them over the 10h daily cap (structured 409s).
+    await enforce_assignment_guardrails(
+        db, tenant.id, assigned_user_id, [(data.start_at, data.end_at)]
+    )
+
+    appointment = Appointment(
+        tenant_id=tenant.id, **{**data.model_dump(), "assigned_user_id": assigned_user_id}
+    )
     db.add(appointment)
     await db.commit()
     await db.refresh(appointment)
@@ -120,7 +152,7 @@ async def get_availability(
             Job.tenant_id == tenant.id,
             Job.scheduled_start.isnot(None),
             Job.scheduled_start < day_end,
-            Job.status.notin_({"cancelled", "completed"}),
+            Job.status.notin_(NON_BLOCKING_JOB_STATUSES),
         )
     )
     for job in jobs_result.scalars().all():
@@ -155,10 +187,34 @@ async def update_appointment(
     tenant: TenantDep,
     db: DbDep,
 ) -> AppointmentRead:
-    """Update an appointment."""
+    """Update an appointment.
+
+    Reschedules and reassignments pass the same dispatch guardrails as
+    creation: the assignee's new placement must not overlap another booking
+    or exceed the daily hours cap. Cancelled/no-show appointments are exempt
+    (they no longer block anyone's calendar).
+    """
     appointment = await _get_appointment(db, tenant.id, appointment_id)
-    for key, value in data.model_dump(exclude_unset=True).items():
+    changes = data.model_dump(exclude_unset=True)
+    if "assigned_user_id" in changes:
+        await _validate_assignee(db, tenant.id, changes["assigned_user_id"])
+    for key, value in changes.items():
         setattr(appointment, key, value)
+    schedule_changed = "start_at" in changes or "end_at" in changes
+    if (
+        schedule_changed or "assigned_user_id" in changes
+    ) and appointment.status not in NON_BLOCKING_APPOINTMENT_STATUSES:
+        try:
+            await enforce_assignment_guardrails(
+                db,
+                tenant.id,
+                appointment.assigned_user_id,
+                [(appointment.start_at, appointment.end_at)],
+                exclude_appointment_ids=frozenset({appointment.id}),
+            )
+        except HTTPException:
+            await db.rollback()
+            raise
     await db.commit()
     return AppointmentRead.model_validate(appointment)
 

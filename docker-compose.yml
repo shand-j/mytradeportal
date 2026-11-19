@@ -44,19 +44,22 @@ services:
       retries: 10
 
   minio:
-    image: quay.io/minio/minio:RELEASE.2025-07-23T15-54-02Z
+    image: rustfs/rustfs:latest
     container_name: mtp_minio
     environment:
-      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
-      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin}
-    command: server /data --console-address ":9001"
+      RUSTFS_ACCESS_KEY: ${MINIO_ACCESS_KEY:-minioadmin}
+      RUSTFS_SECRET_KEY: ${MINIO_SECRET_KEY:-minioadmin}
+      RUSTFS_ADDRESS: ":9000"
+      RUSTFS_CONSOLE_ADDRESS: ":9001"
+      RUSTFS_CONSOLE_ENABLE: "true"
+    command: /data
     volumes:
       - minio_data:/data
     ports:
       - "9000:9000"
       - "9001:9001"
     healthcheck:
-      test: ["CMD-SHELL", "bash -c 'echo >/dev/tcp/localhost/9000'"]
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:9000/health || exit 1"]
       interval: 5s
       timeout: 5s
       retries: 10
@@ -114,9 +117,6 @@ services:
       PADDLE_PRICE_ID_PRO: ${PADDLE_PRICE_ID_PRO:-}
       PADDLE_PRICE_ID_BUSINESS: ${PADDLE_PRICE_ID_BUSINESS:-}
       PADDLE_BETA_DISCOUNT_ID: ${PADDLE_BETA_DISCOUNT_ID:-}
-      SUPABASE_URL: ${SUPABASE_URL:-http://host.docker.internal:54321}
-      SUPABASE_ANON_KEY: ${SUPABASE_ANON_KEY:-}
-      SUPABASE_SERVICE_ROLE_KEY: ${SUPABASE_SERVICE_ROLE_KEY:-}
       RAILWAY_TOKEN: ${RAILWAY_TOKEN:-}
       RAILWAY_PROJECT_ID: ${RAILWAY_PROJECT_ID:-}
     volumes:

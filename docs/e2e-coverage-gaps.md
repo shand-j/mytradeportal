@@ -1,6 +1,7 @@
 # E2E coverage gaps & proposed test plan (beta)
 
-**Date:** 2026-09-16 · **Status:** analysis complete, tests not yet written
+**Date:** 2026-09-16 · **Status:** EXECUTED 2026-09-17 — all waves landed except
+G1/G2/G9/G10/G11/G12 (see Execution status); 6 product bugs filed (#135–#137, #141–#143)
 **Sources:** `docs/features/*.feature` (17 journey specs), `docs/mytradeportal-research/`
 (PRDs + Delivery Plan), `docs/beta-backlog.md`, git diff 2026-09-07→09-16, full
 read of `mobile/e2e/`, `web/app/e2e/`, `services/api/tests_deployed/`.
@@ -178,25 +179,37 @@ fallback applies here too.
 | G33 | **`GET /export/my-data`** | Tenant owner exports → streamed JSON contains their tenants/quotes/invoices; RLS-scoped (no other tenant's data); secrets excluded | `data_export.py`, PRD-Observability | P1 | deployed-smoke | |
 | G34 | **AI metadata contract** | Generated quote exposes `ai_confidence`, `ai_warnings`, `ai_assumptions`, `retrieval_status`; grounded lines use catalogue units (ea/m/hr) — **never `unit="job"`** (repeat regression) | trade-ai-quotes @p0 | **P0** | mobile-staging (extend C/H) | Cheap assert on existing flows. |
 
-## Proposed execution order
+## Execution status (updated 2026-09-17)
 
-**Wave 1 — harness + beta blockers (payments spine):** staging Stripe webhook
-endpoint (user dashboard action, see above); G1/G2
-(portal Stripe sandbox card + decline/retry), G4 refund idempotency, G6 trial,
-G8 paywall gate (server-side first), G5 Paddle sandbox checkout +
-webhook. These need new seeding helpers (Stripe-connected tenant, subscription
-states) in `mobile/e2e/seed-e2e.mjs`.
+**Wave 1 — harness + beta blockers (payments spine): PARTIAL.** G4/G5/G6/G8
+shipped in the `deployed_write` suite (#127) and are green on main staging.
+**G1/G2 remain open** — the Stripe-connected seed and portal sandbox card path
+are deliberately fixme'd pending a Stripe-connected tenant seed in
+`mobile/e2e/seed-e2e.mjs`; also still needs the real Stripe→staging webhook
+endpoint registered in the Stripe dashboard (suite currently forges signatures).
 
-**Wave 2 — email spine:** G11/G12 chasing (scheduler drive + Mailpit), G16 email
-sequence (all lifecycle mails incl. D3/D5 regression guards), G13 review CTA,
-G17 follow-the-magic-link, G15 bounce alert. Mostly extends existing specs +
-`mailpit.ts`.
+**Wave 2 — email spine: MOSTLY DONE.** G13/G15/G16/G17 shipped (#127, #134,
+#139 hotfix). **G11/G12 chasing (reminders scheduler) BLOCKED** on a product
+decision: testing the time-based scheduler needs a SETUP_TOKEN-gated force-run
+endpoint (or another deterministic drive); flagged to the user, not built.
 
-**Wave 3 — portal suite (new):** G18–G25 as a new `web/landing` Playwright suite
-against staging (subdomain strategy B5), reusing Mailpit + setup-token seeding.
+**Wave 3 — portal suite: DONE.** G18–G25 shipped (#140) as the new
+`web/landing` Playwright suite against staging (`?slug=` strategy B5): 24
+passed / 4 fixme vs staging. Fixmes file as product bugs: #141 (entry_channel
+never persisted), #142 (booking-email claim chain broken), #143 (portal contact
+chips never render). Deliberate fixme: Stripe card path (G1/G2 overlap).
 
-**Wave 4 — app depth:** G26–G31, G34 rounding/VAT/AI-metadata hardening.
-G33 export, G9/G10 billing self-serve when decisions land.
+**Wave 4 — app depth: DONE.** G26–G31, G33, G34 shipped (#134, #138, #139).
+Fixmes filed as product bugs: #135 (blocked customer can still submit intake),
+#136 (pre-block bearer tokens stay valid), #137 (`/customer/invoices/{id}/pay`
+always 410 while the app shows Pay now). G9/G10 billing self-serve remain
+deferred until the pricing/Paddle decisions land.
+
+**Staging hardening during execution:** #128 (init_db advisory lock + retry,
+wait-for-deploy gate), #129 (token-free superuser rotation), #130 (SKIPPED
+builds gate), #131 (70% coverage floor), #139 (batch-1 specs hardened against
+live staging — email sender contract, canonical `hour` unit, multi-turn AI
+triage closure).
 
 ## What stays manual / out of CI
 
@@ -206,3 +219,12 @@ G33 export, G9/G10 billing self-serve when decisions land.
   explicitly excluded per `parked-gaps.feature`.
 - Real-LLM quality tests stay minimal in CI (cost): G7 trial-extension is the
   only new LLM-dependent test; everything else is API/UI-assertable.
+
+## Coverage log
+
+| Date | PR | Gaps covered | Notes |
+|---|---|---|---|
+| 2026-09-16 | (this PR) | G4 (Stripe refund + replay idempotency), G5 (Paddle webhook signature/idempotency/plan re-derivation), G6 (14-day no-card trial), G7 (trial extension, API-driven with seeded `ai_generated` quotes + once-only guard), G8 (paywall tenant-status + 402 middleware), G13 (payment-received email + review CTA, Stripe path), G15 (bounce → staff alert, in-app `type=email_failed` + staff email), G17 (magic-link exchange/claim/single-use), G33 (`/export/my-data` shape) | New `deployed_write` pytest suite (`services/api/tests_deployed/test_deployed_write_suite.py`) run by a dedicated `deployed-write-suite` job in `staging-e2e.yml`. Stripe/Paddle chains validated against a Railway PR environment before merge (production-copied secrets); suite skips cleanly without `TEST_SETUP_TOKEN`/webhook secrets so `pr-verify` stays read-only. Also fixed two product bugs found while writing tests: Bearer auth on endpoints without `TenantDep` (`get_current_user` now sets RLS tenant context from token claims, mirroring `get_current_customer`) and tenant resolution for portal magic-link endpoints (`X-Tenant-Slug` header, sent by the landing portal client when served from the marketing origin). |
+| 2026-09-17 | `test/mobile-batch-2` | G27 (multi-day jobs: `is_multi_day` flag vs tenant daily hours on create AND read; `suggest-schedule` earliest-fit — per-day caps ≤ daily hours, consecutive working days with weekend skip, busy-day push-out, `hours=` form agrees; convert caps day 1 at daily hours and books day-2..N as linked block appointments; job-create screen badge "spans N working days" + one-tap earliest-fit suggestion, UI-created job splits identically; reschedule shifts every block by the job's delta), G28 (acceptance reconfirmation: reconfirm-dates panel gated on request preferred dates with the "will try to accommodate" acknowledgement + toggle-off/back-on, dates persist on the quote, staff `quote_accepted` notification quotes them, trade quote screen shows "Customer's confirmed dates" panel, convert-to-job prefills the earliest confirmed date at 09:00 and carries the dates into job notes, no-dates branch accepts directly with no panel) | New mobile-staging specs `multi-day-jobs.spec.ts` (5 tests) + `acceptance.spec.ts` (5 tests); `testMatch` extended in both playwright configs; `seedLead` gained a `preferredDates` option (posts the portal `{date}` dict shape the intake schema expects). Local run vs api :8003: 10/10 passed. No product bugs found — both features behaved exactly as documented. |
+| 2026-09-17 | `test/mobile-batch-1` | G16 (full email spine in Mailpit: quote-ready magic-link CTA → acceptance → booking-confirmed on BOTH scheduling paths → invoice → manual payment-received without card-receipt copy → transactional no-reply sender), G29 (rounding chip → quote_rounding=5/10 → VAT-registered 20% vs non-registered 0% fallback → quote→job→invoice mirrors subtotal/VAT/total/`rounding_adjustment` exactly), G14 (branding screen persists `review_url` → tenant settings → public config; Quotes share sheet encodes the tenant portal link), G30 (staff + customer read-all clears the badge; bell deep-links for staff quote_accepted/chat_reply + customer chat_message/quote_sent), G31 (blocked customer: 403 login, chat, staff-side quote-request; two gaps fixme'd), G34 (AI-metadata contract on generated quotes: catalogue units, confidence/warnings, retrieval status; 503→skip without LLM), G26 (customer invoice list + dead Pay-now graceful 410) | New mobile-staging specs `emails/rounding/branding/blocked/ai-metadata/customer-invoices.spec.ts` + O2 describe in `notifications.spec.ts`; `testMatch` extended in both playwright configs (necessary infra change). Local full suite vs api :8003: 50 passed — the only failures are pre-existing specs needing an LLM (3× 503) or MinIO (C21) plus one N32 flake that passes in isolation. Three product bugs encoded: **(1)** public quote-request intake accepts a blocked customer (`test.fixme`, 201 today); **(2)** pre-block customer bearer tokens stay valid on `CurrentCustomerDep`-only read surfaces (`/customer/quotes` 200, `test.fixme`); **(3)** `POST /customer/invoices/{id}/pay` always 410 while the app still shows Pay now (interim test asserts the graceful error). Noted: Quotes share QR encodes the portal URL, not `review_url`; customer `quote_sent` bell only fires for AI-generated quotes (linked at creation) — deep-link test self-skips for manual quotes; staff `chat_reply` bell requires closed AI triage (no-LLM envs assert the quiet rule instead). |
+| 2026-09-17 | `test/portal-suite` | G18 (arrival & intake: `?slug=` tenant branding + unknown-slug 404, intake form → lead + auto-provisioned passwordless customer + reference, phone-required when phone-preferred `5ac841a`), G19 (inline AI triage `sync_check` bounded + fail-open), G20 (magic-link sign-in + session persistence across reload, re-issue rotation NOT single-use, no account enumeration, object isolation customer A/B, app-register claims the passwordless account without 409), G21 (quote list/detail ex-VAT subtotal + VAT + total, pre-review drafts never leak C3, accept + preferred dates → `quote_accepted` staff notification quoting the dates + platform-branded acceptance email, decline → rejected, discuss reply lands on the shared staff thread via lead-linked quote), G22 (convert-to-job → booking-confirmed email with visit details + claim CTA for passwordless customers, customer `POST /customer/appointments` request listed, claimed/password customer gets NO claim CTA), G23 (invoice list/detail without card option for non-Stripe tenant + graceful pay-shell copy, view-only `/invoice/:token` with no account), G24 (password reset both roles: marketing origin + tenant-branded portal variant, single-use token, no account-existence leak), G25 (passwordless customer `customer_reachable === false` on staff lead reads; forged Paddle `subscription.canceled` → staff 402 while public config / intake / customer auth stay live; re-activate restores) | New Playwright portal suite under `web/landing/new design/app` (`playwright.portal.config.ts` + `e2e/` 7 specs, 28 tests) against staging landing (`?slug=` host override) + staging API + Mailpit. Local full run: **24 passed, 4 `test.fixme`**. Product bugs encoded as fixme: **(1)** intake accepts `entry_channel` but never persists it onto `QuoteRequest` (column stays NULL); **(2)** booking-email claim CTA chain broken — link is `/auth/magic?token=…&next=/claim`, `PortalMagicAuth` consumes the token then navigates to `/claim` with NO token, so `PortalClaim` shows the single-use-link invalid state (claim-after-booking unreachable via the email; the API-level claim contract is covered in booking.spec); **(3)** portal contact-channel chips (`Call`/`Email us` on PortalQuoteDetail + PortalShell nav) never render — `public-config` reads the `tenants.phone`/`tenants.email` columns and no API writes them (onboarding `POST /tenants` and `PATCH /tenants/me` funnel phone/email into the settings JSONB instead). Deliberate fixme: Stripe-connected card path (G1/G2 overlap) pending the Wave 1 Stripe-connected seed. Staging env gaps worked around in the `portalTest` route fixture (documented in `e2e/helpers.ts`): the API CORS allowlist omits the `landing-staging-*.up.railway.app` origin (responses replayed with `Access-Control-Allow-Origin`), and Host-subdomain tenant inference is unavailable on the test origin (`X-Tenant-ID` injected, still cross-checked against the token's tenant claim). Noted: quote/invoice email subjects are fixed strings (`Your quote from {business}`, `Invoice INV-… from {business}`, `Quote accepted — {business}`, `Booking confirmed — {business}`) — disambiguate via recipient + body, not subject; the discuss test needs a 300s timeout (LLM generation + staging latency). |

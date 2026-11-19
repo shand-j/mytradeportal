@@ -1,8 +1,17 @@
 import { useMemo } from "react";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import * as ImagePicker from "expo-image-picker";
 import { JobDetailScreen } from "../../../src/screens/trade/JobDetailScreen";
-import { useJobDetail, useJobActions, useUpdateJob } from "../../../src/api/jobs";
+import {
+  attachJobMedia,
+  useJobDetail,
+  useJobActions,
+  useUpdateJob,
+  useConvertQuoteToJob,
+  type JobPhotoKind,
+} from "../../../src/api/jobs";
+import { uploadFileToApi } from "../../../src/api/uploads";
 import { createAndSendInvoice, fetchInvoices } from "../../../src/api/invoices";
 import { useQuote } from "../../../src/api/quotes";
 import { useUsersList } from "../../../src/api/users";
@@ -16,6 +25,7 @@ export default function JobDetailRoute() {
   const { job: realJob, raw } = useJobDetail(id);
   const { start, complete } = useJobActions(id);
   const updateJob = useUpdateJob(id);
+  const convertToJob = useConvertQuoteToJob();
   const { users } = useUsersList();
   const invoicesQuery = useQuery({ queryKey: ["invoices"], queryFn: fetchInvoices });
   // The job's invoice inherits the source quote's VAT rate server-side; the
@@ -64,6 +74,45 @@ export default function JobDetailRoute() {
     });
   };
 
+  // Pick a photo from the library, upload it through the API and attach it to
+  // the job with the chosen before/after/general label.
+  const handleAddPhoto = async (kind: JobPhotoKind) => {
+    const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!permission.granted) {
+      throw new Error("Photo library access denied");
+    }
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      quality: 0.7,
+      allowsMultipleSelection: false,
+    });
+    if (result.canceled || result.assets.length === 0) return;
+    const asset = result.assets[0];
+    const uploaded = await uploadFileToApi("/files/upload", {
+      uri: asset.uri,
+      name: asset.fileName ?? `photo-${Date.now()}.jpg`,
+      type: asset.mimeType ?? "image/jpeg",
+    });
+    await attachJobMedia(raw.id, {
+      fileUrl: uploaded.url,
+      fileKey: uploaded.key,
+      mimeType: asset.mimeType ?? "image/jpeg",
+      sizeBytes: asset.fileSize ?? null,
+      kind,
+    });
+    queryClient.invalidateQueries({ queryKey: ["job", raw.id] });
+    queryClient.invalidateQueries({ queryKey: ["jobs"] });
+  };
+
+  // Grouped display needs the label; unlabelled URLs (older records) count as
+  // general photos.
+  const photos =
+    raw.mediaAssets?.map((asset) => ({
+      id: asset.id,
+      url: asset.fileUrl,
+      kind: asset.kind,
+    })) ?? raw.photos.map((url) => ({ id: url, url, kind: "general" as const }));
+
   return (
     <JobDetailScreen
       job={realJob}
@@ -71,6 +120,17 @@ export default function JobDetailRoute() {
       onExitToDashboard={() => router.replace("/(trade)/dashboard")}
       onStart={() => start.mutateAsync().then(() => undefined)}
       onComplete={() => complete.mutateAsync().then(() => undefined)}
+      // A draft hold (auto-created at quote acceptance) is confirmed by
+      // converting its quote — the backend adopts the draft in place, so the
+      // returned job keeps this screen's id.
+      onConfirmDraft={
+        raw.quoteId
+          ? async () => {
+              const confirmed = await convertToJob.mutateAsync({ quoteId: raw.quoteId as string });
+              queryClient.invalidateQueries({ queryKey: ["job", confirmed.id] });
+            }
+          : undefined
+      }
       busy={start.isPending || complete.isPending}
       onSubmitInvoice={handleSubmitInvoice}
       onCreateInvoiceAi={handleCreateInvoiceAi}
@@ -86,9 +146,11 @@ export default function JobDetailRoute() {
       }}
       members={users.map((u) => ({ id: u.id, fullName: u.fullName }))}
       initialNotes={raw.notes}
+      initialMeasurements={raw.measurements ?? []}
       scheduledStart={raw.scheduledStart}
       scheduledEnd={raw.scheduledEnd}
-      photos={raw.photos ?? []}
+      photos={photos}
+      onAddPhoto={handleAddPhoto}
       contactEmail={contact?.email ?? raw.customer.email}
       preferredContactMethod={contact?.preferredContactMethod ?? null}
       hasAccount={contact?.hasAccount ?? false}

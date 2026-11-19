@@ -204,6 +204,17 @@ class User(TenantScopedBase):
     phone: Mapped[str | None] = mapped_column(String(50), nullable=True)
     password_hash: Mapped[str | None] = mapped_column(String(255), nullable=True)
     supabase_uid: Mapped[str | None] = mapped_column(String(255), nullable=True, index=True)
+    # Set when the account is created via POST /users/invite and cleared when
+    # the invitee sets their password (accept-invite flips is_active on). A
+    # row with invited_at set and is_active off is a pending invite and counts
+    # against the plan's seat limit; a deactivated user (is_active off, no
+    # invited_at) does not.
+    invited_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+    @property
+    def invite_pending(self) -> bool:
+        """True while an invited user has not yet accepted (set a password)."""
+        return self.invited_at is not None and not self.is_active
 
 
 class Contact(TenantScopedBase):
@@ -230,6 +241,13 @@ class Contact(TenantScopedBase):
     # keep tracking reality. A blocked contact's customer account cannot log
     # in, request quotes or message the business.
     badge_overrides: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict, nullable=False)
+    # Per-customer reminder (chase) overrides (F2). NULL = tenant defaults.
+    # Supported keys: quote_chase_enabled / invoice_chase_enabled (bool),
+    # max_reminders (int, caps the tenant cadence downward only) and
+    # sms_opt_out (bool — set by POST /webhooks/telnyx when the customer
+    # replies STOP; appointment reminders then skip SMS and fall back to
+    # email, and START/UNSTOP clears it again).
+    reminder_preferences: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
     is_blocked: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     blocked_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     blocked_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
@@ -258,6 +276,9 @@ class Quote(TenantScopedBase):
     )
     title: Mapped[str] = mapped_column(String(255), nullable=False)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Internal staff notes (never customer-facing). Creation merges the CRM
+    # contact's notes in, and quote → job conversion carries them onto the job.
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
     status: Mapped[str] = mapped_column(String(50), default="draft", nullable=False)
     subtotal: Mapped[Decimal] = mapped_column(Numeric(12, 2), default=Decimal("0.00"))
     vat_rate: Mapped[Decimal] = mapped_column(Numeric(5, 2), default=Decimal("0.20"))
@@ -488,6 +509,9 @@ class Job(TenantScopedBase):
     lat: Mapped[Decimal | None] = mapped_column(Numeric(10, 8), nullable=True)
     lng: Mapped[Decimal | None] = mapped_column(Numeric(11, 8), nullable=True)
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Structured on-site measurements ([{label, value}]) alongside the
+    # free-text notes — validated to that shape by the API schemas.
+    measurements: Mapped[list[dict[str, Any]]] = mapped_column(JSONB, default=list, nullable=False)
 
     contact: Mapped[Contact] = relationship("Contact", back_populates="jobs")
     # Staff member the job is assigned to (display name surfaced on JobRead).
@@ -616,7 +640,14 @@ class InvoiceLineItem(Base, TimestampMixin):
 
 
 class Payment(Base, TimestampMixin):
-    """A payment record linked to Paddle."""
+    """A payment record for an invoice.
+
+    Receivables are Stripe Connect (ADR-003): the webhook writes these rows
+    with ``provider="stripe"`` on ``payment_intent.succeeded``. Legacy Paddle
+    invoice payments may still appear in historical data (``paid_via`` on the
+    invoice distinguishes them); Paddle's remaining role is platform
+    subscription billing via the ``subscriptions`` table.
+    """
 
     __tablename__ = "payments"
 
@@ -951,6 +982,9 @@ class QuoteRequest(TenantScopedBase):
     source: Mapped[str] = mapped_column(
         String(50), default="qr", nullable=False
     )  # qr | universal_link | web_form | app_store | sms_forward
+    # How the customer arrived at the intake surface (attribution):
+    # qr | code | widget | direct | app. NULL for staff-created leads.
+    entry_channel: Mapped[str | None] = mapped_column(String(50), nullable=True)
     raw_text: Mapped[str | None] = mapped_column(Text, nullable=True)
     structured_data: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict, nullable=False)
     ai_extracted_summary: Mapped[str | None] = mapped_column(Text, nullable=True)
@@ -1021,6 +1055,10 @@ class MediaAsset(TenantScopedBase):
     size_bytes: Mapped[int | None] = mapped_column(nullable=True)
     captured_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     source: Mapped[str] = mapped_column(String(50), default="in_app", nullable=False)
+    # Before/after labelling for job photos ("before" | "after" | "general").
+    kind: Mapped[str] = mapped_column(
+        String(20), default="general", server_default="general", nullable=False
+    )
 
 
 class Consent(TenantScopedBase):
@@ -1075,20 +1113,24 @@ class Notification(TenantScopedBase):
 
 
 class Reminder(TenantScopedBase):
-    """One customer-facing reminder email sent for a quote or invoice.
+    """One dispatched reminder for a quote, invoice or appointment.
 
-    The reminder scheduler appends a row per dispatched email; the row count
-    per entity is the "how many reminders have gone out" state (quotes stop
-    after the configured count) and ``created_at`` of the latest row is the
-    anchor for the next cadence interval. Kept as a dedicated table (rather
-    than a counter on the quote/invoice) so there is a full audit trail of
-    what was chased and when.
+    The reminder scheduler appends a row per actually-delivered reminder
+    across the email/sms/push channels; the row count per entity is the "how
+    many reminders have gone out" state (quotes stop after the configured
+    count) and ``created_at`` of the latest row is the anchor for the next
+    cadence interval. Appointment reminders additionally dedupe on
+    ``payload.window_hours`` + ``payload.role`` so each window fires once per
+    recipient. Kept as a dedicated table (rather than a counter on the
+    entity) so there is a full audit trail of what was chased and when.
     """
 
     __tablename__ = "reminders"
 
-    entity_type: Mapped[str] = mapped_column(String(20), nullable=False)  # quote | invoice
-    # No FK: points at quotes.id or invoices.id depending on entity_type.
+    entity_type: Mapped[str] = mapped_column(
+        String(20), nullable=False
+    )  # quote | invoice | appointment
+    # No FK: points at quotes.id / invoices.id / appointments.id by entity_type.
     entity_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), nullable=False, index=True)
     channel: Mapped[str] = mapped_column(String(20), default="email", nullable=False)
     # 1-based sequence number of this reminder for the entity.
@@ -1286,11 +1328,11 @@ class FxRate(Base):
 
 # ---------------------------------------------------------------------------
 # W1-C AI ROLLUPS + ALERT STATE — ai_rollup_user_day / ai_rollup_feature_day /
-# ai_alert_state (owned by the rollups/alerts/ops workstream). All three are
-# plain ``Base`` tables, NOT tenant-scoped (same rationale as
-# ``AiCallEvent``: cross-tenant ops/BI queries over AI spend must work without
-# an RLS context; ``tenant_id`` is a plain indexed column, not an RLS key).
-# Do NOT add any of these tables to ``app.rls.TENANT_SCOPED_TABLES``.
+# ai_rollup_org_day / ai_alert_state (owned by the rollups/alerts/ops
+# workstream). All four are plain ``Base`` tables, NOT tenant-scoped (same
+# rationale as ``AiCallEvent``: cross-tenant ops/BI queries over AI spend must
+# work without an RLS context; ``tenant_id`` is a plain indexed column, not an
+# RLS key). Do NOT add any of these tables to ``app.rls.TENANT_SCOPED_TABLES``.
 # ---------------------------------------------------------------------------
 
 
@@ -1381,6 +1423,51 @@ class AiRollupFeatureDay(Base):
     )
 
     __table_args__ = (UniqueConstraint("date", "feature", name="uq_ai_rollup_feature_day"),)
+
+
+class AiRollupOrgDay(Base):
+    """Per-day, per-tenant AI usage rollup across all features.
+
+    Same measures as :class:`AiRollupUserDay` but grouped only by
+    ``(date, tenant_id)`` — the granularity behind the staff ops cost
+    leaderboard. Adds ``users_active`` (distinct non-NULL ``user_id`` s with
+    spend events that day) and ``latency_p99`` (the user/feature rollups stop
+    at p95; the org table carries p99 for cohort p99 stats). Events with
+    ``tenant_id=None`` (demo/embedding) are platform-level and never fold
+    here.
+    """
+
+    __tablename__ = "ai_rollup_org_day"
+
+    id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
+    date: Mapped[date] = mapped_column(Date, nullable=False, index=True)
+    # Plain column (no FK, no RLS): every row is tenant-attributed by
+    # definition — the fold skips tenant-NULL events.
+    tenant_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), nullable=False)
+    users_active: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    generations: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    retries: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    tokens_input: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    tokens_output: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    tokens_cached: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    est_cost_usd: Mapped[Decimal] = mapped_column(
+        Numeric(12, 6), default=Decimal("0"), nullable=False
+    )
+    cost_gbp: Mapped[Decimal] = mapped_column(Numeric(12, 4), default=Decimal("0"), nullable=False)
+    latency_p50: Mapped[float | None] = mapped_column(Float, nullable=True)
+    latency_p95: Mapped[float | None] = mapped_column(Float, nullable=True)
+    latency_p99: Mapped[float | None] = mapped_column(Float, nullable=True)
+    avg_keep_rate: Mapped[Decimal | None] = mapped_column(Numeric(4, 3), nullable=True)
+    quotes_sent: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False
+    )
+
+    __table_args__ = (
+        UniqueConstraint("date", "tenant_id", name="uq_ai_rollup_org_day"),
+        Index("ix_ai_rollup_org_day_tenant_date", "tenant_id", "date"),
+    )
 
 
 class AiAlertState(Base):
@@ -1562,14 +1649,52 @@ class CustomerPortalToken(Base):
     revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
+class UserInviteToken(Base):
+    """A single-use bearer token that lets an invited staff user set a password.
+
+    Minted by ``POST /users/invite`` and re-issued by
+    ``POST /users/invite/magic-link``; the raw token only ever appears in the
+    emailed link (``/accept-invite?token=...`` on the landing site). Only the
+    SHA-256 hash is stored so a leaked DB dump cannot be replayed. Re-issuing
+    for a user revokes their earlier still-valid tokens so only the newest
+    emailed link works, and ``used_at`` makes each token single-use.
+
+    Deliberately a plain ``Base`` (same pattern as ``CustomerPortalToken``):
+    the accept endpoint looks the token up before any tenant/auth context
+    exists, so the table must stay out of ``app.rls.TENANT_SCOPED_TABLES``.
+    ``tenant_id`` is a plain column (no FK) so rows survive tenant teardown;
+    the accept endpoint then 401s like any invalid token.
+    """
+
+    __tablename__ = "user_invite_tokens"
+
+    id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
+    user_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    tenant_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), nullable=False, index=True)
+    token_hash: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(UTC), nullable=False
+    )
+    used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
 class EmailFailureAlert(Base):
-    """Dedupe ledger for staff "customer email wasn't delivered" alerts.
+    """Dedupe ledger for staff "customer message wasn't delivered" alerts.
 
     One row per (tenant, contact, calendar day): the first send-time failure
     or Resend bounce webhook for a contact inserts a row and pages staff;
     every further failure that day — any purpose, either source — sees the
     row and stays silent, so a broken mailbox cannot spam the electrician's
-    bell on every reminder sweep or webhook retry.
+    bell on every reminder sweep or webhook retry. Telnyx SMS delivery
+    receipts (``source="telnyx_dlr"``) share the same ledger, so a customer
+    whose details are wrong on both channels pages staff at most once a day.
 
     Deliberately a plain ``Base`` (same pattern as ``ProcessedWebhook``): rows
     are written from contexts with no tenant GUC (bounce webhooks) and are
@@ -1588,7 +1713,7 @@ class EmailFailureAlert(Base):
     tenant_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), nullable=False, index=True)
     contact_id: Mapped[UUID | None] = mapped_column(PGUUID(as_uuid=True), nullable=True, index=True)
     alert_date: Mapped[date] = mapped_column(Date, nullable=False)
-    source: Mapped[str] = mapped_column(String(20), nullable=False)  # send | bounce
+    source: Mapped[str] = mapped_column(String(20), nullable=False)  # send | bounce | telnyx_dlr
     purpose: Mapped[str] = mapped_column(String(100), nullable=False)
     error_class: Mapped[str] = mapped_column(String(100), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)

@@ -1,0 +1,32 @@
+SHAND 1 ELECTRICAL
+
+CUSTOMER PORTAL
+
+QUOTES
+INVOICES
+CALL
+
+← All invoices
+
+INVOICE INV-004
+
+Issued 23 October 2026 · due by 6 November 2026
+
+AWAITING RESPONSE
+Item	Qty	Unit price	Total
+Consumer unit replacement (labour)	4	£65.00	£260.00
+10-way metal RCBO consumer unit with SPD	1	£185.00	£185.00
+Earth bonding to gas and water mains	1	£60.00	£60.00
+Testing, inspection and certification (EIC)	1	£120.00	£120.00
+Subtotal (ex VAT)
+£625.00
+VAT
+£0.00
+Total
+£625.00
+
+To pay online, use the secure pay link in your invoice email — or call Shand 1 Electrical to pay another way.
+
+CALL 07817689214
+
+Powered by My Trade Portal

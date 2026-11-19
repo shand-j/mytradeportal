@@ -1,5 +1,7 @@
 """Tests for the ops alerting module (Slack + email dispatch guards)."""
 
+from typing import Any
+
 import httpx
 import pytest
 from app import alerting
@@ -64,3 +66,55 @@ async def test_slack_alert_never_raises_on_http_error(
 
     monkeypatch.setattr(httpx, "AsyncClient", _Client)
     assert await send_slack_alert("boom", webhook_url="https://hooks.slack.com/x") is False
+
+
+@pytest.mark.asyncio
+async def test_fetch_usd_gbp_rate_success(monkeypatch: pytest.MonkeyPatch) -> None:
+    class _Response:
+        status_code = 200
+
+        def json(self) -> dict[str, Any]:
+            return {"result": "success", "rates": {"GBP": 0.7449}}
+
+    class _Client:
+        def __init__(self, **kwargs: object) -> None:
+            pass
+
+        async def __aenter__(self) -> "_Client":
+            return self
+
+        async def __aexit__(self, *args: object) -> None:
+            return None
+
+        async def get(self, url: str) -> _Response:
+            return _Response()
+
+    monkeypatch.setattr(httpx, "AsyncClient", _Client)
+    assert await alerting.fetch_usd_gbp_rate() == pytest.approx(0.7449)
+
+
+@pytest.mark.asyncio
+async def test_fetch_usd_gbp_rate_provider_error_returns_none(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class _Response:
+        status_code = 200
+
+        def json(self) -> dict[str, Any]:
+            return {"result": "error", "error-type": "unsupported-code"}
+
+    class _Client:
+        def __init__(self, **kwargs: object) -> None:
+            pass
+
+        async def __aenter__(self) -> "_Client":
+            return self
+
+        async def __aexit__(self, *args: object) -> None:
+            return None
+
+        async def get(self, url: str) -> _Response:
+            return _Response()
+
+    monkeypatch.setattr(httpx, "AsyncClient", _Client)
+    assert await alerting.fetch_usd_gbp_rate() is None

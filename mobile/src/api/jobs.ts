@@ -1,7 +1,23 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, ApiError } from "../lib/apiClient";
+import { parseServerDate, toLocalIsoDate } from "../lib/datetime";
 import { ApiContact } from "./quotes";
 import { Job, JobStatus } from "../types";
+
+/** One structured measurement recorded against a job. */
+export type MeasurementEntry = { label: string; value: string };
+
+/** Before/after/general label on a job photo (backend MediaAsset.kind). */
+export type JobPhotoKind = "before" | "after" | "general";
+
+/** A job photo asset as surfaced on JobRead.media_assets (camelized). */
+export type ApiJobMediaAsset = {
+  id: string;
+  fileUrl: string;
+  fileKey: string | null;
+  mimeType: string | null;
+  kind: JobPhotoKind;
+};
 
 /** Full backend job shape (camelized JobRead). */
 export type ApiJob = {
@@ -14,16 +30,21 @@ export type ApiJob = {
   scheduledEnd: string | null;
   completedAt: string | null;
   notes: string | null;
+  /** Structured measurements recorded for the job (label + value pairs). */
+  measurements: MeasurementEntry[];
   assignedUserId: string | null;
   /** Display name of the assignee, derived server-side. */
   assignedTo: string | null;
   /** Photo URLs carried over from the source quote. */
   photos: string[];
+  /** Same photos with their before/after/general label. */
+  mediaAssets?: ApiJobMediaAsset[];
   customer: ApiContact;
 };
 
-export async function fetchJobs(): Promise<ApiJob[]> {
-  return api.get<ApiJob[]>("/jobs");
+export async function fetchJobs(assignedUserId?: string): Promise<ApiJob[]> {
+  const query = assignedUserId ? `?assigned_user_id=${assignedUserId}` : "";
+  return api.get<ApiJob[]>(`/jobs${query}`);
 }
 
 export async function fetchJob(id: string): Promise<ApiJob> {
@@ -39,6 +60,7 @@ export type CreateJobInput = {
   scheduledStart?: string;
   scheduledEnd?: string;
   notes?: string;
+  measurements?: MeasurementEntry[];
   assignedUserId?: string;
 };
 
@@ -51,6 +73,8 @@ export type UpdateJobInput = {
   scheduledStart?: string;
   scheduledEnd?: string;
   notes?: string;
+  /** Replaces the job's measurements list (send [] to clear). */
+  measurements?: MeasurementEntry[];
   /** Pass null to unassign. */
   assignedUserId?: string | null;
 };
@@ -64,6 +88,8 @@ export type ConvertToJobSchedule = {
   scheduledStart?: string;
   scheduledEnd?: string;
   notes?: string;
+  /** Structured measurements carried onto the converted job. */
+  measurements?: MeasurementEntry[];
   assignedUserId?: string;
 };
 
@@ -119,12 +145,35 @@ export async function startJob(id: string): Promise<ApiJob> {
   return api.post<ApiJob>(`/jobs/${id}/start`);
 }
 
+export type AttachJobMediaInput = {
+  fileUrl: string;
+  fileKey?: string | null;
+  mimeType?: string | null;
+  sizeBytes?: number | null;
+  kind: JobPhotoKind;
+};
+
+/** Attach an uploaded photo to a job with its before/after/general label. */
+export async function attachJobMedia(jobId: string, input: AttachJobMediaInput): Promise<ApiJob> {
+  return api.post<ApiJob>(`/jobs/${jobId}/media`, input);
+}
+
+/** Relabel a job photo (PATCH /jobs/{id}/media/{assetId}). */
+export async function updateJobMediaKind(
+  jobId: string,
+  assetId: string,
+  kind: JobPhotoKind
+): Promise<ApiJob> {
+  return api.patch<ApiJob>(`/jobs/${jobId}/media/${assetId}`, { kind });
+}
+
 export async function completeJob(id: string): Promise<ApiJob> {
   return api.post<ApiJob>(`/jobs/${id}/complete`);
 }
 
 /** Backend default is "scheduled"; the app's UI vocabulary uses "confirmed". */
 const STATUS_MAP: Record<string, JobStatus> = {
+  draft: "draft",
   scheduled: "confirmed",
   confirmed: "confirmed",
   in_progress: "in_progress",
@@ -132,16 +181,12 @@ const STATUS_MAP: Record<string, JobStatus> = {
   cancelled: "cancelled",
 };
 
-/** Local (not UTC) calendar date, so jobs bucket into the day the user sees. */
-function toLocalIsoDate(d: Date): string {
-  const pad = (n: number) => String(n).padStart(2, "0");
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
-}
-
 /** Map a backend job into the app's display `Job` shape. */
 function mapJob(j: ApiJob): Job {
-  const start = j.scheduledStart ? new Date(j.scheduledStart) : null;
-  const end = j.scheduledEnd ? new Date(j.scheduledEnd) : null;
+  // Server datetimes are naive UTC — parseServerDate pins them to UTC so
+  // local rendering isn't offset by the device timezone.
+  const start = parseServerDate(j.scheduledStart);
+  const end = parseServerDate(j.scheduledEnd);
   const formatTime = (d: Date) =>
     d.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" });
   return {
@@ -161,10 +206,11 @@ function mapJob(j: ApiJob): Job {
 }
 
 /** Jobs list for the Calendar/Dashboard. Returns backend jobs mapped into the app's `Job` shape. */
-export function useJobsList() {
+export function useJobsList(filter?: { assignedUserId?: string | null }) {
+  const assignedUserId = filter?.assignedUserId ?? undefined;
   const query = useQuery({
-    queryKey: ["jobs"],
-    queryFn: fetchJobs,
+    queryKey: ["jobs", assignedUserId ?? "all"],
+    queryFn: () => fetchJobs(assignedUserId),
   });
 
   return {

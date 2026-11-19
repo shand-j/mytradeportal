@@ -1,36 +1,47 @@
-import { useEffect, useState } from "react";
-import { Linking, View } from "react-native";
+import { useEffect } from "react";
+import { View } from "react-native";
 import { useRouter } from "expo-router";
 import { Button } from "../../components/ui/Button";
 import { Icon } from "../../components/ui/Icon";
 import { Screen } from "../../components/ui/Screen";
 import { Text } from "../../components/ui/Text";
-import { createBillingCheckout, isSubscriptionActive, useSubscription, type PlanKey } from "../../api/billing";
-import { config } from "../../lib/config";
+import {
+  isSubscriptionActive,
+  PLAN_DISPLAY_NAMES,
+  resolvePlanKey,
+  useBillingPlans,
+  useSubscription,
+} from "../../api/billing";
+import { useAuth } from "../../contexts/AuthContext";
+import { useBusiness } from "../../theme/ThemeProvider";
 import { usePaywallStore } from "../../stores/paywallStore";
-
-const PLAN_NAMES: Record<PlanKey, string> = {
-  starter: "Starter",
-  pro: "Pro",
-  business: "Business",
-};
+import { FALLBACK_PLANS } from "../onboarding/steps/PlanPaymentStep";
 
 /**
- * Shown when the backend answers 402 subscription_required: the tenant reached
- * the plan step but the checkout was never completed (or lapsed). Completing
- * checkout flips the subscription via the Paddle webhook; useSubscription
- * polls while incomplete and we release the paywall automatically.
+ * Shown when the backend answers 402 subscription_required: the tenant has no
+ * active subscription. App Store Guideline 3.1.1 — the app carries no purchase
+ * flow, so this screen explains the gate, shows read-only plan pricing and
+ * points to the website as plain text (never a link). useSubscription polls
+ * while incomplete, so a web subscription releases the paywall automatically.
  */
 export function PaywallScreen() {
   const router = useRouter();
   const setRequired = usePaywallStore((s) => s.setRequired);
+  const { logout } = useAuth();
+  const { setBusiness } = useBusiness();
   // Poll while inactive so a web checkout (webhook → status flip) releases
-  // the paywall automatically.
+  // the paywall automatically — including a lapsed trial, which still reads
+  // "trialing" server-side.
   const { data: subscription } = useSubscription({ pollWhileInactive: true });
-  const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
+  const plansQuery = useBillingPlans();
 
+  // The server returns tier keys directly for new subscriptions and legacy
+  // keys for beta ones; resolvePlanKey normalises both onto the tier catalog.
   const planKey = subscription?.planKey ?? "pro";
+  const tierKey = subscription ? resolvePlanKey(planKey) : undefined;
+  const catalog = plansQuery.data ?? FALLBACK_PLANS;
+  const tier = tierKey ? catalog.find((p) => p.key === tierKey) : undefined;
+  const planName = tier?.name ?? (tierKey ? PLAN_DISPLAY_NAMES[tierKey] : undefined);
 
   // Mirrors the server gate (is_subscription_active): a "trialing" row whose
   // trial_ends_at has passed is NOT active. Releasing on a lapsed trial is
@@ -49,25 +60,10 @@ export function PaywallScreen() {
     }
   }, [active, router, setRequired]);
 
-  const completeCheckout = () => {
-    setError(null);
-    setLoading(true);
-    void (async () => {
-      try {
-        const checkoutPageUrl = `${config.apiBaseUrl}/billing/checkout-page`;
-        const { checkoutUrl } = await createBillingCheckout(planKey, checkoutPageUrl);
-        const opened = await Linking.canOpenURL(checkoutUrl);
-        if (opened) {
-          await Linking.openURL(checkoutUrl);
-        } else {
-          setError("Couldn't open the checkout. Try again.");
-        }
-      } catch {
-        setError("Couldn't start the checkout. Check your connection and try again.");
-      } finally {
-        setLoading(false);
-      }
-    })();
+  const signInAgain = () => {
+    setBusiness(null);
+    logout();
+    router.replace("/");
   };
 
   return (
@@ -77,28 +73,25 @@ export function PaywallScreen() {
           <Icon name="shield" size={28} color="#0F1E26" />
         </View>
         <Text variant="title" weight="bold" align="center">
-          {trialExpired ? "Your free trial has ended" : "Finish setting up your plan"}
+          {trialExpired ? "Your free trial has ended" : "Subscription required"}
         </Text>
         <Text variant="body" color="secondary" align="center">
           {trialExpired
-            ? `Subscribe to the ${PLAN_NAMES[planKey]} plan to keep using My Trade Portal. Free during beta — no charge on your card until we come out of beta.`
-            : `Your ${PLAN_NAMES[planKey]} plan checkout wasn't completed. Free during beta — no charge on your card until we come out of beta.`}
+            ? `Subscribe to the ${planName ?? "current"} plan to keep using My Trade Portal — this screen clears itself as soon as your plan activates.`
+            : `This feature needs an active My Trade Portal subscription${subscription ? ` — your ${planName ?? "current"} plan isn't active yet` : ""}. Subscribe on our website and this screen clears itself as soon as your plan activates.`}
         </Text>
-        {error && (
-          <View className="rounded-2xl bg-red-50 p-4">
-            <Text variant="caption" color="warning">
-              {error}
-            </Text>
-          </View>
+        {tier && (
+          <Text variant="caption" color="secondary" align="center">
+            {tier.name}: £{tier.monthlyPriceGbp}/month or £{tier.annualPriceGbp}/year —{" "}
+            {tier.trialDays}-day free trial included.
+          </Text>
         )}
-        <Button
-          testID="paywall-complete-checkout"
-          title={loading ? "Opening secure checkout…" : "Complete secure checkout"}
-          onPress={completeCheckout}
-          disabled={loading}
-        />
-        <Text variant="caption" color="secondary">
-          Secure payment processed by Paddle
+        <Text variant="body" weight="semibold" align="center">
+          Subscribe at mytradeportal.co.uk
+        </Text>
+        <Button testID="paywall-sign-in" title="Sign in" onPress={signInAgain} />
+        <Text variant="caption" color="secondary" align="center">
+          Already subscribed with a different account? Sign in again to switch.
         </Text>
       </View>
     </Screen>

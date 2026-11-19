@@ -132,6 +132,63 @@ async def test_invoice_from_scratch_is_rounded_per_setting(admin_client: AsyncCl
     assert Decimal(adjustment) == Decimal("7.00")
 
 
+async def test_read_endpoints_return_rounded_totals(admin_client: AsyncClient) -> None:
+    """Quote/invoice read endpoints return the rounded total (issue #173).
+
+    The rounding uplift is baked into the stored ``total``; every read surface
+    (detail + list, quote + invoice) must return the same rounded value so no
+    UI ever shows the unrounded amount.
+    """
+    await _set_rounding(admin_client, 5)
+    contact_id = await _create_contact(admin_client)
+    created = await admin_client.post("/quotes", json=_quote_payload(contact_id))
+    quote_id = created.json()["id"]
+    assert Decimal(created.json()["total"]) == Decimal("865.00")
+
+    quote_detail = await admin_client.get(f"/quotes/{quote_id}")
+    assert quote_detail.status_code == 200
+    assert Decimal(quote_detail.json()["total"]) == Decimal("865.00")
+    adjustment = quote_detail.json().get(
+        "roundingAdjustment", quote_detail.json().get("rounding_adjustment")
+    )
+    assert Decimal(adjustment) == Decimal("2.00")
+
+    quote_list = await admin_client.get("/quotes")
+    assert quote_list.status_code == 200
+    listed_quote = next(q for q in quote_list.json() if q["id"] == quote_id)
+    assert Decimal(listed_quote["total"]) == Decimal("865.00")
+
+    converted = await admin_client.post(f"/quotes/{quote_id}/convert-to-invoice", json={})
+    assert converted.status_code == 201
+    invoice_id = converted.json()["id"]
+
+    invoice_detail = await admin_client.get(f"/invoices/{invoice_id}")
+    assert invoice_detail.status_code == 200
+    assert Decimal(invoice_detail.json()["total"]) == Decimal("865.00")
+    adjustment = invoice_detail.json().get(
+        "roundingAdjustment", invoice_detail.json().get("rounding_adjustment")
+    )
+    assert Decimal(adjustment) == Decimal("2.00")
+
+    invoice_list = await admin_client.get("/invoices")
+    assert invoice_list.status_code == 200
+    listed_invoice = next(i for i in invoice_list.json() if i["id"] == invoice_id)
+    assert Decimal(listed_invoice["total"]) == Decimal("865.00")
+
+    scratch = await admin_client.post(
+        "/invoices",
+        json={
+            "contact_id": contact_id,
+            "line_items": [
+                {"description": "Call-out", "quantity": "1", "unit_price": "863.00"},
+            ],
+        },
+    )
+    assert scratch.status_code == 201
+    scratch_detail = await admin_client.get(f"/invoices/{scratch.json()['id']}")
+    assert Decimal(scratch_detail.json()["total"]) == Decimal("865.00")
+
+
 async def test_unrounded_legacy_quote_is_mirrored_not_rerounded(
     admin_client: AsyncClient,
 ) -> None:
@@ -183,3 +240,67 @@ async def test_rounding_persists_via_mobile_follow_up_payload(admin_client: Asyn
     created = await admin_client.post("/quotes", json=_quote_payload(contact_id))
     assert created.status_code == 201
     assert Decimal(created.json()["total"]) == Decimal("870.00")
+
+
+async def _set_vat_registered(admin_client: AsyncClient) -> None:
+    response = await admin_client.patch(
+        "/onboarding/step/tax",
+        json={"step": "tax", "value": {"vat_registered": True}},
+    )
+    assert response.status_code == 200, response.text
+
+
+async def test_vat_opt_out_reapplies_rounding_to_new_total(admin_client: AsyncClient) -> None:
+    """Zero-rating a rounded quote re-runs create-time math: totals rebuild
+    from the line items at 0% VAT, then the £10 increment re-rounds the new
+    VAT-inclusive total (issue #110)."""
+    await _set_rounding(admin_client, 10)
+    await _set_vat_registered(admin_client)
+    contact_id = await _create_contact(admin_client)
+    created = await admin_client.post("/quotes", json=_quote_payload(contact_id))
+    quote_id = created.json()["id"]
+    # £863.00 + 20% VAT = £1035.60 → £1040.00
+    assert Decimal(created.json()["total"]) == Decimal("1040.00")
+    adjustment = created.json().get("roundingAdjustment", created.json().get("rounding_adjustment"))
+    assert Decimal(adjustment) == Decimal("4.40")
+
+    response = await admin_client.patch(f"/quotes/{quote_id}", json={"vat_rate": "0"})
+    assert response.status_code == 200, response.text
+    data = response.json()
+    # £863.00 ex VAT → £870.00; stored totals re-fetch identically.
+    assert Decimal(data["total"]) == Decimal("870.00")
+    adjustment = data.get("roundingAdjustment", data.get("rounding_adjustment"))
+    assert Decimal(adjustment) == Decimal("7.00")
+
+    fetched = await admin_client.get(f"/quotes/{quote_id}")
+    assert fetched.status_code == 200
+    assert Decimal(fetched.json()["total"]) == Decimal("870.00")
+    adjustment = fetched.json().get("roundingAdjustment", fetched.json().get("rounding_adjustment"))
+    assert Decimal(adjustment) == Decimal("7.00")
+
+
+async def test_vat_opt_out_combined_with_line_item_update(admin_client: AsyncClient) -> None:
+    """One PATCH carrying both line_items and vat_rate applies both before
+    the totals recompute, exactly like create-time math."""
+    await _set_vat_registered(admin_client)
+    contact_id = await _create_contact(admin_client)
+    created = await admin_client.post("/quotes", json=_quote_payload(contact_id))
+    quote_id = created.json()["id"]
+    assert Decimal(created.json()["total"]) == Decimal("1035.60")
+
+    response = await admin_client.patch(
+        f"/quotes/{quote_id}",
+        json={
+            "vat_rate": "0",
+            "line_items": [
+                {"description": "Consumer unit", "quantity": "1", "unit_price": "863.00"},
+                {"description": "Extra socket", "quantity": "1", "unit_price": "95.00"},
+            ],
+        },
+    )
+    assert response.status_code == 200, response.text
+    data = response.json()
+    # £958.00 ex VAT at 0% → no rounding configured → £958.00.
+    assert Decimal(data["subtotal"]) == Decimal("958.00")
+    assert Decimal(data["vat_amount"]) == Decimal("0.00")
+    assert Decimal(data["total"]) == Decimal("958.00")

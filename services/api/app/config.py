@@ -19,6 +19,12 @@ PUBLIC_DOCS_BASE_URL: str = os.environ.get(
     "PUBLIC_DOCS_BASE_URL", "https://www.mytradeportal.co.uk"
 ).rstrip("/")
 
+# Public origin of this API, used when minting absolute URLs into tenant
+# settings that must render off-host (e.g. the tenant logo ``<img>`` src on
+# portal/landing pages, which live on a different origin than the API). Empty
+# falls back to the request origin (correct behind Railway's proxy headers).
+PUBLIC_API_BASE_URL: str = os.environ.get("PUBLIC_API_BASE_URL", "").strip().rstrip("/")
+
 # In-process reminder scheduler (quote/invoice follow-up emails). Runs as an
 # asyncio task started from the app lifespan; no extra infra. Disable per
 # environment (e.g. PR previews) with REMINDER_SCHEDULER_ENABLED=false.
@@ -28,6 +34,33 @@ REMINDER_SCHEDULER_ENABLED: bool = os.environ.get(
 # Seconds between reminder sweeps. The first sweep runs one full interval
 # after startup so a fresh deploy never immediately blasts customers.
 REMINDER_TICK_SECONDS: int = int(os.environ.get("REMINDER_TICK_SECONDS", "3600"))
+
+# --- SMS appointment reminders (Telnyx Messaging API) ------------------------
+# Plan-included feature (``sms_reminders`` on every tier): the hourly reminder
+# sweep texts the customer AND the assigned electrician before each appointment
+# (windows below), falling back to the existing email/push channels when SMS is
+# unconfigured or paused. Fair use (flat pricing: the guardrail is invisible to
+# customers): when a tenant's current-UTC-month SMS reminder count reaches the
+# monthly threshold, SMS degrades to email/push for the rest of the month and
+# staff get ONE internal ops alert — never customer-visible.
+SMS_REMINDERS_ENABLED: bool = os.environ.get("SMS_REMINDERS_ENABLED", "true").strip().lower() in {
+    "1",
+    "true",
+    "yes",
+    "on",
+}
+# Comma-separated hours-before-start at which a reminder fires (e.g. "24,2" =
+# 24 hours and 2 hours before the appointment).
+APPOINTMENT_REMINDER_WINDOWS_HOURS: str = os.environ.get(
+    "APPOINTMENT_REMINDER_WINDOWS_HOURS", "24,2"
+)
+# A window fires when ``start_at - now`` is within this many minutes PAST the
+# window edge (the sweep runs hourly, so 90 minutes covers the tick interval
+# with margin without ever double-firing a window).
+APPOINTMENT_REMINDER_PAD_MINUTES: int = int(
+    os.environ.get("APPOINTMENT_REMINDER_PAD_MINUTES", "90")
+)
+SMS_FAIR_USE_MONTHLY_THRESHOLD: int = int(os.environ.get("SMS_FAIR_USE_MONTHLY_THRESHOLD", "500"))
 
 # Fair-use AI guardrails (flat pricing: AI is unmetered for customers, so
 # these protect cost without ever surfacing a usage meter). Per-org burst
@@ -63,8 +96,22 @@ FX_REFRESH_MAX_AGE_DAYS: int = int(os.environ.get("FX_REFRESH_MAX_AGE_DAYS", "7"
 # Anomaly alerts always evaluate but only dispatch when at least one channel
 # (email or Slack) is configured; both are no-ops when unset.
 AI_MONTHLY_BUDGET_GBP: str = os.environ.get("AI_MONTHLY_BUDGET_GBP", "").strip()
+# Monthly cost-drift reconciliation (#60): the provider's invoiced USD total
+# for the month just closed, compared on the month-boundary rollup tick
+# against the platform-estimated spend summed from ai_rollup_feature_day
+# (converted at the stored USD→GBP rate). Empty = drift check off; the manual
+# scripts/reconcile_ai_costs.py run remains the fallback.
+AI_MONTHLY_INVOICE_USD: str = os.environ.get("AI_MONTHLY_INVOICE_USD", "").strip()
 ALERT_EMAIL_TO: str = os.environ.get("ALERT_EMAIL_TO", "").strip()
 SLACK_ALERT_WEBHOOK_URL: str = os.environ.get("SLACK_ALERT_WEBHOOK_URL", "").strip()
+
+# --- Staff ops endpoints (platform-level, cross-tenant) ----------------------
+# Comma-separated email allowlist identifying platform staff (founders/ops)
+# for cross-tenant endpoints such as GET /staff/ops/ai-costs. There is no
+# platform-tenant staff account: the caller must be an authenticated active
+# user AND their email must appear here. Empty = the gate rejects everyone
+# (endpoint answers 403), so an unconfigured environment exposes nothing.
+PLATFORM_STAFF_EMAILS: str = os.environ.get("PLATFORM_STAFF_EMAILS", "").strip()
 
 # --- Stripe Connect (customer → tradie invoice card payments) --------------
 # Destination charges on Express connected accounts, no platform application
@@ -73,7 +120,17 @@ SLACK_ALERT_WEBHOOK_URL: str = os.environ.get("SLACK_ALERT_WEBHOOK_URL", "").str
 # feature: staff endpoints answer 503 ``payments_not_configured`` and public
 # invoice pages simply omit the Pay button.
 STRIPE_SECRET_KEY: str = os.environ.get("STRIPE_SECRET_KEY", "").strip()
-STRIPE_WEBHOOK_SECRET: str = os.environ.get("STRIPE_WEBHOOK_SECRET", "").strip()
+# Webhook signing secrets — two Stripe endpoints share the /webhooks/stripe
+# URL: the platform channel (payment_intent/charge events from destination
+# charges) and the Connect channel (account.updated + payout.paid from
+# connected accounts). Each endpoint has its own signing secret; the verifier
+# accepts either. STRIPE_WEBHOOK_SECRET is the legacy name for the platform
+# secret — still read as a fallback so existing envs keep working.
+STRIPE_PLATFORM_WEBHOOK_SECRET: str = os.environ.get(
+    "STRIPE_PLATFORM_WEBHOOK_SECRET", os.environ.get("STRIPE_WEBHOOK_SECRET", "")
+).strip()
+STRIPE_WEBHOOK_SECRET: str = STRIPE_PLATFORM_WEBHOOK_SECRET  # legacy alias
+STRIPE_CONNECT_WEBHOOK_SECRET: str = os.environ.get("STRIPE_CONNECT_WEBHOOK_SECRET", "").strip()
 # Connect client id (ca_...) — reserved for future OAuth-style onboarding
 # links; Express account links work without it.
 STRIPE_CONNECT_CLIENT_ID: str = os.environ.get("STRIPE_CONNECT_CLIENT_ID", "").strip()
@@ -100,7 +157,28 @@ PORTAL_BASE_DOMAIN: str = os.environ.get("PORTAL_BASE_DOMAIN", "mytradeportal.co
 # customer's earlier tokens so only the newest emailed link works.
 PORTAL_MAGIC_TTL_DAYS: int = int(os.environ.get("PORTAL_MAGIC_TTL_DAYS", "30"))
 
+# --- Staff team invites (POST /users/invite) -----------------------------------
+# Days an invite token stays valid; re-issuing (fresh invite magic link)
+# revokes the user's earlier tokens so only the newest emailed link works.
+INVITE_TOKEN_TTL_DAYS: int = int(os.environ.get("INVITE_TOKEN_TTL_DAYS", "7"))
+# Public TestFlight beta link embedded in invite emails so new team members
+# can install the app. Empty omits the link from the email body.
+TESTFLIGHT_URL: str = os.environ.get("TESTFLIGHT_URL", "").strip()
+
 # --- Resend inbound webhooks (bounce/delivery-failure alerts) -----------------
 # Svix signing secret (whsec_...) for POST /webhooks/resend. Empty disables
 # the endpoint: it answers 503 so Resend keeps retrying until configured.
 RESEND_WEBHOOK_SECRET: str = os.environ.get("RESEND_WEBHOOK_SECRET", "").strip()
+
+# --- Expo push delivery (app.push) --------------------------------------------
+# Optional Expo access token, sent as a Bearer header on push/receipt API
+# calls. Only required when the EAS project has enhanced push security
+# enabled; empty sends unauthenticated (the default).
+EXPO_ACCESS_TOKEN: str = os.environ.get("EXPO_ACCESS_TOKEN", "").strip()
+# Delay before the detached receipt checker asks Expo for delivery receipts —
+# they are not ready immediately after a send. APNs-side failures
+# (InvalidCredentials, DeviceNotRegistered) surface only in receipts, not in
+# the per-message tickets inspected at send time.
+PUSH_RECEIPT_CHECK_DELAY_SECONDS: float = float(
+    os.environ.get("PUSH_RECEIPT_CHECK_DELAY_SECONDS", "300")
+)

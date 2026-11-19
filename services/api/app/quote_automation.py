@@ -199,8 +199,7 @@ async def email_triage_question(
     logs a warning instead of dropping silently when the lead's contact has no
     email address.
     """
-    from app.config import settings
-    from app.email import send_customer_email
+    from app.email import resolve_customer_magic_link, send_customer_email, tenant_reply_to
     from app.email_templates import triage_question as triage_question_template
     from app.models import Contact
 
@@ -209,8 +208,13 @@ async def email_triage_question(
         if quote_request.contact_id is not None
         else None
     )
-    app_origin = settings.app_public_url.rstrip("/") if settings.app_public_url else ""
-    chat_url = f"{app_origin}/customer/chat/{quote_request.id}" if app_origin else None
+    # Portal magic link into the thread, mirroring the staff-reply email in
+    # routers/communications.py: the linked quote when there is one, the
+    # quotes list otherwise. ``None`` when the lead has no customer account
+    # (the template then drops the CTA). APP_PUBLIC_URL is the back-office
+    # host and must never appear in customer mail.
+    next_path = f"/quotes/{quote_request.quote_id}" if quote_request.quote_id else "/quotes"
+    chat_url = await resolve_customer_magic_link(db, tenant, contact, next_path)
     subject, html, text = triage_question_template(
         customer_name=contact.name.split()[0] if contact is not None and contact.name else "there",
         business_name=tenant.name,
@@ -229,7 +233,7 @@ async def email_triage_question(
         event="ai_followup_needed",
         template="triage_question",
         from_name=tenant.name,
-        reply_to=tenant.email if tenant.email else None,
+        reply_to=tenant_reply_to(tenant, quote_request_id=str(quote_request.id)),
         context={
             "quote_request_id": str(quote_request.id),
             "contact_id": str(quote_request.contact_id),
@@ -587,10 +591,16 @@ async def requote_after_triage_close(tenant_id: UUID, quote_request_id: UUID) ->
             retrieved, retrieval_status = await quotes_router.search_cost_items_with_status(  # type: ignore[attr-defined]
                 description
             )
+            # Same photo conditioning as the initial draft: the lead's photos
+            # still apply to the regenerated quote.
+            image_observations = await quotes_router._caption_quote_request_media(
+                db, tenant_id, quote_request, requote_telemetry
+            )
             generated = await quotes_router.generate_quote_from_prompt(  # type: ignore[attr-defined]
                 job_description=description,
                 cost_items=retrieved,
                 tenant_settings=tenant.settings,
+                image_observations=image_observations,
                 telemetry=requote_telemetry,
             )
             completeness = quotes_router._intake_completeness(description, quote_request)
@@ -644,6 +654,8 @@ async def requote_after_triage_close(tenant_id: UUID, quote_request_id: UUID) ->
                     "requote_after_triage": True,
                 },
             }
+            if image_observations:
+                quote.extra_data["rag"]["observations"] = image_observations
             llm_usage = quotes_router._accumulate_llm_usage(
                 previous_rag if isinstance(previous_rag, dict) else {},
                 generated.get("usage"),

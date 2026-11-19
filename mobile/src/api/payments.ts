@@ -18,17 +18,50 @@ export type ConnectStripeRead = {
   onboardingUrl: string;
 };
 
+export type ConnectSessionRead = {
+  clientSecret: string;
+  expiresAt: number;
+  stripeAccountId: string;
+  publishableKey: string;
+};
+
+export const STRIPE_DASHBOARD_URL = "https://www.mytradeportal.co.uk/payments/dashboard";
+
+export async function createConnectSession(
+  components: "onboarding" | "dashboard" = "onboarding"
+): Promise<ConnectSessionRead> {
+  return api.post<ConnectSessionRead>("/payments/connect/session", { components });
+}
+
+/** Public landing origin hosting the Stripe deep-link bounce page. */
+const LANDING_BASE_URL = "https://www.mytradeportal.co.uk";
+
+/**
+ * Wrap an app deep link (mtp://...) in the https bounce page URL. Stripe's
+ * AccountLink API rejects non-http(s) return/refresh URLs, so onboarding
+ * returns via the landing page, which immediately navigates to the deep
+ * link — the in-app auth-session browser intercepts it and closes back into
+ * the app.
+ */
+export function stripeBounceUrl(next: string): string {
+  return `${LANDING_BASE_URL}/payments/stripe-bounce?next=${encodeURIComponent(next)}`;
+}
+
 export async function getPaymentsStatus(): Promise<PaymentsStatus> {
   return api.get<PaymentsStatus>("/payments/status");
 }
 
 /**
  * Create (or reuse) the tenant's Stripe Express account and return its hosted
- * onboarding URL. The tradie completes onboarding in the browser, then Stripe
- * redirects back to the return URL the backend configured.
+ * onboarding URL. The tradie completes onboarding in the in-app browser, then
+ * Stripe redirects to the return URL — https bounce URLs wrapping the app's
+ * deep links (mtp://payments/...) so the flow lands back inside the app.
  */
-export async function connectStripe(): Promise<ConnectStripeRead> {
-  return api.post<ConnectStripeRead>("/payments/connect", {});
+export async function connectStripe(input?: {
+  returnUrl?: string;
+  refreshUrl?: string;
+}): Promise<ConnectStripeRead> {
+  return api.post<ConnectStripeRead>("/payments/connect", input ?? {});
 }
 
 /** Set the tenant-level default for offering card payment on new invoices. */

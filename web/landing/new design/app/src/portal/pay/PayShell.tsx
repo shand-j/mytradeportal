@@ -25,7 +25,10 @@ export function PayShell({
   children?: React.ReactNode
 }) {
   return (
-    <section className="w-full max-w-[520px] border-2 border-[var(--ink)] bg-[var(--paper)]">
+    <section
+      className="w-full max-w-[520px] border-2 border-[var(--ink)] bg-[var(--paper)]"
+      style={{ '--brand': brandColor } as React.CSSProperties}
+    >
       <header
         className="flex items-center gap-[var(--space-md)] border-b-2 border-[var(--ink)] px-6 py-5"
         style={{ backgroundColor: brandColor }}

@@ -2,12 +2,18 @@ import { useMemo } from 'react'
 import { Navigate, Route, Routes } from 'react-router'
 import Home from './pages/Home'
 import ResetPassword from './pages/ResetPassword'
+import AcceptInvite from './pages/AcceptInvite'
+import Subscribe from './pages/Subscribe'
 import ViewQuote from './pages/ViewQuote'
 import ViewInvoice from './pages/ViewInvoice'
 import PayInvoice from './pages/PayInvoice'
 import FairUse from './pages/FairUse'
+import StripeBounce from './pages/StripeBounce'
+import PaymentsDashboard from './pages/PaymentsDashboard'
 import BlogIndex from './pages/blog/BlogIndex'
 import BlogPost from './pages/blog/BlogPost'
+import HelpIndex from './pages/help/HelpIndex'
+import HelpArticle from './pages/help/HelpArticle'
 import { resolvePortalSlug } from './portal/host'
 import { PortalProvider } from './portal/PortalProvider'
 import PortalHome from './portal/pages/PortalHome'
@@ -53,12 +59,18 @@ export default function App() {
       <Route path="/" element={<Home />} />
       <Route path="/code" element={<CodeEntryPage />} />
       <Route path="/reset-password" element={<ResetPassword />} />
+      <Route path="/accept-invite" element={<AcceptInvite />} />
+      <Route path="/subscribe" element={<Subscribe />} />
       <Route path="/quote/:token" element={<ViewQuote />} />
       <Route path="/invoice/:token" element={<ViewInvoice />} />
       <Route path="/pay/:token" element={<PayInvoice />} />
       <Route path="/fair-use" element={<FairUse />} />
+      <Route path="/payments/stripe-bounce" element={<StripeBounce />} />
+      <Route path="/payments/dashboard" element={<PaymentsDashboard />} />
       <Route path="/blog" element={<BlogIndex />} />
       <Route path="/blog/:slug" element={<BlogPost />} />
+      <Route path="/help" element={<HelpIndex />} />
+      <Route path="/help/:slug" element={<HelpArticle />} />
     </Routes>
   )
 }

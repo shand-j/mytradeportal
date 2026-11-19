@@ -46,6 +46,7 @@ from app.models import (
     AiAlertState,
     AiCallEvent,
     AiRollupFeatureDay,
+    AiRollupOrgDay,
     AiRollupUserDay,
     Contact,
     Customer,
@@ -464,8 +465,8 @@ async def test_fair_use_alert_refires_after_month_rollover(
 
 async def _rollup_snapshot(
     db: AsyncSession, day: date
-) -> tuple[list[tuple[Any, ...]], list[tuple[Any, ...]]]:
-    """Full-content snapshot of both rollup tables for one day."""
+) -> tuple[list[tuple[Any, ...]], list[tuple[Any, ...]], list[tuple[Any, ...]]]:
+    """Full-content snapshot of all three rollup tables for one day."""
     user_rows = (
         (await db.execute(select(AiRollupUserDay).where(AiRollupUserDay.date == day)))
         .scalars()
@@ -475,6 +476,9 @@ async def _rollup_snapshot(
         (await db.execute(select(AiRollupFeatureDay).where(AiRollupFeatureDay.date == day)))
         .scalars()
         .all()
+    )
+    org_rows = (
+        (await db.execute(select(AiRollupOrgDay).where(AiRollupOrgDay.date == day))).scalars().all()
     )
     user_packed = sorted(
         (
@@ -510,7 +514,22 @@ async def _rollup_snapshot(
         )
         for row in feature_rows
     )
-    return user_packed, feature_packed
+    org_packed = sorted(
+        (
+            str(row.tenant_id),
+            row.users_active,
+            row.generations,
+            row.retries,
+            str(row.est_cost_usd),
+            str(row.cost_gbp),
+            row.latency_p50,
+            row.latency_p95,
+            row.latency_p99,
+            row.quotes_sent,
+        )
+        for row in org_rows
+    )
+    return user_packed, feature_packed, org_packed
 
 
 async def test_refold_converges_to_identical_rows(db: AsyncSession) -> None:
@@ -539,7 +558,12 @@ async def test_refold_converges_to_identical_rows(db: AsyncSession) -> None:
 
     first_summary = await run_rollup_for_day(db, DAY)
     first_snapshot = await _rollup_snapshot(db, DAY)
-    assert first_summary == {"user_day_rows": 2, "feature_day_rows": 2, "locked": 0}
+    assert first_summary == {
+        "user_day_rows": 2,
+        "feature_day_rows": 2,
+        "org_day_rows": 1,
+        "locked": 0,
+    }
 
     second_summary = await run_rollup_for_day(db, DAY)
     second_snapshot = await _rollup_snapshot(db, DAY)
@@ -574,7 +598,12 @@ async def test_rollup_advisory_lock_contention_is_clean_noop(
             assert acquired is True  # the holder really owns the lock
 
             summary = await run_rollup_for_day(db, DAY)
-            assert summary == {"user_day_rows": 0, "feature_day_rows": 0, "locked": 1}
+            assert summary == {
+                "user_day_rows": 0,
+                "feature_day_rows": 0,
+                "org_day_rows": 0,
+                "locked": 1,
+            }
             assert (
                 await db.scalar(
                     select(func.count(AiRollupUserDay.id)).where(AiRollupUserDay.date == DAY)
@@ -583,6 +612,11 @@ async def test_rollup_advisory_lock_contention_is_clean_noop(
             assert (
                 await db.scalar(
                     select(func.count(AiRollupFeatureDay.id)).where(AiRollupFeatureDay.date == DAY)
+                )
+            ) == 0
+            assert (
+                await db.scalar(
+                    select(func.count(AiRollupOrgDay.id)).where(AiRollupOrgDay.date == DAY)
                 )
             ) == 0
             # The skipped fold left the session fully usable.

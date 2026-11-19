@@ -1,4 +1,3 @@
-import { useState } from "react";
 import { Pressable, StyleSheet, View } from "react-native";
 import { Button } from "../../../components/ui/Button";
 import { Icon } from "../../../components/ui/Icon";
@@ -29,22 +28,35 @@ function Checkbox({
   );
 }
 
-export function ConsentsStep({ formData, updateFormData, onNext }: StepPropsWithBusiness) {
+type ConsentsStepProps = StepPropsWithBusiness & {
+  /** True while the quote request is being submitted to the backend. */
+  submitting?: boolean;
+  /** Blocking submit failure; the user stays on this step until retry succeeds. */
+  submitError?: string | null;
+};
+
+export function ConsentsStep({
+  formData,
+  updateFormData,
+  onNext,
+  submitting = false,
+  submitError = null,
+}: ConsentsStepProps) {
   const { business } = useBusiness();
-  const [consents, setConsents] = useState(formData.consents);
+  // Controlled: write every toggle straight to the parent form so the submit
+  // that fires on "Next" always reads the latest consents.
+  const consents = formData.consents;
   const isTenant = formData.property.tenure === "tenant";
 
   const update = (key: string, value: boolean) => {
-    setConsents((prev) => ({ ...prev, [key]: value }));
-  };
-
-  const handleNext = () => {
-    updateFormData({ consents });
-    onNext();
+    updateFormData({ consents: { ...consents, [key]: value } });
   };
 
   const canSubmit =
-    consents.termsPrivacy && consents.contactPermission && (!isTenant || consents.landlordPermission);
+    !submitting &&
+    consents.termsPrivacy &&
+    consents.contactPermission &&
+    (!isTenant || consents.landlordPermission);
 
   return (
     <View style={styles.container}>
@@ -85,10 +97,19 @@ export function ConsentsStep({ formData, updateFormData, onNext }: StepPropsWith
         />
       ) : null}
 
+      {submitError ? (
+        <View testID="quote-submit-error" style={styles.errorBanner}>
+          <Icon name="warning" size={18} color="#B91C1C" />
+          <Text variant="body" style={styles.errorText}>
+            {submitError}
+          </Text>
+        </View>
+      ) : null}
+
       <Button
         testID="quote-submit"
-        title="Submit quote request"
-        onPress={handleNext}
+        title={submitting ? "Sending…" : submitError ? "Retry" : "Submit quote request"}
+        onPress={onNext}
         disabled={!canSubmit}
       />
     </View>
@@ -121,5 +142,18 @@ const styles = StyleSheet.create({
   },
   checkboxLabel: {
     flex: 1,
+  },
+  errorBanner: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    padding: 12,
+    borderRadius: 12,
+    backgroundColor: "#FEF2F2",
+    alignSelf: "stretch",
+  },
+  errorText: {
+    flex: 1,
+    color: "#B91C1C",
   },
 });

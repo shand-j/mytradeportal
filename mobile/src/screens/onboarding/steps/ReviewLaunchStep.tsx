@@ -11,20 +11,53 @@ type ReviewLaunchStepProps = {
   onNext: (data?: Record<string, unknown>) => void;
 };
 
-const LAUNCH_GATE_ITEMS: ChecklistItem[] = [
-  { key: "account", label: "Account created", status: "complete" },
-  { key: "identity", label: "Business identity", status: "complete" },
-  { key: "address", label: "Address & service area", status: "complete" },
-  { key: "tax", label: "Tax & VAT", status: "complete" },
-  { key: "compliance", label: "Compliance & credentials", status: "complete" },
-  { key: "services", label: "Services offered", status: "complete" },
-  { key: "team", label: "Team & capacity", status: "pending" },
-  { key: "pricing", label: "Pricing setup", status: "pending" },
-  { key: "quotes", label: "Quote defaults", status: "pending" },
-  { key: "branding", label: "Branding", status: "pending" },
-  { key: "payments", label: "Payments", status: "pending" },
-  { key: "data-import", label: "Data import", status: "pending" },
-];
+/**
+ * The checklist is driven by the wizard data actually collected so far: an
+ * item only shows "Done" when its step's data is present (branding can also
+ * be honestly "skipped"). Bank details, card payments and plan come AFTER
+ * this step in the wizard, so they truthfully stay "To do" here. In resume
+ * mode (data.__resume) the tenant already exists server-side, so the account
+ * item is complete even though the local wizard never collected it. Items
+ * with no wizard step (team, pricing, quote defaults, data import) are not
+ * listed — there is no state to track them against.
+ */
+function buildChecklist(data: Record<string, unknown> | undefined): ChecklistItem[] {
+  const has = (key: string) => Boolean(data?.[key]);
+  const branding = (data?.branding ?? {}) as Record<string, unknown>;
+  return [
+    {
+      key: "account",
+      label: "Account created",
+      status: has("account") || data?.__resume === true ? "complete" : "pending",
+    },
+    { key: "identity", label: "Business identity", status: has("identity") ? "complete" : "pending" },
+    { key: "address", label: "Address & service area", status: has("address") ? "complete" : "pending" },
+    { key: "tax", label: "Tax & VAT", status: has("tax") ? "complete" : "pending" },
+    {
+      key: "compliance",
+      label: "Compliance & credentials",
+      status: has("compliance") ? "complete" : "pending",
+    },
+    { key: "services", label: "Services offered", status: has("services") ? "complete" : "pending" },
+    {
+      key: "branding",
+      label: "Branding",
+      status: branding.skipped ? "skipped" : has("branding") ? "complete" : "pending",
+    },
+    // Post-review wizard steps — genuinely still to do at this point.
+    {
+      key: "bank_details",
+      label: "Bank details",
+      status: has("bank_details") ? "complete" : "pending",
+    },
+    {
+      key: "card_payments",
+      label: "Card payments",
+      status: has("card_payments") ? "complete" : "pending",
+    },
+    { key: "plan", label: "Plan", status: has("plan") ? "complete" : "pending" },
+  ];
+}
 
 const SCHEME_LABELS: Record<string, string> = {
   niceic: "NICEIC",
@@ -66,7 +99,7 @@ export function ReviewLaunchStep({ data, onNext }: ReviewLaunchStepProps) {
           Check the details below, then choose your plan to go live.
         </Text>
 
-        <LaunchGateChecklist items={LAUNCH_GATE_ITEMS} />
+        <LaunchGateChecklist items={buildChecklist(data)} />
 
         <View className="gap-3 rounded-2xl bg-slate-100 p-4">
           <Text variant="body" weight="semibold">

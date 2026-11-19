@@ -793,8 +793,6 @@ def test_followup_system_prompt_foregrounds_stated_problem() -> None:
     assert "Customer's stated problem" in FOLLOWUP_SYSTEM_PROMPT
     assert "BEFORE asking anything" in FOLLOWUP_SYSTEM_PROMPT
     assert "non-engineer" in FOLLOWUP_SYSTEM_PROMPT
-    assert '"options"' in FOLLOWUP_SYSTEM_PROMPT
-    assert '"suggested_questions"' in FOLLOWUP_SYSTEM_PROMPT
 
 
 def _set_flagship_kimi_route(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -912,6 +910,8 @@ async def test_generate_followup_uses_chat_route_and_budget(
     assert kwargs["timeout"] == generation_config.settings.llm_followup_timeout_seconds
     assert kwargs["num_retries"] == generation_config.settings.llm_followup_max_retries
     assert result["model"] == "gpt-4o-mini"
+    assert '"options"' in FOLLOWUP_SYSTEM_PROMPT
+    assert '"suggested_questions"' in FOLLOWUP_SYSTEM_PROMPT
 
 
 def test_resolve_refine_route_defaults_to_cheap_model(monkeypatch: pytest.MonkeyPatch) -> None:

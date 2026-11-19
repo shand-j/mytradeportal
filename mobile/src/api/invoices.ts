@@ -30,6 +30,9 @@ export type ApiInvoice = {
   paidVia: string | null;
   /** Per-invoice card-payment override; null inherits the tenant default. */
   acceptCardPayments: boolean | null;
+  /** True when the invoice can be sent by SMS (Telnyx configured, contact has a
+   * usable phone and has not opted out). Absent/false hides the SMS affordance. */
+  smsAvailable?: boolean;
   lineItems: ApiInvoiceLineItem[];
   customer: ApiContact;
 };
@@ -113,6 +116,15 @@ export async function sendInvoice(id: string): Promise<ApiInvoice> {
 }
 
 /**
+ * Send the invoice by SMS with the secure pay/view link (POST
+ * /invoices/{id}/send-sms). The backend 4xxes when SMS is unavailable for the
+ * contact — only offer this when `smsAvailable` is true.
+ */
+export async function sendInvoiceSms(id: string): Promise<ApiInvoice> {
+  return api.post<ApiInvoice>(`/invoices/${id}/send-sms`);
+}
+
+/**
  * Refund a Stripe-paid invoice in full (POST /invoices/{id}/refund). The
  * backend 409s unless the invoice was settled online by card.
  */
@@ -183,6 +195,19 @@ export function useSendInvoice() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (id: string) => sendInvoice(id),
+    onSuccess: (_data, id) => {
+      qc.invalidateQueries({ queryKey: ["invoices"] });
+      qc.invalidateQueries({ queryKey: ["invoice", id] });
+      qc.invalidateQueries({ queryKey: ["dashboard"] });
+    },
+  });
+}
+
+/** Mutation: send an invoice by SMS and refresh the caches. */
+export function useSendInvoiceSms() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => sendInvoiceSms(id),
     onSuccess: (_data, id) => {
       qc.invalidateQueries({ queryKey: ["invoices"] });
       qc.invalidateQueries({ queryKey: ["invoice", id] });

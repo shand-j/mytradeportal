@@ -1,0 +1,3 @@
+https://cdn.paddle.com/paddle/v2/paddle.js
+https://sandbox-cdn.paddle.com/paddle/v2/assets/css/paddle.css
+https://sandbox-api.paddle.com/pricing-preview

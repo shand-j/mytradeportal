@@ -10,9 +10,13 @@ copy-pasteable. Local prerequisites: Docker Desktop, pnpm, the repo `.venv`.
 - **Web back-office** (`web/app`) — CRM, quotes (incl. AI generate + refine),
   jobs, invoices, calendar, reviews, AI insights, settings.
 - **Mobile iOS app** (`mobile/`) — trade + customer flows, AI quote intake,
-  AI lead-triage chat, digital EICR certificates with BS 7671 validation.
+  AI lead-triage chat, digital EICR certificates with BS 7671 validation,
+  team invites + assignment on multi-seat plans, Stripe Connect onboarding in
+  an in-app browser.
 - **API** (`services/api`) — FastAPI, RLS-enforced multi-tenancy, structured
-  JSON logs on stdout (request IDs, LLM call metrics), `/health` + `/ready`.
+  JSON logs on stdout (request IDs, LLM call metrics), `/health` + `/ready`,
+  the reminder scheduler (email quote/invoice chasers + Telnyx SMS appointment
+  reminders), and dispatch guardrails on every assignment path.
 - **AI features** — Quote Agent (guide-priced drafts from free text, catalogue
   grounding via Qdrant when embedding keys are configured, confidence +
   warnings + assumptions surfaced in both apps, edit-feedback instrumentation)
@@ -41,12 +45,20 @@ forecasting. No UI path leads to any of these.
 | `LLM_MODEL` | `openai/kimi-k2.6` | api |
 | `LLM_TEMPERATURE` | leave UNSET/empty for kimi-k* — they 400 on any custom temperature (the code now also omits it automatically for `kimi-k*` models) | api |
 | `LLM_TIMEOUT_SECONDS` | `180` — a full quote JSON from Kimi takes 60–120s; the 45s default times out mid-generation | api |
+| `LLM_FOLLOWUP_MODEL` / `LLM_REFINE_MODEL` | fast model id (e.g. `gpt-4o-mini`) for the triage chat and refine routes — without them both inherit the flagship and blow their latency budgets | api |
+| `LLM_VISION_MODEL` | only if `LLM_MODEL` cannot take image input; powers photo captioning on AI quotes | api |
 | `EMBEDDING_MODEL` / `EMBEDDING_API_KEY` / `EMBEDDING_API_BASE` | OpenAI text-embedding-3-small key — enables catalogue grounding; without it quotes are guide-priced only (`retrieval_status: skipped_no_key`) | api |
 | `AUTH_SECRET_KEY` | generate: `openssl rand -hex 32` — **not** the dev default | api, admin |
 | `ALLOWED_ORIGINS` | `https://<web-domain>` (no wildcard) | api |
 | `DATABASE_URL` / `REDIS_URL` / `QDRANT_URL` | Railway reference vars | api |
 | `MINIO_*` | Railway reference vars | api |
-| Paddle keys / webhook secret | prod Paddle dashboard | api |
+| `STRIPE_SECRET_KEY` / `STRIPE_WEBHOOK_SECRET` / `STRIPE_CONNECT_CLIENT_ID` / `STRIPE_PUBLISHABLE_KEY` | prod Stripe dashboard — customer→tradesperson card payments (Connect Express) | api |
+| `TELNYX_API_KEY` + `TELNYX_FROM_NUMBER` or `TELNYX_MESSAGING_PROFILE_ID` | Telnyx Mission Control — SMS appointment reminders; unset degrades reminders to email/push | api |
+| `TELNYX_PUBLIC_KEY` | Telnyx public key for `POST /webhooks/telnyx` (delivery receipts + STOP opt-outs; 503 until set) | api |
+| `RESEND_FROM_EMAIL` / `RESEND_NO_REPLY_EMAIL` / `RESEND_WEBHOOK_SECRET` | see `docs/resend-config.md` — branded quotes@ sender, platform no-reply sender, bounce/failure webhook | api |
+| `PUBLIC_DOCS_BASE_URL` / `PASSWORD_RESET_BASE_URL` | `https://www.mytradeportal.co.uk` — public token pages, Stripe bounce page, emailed reset/invite links | api |
+| `CALENDAR_FEED_BASE_URL` | leave empty until the branded API domain lands (issue #181) | api |
+| Paddle keys / webhook secret / `PADDLE_PRICE_ID_*` | prod Paddle dashboard | api |
 | `VITE_API_BASE_URL` | `https://<api-domain>` (build arg) | web |
 | `EXPO_PUBLIC_API_BASE_URL` | `https://<api-domain>` (EAS build) | mobile |
 
@@ -115,10 +127,9 @@ doc's caveat).
 | Voice features deferred (post-beta) | none — no UI leads to them | scoped separately |
 | OCERP/BoQ parked (501) | none — UI removed | product decision |
 | `web/app` mock layer (`src/lib/mock`, `dataStore`) is dead code | bundle weight only | 1–2 h |
-| `ruff check` has 2 findings in pre-existing files (`customer_portal.py`, `test_customer_portal.py`) | lint noise | < 1 h |
-| Mobile e2e suite exists but is thin (connected-mode smoke only) | less regression safety on iOS flows | 4 h |
+| Mobile e2e suite covers the regression journeys (G-series) against a live backend but native-only UX (date wheels, push, deep links) stays manual — see `docs/beta-test-plan.md` §3 | less regression safety on device-only paths | ongoing |
 | Other mobile screens share the `ScrollView flex-1` + fixed-footer pattern that hid QuoteEditScreen's send button on web (`ManualLeadScreen`, `FollowUpSettingsScreen`, …) — fine today, fragile if content grows | future layout bugs on web builds | 1–2 h |
-| Kimi follow-up latency drifted 55s → 105s during testing; mobile chat closure wait is 180s and `AI_TIMEOUT_MS` 240s — headroom exists but watch it | slow chat screening if the model degrades | monitor |
+| Kimi flagship latency (60–120s) is routed around for the chatty paths — triage follow-ups use `LLM_FOLLOWUP_MODEL` and refine uses `LLM_REFINE_MODEL`; only full generation stays on the flagship | slow first draft if the fast models are left unset | set the env vars; monitor |
 | Demo/marketing video scripts lost their voice segments | re-record marketing assets | n/a (marketing) |
 | Eval harness confidence calibration only meaningful in `--live` mode | offline evals can't judge calibration | n/a |
 

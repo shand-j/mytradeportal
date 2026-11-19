@@ -1,0 +1,10 @@
+{
+    "stripe_configured": true,
+    "connected": true,
+    "stripe_account_id": "acct_1UTx5WGblruzCXwd",
+    "details_submitted": false,
+    "charges_enabled": false,
+    "payouts_enabled": false,
+    "onboarding_complete": false,
+    "accept_card_default": true
+}

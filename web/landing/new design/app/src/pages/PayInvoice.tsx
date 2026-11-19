@@ -10,28 +10,37 @@ import {
   useNoIndex,
   usePublicDocument,
 } from './ViewQuote'
+import ViewInvoice from './ViewInvoice'
 import { buildElementsOptions, getStripe, PUBLISHABLE_KEY } from '../portal/pay/stripe'
 import { PaymentForm } from '../portal/pay/PaymentForm'
 import { PayShell } from '../portal/pay/PayShell'
 
 export default function PayInvoice() {
+  const [searchParams] = useSearchParams()
+  const hasIntentParams = Boolean(searchParams.get('pi') && searchParams.get('cs'))
+  // A bare /pay/:token link (no PaymentIntent params) is not invalid — fall
+  // back to the invoice view: summary, paid state, and the bank-transfer /
+  // pay-link block, with card payment only once the intent params are present.
+  if (!hasIntentParams) return <ViewInvoice />
+  return <PayInvoiceCard />
+}
+
+function PayInvoiceCard() {
   usePageMeta('Pay your invoice — My Trade Portal', 'Pay the invoice your electrician sent you, securely by card.')
   useNoIndex()
   const { token = '' } = useParams()
   const [searchParams] = useSearchParams()
-  const paymentIntentId = searchParams.get('pi')
-  const clientSecret = searchParams.get('cs')
+  const paymentReturning = searchParams.get('paid') === '1'
   const { status, error, doc } = usePublicDocument('invoice')
 
-  const linkParamsValid = Boolean(token && paymentIntentId && clientSecret)
   const brandColor = doc?.tenant.brand_color || '#0F1E26'
 
-  const elementsOptions = useMemo(
-    () => (clientSecret ? buildElementsOptions(clientSecret, brandColor) : null),
-    [clientSecret, brandColor],
-  )
+  const elementsOptions = useMemo(() => {
+    const clientSecret = searchParams.get('cs')
+    return clientSecret ? buildElementsOptions(clientSecret, brandColor) : null
+  }, [searchParams, brandColor])
 
-  const showInvalid = !linkParamsValid || status === 'invalid'
+  const showInvalid = status === 'invalid'
 
   const shellProps = doc
     ? {
@@ -75,9 +84,29 @@ export default function PayInvoice() {
             </div>
           </PayShell>
         )}
+        {!showInvalid && status === 'loaded' && doc && shellProps && paymentReturning && doc.status !== 'paid' && (
+          <PayShell {...shellProps}>
+            <p
+              role="status"
+              className="mt-[var(--space-lg)] border-2 border-[var(--ink)] p-4 text-[14px] font-semibold leading-relaxed text-white"
+              style={{ backgroundColor: 'var(--brand)' }}
+            >
+              Thank you — your payment is being confirmed. This page will show the invoice as
+              paid shortly.
+            </p>
+            <p className="mt-[var(--space-md)] text-[13.5px] text-[var(--muted)]">
+              <Link to={`/invoice/${token}`} className="link-arrow">
+                View your invoice
+              </Link>
+            </p>
+          </PayShell>
+        )}
         {!showInvalid && status === 'loaded' && doc && shellProps && PUBLISHABLE_KEY && doc.status === 'paid' && (
           <PayShell {...shellProps}>
-            <p className="mt-[var(--space-lg)] border-2 border-[var(--ink)] bg-[var(--accent)] p-4 text-[14px] font-semibold leading-relaxed text-[var(--ink-deep)]">
+            <p
+              className="mt-[var(--space-lg)] border-2 border-[var(--ink)] p-4 text-[14px] font-semibold leading-relaxed text-white"
+              style={{ backgroundColor: 'var(--brand)' }}
+            >
               This invoice is already paid — thank you.
             </p>
             <p className="mt-[var(--space-md)] text-[13.5px] text-[var(--muted)]">
@@ -93,6 +122,7 @@ export default function PayInvoice() {
           shellProps &&
           PUBLISHABLE_KEY &&
           doc.status !== 'paid' &&
+          !paymentReturning &&
           elementsOptions && (
             <PayShell {...shellProps}>
               <Elements stripe={getStripe(PUBLISHABLE_KEY)} options={elementsOptions}>

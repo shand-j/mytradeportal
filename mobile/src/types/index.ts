@@ -120,11 +120,22 @@ export type Quote = {
   aiNotes: string | null;
   /** "grounded" | "no_index" | "skipped_no_key" | null — catalogue retrieval status. */
   retrievalStatus: string | null;
+  /** One-sentence summary of what the last AI refine changed (null before any refine). */
+  aiRefineSummary?: string | null;
+  /** The electrician's thumbs up/down on the last refine, when rated. */
+  aiRefineRating?: "up" | "down" | null;
   sentAt?: string;
   expiresAt?: string;
   /** Customer-reconfirmed visit dates captured at acceptance. */
   acceptedDates: string[];
   vatRate: number;
+  /** Server totals (ex VAT, VAT amount, VAT-inclusive total). `total` already
+   * includes any tenant quote-rounding uplift; display these instead of
+   * recomputing from line items so every surface shows the same value. */
+  subtotal?: number;
+  vatAmount?: number;
+  total?: number;
+  roundingAdjustment?: number;
 };
 
 export type InvoiceStatus = "draft" | "sent" | "paid" | "overdue" | "refunded";
@@ -141,7 +152,7 @@ export type Invoice = {
   paidAt?: string;
 };
 
-export type JobStatus = "confirmed" | "in_progress" | "completed" | "cancelled";
+export type JobStatus = "draft" | "confirmed" | "in_progress" | "completed" | "cancelled";
 
 export type Job = {
   id: string;

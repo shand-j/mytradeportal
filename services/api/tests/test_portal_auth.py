@@ -299,6 +299,53 @@ async def test_portal_invoice_payment_url_null_without_stripe(
     resp = await client.get(f"/customer/invoices/{invoice.id}", headers=auth)
     assert resp.status_code == 200, resp.text
     assert resp.json()["payment_url"] is None
+    # No bank details configured → no bank-transfer block either.
+    assert resp.json()["payment_details"] is None
+
+
+async def test_portal_invoice_payment_details_from_tenant_settings(
+    client: AsyncClient, db: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A tenant without Stripe but with bank details configured gets
+    payment_details on the portal invoice payload (the bank-transfer fallback
+    the portal shows when payment_url is null)."""
+    monkeypatch.setattr("app.stripe_client.is_configured", lambda: False)
+
+    slug = f"portal-{uuid4().hex[:8]}"
+    tenant = await _create_tenant(db, slug)
+    tenant.settings = {
+        "bank_account_name": "Portal Electrical Ltd",
+        "bank_sort_code": "12-34-56",
+        "bank_account_number": "12345678",
+    }
+    customer = await _create_customer(db, tenant, f"pat-{uuid4().hex[:6]}@example.com")
+    auth = await _auth_headers_via_magic(client, db, customer)
+
+    await set_tenant_in_session(db, tenant.id)
+    invoice = Invoice(
+        tenant_id=tenant.id,
+        contact_id=customer.contact_id,
+        invoice_number=f"INV-{uuid4().hex[:6].upper()}",
+        status="sent",
+        subtotal=Decimal("100.00"),
+        vat_rate=Decimal("20.00"),
+        vat_amount=Decimal("20.00"),
+        total=Decimal("120.00"),
+        issue_date=datetime.utcnow(),
+    )
+    db.add(invoice)
+    await db.commit()
+
+    resp = await client.get(f"/customer/invoices/{invoice.id}", headers=auth)
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["payment_url"] is None
+    assert body["payment_details"] == {
+        "account_name": "Portal Electrical Ltd",
+        "sort_code": "12-34-56",
+        "account_number": "12345678",
+        "reference": invoice.invoice_number,
+    }
 
 
 async def test_reserved_slugs_rejected_on_tenant_create(

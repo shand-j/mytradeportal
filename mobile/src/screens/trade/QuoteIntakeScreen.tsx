@@ -1,32 +1,20 @@
-import { useMemo, useState } from "react";
-import { KeyboardAvoidingView, Platform, ScrollView, TextInput, View } from "react-native";
+import { useEffect, useMemo, useState } from "react";
+import { KeyboardAvoidingView, Platform, Pressable, ScrollView, TextInput, View } from "react-native";
+import { useRouter } from "expo-router";
 import { Button } from "../../components/ui/Button";
 import { Header } from "../../components/ui/Header";
+import { OptionChips } from "../../components/ui/OptionChips";
 import { PhotoAsset, PhotoPicker } from "../../components/ui/PhotoPicker";
 import { Screen } from "../../components/ui/Screen";
 import { Text } from "../../components/ui/Text";
+import { VoiceInputButton } from "../../components/ui/VoiceInputButton";
 import { Lead } from "../../types";
+import { useContactsList } from "../../api/contacts";
+import { useIntakeCustomerStore } from "../../stores/intakeCustomerStore";
 import { formatUrgency } from "../../lib/format";
+import { BEDROOMS, PROPERTY_TYPES, matchBedrooms, matchPropertyType } from "../../lib/property";
 
-const PROPERTY_TYPES = ["House", "Flat", "Bungalow", "Commercial"];
-const BEDROOMS = ["1", "2", "3", "4", "5+"];
 const CU_LOCATIONS = ["Hallway", "Kitchen", "Garage", "Utility", "Under stairs", "Other"];
-
-/** Customer-facing property types (quote-request wizard) -> intake chips. */
-const PROPERTY_TYPE_MAP: Record<string, string> = {
-  house: "House",
-  detached: "House",
-  semi: "House",
-  "semi-detached": "House",
-  semi_detached: "House",
-  terrace: "House",
-  terraced: "House",
-  flat: "Flat",
-  apartment: "Flat",
-  maisonette: "Flat",
-  bungalow: "Bungalow",
-  commercial: "Commercial",
-};
 
 export type QuoteIntakeData = {
   propertyType: string;
@@ -72,26 +60,6 @@ function asRecord(value: unknown): Record<string, unknown> {
 
 function asString(value: unknown): string {
   return typeof value === "string" ? value : "";
-}
-
-/** Normalise a free-form property type onto the intake chips. */
-function matchPropertyType(value: unknown): string {
-  const raw = asString(value).trim().toLowerCase();
-  if (!raw) return "";
-  return PROPERTY_TYPE_MAP[raw] ?? (PROPERTY_TYPES.includes(asString(value)) ? asString(value) : "");
-}
-
-/** Normalise a bedroom count onto the intake chips. */
-function matchBedrooms(value: unknown): string {
-  if (typeof value === "number" && Number.isFinite(value)) {
-    return value >= 5 ? "5+" : BEDROOMS.includes(String(value)) ? String(value) : "";
-  }
-  const raw = asString(value).trim();
-  if (!raw) return "";
-  if (BEDROOMS.includes(raw)) return raw;
-  const parsed = parseInt(raw, 10);
-  if (Number.isNaN(parsed)) return "";
-  return parsed >= 5 ? "5+" : BEDROOMS.includes(String(parsed)) ? String(parsed) : "";
 }
 
 /** Normalise a consumer-unit location onto the intake chips. */
@@ -192,8 +160,14 @@ function buildInitialIntake(lead?: Lead, contact?: QuoteIntakeContact): QuoteInt
 }
 
 export function QuoteIntakeScreen({ lead, contact, onBack, onComplete }: QuoteIntakeScreenProps) {
+  const router = useRouter();
   const initial = useMemo(() => buildInitialIntake(lead, contact), [lead, contact]);
+  const { contacts } = useContactsList();
+  const pendingCustomer = useIntakeCustomerStore((s) => s.pending);
+  const clearPendingCustomer = useIntakeCustomerStore((s) => s.clear);
+  const [selectedContact, setSelectedContact] = useState<QuoteIntakeContact | undefined>(contact);
   const [customerName, setCustomerName] = useState(contact?.name ?? "");
+  const [pickerOpen, setPickerOpen] = useState(false);
   const [description, setDescription] = useState("");
   const [propertyType, setPropertyType] = useState(initial.propertyType);
   const [bedrooms, setBedrooms] = useState(initial.bedrooms);
@@ -209,6 +183,45 @@ export function QuoteIntakeScreen({ lead, contact, onBack, onComplete }: QuoteIn
   // site survey and the AI estimates it. Without a lead, the plain-English
   // job description is the only required input (backend needs >= 5 chars).
   const canComplete = lead ? true : description.trim().length >= 5;
+
+  const filteredContacts = useMemo(() => {
+    const q = customerName.trim().toLowerCase();
+    const sorted = [...contacts].sort((a, b) => a.name.localeCompare(b.name));
+    if (!q) return sorted;
+    return sorted.filter((c) =>
+      [c.name, c.email, c.phone, c.postcode].some((field) => field?.toLowerCase().includes(q))
+    );
+  }, [contacts, customerName]);
+
+  // Selecting an existing customer pre-fills the site logistics saved on their
+  // CRM record (same chain as the contactId route entry) without clobbering
+  // anything the electrician already typed.
+  const applyContact = (selected: QuoteIntakeContact) => {
+    setSelectedContact(selected);
+    setCustomerName(selected.name);
+    setPickerOpen(false);
+    if (selected.propertyType && !propertyType) {
+      setPropertyType(matchPropertyType(selected.propertyType));
+    }
+    if (selected.bedrooms && !bedrooms) setBedrooms(matchBedrooms(selected.bedrooms));
+    if (selected.parkingNotes && !parking) setParking(selected.parkingNotes);
+    if (selected.accessNotes && !access) setAccess(selected.accessNotes);
+  };
+
+  // Returning from Add New Customer: pick up the saved contact and pre-select it.
+  useEffect(() => {
+    if (lead || !pendingCustomer) return;
+    clearPendingCustomer();
+    applyContact(pendingCustomer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [lead, pendingCustomer]);
+
+  const handleAddCustomer = () => {
+    setPickerOpen(false);
+    router.push(
+      `/(trade)/manual-lead?returnTo=quote-intake&name=${encodeURIComponent(customerName.trim())}`
+    );
+  };
 
   const handleComplete = async () => {
     if (!canComplete) return;
@@ -226,8 +239,8 @@ export function QuoteIntakeScreen({ lead, contact, onBack, onComplete }: QuoteIn
         access,
         notes,
         photoUrls: photos.map((p) => p.url),
-        customerName: customerName.trim(),
-        contactId: contact?.id,
+        customerName: (selectedContact?.name ?? customerName).trim(),
+        contactId: selectedContact?.id,
         description: description.trim(),
       });
     } catch {
@@ -238,31 +251,6 @@ export function QuoteIntakeScreen({ lead, contact, onBack, onComplete }: QuoteIn
       setSubmitting(false);
     }
   };
-
-  const renderChipGroup = (
-    label: string,
-    options: string[],
-    selected: string,
-    onSelect: (value: string) => void
-  ) => (
-    <View className="flex-row flex-wrap gap-2">
-      {options.map((option) => (
-        <Button
-          key={option}
-          testID={`intake-${label.replace(/\s+/g, "-").toLowerCase()}-${option.toLowerCase().replace(/\+/g, "plus")}`}
-          title={option}
-          variant={selected === option ? "primary" : "outline"}
-          onPress={() => onSelect(option)}
-        />
-      ))}
-      <Button
-        testID={`intake-${label.replace(/\s+/g, "-").toLowerCase()}-not-sure`}
-        title="Not sure"
-        variant={selected === "" ? "primary" : "outline"}
-        onPress={() => onSelect("")}
-      />
-    </View>
-  );
 
   return (
     <Screen>
@@ -290,21 +278,89 @@ export function QuoteIntakeScreen({ lead, contact, onBack, onComplete }: QuoteIn
           <>
             <View className="rounded-2xl bg-slate-100 p-4 gap-2">
               <Text variant="body" weight="semibold">
-                Customer name
+                Customer
               </Text>
-              <TextInput
-                testID="intake-customer-name"
-                className="h-12 rounded-xl border border-slate-200 bg-white px-4 text-base text-slate-900"
-                placeholder="Optional — e.g. Jane Smith"
-                value={customerName}
-                onChangeText={setCustomerName}
-              />
+              {selectedContact ? (
+                <View className="flex-row items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3">
+                  <View className="flex-1">
+                    <Text testID="intake-selected-customer" variant="body" numberOfLines={1}>
+                      {selectedContact.name}
+                    </Text>
+                    <Text variant="caption" color="secondary">
+                      Existing customer
+                    </Text>
+                  </View>
+                  <Button
+                    testID="intake-change-customer"
+                    title="Change"
+                    size="sm"
+                    variant="outline"
+                    onPress={() => {
+                      setSelectedContact(undefined);
+                      setPickerOpen(true);
+                    }}
+                  />
+                </View>
+              ) : (
+                <>
+                  <TextInput
+                    testID="intake-customer-name"
+                    className="h-12 rounded-xl border border-slate-200 bg-white px-4 text-base text-slate-900"
+                    placeholder="Search customers or type a name"
+                    value={customerName}
+                    onChangeText={(text) => {
+                      setCustomerName(text);
+                      setPickerOpen(true);
+                    }}
+                    onFocus={() => setPickerOpen(true)}
+                    onBlur={() => setTimeout(() => setPickerOpen(false), 150)}
+                  />
+                  {pickerOpen && (
+                    <View className="overflow-hidden rounded-xl border border-slate-200 bg-white">
+                      {filteredContacts.slice(0, 5).map((option) => (
+                        <Pressable
+                          key={option.id}
+                          testID={`intake-customer-option-${option.id}`}
+                          onPress={() => applyContact(option)}
+                        >
+                          <View className="gap-0.5 border-b border-slate-100 px-4 py-3">
+                            <Text variant="body" numberOfLines={1}>
+                              {option.name}
+                            </Text>
+                            {[option.phone, option.email, option.postcode].some(Boolean) && (
+                              <Text variant="caption" color="secondary" numberOfLines={1}>
+                                {[option.phone, option.email, option.postcode]
+                                  .filter(Boolean)
+                                  .join(" · ")}
+                              </Text>
+                            )}
+                          </View>
+                        </Pressable>
+                      ))}
+                      <Pressable testID="intake-add-customer" onPress={handleAddCustomer}>
+                        <View className="px-4 py-3">
+                          <Text variant="body" color="primary">
+                            + Add new customer
+                          </Text>
+                        </View>
+                      </Pressable>
+                    </View>
+                  )}
+                </>
+              )}
             </View>
 
             <View className="rounded-2xl bg-slate-100 p-4 gap-2">
-              <Text variant="body" weight="semibold">
-                Job description *
-              </Text>
+              <View className="flex-row items-center justify-between">
+                <Text variant="body" weight="semibold">
+                  Job description *
+                </Text>
+                <VoiceInputButton
+                  testID="intake-description-voice"
+                  value={description}
+                  onChangeText={setDescription}
+                />
+              </View>
               <TextInput
                 testID="intake-description"
                 className="h-24 rounded-xl border border-slate-200 bg-white px-4 pt-3 text-base text-slate-900"
@@ -329,21 +385,36 @@ export function QuoteIntakeScreen({ lead, contact, onBack, onComplete }: QuoteIn
           <Text variant="body" weight="semibold">
             Property type
           </Text>
-          {renderChipGroup("Property type", PROPERTY_TYPES, propertyType, setPropertyType)}
+          <OptionChips
+            testIDPrefix="intake-property-type"
+            options={PROPERTY_TYPES}
+            selected={propertyType}
+            onSelect={setPropertyType}
+          />
         </View>
 
         <View className="rounded-2xl bg-slate-100 p-4 gap-3">
           <Text variant="body" weight="semibold">
             Bedrooms
           </Text>
-          {renderChipGroup("Bedrooms", BEDROOMS, bedrooms, setBedrooms)}
+          <OptionChips
+            testIDPrefix="intake-bedrooms"
+            options={BEDROOMS}
+            selected={bedrooms}
+            onSelect={setBedrooms}
+          />
         </View>
 
         <View className="rounded-2xl bg-slate-100 p-4 gap-3">
           <Text variant="body" weight="semibold">
             Consumer unit location
           </Text>
-          {renderChipGroup("CU location", CU_LOCATIONS, cuLocation, setCuLocation)}
+          <OptionChips
+            testIDPrefix="intake-cu-location"
+            options={CU_LOCATIONS}
+            selected={cuLocation}
+            onSelect={setCuLocation}
+          />
         </View>
 
         <View className="rounded-2xl bg-slate-100 p-4 gap-2">

@@ -1,18 +1,47 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { api } from "../lib/apiClient";
 
 export type PlanKey = "starter" | "pro" | "business";
 
-// Current tier keys from GET /billing/plans. The checkout endpoint still
-// speaks the legacy keys until the W2-B Paddle catalog work lands, so plan
-// selections are mapped back when creating a checkout.
+// Current tier keys from GET /billing/plans. Subscriptions are created and
+// managed on the web (mytradeportal.co.uk) — App Store Guideline 3.1.1 means
+// the app carries no purchase flow, so the plan-key mapping below only goes
+// one way: a subscription's legacy plan key → its display tier.
 export type BillingPlanKey = "sole_trader" | "pro" | "team";
 
-export const CHECKOUT_PLAN_KEY: Record<BillingPlanKey, PlanKey> = {
-  sole_trader: "starter",
+/** A subscription's legacy plan key → tier. */
+export const SUBSCRIPTION_TIER_KEY: Record<PlanKey, BillingPlanKey> = {
+  starter: "sole_trader",
   pro: "pro",
-  team: "business",
+  business: "team",
 };
+
+/**
+ * Map a (possibly legacy) subscription plan_key onto a current tier key —
+ * mirrors resolve_plan_key in services/api/app/plans.py. Beta subscriptions
+ * carry starter|pro|business; new ones store the tier key directly, so both
+ * key sets must resolve.
+ */
+export function resolvePlanKey(key: string): BillingPlanKey {
+  return SUBSCRIPTION_TIER_KEY[key as PlanKey] ?? (key as BillingPlanKey);
+}
+
+/**
+ * Tier display names — mirrors the `name` field of GET /billing/plans and the
+ * pricing page (web/landing …/constants/pricing-tiers.ts). Use this instead
+ * of prettifying the raw plan key ("sole_trader" → "Sole Trader", not
+ * "Sole_trader").
+ */
+export const PLAN_DISPLAY_NAMES: Record<BillingPlanKey, string> = {
+  sole_trader: "Sole Trader",
+  pro: "Pro",
+  team: "Team",
+};
+
+/** Display name for any (legacy or tier) subscription plan key. */
+export function planDisplayName(key: string): string {
+  return PLAN_DISPLAY_NAMES[resolvePlanKey(key)] ?? key;
+}
 
 export type BillingPlan = {
   key: BillingPlanKey;
@@ -25,6 +54,8 @@ export type BillingPlan = {
   overageBehavior: "block" | "metered";
   overagePricePence: number;
   minSeats: number;
+  /** Staff seats included in the tier (max active users + pending invites). */
+  seats: number;
   pooledAllowance: boolean;
   featured: boolean;
   trialDays: number;
@@ -49,7 +80,8 @@ export function useBillingPlans() {
 
 export type SubscriptionRead = {
   id: string;
-  planKey: PlanKey;
+  /** Legacy (starter|pro|business) or current tier key — use resolvePlanKey. */
+  planKey: PlanKey | BillingPlanKey;
   status: "incomplete" | "trialing" | "trial_expired" | "active" | "past_due" | "paused" | "canceled";
   paddleSubscriptionId: string | null;
   paddleCustomerId: string | null;
@@ -61,22 +93,11 @@ export type SubscriptionRead = {
   canceledAt: string | null;
   createdAt: string;
   updatedAt: string;
+  /** Staff seats included in the plan (sole_trader 1, pro 5, team 15). */
+  seats: number;
+  /** Active users + pending invites — the count the seat cap gates on. */
+  seatsInUse: number;
 };
-
-export type BillingCheckoutRead = {
-  transactionId: string;
-  checkoutUrl: string;
-};
-
-export async function createBillingCheckout(
-  planKey: PlanKey,
-  successUrl?: string
-): Promise<BillingCheckoutRead> {
-  return api.post<BillingCheckoutRead>("/billing/checkout", {
-    planKey,
-    successUrl,
-  });
-}
 
 export async function getSubscription(): Promise<SubscriptionRead | null> {
   return api.get<SubscriptionRead | null>("/billing/subscription");
@@ -127,13 +148,17 @@ export function useSubscription(options?: { pollWhileInactive?: boolean }) {
   });
 }
 
-export function useCreateBillingCheckout() {
-  const client = useQueryClient();
-  return useMutation({
-    mutationFn: ({ planKey, successUrl }: { planKey: PlanKey; successUrl?: string }) =>
-      createBillingCheckout(planKey, successUrl),
-    onSuccess: () => {
-      void client.invalidateQueries({ queryKey: ["billing", "subscription"] });
-    },
-  });
+/**
+ * True when the tenant's subscription tier includes more than one staff seat
+ * (seat counts come from GET /billing/plans — the per-plan source of truth).
+ * False while either query is loading or when there is no subscription, so
+ * single-seat tenants never see team-only UI.
+ */
+export function useMultiSeatPlan(): boolean {
+  const subscription = useSubscription();
+  const plans = useBillingPlans();
+  const planKey = subscription.data?.planKey;
+  if (!planKey) return false;
+  const tier = plans.data?.find((p) => p.key === resolvePlanKey(planKey));
+  return (tier?.seats ?? 1) > 1;
 }

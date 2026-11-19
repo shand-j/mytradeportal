@@ -196,13 +196,6 @@ async def client(test_database_url: str) -> AsyncIterator[AsyncClient]:
 
 
 @pytest.fixture(autouse=True)
-def _disable_supabase_in_tests(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Force local password auth so tests do not need a running Supabase instance."""
-    monkeypatch.setattr("app.routers.auth.is_supabase_configured", lambda: False)
-    monkeypatch.setattr("app.supabase.is_supabase_configured", lambda: False)
-
-
-@pytest.fixture(autouse=True)
 def _disable_rate_limiter_in_tests() -> "Iterator[None]":
     """Disable the global rate limiter so the bulk of integration tests are
     not flaky against shared per-IP/tenant buckets.

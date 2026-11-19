@@ -17,23 +17,47 @@ import { Screen } from "../../components/ui/Screen";
 import { Text } from "../../components/ui/Text";
 import { useContactsList, findOrCreateContact } from "../../api/contacts";
 import { useCreateJob, useConvertQuoteToJob, useScheduleSuggestion } from "../../api/jobs";
-import type { ScheduleSuggestion } from "../../api/jobs";
+import type { MeasurementEntry, ScheduleSuggestion } from "../../api/jobs";
 import { ApiQuote, fetchQuotes, setQuoteApproval, useApiQuote } from "../../api/quotes";
 import { fetchAvailability, useAvailability } from "../../api/appointments";
 import { useUsersList } from "../../api/users";
 import { ApiError } from "../../lib/apiClient";
+import { parseServerDate, toLocalIsoDate } from "../../lib/datetime";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 const TIME_RE = /^\d{2}:\d{2}$/;
 const HOUR_UNIT_RE = /^(h|hr|hrs|hour|hours)$/i;
+// Stored accepted_dates entries: "YYYY-MM-DD" or "YYYY-MM-DD (morning)".
+const PREFERENCE_RE = /^(\d{4}-\d{2}-\d{2})(?:\s*\(([^)]+)\))?$/;
+
+const PREFERENCE_RANKS = ["1st choice", "2nd choice", "3rd choice"];
+
+type QuoteDatePreference = { date: string; label: string; startTime: string | null };
+
+/**
+ * Parse one stored accepted_dates entry into a tappable date/time chip.
+ * Null for the customer app's free-text labels ("Fri 12 Sep") — those stay
+ * display-only. The coarse window maps to a start time (09:00 / 13:00),
+ * matching the server-side draft-job convention.
+ */
+export function parseQuotePreference(entry: string): QuoteDatePreference | null {
+  const match = PREFERENCE_RE.exec(entry.trim());
+  if (!match) return null;
+  const day = new Date(`${match[1]}T12:00:00`);
+  if (Number.isNaN(day.getTime())) return null;
+  const dateLabel = day.toLocaleDateString("en-GB", {
+    weekday: "short",
+    day: "numeric",
+    month: "short",
+  });
+  const window = match[2]?.trim().toLowerCase();
+  const startTime = window === "morning" ? "09:00" : window === "afternoon" ? "13:00" : null;
+  return { date: match[1], label: window ? `${dateLabel} · ${match[2]}` : dateLabel, startTime };
+}
 
 function pad(n: number): string {
   return String(n).padStart(2, "0");
-}
-
-function toLocalIsoDate(d: Date): string {
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 }
 
 function toHHMM(d: Date): string {
@@ -75,8 +99,10 @@ async function suggestFirstSlot(): Promise<{ date: string; time: string } | null
     const iso = toLocalIsoDate(day);
     try {
       const slots = await fetchAvailability(iso);
-      if (slots.length > 0) {
-        return { date: iso, time: toHHMM(new Date(slots[0])) };
+      // Availability slots are server datetimes (naive UTC).
+      const first = slots.length > 0 ? parseServerDate(slots[0]) : null;
+      if (first) {
+        return { date: iso, time: toHHMM(first) };
       }
     } catch {
       return null;
@@ -129,6 +155,7 @@ export function JobCreateScreen({ onClose, initialQuoteId }: JobCreateScreenProp
   const [time, setTime] = useState("");
   const [durationHours, setDurationHours] = useState("");
   const [assignedUserId, setAssignedUserId] = useState<string | null>(null);
+  const [measurements, setMeasurements] = useState<MeasurementEntry[]>([]);
   const [notes, setNotes] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
@@ -179,7 +206,8 @@ export function JobCreateScreen({ onClose, initialQuoteId }: JobCreateScreenProp
 
   // N18: selecting a quote prefills title, customer, duration (from the
   // quote's server-side estimated hours, falling back to quoted labour hours)
-  // and proposes the earliest available start slot.
+  // and proposes the customer's 1st-choice date when they picked one at
+  // acceptance (falling back to the earliest available start slot).
   const prefilledQuoteRef = useRef<string | null>(null);
   useEffect(() => {
     if (!selectedQuote || prefilledQuoteRef.current === selectedQuote.id) return;
@@ -189,6 +217,23 @@ export function JobCreateScreen({ onClose, initialQuoteId }: JobCreateScreenProp
     setCustomerMode("search");
     const hours = quotedEstimatedHours(selectedQuote);
     setDurationHours(hours > 0 ? String(hours) : "");
+    const firstChoice = (selectedQuote.acceptedDates ?? [])
+      .map(parseQuotePreference)
+      .find((p): p is QuoteDatePreference => p !== null);
+    if (firstChoice) {
+      setDate(firstChoice.date);
+      if (firstChoice.startTime) {
+        setTime(firstChoice.startTime);
+      } else {
+        void fetchAvailability(firstChoice.date)
+          .then((slots) => {
+            const first = slots.length > 0 ? parseServerDate(slots[0]) : null;
+            if (first) setTime(toHHMM(first));
+          })
+          .catch(() => {});
+      }
+      return;
+    }
     void suggestFirstSlot().then((slot) => {
       if (slot) {
         setDate(slot.date);
@@ -196,6 +241,31 @@ export function JobCreateScreen({ onClose, initialQuoteId }: JobCreateScreenProp
       }
     });
   }, [selectedQuote]);
+
+  // The customer's ranked preferences from quote acceptance — tappable so
+  // the electrician lands on the 2nd/3rd choice when the 1st doesn't fit.
+  const quotePreferences = useMemo(
+    () =>
+      (selectedQuote?.acceptedDates ?? []).map((entry) => ({
+        entry,
+        parsed: parseQuotePreference(entry),
+      })),
+    [selectedQuote]
+  );
+
+  const applyPreference = (parsed: QuoteDatePreference) => {
+    setDate(parsed.date);
+    if (parsed.startTime) {
+      setTime(parsed.startTime);
+      return;
+    }
+    void fetchAvailability(parsed.date)
+      .then((slots) => {
+        const first = slots.length > 0 ? parseServerDate(slots[0]) : null;
+        if (first) setTime(toHHMM(first));
+      })
+      .catch(() => {});
+  };
 
   // Server-side recommendation: earliest start where the quote's whole
   // working-day block sequence fits around the existing calendar.
@@ -211,6 +281,8 @@ export function JobCreateScreen({ onClose, initialQuoteId }: JobCreateScreenProp
     DATE_RE.test(date.trim()) ? date.trim() : null
   );
   const suggestedSlot = availableSlots[0] ?? null;
+  // Availability slots are server datetimes (naive UTC) — parse as UTC.
+  const suggestedSlotDate = suggestedSlot ? parseServerDate(suggestedSlot) : null;
 
   const openPicker = (kind: "date" | "time") => {
     const base =
@@ -255,6 +327,13 @@ export function JobCreateScreen({ onClose, initialQuoteId }: JobCreateScreenProp
     return { start: start.toISOString(), end: end?.toISOString() };
   };
 
+  // Blank rows are dropped rather than rejected — the API requires a non-empty
+  // label and value on every stored entry.
+  const cleanedMeasurements = () =>
+    measurements
+      .map((entry) => ({ label: entry.label.trim(), value: entry.value.trim() }))
+      .filter((entry) => entry.label !== "" && entry.value !== "");
+
   const handleCreate = async () => {
     setError(null);
     if (!selectedQuote && !title.trim()) {
@@ -266,6 +345,7 @@ export function JobCreateScreen({ onClose, initialQuoteId }: JobCreateScreenProp
       setError(schedule);
       return;
     }
+    const recordedMeasurements = cleanedMeasurements();
 
     let resolvedContactId = contactId;
     if (selectedQuote) {
@@ -312,6 +392,8 @@ export function JobCreateScreen({ onClose, initialQuoteId }: JobCreateScreenProp
             scheduledStart: schedule.start,
             scheduledEnd: schedule.end,
             notes: notes.trim() !== "" ? notes.trim() : undefined,
+            measurements:
+              recordedMeasurements.length > 0 ? recordedMeasurements : undefined,
             assignedUserId: assignedUserId ?? undefined,
           },
         });
@@ -322,6 +404,7 @@ export function JobCreateScreen({ onClose, initialQuoteId }: JobCreateScreenProp
           scheduledStart: schedule.start,
           scheduledEnd: schedule.end,
           notes: notes.trim() !== "" ? notes.trim() : undefined,
+          measurements: recordedMeasurements.length > 0 ? recordedMeasurements : undefined,
           assignedUserId: assignedUserId ?? undefined,
         });
       }
@@ -698,6 +781,55 @@ export function JobCreateScreen({ onClose, initialQuoteId }: JobCreateScreenProp
             </Pressable>
           )}
 
+          {selectedQuote && quotePreferences.length > 0 && (
+            <View className="gap-2">
+              <Text variant="body" weight="semibold">
+                Customer's preferred dates
+              </Text>
+              <Text variant="caption" color="secondary">
+                Chosen when the quote was accepted — tap one to schedule it, or pick another
+                date below.
+              </Text>
+              <View className="flex-row flex-wrap gap-2">
+                {quotePreferences.map(({ entry, parsed }, index) =>
+                  parsed ? (
+                    <Pressable
+                      key={entry}
+                      testID={`job-create-preference-${index}`}
+                      onPress={() => applyPreference(parsed)}
+                    >
+                      <View
+                        className={`rounded-xl border p-3 ${
+                          date === parsed.date
+                            ? "border-primary bg-primary-50"
+                            : "border-slate-200 bg-white"
+                        }`}
+                      >
+                        <Text variant="caption" color="secondary">
+                          {PREFERENCE_RANKS[index] ?? `Choice ${index + 1}`}
+                        </Text>
+                        <Text variant="body" weight="semibold">
+                          {parsed.label}
+                        </Text>
+                      </View>
+                    </Pressable>
+                  ) : (
+                    <View
+                      key={entry}
+                      testID={`job-create-preference-${index}`}
+                      className="rounded-xl border border-slate-200 bg-white p-3"
+                    >
+                      <Text variant="caption" color="secondary">
+                        {PREFERENCE_RANKS[index] ?? `Choice ${index + 1}`}
+                      </Text>
+                      <Text variant="body">{entry}</Text>
+                    </View>
+                  )
+                )}
+              </View>
+            </View>
+          )}
+
           {Platform.OS === "web" ? (
             <>
               <FormField
@@ -751,7 +883,7 @@ export function JobCreateScreen({ onClose, initialQuoteId }: JobCreateScreenProp
             </View>
           )}
 
-          {DATE_RE.test(date.trim()) && (
+          {!scheduleSuggestion && DATE_RE.test(date.trim()) && (
             <View className="gap-1">
               {availabilityLoading ? (
                 <Text variant="caption" color="secondary">
@@ -760,11 +892,15 @@ export function JobCreateScreen({ onClose, initialQuoteId }: JobCreateScreenProp
               ) : suggestedSlot ? (
                 <Pressable
                   testID="job-create-suggested-slot"
-                  onPress={() => setTime(toHHMM(new Date(suggestedSlot)))}
+                  onPress={() => {
+                    if (suggestedSlotDate) setTime(toHHMM(suggestedSlotDate));
+                  }}
                 >
                   <View className="rounded-xl border border-primary-100 bg-primary-50 p-3">
                     <Text variant="caption" color="secondary">
-                      First free slot that day: {toHHMM(new Date(suggestedSlot))} — tap to use it.
+                      First free slot that day:{" "}
+                      {suggestedSlotDate ? toHHMM(suggestedSlotDate) : suggestedSlot} — tap to use
+                      it.
                     </Text>
                   </View>
                 </Pressable>
@@ -793,29 +929,87 @@ export function JobCreateScreen({ onClose, initialQuoteId }: JobCreateScreenProp
             keyboardType="decimal-pad"
           />
 
+          {/* Team gating: with a single active user (every sole_trader tenant)
+              there is nothing to pick — the API auto-assigns that user, so the
+              picker only renders once the tenant actually has staff to choose. */}
+          {users.length > 1 && (
+            <View className="gap-2">
+              <Text variant="body" weight="semibold">
+                Assigned to
+              </Text>
+              <View className="flex-row flex-wrap gap-2">
+                <Button
+                  testID="job-create-assignee-none"
+                  title="Unassigned"
+                  size="sm"
+                  variant={assignedUserId === null ? "primary" : "outline"}
+                  onPress={() => setAssignedUserId(null)}
+                />
+                {users.map((user) => (
+                  <Button
+                    key={user.id}
+                    testID={`job-create-assignee-${user.id}`}
+                    title={user.fullName}
+                    size="sm"
+                    variant={assignedUserId === user.id ? "primary" : "outline"}
+                    onPress={() => setAssignedUserId(user.id)}
+                  />
+                ))}
+              </View>
+            </View>
+          )}
+
           <View className="gap-2">
             <Text variant="body" weight="semibold">
-              Assigned to
+              Measurements
             </Text>
-            <View className="flex-row flex-wrap gap-2">
-              <Button
-                testID="job-create-assignee-none"
-                title="Unassigned"
-                size="sm"
-                variant={assignedUserId === null ? "primary" : "outline"}
-                onPress={() => setAssignedUserId(null)}
-              />
-              {users.map((user) => (
-                <Button
-                  key={user.id}
-                  testID={`job-create-assignee-${user.id}`}
-                  title={user.fullName}
-                  size="sm"
-                  variant={assignedUserId === user.id ? "primary" : "outline"}
-                  onPress={() => setAssignedUserId(user.id)}
+            <Text variant="caption" color="secondary">
+              Optional — e.g. cable run lengths, board height, room dimensions.
+            </Text>
+            {measurements.map((entry, index) => (
+              <View key={index} className="flex-row items-center gap-2">
+                <TextInput
+                  testID={`job-create-measurement-label-${index}`}
+                  className="h-12 flex-1 rounded-xl border border-slate-200 bg-white px-4 text-base text-slate-900"
+                  value={entry.label}
+                  onChangeText={(value) =>
+                    setMeasurements((prev) =>
+                      prev.map((e, i) => (i === index ? { ...e, label: value } : e))
+                    )
+                  }
+                  placeholder="Label (e.g. Cable run)"
+                  placeholderTextColor="#94A3B8"
                 />
-              ))}
-            </View>
+                <TextInput
+                  testID={`job-create-measurement-value-${index}`}
+                  className="h-12 flex-1 rounded-xl border border-slate-200 bg-white px-4 text-base text-slate-900"
+                  value={entry.value}
+                  onChangeText={(value) =>
+                    setMeasurements((prev) =>
+                      prev.map((e, i) => (i === index ? { ...e, value } : e))
+                    )
+                  }
+                  placeholder="Value (e.g. 12 m)"
+                  placeholderTextColor="#94A3B8"
+                />
+                <Pressable
+                  testID={`job-create-measurement-remove-${index}`}
+                  accessibilityLabel={`Remove measurement ${index + 1}`}
+                  onPress={() => setMeasurements((prev) => prev.filter((_, i) => i !== index))}
+                >
+                  <Text variant="body" weight="semibold" color="primary">
+                    ✕
+                  </Text>
+                </Pressable>
+              </View>
+            ))}
+            <Button
+              testID="job-create-measurement-add"
+              title="+ Add measurement"
+              variant="outline"
+              size="sm"
+              onPress={() => setMeasurements((prev) => [...prev, { label: "", value: "" }])}
+            />
           </View>
 
           <FormField

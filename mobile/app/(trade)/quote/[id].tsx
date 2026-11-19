@@ -15,12 +15,12 @@ export default function QuoteDetailRoute() {
   const { quote: realQuote } = useQuote(id);
   const convert = useConvertQuoteToInvoice();
   const convertToJob = useConvertQuoteToJob();
-  const jobsQuery = useQuery({ queryKey: ["jobs"], queryFn: fetchJobs });
+  const jobsQuery = useQuery({ queryKey: ["jobs"], queryFn: () => fetchJobs() });
   const invoicesQuery = useQuery({ queryKey: ["invoices"], queryFn: fetchInvoices });
   const [jobConvertFailed, setJobConvertFailed] = useState(false);
 
-  const existingJobId = useMemo(
-    () => jobsQuery.data?.find((j) => j.quoteId === id)?.id ?? null,
+  const existingJob = useMemo(
+    () => jobsQuery.data?.find((j) => j.quoteId === id) ?? null,
     [jobsQuery.data, id]
   );
 
@@ -51,7 +51,7 @@ export default function QuoteDetailRoute() {
         // A job already exists for this quote. Refresh the jobs cache so the
         // screen links to it ("View job"); when it can't be resolved, fall
         // back to the legacy convert-to-invoice path.
-        const jobs = await queryClient.fetchQuery({ queryKey: ["jobs"], queryFn: fetchJobs });
+        const jobs = await queryClient.fetchQuery({ queryKey: ["jobs"], queryFn: () => fetchJobs() });
         if (!jobs.some((j) => j.quoteId === realQuote.id)) {
           setJobConvertFailed(true);
         }
@@ -67,7 +67,10 @@ export default function QuoteDetailRoute() {
       onClose={() => router.back()}
       onConvertToInvoice={handleConvertToInvoice}
       onConvertToJob={handleConvertToJob}
-      existingJobId={existingJobId}
+      existingJobId={existingJob?.id ?? null}
+      // The tentative hold auto-created at acceptance is confirmable: the
+      // screen offers "Confirm booking" for it instead of hiding convert.
+      existingJobIsDraft={existingJob?.status === "draft"}
       jobConvertFailed={jobConvertFailed}
       invoicedReadOnly={invoicedReadOnly}
     />

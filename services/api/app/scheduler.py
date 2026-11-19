@@ -1,4 +1,4 @@
-"""In-process quote/invoice reminder scheduler.
+"""In-process quote/invoice/appointment reminder scheduler.
 
 Runs as an asyncio task started from the FastAPI lifespan — no extra infra
 (no Celery beat, no APScheduler dependency). A single sweep
@@ -9,11 +9,20 @@ Runs as an asyncio task started from the FastAPI lifespan — no extra infra
   configurable per tenant via settings keys (see below).
 * **Invoice reminders** — for unpaid invoices in ``sent`` status. Recur
   indefinitely until the invoice is paid/cancelled. Cadence is configurable.
+* **Subscription dunning follow-ups** — for Paddle subscriptions in
+  ``past_due``: a reminder email every few days until payment recovers or
+  the subscription is cancelled (see :mod:`app.dunning`).
+* **Appointment reminders** — SMS to the customer AND the assigned
+  electrician before each appointment (default windows 24 h and 2 h before
+  ``start_at``), with email/push fallbacks. Plan-included on every tier with
+  an invisible monthly fair-use guardrail that degrades SMS to email/push
+  (see :mod:`app.appointment_reminders`).
 
 Dispatch state lives in the ``reminders`` table (:class:`app.models.Reminder`):
-one row per sent email. The row count per entity is the "how many have gone
-out" state and the latest row's timestamp anchors the next interval, so the
-scheduler is stateless and safe to restart at any point.
+one row per dispatched reminder (email, sms or push channel). The row count
+per entity is the "how many have gone out" state and the latest row's
+timestamp anchors the next interval, so the scheduler is stateless and safe
+to restart at any point.
 
 Concurrency: multiple API replicas each run this loop. Each tenant is
 processed inside a transaction that first takes a PostgreSQL transaction-level
@@ -27,6 +36,17 @@ Tenant settings keys (merged via ``PATCH /tenants/me``):
 * ``quote_reminder_interval_days`` (int, default 3)
 * ``invoice_reminders_enabled`` (bool, default true)
 * ``invoice_reminder_interval_days`` (int, default 7)
+* ``appointment_reminders_enabled`` (bool, default true)
+
+Per-customer overrides (F2) live on ``Contact.reminder_preferences``
+(``PATCH /contacts/{id}``, merged key-by-key): ``quote_chase_enabled`` /
+``invoice_chase_enabled`` skip that document type for the contact and
+``max_reminders`` caps the tenant cadence downward. Reminder emails may carry
+an AI-drafted personalised paragraph (``feature="reminder_draft"`` in
+``ai_call_events``); the first successful draft per quote/invoice is cached
+on the ``Reminder`` row payload (``ai_draft``) and reused for later episodes.
+Drafting is fail-open: any LLM failure or sanity-gate rejection falls back
+to the static template and the send still happens.
 """
 
 from __future__ import annotations
@@ -41,10 +61,12 @@ import structlog
 from sqlalchemy import delete, func, select, text
 
 from app.alerting import fetch_usd_gbp_rate, send_alert
+from app.appointment_reminders import process_appointment_reminders
 from app.audit import Actions, write_audit_log
 from app.config import (
     AI_FAIR_USE_MONTHLY_THRESHOLD,
     AI_MONTHLY_BUDGET_GBP,
+    AI_MONTHLY_INVOICE_USD,
     FX_REFRESH_MAX_AGE_DAYS,
     REMINDER_TICK_SECONDS,
     ROLLUP_RUN_HOUR_UTC,
@@ -52,14 +74,16 @@ from app.config import (
     ROLLUP_TICK_SECONDS,
 )
 from app.database import AsyncSessionLocal
-from app.email import resolve_customer_magic_link, send_customer_email
+from app.dunning import run_dunning_followups
+from app.email import resolve_customer_magic_link, send_customer_email, tenant_reply_to
 from app.email_templates import invoice_reminder as invoice_reminder_template
 from app.email_templates import quote_reminder as quote_reminder_template
-from app.fx import store_fx_rate
+from app.fx import get_usd_gbp_rate, store_fx_rate
 from app.models import (
     AiAlertState,
     AiCallEvent,
     AiRollupFeatureDay,
+    AiRollupOrgDay,
     AiRollupUserDay,
     Contact,
     FxRate,
@@ -70,6 +94,7 @@ from app.models import (
 )
 from app.payment_details import tenant_payment_details
 from app.push import notify_staff
+from app.reminder_draft import draft_reminder_message
 from app.rls import set_tenant_in_session
 
 if TYPE_CHECKING:
@@ -130,6 +155,89 @@ async def _reminder_state(
     return count or 0, last_sent
 
 
+def _chase_preferences(contact: Contact | None) -> dict[str, Any]:
+    """The contact's reminder-preference overrides ({} = tenant defaults)."""
+    if contact is None or not isinstance(contact.reminder_preferences, dict):
+        return {}
+    return contact.reminder_preferences
+
+
+def _chase_enabled(contact: Contact | None, kind: str) -> bool:
+    """Per-customer chase switch; missing/None preference = tenant default (on)."""
+    value = _chase_preferences(contact).get(f"{kind}_chase_enabled")
+    return True if value is None else bool(value)
+
+
+def _contact_max_reminders(contact: Contact | None) -> int | None:
+    """Per-customer cap on reminder count, or None when unset/invalid."""
+    value = _chase_preferences(contact).get("max_reminders")
+    if value is None:
+        return None
+    try:
+        return max(1, int(str(value)))
+    except (TypeError, ValueError):
+        return None
+
+
+async def _reminder_personal_message(
+    db: AsyncSession,
+    tenant: Tenant,
+    contact: Contact | None,
+    *,
+    kind: str,
+    entity_id: UUID,
+    document_label: str,
+    total: str,
+    status_line: str,
+) -> str | None:
+    """Personalised AI draft for one reminder episode.
+
+    Reuses the first successful draft cached on a prior ``Reminder`` row for
+    this entity (payload key ``ai_draft``) so the copy stays consistent across
+    the chase sequence and the LLM is never re-paid per episode. Otherwise
+    drafts once via :func:`app.reminder_draft.draft_reminder_message`.
+    Returns ``None`` whenever drafting is unavailable or rejected — the
+    caller then sends the static template (fail-open).
+    """
+    rows = (
+        (
+            await db.execute(
+                select(Reminder.payload)
+                .where(Reminder.entity_type == kind, Reminder.entity_id == entity_id)
+                .order_by(Reminder.sequence)
+            )
+        )
+        .scalars()
+        .all()
+    )
+    for payload in rows:
+        cached = (payload or {}).get("ai_draft")
+        if isinstance(cached, str) and cached.strip():
+            return cached
+    try:
+        return await draft_reminder_message(
+            db,
+            tenant_id=tenant.id,
+            business_name=tenant.name,
+            customer_name=contact.name if contact is not None else None,
+            kind=kind,
+            document_label=document_label,
+            total=total,
+            status_line=status_line,
+        )
+    except Exception as exc:
+        # Belt and braces: the draft helper is already fail-open, but an
+        # unexpected bug there must never hold up the reminder send.
+        logger.warning(
+            "reminder_draft_unexpected_error",
+            entity_type=kind,
+            entity_id=str(entity_id),
+            error_type=type(exc).__name__,
+            error=str(exc)[:300],
+        )
+        return None
+
+
 async def _document_view_url(
     db: AsyncSession, kind: str, document_id: UUID, tenant_id: UUID, contact_email: str | None
 ) -> str:
@@ -176,14 +284,24 @@ async def _process_quote_reminders(
         # An expired quote should not be chased further.
         if quote.valid_until is not None and quote.valid_until < now:
             continue
+
+        contact = await db.get(Contact, quote.contact_id)
+        # Per-customer overrides (F2): a contact can opt out of quote chases
+        # and/or cap the number of reminders below the tenant cadence.
+        if not _chase_enabled(contact, "quote"):
+            continue
+        effective_max = config.quote_max
+        contact_max = _contact_max_reminders(contact)
+        if contact_max is not None:
+            effective_max = min(effective_max, contact_max)
+
         count, last_sent = await _reminder_state(db, "quote", quote.id)
-        if count >= config.quote_max:
+        if count >= effective_max:
             continue
         anchor = last_sent or quote.sent_at
         if anchor is None or now - anchor < interval:
             continue
 
-        contact = await db.get(Contact, quote.contact_id)
         # Magic portal link when the contact has a customer account. When one
         # is sent we skip minting a fresh document token — minting revokes the
         # view link emailed at send time for no benefit.
@@ -195,6 +313,17 @@ async def _process_quote_reminders(
                 db, "quote", quote.id, tenant.id, contact.email if contact else None
             )
         )
+        sent_days = (now - quote.sent_at).days if quote.sent_at is not None else 0
+        personal_message = await _reminder_personal_message(
+            db,
+            tenant,
+            contact,
+            kind="quote",
+            entity_id=quote.id,
+            document_label=quote.title,
+            total=f"£{quote.total}",
+            status_line=f"sent {sent_days} day(s) ago and not yet accepted",
+        )
         subject, html, text = quote_reminder_template(
             customer_name=contact.name.split()[0]
             if contact is not None and contact.name
@@ -204,6 +333,8 @@ async def _process_quote_reminders(
             quote_total=f"£{quote.total}",
             view_url=view_url,
             portal_url=portal_url,
+            personal_message=personal_message,
+            brand_color=tenant.primary_color,
         )
         delivered = await send_customer_email(
             db,
@@ -217,7 +348,7 @@ async def _process_quote_reminders(
             event="quote_reminder",
             template="quote_reminder",
             from_name=tenant.name,
-            reply_to=tenant.email or None,
+            reply_to=tenant_reply_to(tenant, quote_id=str(quote.id)),
             context={"quote_id": str(quote.id), "tenant_id": str(tenant.id)},
         )
         if not delivered:
@@ -227,6 +358,14 @@ async def _process_quote_reminders(
             continue
 
         sequence = count + 1
+        reminder_payload: dict[str, Any] = {
+            "quote_id": str(quote.id),
+            "total": str(quote.total),
+        }
+        if personal_message:
+            # Cache the draft on the row so retries/replays and later episodes
+            # of this chase reuse the same copy without re-paying the LLM.
+            reminder_payload["ai_draft"] = personal_message
         db.add(
             Reminder(
                 tenant_id=tenant.id,
@@ -234,7 +373,7 @@ async def _process_quote_reminders(
                 entity_id=quote.id,
                 channel="email",
                 sequence=sequence,
-                payload={"quote_id": str(quote.id), "total": str(quote.total)},
+                payload=reminder_payload,
             )
         )
         await notify_staff(
@@ -242,7 +381,7 @@ async def _process_quote_reminders(
             tenant.id,
             kind="quote_reminder_sent",
             title="Quote reminder sent",
-            body=f"Reminder {sequence} of {config.quote_max} emailed to "
+            body=f"Reminder {sequence} of {effective_max} emailed to "
             f"{contact.name if contact is not None else 'the customer'} for '{quote.title}'.",
             link=f"/quotes/{quote.id}",
         )
@@ -253,7 +392,7 @@ async def _process_quote_reminders(
             action=Actions.QUOTE_REMINDER_SENT,
             entity_type="quote",
             entity_id=quote.id,
-            payload={"sequence": sequence, "max": config.quote_max},
+            payload={"sequence": sequence, "max": effective_max},
         )
         sent += 1
     return sent
@@ -280,7 +419,16 @@ async def _process_invoice_reminders(
         .all()
     )
     for invoice in invoices:
+        contact = await db.get(Contact, invoice.contact_id)
+        # Per-customer overrides (F2): opt out of invoice chases and/or cap
+        # the recurrence count below the (unbounded) tenant cadence.
+        if not _chase_enabled(contact, "invoice"):
+            continue
+        contact_max = _contact_max_reminders(contact)
+
         count, last_sent = await _reminder_state(db, "invoice", invoice.id)
+        if contact_max is not None and count >= contact_max:
+            continue
         # First reminder fires one interval after the due date (falling back
         # to the issue date when no due date was set); subsequent ones recur
         # every interval after the previous reminder, indefinitely.
@@ -288,7 +436,6 @@ async def _process_invoice_reminders(
         if anchor is None or now - anchor < interval:
             continue
 
-        contact = await db.get(Contact, invoice.contact_id)
         sequence = count + 1
         # Same magic-link rule as quote reminders: a portal sign-in link
         # replaces the document token so the emailed view link stays valid.
@@ -302,6 +449,24 @@ async def _process_invoice_reminders(
                 db, "invoice", invoice.id, tenant.id, contact.email if contact else None
             )
         )
+        if invoice.due_date is not None:
+            overdue_days = max(0, (now.date() - invoice.due_date.date()).days)
+            status_line = f"due {overdue_days} day(s) ago and still unpaid"
+        elif invoice.issue_date is not None:
+            issued_days = max(0, (now.date() - invoice.issue_date.date()).days)
+            status_line = f"issued {issued_days} day(s) ago and still unpaid"
+        else:
+            status_line = "still unpaid"
+        personal_message = await _reminder_personal_message(
+            db,
+            tenant,
+            contact,
+            kind="invoice",
+            entity_id=invoice.id,
+            document_label=invoice.invoice_number,
+            total=f"£{invoice.total}",
+            status_line=status_line,
+        )
         subject, html, text = invoice_reminder_template(
             customer_name=contact.name.split()[0]
             if contact is not None and contact.name
@@ -314,6 +479,8 @@ async def _process_invoice_reminders(
             ),
             view_url=view_url,
             portal_url=portal_url,
+            personal_message=personal_message,
+            brand_color=tenant.primary_color,
         )
         delivered = await send_customer_email(
             db,
@@ -327,12 +494,19 @@ async def _process_invoice_reminders(
             event="invoice_reminder",
             template="invoice_reminder",
             from_name=tenant.name,
-            reply_to=tenant.email or None,
+            reply_to=tenant_reply_to(tenant, invoice_id=str(invoice.id)),
             context={"invoice_id": str(invoice.id), "tenant_id": str(tenant.id)},
         )
         if not delivered:
             continue
 
+        reminder_payload: dict[str, Any] = {
+            "invoice_id": str(invoice.id),
+            "invoice_number": invoice.invoice_number,
+            "total": str(invoice.total),
+        }
+        if personal_message:
+            reminder_payload["ai_draft"] = personal_message
         db.add(
             Reminder(
                 tenant_id=tenant.id,
@@ -340,11 +514,7 @@ async def _process_invoice_reminders(
                 entity_id=invoice.id,
                 channel="email",
                 sequence=sequence,
-                payload={
-                    "invoice_id": str(invoice.id),
-                    "invoice_number": invoice.invoice_number,
-                    "total": str(invoice.total),
-                },
+                payload=reminder_payload,
             )
         )
         await notify_staff(
@@ -380,16 +550,30 @@ async def _process_tenant(db: AsyncSession, tenant: Tenant, now: datetime) -> di
     ).scalar()
     if not locked:
         logger.info("reminder_tenant_locked_elsewhere", tenant_id=str(tenant.id))
-        return {"quote_reminders": 0, "invoice_reminders": 0, "skipped_locked": 1}
+        return {
+            "quote_reminders": 0,
+            "invoice_reminders": 0,
+            "dunning_reminders": 0,
+            "appointment_customer_sms": 0,
+            "appointment_staff_sms": 0,
+            "appointment_email_fallbacks": 0,
+            "skipped_locked": 1,
+        }
 
     await set_tenant_in_session(db, tenant.id)
     config = _ReminderConfig(tenant.settings)
     quote_sent = await _process_quote_reminders(db, tenant, config, now)
     invoice_sent = await _process_invoice_reminders(db, tenant, config, now)
+    dunning_sent = await run_dunning_followups(db, tenant, now)
+    appointment_counts = await process_appointment_reminders(db, tenant, now)
     await db.commit()
     return {
         "quote_reminders": quote_sent,
         "invoice_reminders": invoice_sent,
+        "dunning_reminders": dunning_sent,
+        "appointment_customer_sms": appointment_counts["customer_sms"],
+        "appointment_staff_sms": appointment_counts["staff_sms"],
+        "appointment_email_fallbacks": appointment_counts["email_fallbacks"],
         "skipped_locked": 0,
     }
 
@@ -399,6 +583,10 @@ async def _run_tick(db: AsyncSession, now: datetime) -> dict[str, int]:
         "tenants": 0,
         "quote_reminders": 0,
         "invoice_reminders": 0,
+        "dunning_reminders": 0,
+        "appointment_customer_sms": 0,
+        "appointment_staff_sms": 0,
+        "appointment_email_fallbacks": 0,
         "skipped_locked": 0,
         "errors": 0,
     }
@@ -421,6 +609,10 @@ async def _run_tick(db: AsyncSession, now: datetime) -> dict[str, int]:
             continue
         summary["quote_reminders"] += result["quote_reminders"]
         summary["invoice_reminders"] += result["invoice_reminders"]
+        summary["dunning_reminders"] += result["dunning_reminders"]
+        summary["appointment_customer_sms"] += result["appointment_customer_sms"]
+        summary["appointment_staff_sms"] += result["appointment_staff_sms"]
+        summary["appointment_email_fallbacks"] += result["appointment_email_fallbacks"]
         summary["skipped_locked"] += result["skipped_locked"]
     return summary
 
@@ -489,8 +681,10 @@ async def reminder_loop(stop: asyncio.Event) -> None:
 # ``reminder_loop``. Once per UTC day (default 02:30) it:
 #
 # 1. Re-folds the previous UTC day from ``ai_call_events`` into
-#    ``ai_rollup_user_day`` (tenant/user/feature) and ``ai_rollup_feature_day``
-#    (platform-wide). The fold deletes and re-inserts that day's rows inside
+#    ``ai_rollup_user_day`` (tenant/user/feature), ``ai_rollup_feature_day``
+#    (platform-wide) and ``ai_rollup_org_day`` (tenant totals across all
+#    features, incl. p99 + active-user counts for the staff ops leaderboard).
+#    The fold deletes and re-inserts that day's rows inside
 #    a global advisory lock, so it is idempotent and safe to re-run.
 # 2. Refreshes the USD→GBP rate when the newest ``fx_rates`` row is older
 #    than ``FX_REFRESH_MAX_AGE_DAYS`` (weekly cadence; failures keep the
@@ -501,7 +695,10 @@ async def reminder_loop(stop: asyncio.Event) -> None:
 #    fair-use alerts (an org's current-month AI action count reaches
 #    ``AI_FAIR_USE_MONTHLY_THRESHOLD``, once per org per month — internal ops
 #    only, never customer-visible), all deduped via the ``ai_alert_state``
-#    table. An unhandled exception in the pass itself fires a once-per-day
+#    table. On the first tick of a new month it also reconciles the month
+#    that just closed: estimated rollup spend vs ``AI_MONTHLY_INVOICE_USD``
+#    (provider invoice), alerting once per month when |variance| > 10% (#60).
+#    An unhandled exception in the pass itself fires a once-per-day
 #    ``rollup_failed`` alert and the loop keeps its schedule.
 #
 # The loop never raises; per-step failures are logged and the next step still
@@ -526,13 +723,16 @@ _BUDGET_THRESHOLDS: tuple[tuple[str, Decimal], ...] = (
 
 _COST_SPIKE_FACTOR = Decimal("3")
 _LATENCY_SPIKE_FACTOR = 2.0
+# |variance| above this percent between the platform-estimated month and the
+# provider invoice fires one cost-drift alert per month (#60).
+_COST_DRIFT_THRESHOLD_PCT = Decimal("10")
 # Require at least this many trailing days of data before anomaly detection
 # fires, so a quiet first week does not page anyone.
 _ANOMALY_MIN_TRAILING_DAYS = 3
 
 
 class _Measures:
-    """Accumulator for one rollup group (user-day or feature-day)."""
+    """Accumulator for one rollup group (user-day, feature-day or org-day)."""
 
     __slots__ = (
         "cost_gbp",
@@ -544,6 +744,7 @@ class _Measures:
         "tokens_cached",
         "tokens_input",
         "tokens_output",
+        "user_ids",
     )
 
     def __init__(self) -> None:
@@ -556,6 +757,8 @@ class _Measures:
         self.cost_gbp = Decimal("0")
         self.latencies: list[float] = []
         self.quotes_sent = 0
+        # Distinct non-NULL user ids behind spend events (org-day fold only).
+        self.user_ids: set[UUID] = set()
 
     def add(self, event: AiCallEvent) -> None:
         if event.feature == _OUTCOME_FEATURE:
@@ -573,6 +776,8 @@ class _Measures:
         self.cost_gbp += event.cost_gbp or Decimal("0")
         if event.latency_seconds is not None:
             self.latencies.append(event.latency_seconds)
+        if event.user_id is not None:
+            self.user_ids.add(event.user_id)
 
 
 def _percentile(sorted_values: list[float], pct: int) -> float | None:
@@ -613,6 +818,21 @@ def fold_events_platform(events: list[AiCallEvent]) -> dict[str, _Measures]:
     return groups
 
 
+def fold_events_org(events: list[AiCallEvent]) -> dict[UUID, _Measures]:
+    """Group raw events into per-tenant measures keyed by tenant_id.
+
+    One group per org per day (all features combined) — the staff ops
+    leaderboard granularity. Events with ``tenant_id=None`` (demo/embedding)
+    carry no org attribution and are excluded.
+    """
+    groups: dict[UUID, _Measures] = {}
+    for event in events:
+        if event.tenant_id is None:
+            continue
+        groups.setdefault(event.tenant_id, _Measures()).add(event)
+    return groups
+
+
 async def _table_exists(db: AsyncSession, table_name: str) -> bool:
     """True when ``table_name`` exists in the public schema.
 
@@ -626,17 +846,17 @@ async def _table_exists(db: AsyncSession, table_name: str) -> bool:
 
 async def _load_keep_rates(
     db: AsyncSession, day_start: datetime, day_end: datetime
-) -> tuple[dict[tuple[Any, ...], Decimal], dict[str, Decimal]]:
+) -> tuple[dict[tuple[Any, ...], Decimal], dict[str, Decimal], dict[UUID, Decimal]]:
     """Average keep_rate per group from ai_draft_feedback, when that table exists.
 
     Feedback rows are attributed to the tenant/user/feature of the generation
     event they reference (``generation_event_id`` → ``ai_call_events``). Raw
     SQL because the ORM model lives in a different workstream's tree.
-    Returns (user_day_rates, feature_day_rates); both empty when the table is
-    absent.
+    Returns (user_day_rates, feature_day_rates, org_day_rates); all empty when
+    the table is absent.
     """
     if not await _table_exists(db, "ai_draft_feedback"):
-        return {}, {}
+        return {}, {}, {}
     rows = (
         await db.execute(
             text(
@@ -662,7 +882,27 @@ async def _load_keep_rates(
         feature: _mean_decimal(rates).quantize(Decimal("0.001"))
         for feature, rates in feature_day.items()
     }
-    return user_day, feature_rates
+    # Org-day rates: a separate tenant-only grouping — averaging the
+    # per-user rates above would weight a 1-draft user like a 20-draft user.
+    org_rows = (
+        await db.execute(
+            text(
+                "SELECT e.tenant_id, AVG(f.keep_rate) "
+                "FROM ai_draft_feedback f "
+                "JOIN ai_call_events e ON e.id = f.generation_event_id "
+                "WHERE f.created_at >= :start AND f.created_at < :end "
+                "AND e.tenant_id IS NOT NULL "
+                "GROUP BY e.tenant_id"
+            ),
+            {"start": day_start, "end": day_end},
+        )
+    ).all()
+    org_rates = {
+        tenant_id: Decimal(str(avg_keep)).quantize(Decimal("0.001"))
+        for tenant_id, avg_keep in org_rows
+        if avg_keep is not None
+    }
+    return user_day, feature_rates, org_rates
 
 
 async def _events_for_day(
@@ -727,8 +967,31 @@ def _feature_day_row(
     )
 
 
+def _org_day_row(
+    day: date, tenant_id: UUID, measures: _Measures, keep_rates: dict[UUID, Decimal]
+) -> AiRollupOrgDay:
+    ordered = sorted(measures.latencies)
+    return AiRollupOrgDay(
+        date=day,
+        tenant_id=tenant_id,
+        users_active=len(measures.user_ids),
+        generations=measures.generations,
+        retries=measures.retries,
+        tokens_input=measures.tokens_input,
+        tokens_output=measures.tokens_output,
+        tokens_cached=measures.tokens_cached,
+        est_cost_usd=measures.est_cost_usd.quantize(Decimal("0.000001")),
+        cost_gbp=measures.cost_gbp.quantize(Decimal("0.0001")),
+        latency_p50=_percentile(ordered, 50),
+        latency_p95=_percentile(ordered, 95),
+        latency_p99=_percentile(ordered, 99),
+        avg_keep_rate=keep_rates.get(tenant_id),
+        quotes_sent=measures.quotes_sent,
+    )
+
+
 async def run_rollup_for_day(db: AsyncSession, day: date) -> dict[str, int]:
-    """Idempotently re-fold one UTC day of ai_call_events into both rollup tables.
+    """Idempotently re-fold one UTC day of ai_call_events into all rollup tables.
 
     Takes the global rollup advisory lock for the transaction; a concurrent
     replica folds nothing and reports ``locked=1``. Deletes + re-inserts the
@@ -742,15 +1005,18 @@ async def run_rollup_for_day(db: AsyncSession, day: date) -> dict[str, int]:
     ).scalar()
     if not locked:
         logger.info("rollup_locked_elsewhere", date=str(day))
-        return {"user_day_rows": 0, "feature_day_rows": 0, "locked": 1}
+        return {"user_day_rows": 0, "feature_day_rows": 0, "org_day_rows": 0, "locked": 1}
 
     day_start = datetime(day.year, day.month, day.day)
     day_end = day_start + timedelta(days=1)
     events = await _events_for_day(db, day_start, day_end)
-    user_keep_rates, feature_keep_rates = await _load_keep_rates(db, day_start, day_end)
+    user_keep_rates, feature_keep_rates, org_keep_rates = await _load_keep_rates(
+        db, day_start, day_end
+    )
 
     await db.execute(delete(AiRollupUserDay).where(AiRollupUserDay.date == day))
     await db.execute(delete(AiRollupFeatureDay).where(AiRollupFeatureDay.date == day))
+    await db.execute(delete(AiRollupOrgDay).where(AiRollupOrgDay.date == day))
 
     user_rows = [
         _user_day_row(day, key, measures, user_keep_rates)
@@ -760,12 +1026,18 @@ async def run_rollup_for_day(db: AsyncSession, day: date) -> dict[str, int]:
         _feature_day_row(day, feature, measures, feature_keep_rates)
         for feature, measures in fold_events_platform(events).items()
     ]
+    org_rows = [
+        _org_day_row(day, tenant_id, measures, org_keep_rates)
+        for tenant_id, measures in fold_events_org(events).items()
+    ]
     db.add_all(user_rows)
     db.add_all(feature_rows)
+    db.add_all(org_rows)
     await db.commit()
     return {
         "user_day_rows": len(user_rows),
         "feature_day_rows": len(feature_rows),
+        "org_day_rows": len(org_rows),
         "locked": 0,
     }
 
@@ -956,6 +1228,66 @@ async def _check_fair_use_alerts(db: AsyncSession, day: date) -> list[str]:
     return fired
 
 
+async def _check_cost_drift_alerts(db: AsyncSession, day: date) -> list[str]:
+    """Reconcile the just-closed month's estimated spend vs the provider invoice.
+
+    Sums ``cost_gbp`` over ``ai_rollup_feature_day`` for the month containing
+    ``day`` (the budget alert's source of truth), converts
+    ``AI_MONTHLY_INVOICE_USD`` to GBP at the stored USD→GBP rate, and fires
+    one alert per month when the absolute variance exceeds 10% (#60). A
+    structured event is logged either way. The automatic companion to the
+    manual ``scripts/reconcile_ai_costs.py`` run.
+
+    Empty/invalid invoice = check skipped, like an unset monthly budget.
+    """
+    if not AI_MONTHLY_INVOICE_USD:
+        return []
+    try:
+        invoice_usd = Decimal(AI_MONTHLY_INVOICE_USD)
+    except Exception:
+        logger.warning("ai_cost_drift_invoice_invalid", value=AI_MONTHLY_INVOICE_USD)
+        return []
+    if invoice_usd <= 0:
+        return []
+    month_start = date(day.year, day.month, 1)
+    month_end = date(day.year + (day.month == 12), day.month % 12 + 1, 1)
+    spent = await db.scalar(
+        select(func.coalesce(func.sum(AiRollupFeatureDay.cost_gbp), 0)).where(
+            AiRollupFeatureDay.date >= month_start,
+            AiRollupFeatureDay.date < month_end,
+        )
+    )
+    spent_gbp = Decimal(str(spent or 0))
+    rate, rate_date = await get_usd_gbp_rate(db, day)
+    invoice_gbp = invoice_usd * rate
+    variance = (spent_gbp - invoice_gbp) / invoice_gbp * Decimal("100") if invoice_gbp > 0 else None
+    period = f"{day.year:04d}-{day.month:02d}"
+    drifted = variance is not None and abs(variance) > _COST_DRIFT_THRESHOLD_PCT
+    logger.info(
+        "ai_cost_drift_check",
+        period=period,
+        spent_gbp=str(spent_gbp),
+        invoice_usd=str(invoice_usd),
+        invoice_gbp=str(invoice_gbp),
+        usd_gbp=str(rate),
+        fx_rate_date=str(rate_date),
+        variance_pct=str(variance) if variance is not None else None,
+        drift=drifted,
+    )
+    if not drifted:
+        return []
+    assert variance is not None  # narrowed by drifted
+    subject = f"AI cost drift {variance:+.1f}% ({period})"
+    body = (
+        f"Platform-estimated AI spend for {period} was £{spent_gbp:.2f} vs the "
+        f"provider invoice of ${invoice_usd:.2f} (≈ £{invoice_gbp:.2f} at the stored "
+        f"USD→GBP rate of {rate}) — a variance of {variance:+.2f}%, over the 10% "
+        "threshold. Investigate pricing drift, missing models in the price list, "
+        "or untracked calls."
+    )
+    return ["cost_drift"] if await _fire_alert_once(db, period, "cost_drift", subject, body) else []
+
+
 async def _run_rollup_tick(db: AsyncSession, now: datetime) -> dict[str, Any]:
     """One nightly pass: fold yesterday, refresh FX, evaluate alerts."""
     yesterday = (now - timedelta(days=1)).date()
@@ -966,6 +1298,11 @@ async def _run_rollup_tick(db: AsyncSession, now: datetime) -> dict[str, Any]:
         summary["budget_alerts"] = await _check_budget_alerts(db, yesterday)
         summary["anomaly_alerts"] = await _check_anomaly_alerts(db, yesterday)
         summary["fair_use_alerts"] = await _check_fair_use_alerts(db, yesterday)
+        # The drift check reconciles the month that just closed, so it only
+        # runs on the first tick of a new month (yesterday = month's last day).
+        next_day = yesterday + timedelta(days=1)
+        if (next_day.year, next_day.month) != (yesterday.year, yesterday.month):
+            summary["cost_drift_alerts"] = await _check_cost_drift_alerts(db, yesterday)
     except Exception as exc:
         # Alert evaluation must not be lost with the fold — the rollup rows
         # are already committed; log and continue.

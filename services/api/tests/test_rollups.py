@@ -3,11 +3,17 @@
 import asyncio
 from datetime import date, datetime, timedelta
 from decimal import Decimal
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import pytest
 from app import scheduler
-from app.models import AiAlertState, AiCallEvent, AiRollupFeatureDay, AiRollupUserDay
+from app.models import (
+    AiAlertState,
+    AiCallEvent,
+    AiRollupFeatureDay,
+    AiRollupOrgDay,
+    AiRollupUserDay,
+)
 from app.scheduler import (
     _check_anomaly_alerts,
     _check_budget_alerts,
@@ -164,6 +170,132 @@ async def test_refold_is_idempotent(db: AsyncSession) -> None:
     assert row is not None
     assert row.generations == 1
     assert row.retries == 1
+
+
+async def _org_day_row(db: AsyncSession, day: date, tenant_id: UUID) -> AiRollupOrgDay | None:
+    row: AiRollupOrgDay | None = await db.scalar(
+        select(AiRollupOrgDay).where(
+            AiRollupOrgDay.date == day, AiRollupOrgDay.tenant_id == tenant_id
+        )
+    )
+    return row
+
+
+@pytest.mark.asyncio
+async def test_org_day_fold_two_tenants_across_days(db: AsyncSession) -> None:
+    """The org fold lands one row per tenant per day with cost sums and
+    p50/p95/p99 latency (p99 >= p95 >= p50, p99 pinned to the max sample)."""
+    day2 = DAY + timedelta(days=1)
+    tenant_a, tenant_b = uuid4(), uuid4()
+    user_a1, user_a2, user_b1 = uuid4(), uuid4(), uuid4()
+
+    # Day 1: tenant A spends across two users (tenant B has no day-1 events).
+    a_latencies = [0.5, 1.0, 1.5, 2.0, 4.0, 8.0, 16.0]
+    for index, latency in enumerate(a_latencies):
+        db.add(
+            _event(
+                tenant_id=tenant_a,
+                user_id=user_a1 if index % 2 == 0 else user_a2,
+                gen_ai_usage_input_tokens=100,
+                gen_ai_usage_output_tokens=40,
+                gen_ai_usage_cached_input_tokens=5,
+                est_cost_usd=Decimal("0.002000"),
+                cost_gbp=Decimal("0.0016"),
+                latency_seconds=latency,
+            )
+        )
+    # One retry and one outcome event fold into tenant A's day too.
+    db.add(_event(tenant_id=tenant_a, user_id=user_a1, status="error"))
+    db.add(
+        _event(
+            tenant_id=tenant_a,
+            user_id=user_a1,
+            feature="outcome",
+            raw_payload={"outcome": "quote_sent"},
+        )
+    )
+    # Platform-only event: never attributed to an org.
+    db.add(_event(tenant_id=None, latency_seconds=9.9))
+    # Day 2 (folded separately): tenant A one event, tenant B three events.
+    db.add(
+        _event(
+            tenant_id=tenant_a,
+            user_id=user_a1,
+            created_at=datetime(day2.year, day2.month, day2.day, 9, 0),
+            est_cost_usd=Decimal("0.001000"),
+            cost_gbp=Decimal("0.0008"),
+            latency_seconds=3.0,
+        )
+    )
+    for latency in (1.0, 2.0, 9.0):
+        db.add(
+            _event(
+                tenant_id=tenant_b,
+                user_id=user_b1,
+                created_at=datetime(day2.year, day2.month, day2.day, 11, 0),
+                est_cost_usd=Decimal("0.003000"),
+                cost_gbp=Decimal("0.0024"),
+                latency_seconds=latency,
+            )
+        )
+    await db.flush()
+
+    summary1 = await run_rollup_for_day(db, DAY)
+    assert summary1["org_day_rows"] == 1  # tenant A only, tenant B has no day-1 events
+    summary2 = await run_rollup_for_day(db, day2)
+    assert summary2["org_day_rows"] == 2
+
+    # --- Day 1, tenant A: sums over 7 generations + 1 retry + 1 outcome. ---
+    row_a1 = await _org_day_row(db, DAY, tenant_a)
+    assert row_a1 is not None
+    assert row_a1.users_active == 2  # two distinct users with spend events
+    assert row_a1.generations == 7
+    assert row_a1.retries == 1
+    assert row_a1.tokens_input == 700
+    assert row_a1.tokens_output == 280
+    assert row_a1.tokens_cached == 35
+    assert row_a1.est_cost_usd == Decimal("0.014000")
+    assert row_a1.cost_gbp == Decimal("0.0112")
+    assert row_a1.quotes_sent == 1
+    assert row_a1.avg_keep_rate is None  # ai_draft_feedback not in the test schema
+    # Nearest-rank over [0.5..16.0] (n=7): p50 → 2.0, p95 → 16.0, p99 → 16.0.
+    assert row_a1.latency_p50 == 2.0
+    assert row_a1.latency_p95 == 16.0
+    assert row_a1.latency_p99 == 16.0
+    assert row_a1.latency_p99 >= row_a1.latency_p95 >= row_a1.latency_p50
+    assert row_a1.latency_p99 == max(a_latencies)
+
+    # Day 1 has no tenant-B row: no events to attribute.
+    assert await _org_day_row(db, DAY, tenant_b) is None
+
+    # --- Day 2 rows fold independently per tenant. ---
+    row_a2 = await _org_day_row(db, day2, tenant_a)
+    assert row_a2 is not None
+    assert row_a2.users_active == 1
+    assert row_a2.cost_gbp == Decimal("0.0008")
+    assert row_a2.latency_p50 == 3.0
+    assert row_a2.latency_p99 == 3.0
+
+    row_b2 = await _org_day_row(db, day2, tenant_b)
+    assert row_b2 is not None
+    assert row_b2.users_active == 1
+    assert row_b2.generations == 3
+    assert row_b2.est_cost_usd == Decimal("0.009000")
+    assert row_b2.cost_gbp == Decimal("0.0072")
+    # Nearest-rank over [1.0, 2.0, 9.0]: p50 → 2.0, p95 → 9.0, p99 → 9.0.
+    assert row_b2.latency_p50 == 2.0
+    assert row_b2.latency_p95 == 9.0
+    assert row_b2.latency_p99 == 9.0
+    assert row_b2.latency_p99 >= row_b2.latency_p95 >= row_b2.latency_p50
+
+    # Re-folding a day converges: same summary, same re-fetched measures.
+    assert (await run_rollup_for_day(db, DAY)) == summary1
+    refolded = await _org_day_row(db, DAY, tenant_a)
+    assert refolded is not None
+    assert refolded.generations == row_a1.generations
+    assert refolded.cost_gbp == row_a1.cost_gbp
+    assert refolded.latency_p99 == row_a1.latency_p99
+    assert refolded.users_active == row_a1.users_active
 
 
 def test_fold_events_excludes_tenant_null_rows() -> None:

@@ -50,6 +50,12 @@ Profiles in `eas.json`:
 npx eas-cli build --platform ios --profile production
 npx eas-cli submit --platform ios --profile production
 
+# Quota-free local build (macOS + Xcode + fastlane): EAS drives the build on
+# your machine via fastlane instead of a cloud worker — no EAS build minutes
+# are consumed. It prints the .ipa path when done; submit that artifact:
+npx eas-cli build --platform ios --profile production --local
+npx eas-cli submit --platform ios --path <path-to>.ipa
+
 # OTA hot fix (JS-only changes; no resubmission needed)
 npx eas-cli update --branch production --message "fix: ..."
 ```
@@ -124,8 +130,6 @@ Notes:
   Chromium runs with web security disabled.
 - The trade and white-label suites use different `EXPO_PUBLIC_*` builds, so they
   run sequentially on the same port (never concurrently).
-- Known issue: `e2e/run.sh` and `e2e/start-stack.sh` still reference the old
-  `services/pwa` paths and need updating before the suite runs.
 
 ## Structure
 

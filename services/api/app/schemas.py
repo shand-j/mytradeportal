@@ -16,6 +16,8 @@ from pydantic import (
     model_validator,
 )
 
+from app.preferred_dates import format_preferred_date
+
 # ---------------------------------------------------------------------------
 # Tenant
 # ---------------------------------------------------------------------------
@@ -29,6 +31,9 @@ class TenantCreate(BaseModel):
     phone: str | None = Field(default=None, max_length=50)
     address: str | None = Field(default=None, max_length=2000)
     postcode: str | None = Field(default=None, max_length=20)
+    # Public contact email (portal "Email us" chip, quote/invoice Reply-To).
+    # Defaults to the admin's work email when not given explicitly.
+    email: EmailStr | None = None
 
     # Optional atomic bootstrap of the tenant's first admin user. All three
     # fields must be provided together; when omitted only the tenant is
@@ -37,12 +42,27 @@ class TenantCreate(BaseModel):
     admin_password: str | None = Field(default=None, min_length=8, max_length=128)
     admin_name: str | None = Field(default=None, min_length=1, max_length=255)
 
+    @field_validator("admin_email")
+    @classmethod
+    def _normalize_admin_email(cls, v: EmailStr | None) -> str | None:
+        """Store lowercase: EmailStr lowercases the domain but preserves the
+        local-part case as typed, and every login lookup is (now) case-insensitive
+        on lowercase — mixed-case storage is what locked onboarding admins out."""
+        return str(v).strip().lower() if v is not None else None
+
     @model_validator(mode="after")
     def _admin_fields_all_or_none(self) -> "TenantCreate":
         provided = (self.admin_email, self.admin_password, self.admin_name)
         if any(v is not None for v in provided) and not all(v is not None for v in provided):
             raise ValueError("admin_email, admin_password and admin_name must be provided together")
         return self
+
+
+class EmailAvailabilityRead(BaseModel):
+    """Result of the onboarding email-availability pre-flight check."""
+
+    email: str
+    available: bool
 
 
 class TenantUpdate(BaseModel):
@@ -166,6 +186,11 @@ class ContactUpdate(BaseModel):
     # {badge: false} forces it off, {badge: null} clears the override so the
     # auto rule decides again. Keys must be known badge slugs.
     badge_overrides: dict[str, bool | None] | None = None
+    # Per-customer reminder (chase) overrides (F2), merged key-by-key: a bool
+    # enables/disables chasing for that document type, an int caps the number
+    # of reminders (downward of the tenant cadence only), null clears the
+    # override back to the tenant default. Keys must be known preference keys.
+    reminder_preferences: dict[str, bool | int | None] | None = None
 
 
 class ContactBlockRequest(BaseModel):
@@ -202,6 +227,8 @@ class ContactRead(BaseModel):
     badges: list[str] = Field(default_factory=list)
     auto_badges: list[str] = Field(default_factory=list)
     badge_overrides: dict[str, bool] = Field(default_factory=dict)
+    # Per-customer reminder (chase) overrides; null = tenant defaults.
+    reminder_preferences: dict[str, Any] | None = None
     is_blocked: bool = False
     blocked_at: datetime | None = None
     blocked_reason: str | None = None
@@ -227,9 +254,15 @@ class QuoteLineItemCreate(BaseModel):
     description: str
     quantity: Decimal = Decimal("1.00")
     unit_price: Decimal = Decimal("0.00")
-    unit: str = "ea"
-    # Clients must round-trip this flag when editing line items, otherwise an
-    # edit silently strips the AI lineage and refine/analytics misbehave.
+    # None = the client did not send a unit (both first-party clients omit it
+    # when round-tripping line items). Create coalesces to "ea"; update
+    # preserves the stored line's unit so a unitless PATCH can neither reset
+    # the unit nor break the AI-lineage match (which included the unit and
+    # silently flipped every non-"ea" AI line to manual — the refine no-op).
+    unit: str | None = None
+    # AI lineage flag. The server re-derives it on update: a line only keeps
+    # ai_generated=True when it still matches an existing AI-drafted line
+    # exactly, so edits (which refine must preserve) cannot be claimed as AI.
     ai_generated: bool = False
 
 
@@ -423,14 +456,25 @@ class BillOfQuantitiesUpdate(BaseModel):
     line_items: list[BoQLineItemUpdate] = Field(default_factory=list)
 
 
+def _strip_tz(value: datetime | None) -> datetime | None:
+    """Store naive UTC — schedule/due-date columns are `DateTime` (no timezone)."""
+    if value is not None and value.tzinfo is not None:
+        return value.astimezone(UTC).replace(tzinfo=None)
+    return value
+
+
 class QuoteCreate(BaseModel):
     contact_id: UUID
     title: str = Field(..., min_length=1, max_length=255)
     description: str | None = None
+    # Staff notes; the router merges the contact's CRM notes in at creation.
+    notes: str | None = None
     line_items: list[QuoteLineItemCreate] = Field(default_factory=list)
     vat_rate: Decimal = Decimal("0.20")
     valid_until: datetime | None = None
     estimated_hours: Decimal | None = None
+
+    _normalize_valid_until = field_validator("valid_until", mode="after")(_strip_tz)
 
 
 class QuoteRead(BaseModel):
@@ -441,6 +485,7 @@ class QuoteRead(BaseModel):
     contact_id: UUID
     title: str
     description: str | None
+    notes: str | None = None
     status: str
     subtotal: Decimal
     vat_rate: Decimal
@@ -463,8 +508,16 @@ class QuoteRead(BaseModel):
     ai_confidence: float | None = None
     ai_warnings: list[str] = Field(default_factory=list)
     ai_assumptions: list[str] = Field(default_factory=list)
+    # Factual observations captioned from the customer's photos by the vision
+    # step (empty when no photos were attached or captioning failed).
+    ai_observations: list[str] = Field(default_factory=list)
     ai_notes: str | None = None
     retrieval_status: str | None = None
+    # One-sentence summary of what the last /refine changed (LLM-supplied when
+    # available, otherwise a server-side diff of the before/after line items).
+    ai_refine_summary: str | None = None
+    # The electrician's thumbs up/down on the last refine, when rated.
+    ai_refine_rating: str | None = None
     # Uplift from the tenant's quote-rounding setting (0 when off). ``total``
     # already includes it; the UI shows a "rounded up" indicator when > 0.
     rounding_adjustment: Decimal = Decimal("0.00")
@@ -510,8 +563,11 @@ class QuoteRead(BaseModel):
             "ai_confidence": rag.get("confidence"),
             "ai_warnings": rag.get("warnings") or [],
             "ai_assumptions": rag.get("assumptions") or [],
+            "ai_observations": rag.get("observations") or [],
             "ai_notes": rag.get("notes"),
             "retrieval_status": rag.get("retrieval_status"),
+            "ai_refine_summary": rag.get("refine_summary"),
+            "ai_refine_rating": rag.get("refine_rating"),
             "is_multi_day": multi_day,
         }
         if isinstance(value, dict):
@@ -529,11 +585,29 @@ class QuoteApprove(BaseModel):
 class QuoteUpdate(BaseModel):
     title: str | None = Field(default=None, min_length=1, max_length=255)
     description: str | None = None
+    # Explicit null clears the notes; omitting the key leaves them untouched.
+    notes: str | None = None
     valid_until: datetime | None = None
     status: str | None = None
     line_items: list[QuoteLineItemCreate] | None = None
     # Explicit null clears the estimate; omitting the key leaves it untouched.
     estimated_hours: Decimal | None = None
+    # Per-quote VAT override (zero-rated jobs such as new builds): a fraction
+    # between 0 and 1 (0.20 = 20%). Omitting the key leaves the rate untouched;
+    # the router rejects values above the tenant's registered rate.
+    vat_rate: Decimal | None = Field(default=None, ge=0, le=1)
+
+    _normalize_valid_until = field_validator("valid_until", mode="after")(_strip_tz)
+
+    @model_validator(mode="after")
+    def _vat_rate_not_null(self) -> "QuoteUpdate":
+        # Unlike estimated_hours, a null VAT rate has no defined meaning —
+        # calculate_quote_totals would fall back to 20% — so reject it outright.
+        if "vat_rate" in self.model_fields_set and self.vat_rate is None:
+            raise ValueError(
+                "vat_rate must be a number between 0 and 1; omit the field to leave it unchanged"
+            )
+        return self
 
 
 class QuoteGenerateRequest(BaseModel):
@@ -560,6 +634,12 @@ class QuoteRefineRequest(BaseModel):
     """Electrician's free-text instructions for refining an AI-generated quote."""
 
     instructions: str = Field(..., min_length=1, max_length=2000)
+
+
+class QuoteRefineRatingRequest(BaseModel):
+    """Thumbs up/down on the output of an AI refine (``POST /quotes/{id}/refine-rating``)."""
+
+    rating: Literal["up", "down"]
 
 
 class QuoteGenerateAsyncResponse(BaseModel):
@@ -639,11 +719,11 @@ class PushTokenRead(BaseModel):
 # ---------------------------------------------------------------------------
 
 
-def _strip_tz(value: datetime | None) -> datetime | None:
-    """Store naive UTC — job schedule columns are `DateTime` (no timezone)."""
-    if value is not None and value.tzinfo is not None:
-        return value.astimezone(UTC).replace(tzinfo=None)
-    return value
+class MeasurementEntry(BaseModel):
+    """One structured measurement recorded against a job (label + value)."""
+
+    label: str = Field(..., min_length=1, max_length=100)
+    value: str = Field(..., min_length=1, max_length=255)
 
 
 class JobCreate(BaseModel):
@@ -654,6 +734,7 @@ class JobCreate(BaseModel):
     scheduled_start: datetime | None = None
     scheduled_end: datetime | None = None
     notes: str | None = None
+    measurements: list[MeasurementEntry] = Field(default_factory=list)
     assigned_user_id: UUID | None = None
 
     _normalize_schedule = field_validator("scheduled_start", "scheduled_end", mode="after")(
@@ -667,6 +748,7 @@ class JobConvertRequest(BaseModel):
     scheduled_start: datetime | None = None
     scheduled_end: datetime | None = None
     notes: str | None = None
+    measurements: list[MeasurementEntry] = Field(default_factory=list)
     assigned_user_id: UUID | None = None
 
     _normalize_schedule = field_validator("scheduled_start", "scheduled_end", mode="after")(
@@ -678,11 +760,32 @@ class JobUpdate(BaseModel):
     scheduled_start: datetime | None = None
     scheduled_end: datetime | None = None
     notes: str | None = None
+    measurements: list[MeasurementEntry] | None = None
     assigned_user_id: UUID | None = None
 
     _normalize_schedule = field_validator("scheduled_start", "scheduled_end", mode="after")(
         _strip_tz
     )
+
+    @field_validator("measurements", mode="before")
+    @classmethod
+    def _null_clears_measurements(cls, value: Any) -> Any:
+        """An explicit null clears the list; omitting the key leaves it alone."""
+        return [] if value is None else value
+
+
+# Before/after labelling for job photos; anything without a label is general.
+MediaAssetKind = Literal["before", "after", "general"]
+
+
+class JobMediaAssetRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    file_url: str
+    file_key: str | None
+    mime_type: str | None
+    kind: str
 
 
 class JobRead(BaseModel):
@@ -699,6 +802,8 @@ class JobRead(BaseModel):
     scheduled_end: datetime | None
     completed_at: datetime | None
     notes: str | None
+    # Structured measurements recorded for the job (validated label/value pairs).
+    measurements: list[MeasurementEntry] = Field(default_factory=list)
     assigned_user_id: UUID | None
     # Denormalised from the contact at job creation — display-only thereafter,
     # so a later contact edit does not rewrite the job's history.
@@ -708,6 +813,8 @@ class JobRead(BaseModel):
     assigned_to: str | None = None
     # Photo/file URLs carried over from the source quote's quote request.
     photos: list[str] = Field(default_factory=list)
+    # Same assets with their before/after/general label, for grouped display.
+    media_assets: list[JobMediaAssetRead] = Field(default_factory=list)
     created_at: datetime
     updated_at: datetime
     customer: ContactRead = Field(validation_alias="contact", serialization_alias="customer")
@@ -726,8 +833,10 @@ class JobRead(BaseModel):
         try:
             media = getattr(value, "media", None) or []
             value.photos = [asset.file_url for asset in media]
+            value.media_assets = [JobMediaAssetRead.model_validate(asset) for asset in media]
         except Exception:  # unloaded relationship outside a session
             value.photos = []
+            value.media_assets = []
         return value
 
 
@@ -766,6 +875,9 @@ class AppointmentCreate(BaseModel):
     end_at: datetime
     address: str | None = None
     notes: str | None = None
+    assigned_user_id: UUID | None = None
+
+    _normalize_window = field_validator("start_at", "end_at", mode="after")(_strip_tz)
 
 
 class AppointmentUpdate(BaseModel):
@@ -775,6 +887,9 @@ class AppointmentUpdate(BaseModel):
     status: str | None = None
     address: str | None = None
     notes: str | None = None
+    assigned_user_id: UUID | None = None
+
+    _normalize_window = field_validator("start_at", "end_at", mode="after")(_strip_tz)
 
 
 class AppointmentRead(BaseModel):
@@ -790,6 +905,7 @@ class AppointmentRead(BaseModel):
     status: str
     address: str | None
     notes: str | None
+    assigned_user_id: UUID | None
     created_at: datetime
     updated_at: datetime
 
@@ -824,21 +940,52 @@ class InvoiceCreate(BaseModel):
     vat_rate: Decimal = Decimal("0.20")
     line_items: list[InvoiceLineItemCreate] = Field(default_factory=list)
 
+    _normalize_due_date = field_validator("due_date", mode="after")(_strip_tz)
+
 
 class InvoiceUpdate(BaseModel):
     due_date: datetime | None = None
     notes: str | None = None
     status: str | None = None
+    # Per-invoice VAT override (zero-rated jobs such as new builds): a fraction
+    # between 0 and 1 (0.20 = 20%). Omitting the key leaves the rate untouched;
+    # the router rejects values above the tenant's registered rate.
+    vat_rate: Decimal | None = Field(default=None, ge=0, le=1)
     # Per-invoice card-payment override; explicit null restores tenant-default
     # inheritance (see app.routers.payments.invoice_accepts_card).
     accept_card_payments: bool | None = None
     # Full replacement when provided (same semantics as QuoteUpdate).
     line_items: list[InvoiceLineItemCreate] | None = None
 
+    _normalize_due_date = field_validator("due_date", mode="after")(_strip_tz)
+
+    @model_validator(mode="after")
+    def _vat_rate_not_null(self) -> "InvoiceUpdate":
+        # A null VAT rate would silently fall back to 20% in
+        # calculate_invoice_totals, so reject it outright.
+        if "vat_rate" in self.model_fields_set and self.vat_rate is None:
+            raise ValueError(
+                "vat_rate must be a number between 0 and 1; omit the field to leave it unchanged"
+            )
+        return self
+
 
 class QuoteConvertToInvoice(BaseModel):
     invoice_number: str | None = Field(default=None, min_length=1, max_length=50)
     due_date: datetime | None = None
+
+    _normalize_due_date = field_validator("due_date", mode="after")(_strip_tz)
+
+
+class InvoiceMarkPaid(BaseModel):
+    """Optional body for POST /invoices/{id}/mark-paid.
+
+    ``paid_via`` records how the customer settled off-platform. It is written
+    to the invoice and used as the Payment row's provider, so manual
+    settlements appear in payment reporting alongside Stripe ones.
+    """
+
+    paid_via: Literal["manual", "bank_transfer"] = "manual"
 
 
 class InvoiceRead(BaseModel):
@@ -861,7 +1008,7 @@ class InvoiceRead(BaseModel):
     # never re-rounded) or applied once at creation for scratch invoices.
     rounding_adjustment: Decimal = Decimal("0.00")
     paid_at: datetime | None
-    # "manual" / "stripe" / None — how the invoice was settled.
+    # "manual" / "bank_transfer" / "stripe" / None — how the invoice was settled.
     paid_via: str | None
     # Per-invoice card-payment override; None = inherit the tenant default.
     accept_card_payments: bool | None
@@ -872,6 +1019,10 @@ class InvoiceRead(BaseModel):
     created_at: datetime
     updated_at: datetime
     customer: ContactRead = Field(validation_alias="contact", serialization_alias="customer")
+    # SMS-send affordance for the UI: true only when Telnyx is configured, the
+    # contact's phone normalises to E.164 and they have not replied STOP.
+    # Computed on read by the invoices router — not a column.
+    sms_available: bool = False
 
 
 # ---------------------------------------------------------------------------
@@ -914,6 +1065,11 @@ class BillingCheckoutCreate(BaseModel):
     plan_key: str  # sole_trader | pro | team (legacy: starter | pro | business)
     success_url: str | None = None
     interval: Literal["month", "year"] = "month"
+    # Billing postcode collected by the web subscribe page when the tenant
+    # profile lacks one — Paddle requires postal_code for GB addresses, so a
+    # cardless-trial checkout cannot be created without it. Persisted into the
+    # tenant settings when supplied.
+    postcode: str | None = Field(default=None, min_length=3, max_length=16)
     # Deprecated and ignored: flat pricing has no per-seat tiers (one
     # subscription per business). Kept because stale clients still send it.
     seats: int | None = Field(default=None, ge=1, le=100)
@@ -922,6 +1078,11 @@ class BillingCheckoutCreate(BaseModel):
 class BillingCheckoutRead(BaseModel):
     transaction_id: str
     checkout_url: str
+
+
+class BillingPlanChangeCreate(BaseModel):
+    plan_key: str  # sole_trader | pro | team (legacy: starter | pro | business)
+    interval: Literal["month", "year"] = "month"
 
 
 class SubscriptionRead(BaseModel):
@@ -940,6 +1101,10 @@ class SubscriptionRead(BaseModel):
     canceled_at: datetime | None
     created_at: datetime
     updated_at: datetime
+    # Seat context resolved from the plan catalog (legacy plan keys mapped):
+    # clients gate team features (assignee pickers, invites) on these.
+    seats: int
+    seats_in_use: int
 
 
 # ---------------------------------------------------------------------------
@@ -1181,8 +1346,33 @@ class UserRead(BaseModel):
     role: str
     is_active: bool
     phone: str | None
+    # True while the user was invited but has not yet set a password.
+    invite_pending: bool = False
     created_at: datetime
     updated_at: datetime
+
+
+class UserInviteCreate(BaseModel):
+    """Invite a team member: creates an unactivated user and emails a link."""
+
+    email: str = Field(..., min_length=3, max_length=255)
+    full_name: str = Field(..., min_length=1, max_length=255)
+    role: str = Field(default="engineer", max_length=50)
+    phone: str | None = Field(default=None, max_length=50)
+
+
+class UserInviteLinkRequest(BaseModel):
+    """Ask for a fresh invite magic link (pending invites only)."""
+
+    email: str = Field(..., min_length=3, max_length=255)
+
+
+class UserInviteAccept(BaseModel):
+    """Accept an invite: set a password and activate the account."""
+
+    token: str = Field(..., min_length=32, max_length=128)
+    password: str = Field(..., min_length=8, max_length=128)
+    full_name: str | None = Field(default=None, min_length=1, max_length=255)
 
 
 class UserLogin(BaseModel):
@@ -1192,6 +1382,15 @@ class UserLogin(BaseModel):
     # Host-subdomain resolution so login works on bare domains (e.g.
     # Railway's *.up.railway.app) where every tenant shares one hostname.
     tenant_slug: str | None = Field(default=None, min_length=2, max_length=63)
+
+    @field_validator("email")
+    @classmethod
+    def _normalize_email(cls, v: str) -> str:
+        """Normalize to lowercase+stripped before any lookup: email casing is
+        not significant to any provider we authenticate against, and exact
+        case-sensitive matching is what locked out onboarding-created admins
+        (stored via EmailStr, which preserves local-part case)."""
+        return v.strip().lower()
 
 
 class PasswordResetRequest(BaseModel):
@@ -1225,6 +1424,32 @@ class TenantBootstrapRead(TenantRead):
     """Tenant plus the first admin user created alongside it (if requested)."""
 
     admin_user: UserRead | None = None
+
+
+class TenantOffboardRequest(BaseModel):
+    """Confirmation payload for tenant offboarding (GDPR deletion).
+
+    ``confirm_slug`` must equal the tenant's slug so an offboard can never be
+    triggered by an accidental click or a CSRF-style replay against the wrong
+    tenant context.
+    """
+
+    confirm_slug: str
+    reason: str | None = None
+
+
+class TenantOffboardRead(BaseModel):
+    """Summary of what the offboarding run changed."""
+
+    tenant_id: UUID
+    status: str
+    offboarded_at: datetime
+    users_deactivated: int
+    customers_deactivated: int
+    contacts_anonymised: int
+    tokens_revoked: int
+    paddle_subscription_cancelled: bool
+    stripe_account_detached: bool
 
 
 # ---------------------------------------------------------------------------
@@ -1284,7 +1509,8 @@ class PublicQuoteRequestCreate(BaseModel):
     # fail-open) and may carry an inline follow-up question + guest thread
     # token. The background draft runs regardless.
     sync_check: bool = False
-    # How the customer arrived at the intake form; recorded on AI telemetry.
+    # How the customer arrived at the intake form; persisted on the lead
+    # (QuoteRequest.entry_channel) and recorded on AI telemetry.
     entry_channel: Literal["qr", "code", "widget", "direct", "app"] | None = None
 
 
@@ -1376,9 +1602,19 @@ class CustomerRegister(BaseModel):
 
 
 class PreferredDateInput(BaseModel):
-    """One preferred visit date in the portal client shape (``{"date": "YYYY-MM-DD"}``)."""
+    """One preferred visit date in the portal client shape (``{"date": "YYYY-MM-DD"}``).
+
+    ``time`` is an optional coarse window label ("morning" / "afternoon") —
+    the public availability is by date only, so customers never pick exact
+    clock times against the electrician's calendar.
+    """
 
     date: str = Field(..., min_length=1, max_length=40)
+    time: str | None = Field(default=None, max_length=20)
+
+    def as_string(self) -> str:
+        """Storage form on ``Quote.accepted_dates`` ("YYYY-MM-DD (morning)")."""
+        return format_preferred_date(self.date, self.time)
 
 
 class CustomerQuoteAccept(BaseModel):
@@ -1386,16 +1622,32 @@ class CustomerQuoteAccept(BaseModel):
 
     Accepts both the app shape (``["Fri 12 Sep", ...]``) and the portal shape
     (``[{"date": "YYYY-MM-DD"}, ...]``); both normalise to the same
-    ``accepted_dates`` string list stored on the quote.
+    ``accepted_dates`` string list stored on the quote. Ranked: the first
+    entry is the customer's 1st choice. At most 3 preferences.
     """
 
-    preferred_dates: list[str | PreferredDateInput] | None = None
+    preferred_dates: list[str | PreferredDateInput] | None = Field(default=None, max_length=3)
 
     def preferred_date_strings(self) -> list[str] | None:
         """Normalise both accepted shapes to the stored string list."""
         if self.preferred_dates is None:
             return None
-        return [d if isinstance(d, str) else d.date for d in self.preferred_dates]
+        return [d if isinstance(d, str) else d.as_string() for d in self.preferred_dates]
+
+
+class PublicQuotePreferences(BaseModel):
+    """Ranked date/time-window preferences submitted from the public quote page.
+
+    Stored on ``Quote.accepted_dates`` in the same string form the acceptance
+    payload normalises to, so every consumer (staff notification, draft job,
+    convert-to-job prefill) reads one format.
+    """
+
+    preferences: list[PreferredDateInput] = Field(..., min_length=1, max_length=3)
+
+    def preference_strings(self) -> list[str]:
+        """Normalise to the stored string list."""
+        return [p.as_string() for p in self.preferences]
 
 
 class CustomerLogin(BaseModel):
@@ -1599,6 +1851,7 @@ class QuoteRequestRead(BaseModel):
     customer_id: UUID | None
     property_id: UUID | None
     source: str
+    entry_channel: str | None
     raw_text: str | None
     structured_data: dict[str, Any]
     ai_extracted_summary: str | None
@@ -1633,6 +1886,22 @@ class QuoteRequestMediaCreate(BaseModel):
     mime_type: str | None = Field(default=None, max_length=100)
     size_bytes: int | None = None
     source: str = Field(default="in_app")
+    kind: MediaAssetKind = "general"
+
+
+class JobMediaCreate(BaseModel):
+    """Attach an uploaded photo to a job (staff)."""
+
+    file_url: str
+    file_key: str | None = None
+    mime_type: str | None = Field(default=None, max_length=100)
+    size_bytes: int | None = None
+    source: str = Field(default="in_app")
+    kind: MediaAssetKind = "general"
+
+
+class JobMediaUpdate(BaseModel):
+    kind: MediaAssetKind
 
 
 class AiInterpretLineItem(BaseModel):

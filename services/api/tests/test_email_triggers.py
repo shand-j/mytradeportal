@@ -356,6 +356,12 @@ async def test_customer_register_dispatches_account_created_email(
     # and no Reply-To.
     assert kwargs.get("from_name") is None
     assert kwargs.get("reply_to") is None
+    # The sign-in CTA is a portal magic link on the tenant's subdomain —
+    # never an APP_PUBLIC_URL /customer-login link (the back-office host,
+    # where that route does not exist for web customers).
+    assert f"https://{slug}.mytradeportal.co.uk/auth/magic?token=" in kwargs["html_body"]
+    assert "next=/quotes" in kwargs["html_body"]
+    assert "/customer-login" not in kwargs["html_body"]
 
 
 # ---------------------------------------------------------------------------
@@ -425,10 +431,24 @@ async def test_quote_accept_dispatches_confirmation_email(
 async def test_email_triage_question_sends_to_contact_email(
     client: AsyncClient, db: AsyncSession, monkeypatch: MonkeyPatch
 ) -> None:
-    """The triage helper emails the lead's contact, tenant-branded."""
+    """The triage helper emails the lead's contact, tenant-branded, with a
+    portal magic link — never an APP_PUBLIC_URL link (that host is the
+    back-office admin, where customer routes do not exist)."""
     tenant = await _create_tenant(db, f"triage-{uuid4().hex[:8]}", email="sparks@example.com")
-    _, lead = await _create_lead(db, tenant, "homeowner@example.com")
+    contact, lead = await _create_lead(db, tenant, "homeowner@example.com")
+    customer = Customer(
+        tenant_id=tenant.id,
+        contact_id=contact.id,
+        email="homeowner@example.com",
+        full_name="Lead Owner",
+        password_hash=get_password_hash("homeowner-pass-123"),
+        is_active=True,
+    )
+    db.add(customer)
+    await db.flush()
 
+    # Prove the link does not come from APP_PUBLIC_URL even when it is set.
+    monkeypatch.setattr(email_module.settings, "app_public_url", "https://admin.example.com")
     transport = AsyncMock()
     monkeypatch.setattr(email_module, "send_email", transport)
 
@@ -441,6 +461,12 @@ async def test_email_triage_question_sends_to_contact_email(
     assert kwargs["from_name"] == tenant.name
     assert kwargs["reply_to"] == "sparks@example.com"
     assert "Where is the consumer unit?" in kwargs["html_body"]
+    # Portal magic link on the tenant subdomain (no linked quote yet → the
+    # portal quotes list), not an APP_PUBLIC_URL customer/chat link.
+    assert f"https://{tenant.slug}.mytradeportal.co.uk/auth/magic?token=" in kwargs["html_body"]
+    assert "next=/quotes" in kwargs["html_body"]
+    assert "admin.example.com" not in kwargs["html_body"]
+    assert "/customer/chat/" not in kwargs["html_body"]
 
 
 async def test_email_triage_question_without_contact_email_logs_warning(

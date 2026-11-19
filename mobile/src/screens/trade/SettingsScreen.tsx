@@ -1,40 +1,31 @@
 import { useRouter } from "expo-router";
 import { useState } from "react";
-import { Linking, Pressable, ScrollView, Share, View } from "react-native";
+import { Pressable, ScrollView, Share, View } from "react-native";
 import { Button } from "../../components/ui/Button";
 import { Header } from "../../components/ui/Header";
 import { Screen } from "../../components/ui/Screen";
 import { Text } from "../../components/ui/Text";
 import { useAuth } from "../../contexts/AuthContext";
 import { useBusiness } from "../../theme/ThemeProvider";
-import { createPortalSession, useSubscription } from "../../api/billing";
+import { useSubscription } from "../../api/billing";
 import { api, ApiError } from "../../lib/apiClient";
 import { openCalendarSubscription } from "../../api/calendar";
+import { config } from "../../lib/config";
+import { openInAppBrowser } from "../../lib/inAppBrowser";
+import { PortalQrSheet } from "../../components/trade/PortalQrSheet";
+import { SubscriptionCard } from "../../components/trade/SubscriptionCard";
 
-function SubscriptionCard() {
+/**
+ * Read-only subscription status (App Store Guideline 3.1.1): plans are bought
+ * and managed on the website, so this section only reports state. The website
+ * mentions below are plain text on purpose; they must never become links.
+ */
+function SubscriptionSection() {
   const { data, isLoading } = useSubscription();
-  const router = useRouter();
-  const [portalLoading, setPortalLoading] = useState(false);
-  const [portalError, setPortalError] = useState<string | null>(null);
 
   if (isLoading) {
     return null;
   }
-
-  const openPlanPicker = () => router.push("/(trade)/billing");
-
-  const openCustomerPortal = async () => {
-    setPortalError(null);
-    setPortalLoading(true);
-    try {
-      const { portalUrl } = await createPortalSession();
-      await Linking.openURL(portalUrl);
-    } catch {
-      setPortalError("Couldn't open subscription management. Please try again.");
-    } finally {
-      setPortalLoading(false);
-    }
-  };
 
   if (!data) {
     return (
@@ -45,93 +36,14 @@ function SubscriptionCard() {
         <Text variant="caption" color="secondary">
           You don't have an active plan yet. Start a 14-day free trial to unlock everything.
         </Text>
-        <Button testID="settings-choose-plan" title="Choose a plan" onPress={openPlanPicker} />
+        <Text variant="caption" color="secondary">
+          Subscribe at mytradeportal.co.uk — your plan shows up here automatically.
+        </Text>
       </View>
     );
   }
 
-  const trialLeft =
-    data.status === "trialing" && data.trialEndsAt
-      ? `Trial ends ${new Date(data.trialEndsAt).toLocaleDateString("en-GB", {
-          day: "numeric",
-          month: "short",
-        })}`
-      : null;
-  const renewsAt =
-    (data.status === "active" || data.status === "past_due") && data.currentPeriodEnd
-      ? `Renews ${new Date(data.currentPeriodEnd).toLocaleDateString("en-GB", {
-          day: "numeric",
-          month: "short",
-        })}`
-      : null;
-  const statusLabel: Record<string, string> = {
-    incomplete: "Setup incomplete",
-    trialing: "Free trial",
-    trial_expired: "Trial expired",
-    active: "Active",
-    past_due: "Payment past due",
-    paused: "Paused",
-    canceled: "Cancelled",
-  };
-  const planLabel = data.planKey.charAt(0).toUpperCase() + data.planKey.slice(1);
-
-  return (
-    <View className="rounded-2xl bg-slate-100 p-4 gap-2">
-      <View className="flex-row items-center justify-between">
-        <Text variant="body" weight="semibold">
-          Subscription
-        </Text>
-        <View className="rounded-full bg-white px-2 py-0.5">
-          <Text testID="settings-subscription-status" variant="caption" weight="semibold">
-            {statusLabel[data.status] ?? data.status}
-          </Text>
-        </View>
-      </View>
-      <Text testID="settings-subscription-plan" variant="body">
-        {planLabel} plan
-      </Text>
-      {trialLeft && (
-        <Text variant="caption" color="secondary">
-          {trialLeft}
-        </Text>
-      )}
-      {renewsAt && (
-        <Text variant="caption" color="secondary">
-          {renewsAt}
-        </Text>
-      )}
-      {data.status === "incomplete" && (
-        <Text variant="caption" color="warning">
-          Checkout wasn't completed — try again to finish activating your plan.
-        </Text>
-      )}
-      {(data.status === "incomplete" ||
-        data.status === "canceled" ||
-        data.status === "trial_expired") && (
-        <Button
-          testID="settings-restart-checkout"
-          title="Choose a plan"
-          onPress={openPlanPicker}
-        />
-      )}
-      {data.paddleCustomerId && (
-        <>
-          <Button
-            testID="settings-manage-subscription"
-            title={portalLoading ? "Opening…" : "Manage subscription"}
-            variant="outline"
-            disabled={portalLoading}
-            onPress={openCustomerPortal}
-          />
-          {portalError && (
-            <Text variant="caption" color="warning">
-              {portalError}
-            </Text>
-          )}
-        </>
-      )}
-    </View>
-  );
+  return <SubscriptionCard subscription={data} />;
 }
 
 export function SettingsScreen() {
@@ -140,6 +52,7 @@ export function SettingsScreen() {
   const { business, setBusiness } = useBusiness();
   const [calendarLinkLoading, setCalendarLinkLoading] = useState(false);
   const [calendarLinkError, setCalendarLinkError] = useState<string | null>(null);
+  const [showQrSheet, setShowQrSheet] = useState(false);
 
   const handleCalendarSubscription = async () => {
     setCalendarLinkError(null);
@@ -149,7 +62,7 @@ export function SettingsScreen() {
     } catch (error) {
       setCalendarLinkError(
         error instanceof ApiError && error.status === 402
-          ? "Complete your plan checkout to enable calendar sync."
+          ? "An active subscription is required for calendar sync — subscribe at mytradeportal.co.uk."
           : "Could not load your calendar link. Please try again."
       );
     } finally {
@@ -182,11 +95,16 @@ export function SettingsScreen() {
       onPress: () => router.push("/(trade)/invoices"),
     },
     // Business profile and Branding share the same underlying edit screen for
-    // beta; Team is deferred to post-beta (sole-owner-operator centric).
+    // beta.
     {
       title: "Business profile & branding",
       subtitle: business?.name ?? "Name, logo, colour, quote PDF",
       onPress: () => router.push("/(trade)/branding"),
+    },
+    {
+      title: "Team",
+      subtitle: "Invite users, see pending invites",
+      onPress: () => router.push("/(trade)/team"),
     },
     {
       title: "Payment details",
@@ -207,6 +125,16 @@ export function SettingsScreen() {
       title: "Working hours",
       subtitle: "Working day times & days for scheduling",
       onPress: () => router.push("/(trade)/working-hours"),
+    },
+    {
+      title: "Share your booking page",
+      subtitle: "QR code + link for customers",
+      onPress: () => setShowQrSheet(true),
+    },
+    {
+      title: "Help & guides",
+      subtitle: "Step-by-step guides for every feature",
+      onPress: () => void openInAppBrowser(config.helpUrl),
     },
   ];
 
@@ -249,7 +177,7 @@ export function SettingsScreen() {
           </View>
         ) : null}
 
-        <SubscriptionCard />
+        <SubscriptionSection />
 
         <View className="rounded-2xl bg-slate-100 p-4 gap-3">
           <Text variant="body" weight="semibold">
@@ -291,6 +219,8 @@ export function SettingsScreen() {
 
         <Button testID="settings-logout" title="Log out" variant="outline" onPress={handleLogout} />
       </ScrollView>
+
+      <PortalQrSheet visible={showQrSheet} onClose={() => setShowQrSheet(false)} />
     </Screen>
   );
 }

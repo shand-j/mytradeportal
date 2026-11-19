@@ -1,23 +1,24 @@
 import { useEffect, useMemo, useState } from "react";
-import { Alert, Image, KeyboardAvoidingView, Linking, Modal, Platform, Pressable, ScrollView, TextInput, View } from "react-native";
+import { Alert, KeyboardAvoidingView, Linking, Modal, Platform, Pressable, ScrollView, TextInput, View } from "react-native";
 import DateTimePicker from "@react-native-community/datetimepicker";
 import { useQuery } from "@tanstack/react-query";
+import { AuthenticatedImage } from "../../components/ui/AuthenticatedImage";
 import { Button } from "../../components/ui/Button";
 import { FormField } from "../../components/ui/FormField";
 import { Header } from "../../components/ui/Header";
 import { Text } from "../../components/ui/Text";
 import { Screen } from "../../components/ui/Screen";
 import { fetchQuote } from "../../api/quotes";
+import { JobPhotoKind, MeasurementEntry } from "../../api/jobs";
+import { useQuoteRoundingIncrement } from "../../api/businesses";
 import { ApiError } from "../../lib/apiClient";
-import { formatMoneyGBP } from "../../lib/format";
+import { parseServerDate, toLocalIsoDate } from "../../lib/datetime";
+import { formatMoneyGBP, roundUpToIncrement } from "../../lib/format";
+import { openNavigation } from "../../lib/navigation";
 import { Job, JobStatus } from "../../types";
 
 function pad(n: number): string {
   return String(n).padStart(2, "0");
-}
-
-function toLocalIsoDate(d: Date): string {
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 }
 
 function toHHMM(d: Date): string {
@@ -31,6 +32,7 @@ function errorMessage(err: unknown, fallback: string): string {
 }
 
 const STATUS_COPY: Record<JobStatus, string> = {
+  draft: "Draft",
   confirmed: "Confirmed",
   in_progress: "In progress",
   completed: "Completed",
@@ -38,6 +40,7 @@ const STATUS_COPY: Record<JobStatus, string> = {
 };
 
 const STATUS_COLORS: Record<JobStatus, string> = {
+  draft: "#FFFBEB", // warning surface — tentative until confirmed via the quote
   confirmed: "#E2E8EB", // info-100 slate
   in_progress: "#FFFBEB", // warning surface
   completed: "#ECFDF5", // success surface
@@ -46,8 +49,22 @@ const STATUS_COLORS: Record<JobStatus, string> = {
 
 type InvoiceItem = { id: string; description: string; amount: number };
 
+/** A job photo with its before/after/general label. */
+type JobPhoto = { id: string; url: string; kind: JobPhotoKind };
+
+const PHOTO_KIND_LABELS: Record<JobPhotoKind, string> = {
+  before: "Before",
+  after: "After",
+  general: "General",
+};
+
+/** Display order for the grouped photo sections. */
+const PHOTO_KIND_ORDER: JobPhotoKind[] = ["before", "after", "general"];
+
 type JobUpdatePatch = {
   notes?: string;
+  /** Replaces the job's measurements list. */
+  measurements?: MeasurementEntry[];
   assignedUserId?: string | null;
   /** ISO datetimes — scheduling/rescheduling the job. */
   scheduledStart?: string;
@@ -70,6 +87,9 @@ type JobDetailScreenProps = {
   onCreateInvoiceAi?: () => void;  /** Persist status transitions on the backend. */
   onStart?: () => Promise<void>;
   onComplete?: () => Promise<void>;
+  /** Confirm an acceptance-time draft hold in place (the backend's
+   * convert-to-job adopts it, keeping the customer's preferred dates). */
+  onConfirmDraft?: () => Promise<void>;
   /** Id of the invoice already created for this job's quote, when one exists. */
   existingInvoiceId?: string | null;
   /** VAT rate applied to ad-hoc invoice previews (from the source quote). */
@@ -82,11 +102,15 @@ type JobDetailScreenProps = {
   members?: { id: string; fullName: string }[];
   /** Notes saved on the backend job record. */
   initialNotes?: string | null;
+  /** Measurements saved on the backend job record. */
+  initialMeasurements?: MeasurementEntry[];
   /** Raw scheduled window from the backend job record (null when unscheduled). */
   scheduledStart?: string | null;
   scheduledEnd?: string | null;
-  /** Photos carried over from the source quote. */
-  photos?: string[];
+  /** Photos carried over from the source quote, with before/after labels. */
+  photos?: JobPhoto[];
+  /** Pick + upload a new job photo with the given kind (enables the upload UI). */
+  onAddPhoto?: (kind: JobPhotoKind) => Promise<void>;
   busy?: boolean;
   /** Customer contact details for the message button (N5 contact preference). */
   contactEmail?: string | null;
@@ -105,15 +129,18 @@ export function JobDetailScreen({
   onCreateInvoiceAi,
   onStart,
   onComplete,
+  onConfirmDraft,
   existingInvoiceId,
   vatRate,
   onViewInvoice,
   onUpdateJob,
   members,
   initialNotes,
+  initialMeasurements,
   scheduledStart,
   scheduledEnd,
   photos,
+  onAddPhoto,
   busy,
   contactEmail,
   preferredContactMethod,
@@ -124,11 +151,15 @@ export function JobDetailScreen({
   const [notes, setNotes] = useState(initialNotes ?? "");
   const [notesDirty, setNotesDirty] = useState(false);
   const [savingNotes, setSavingNotes] = useState(false);
+  const [measurements, setMeasurements] = useState<MeasurementEntry[]>(initialMeasurements ?? []);
+  const [measurementsDirty, setMeasurementsDirty] = useState(false);
+  const [savingMeasurements, setSavingMeasurements] = useState(false);
   const [assignedTo, setAssignedTo] = useState(job.assignedTo);
   const [assigneePickerOpen, setAssigneePickerOpen] = useState(false);
   const [savingAssignee, setSavingAssignee] = useState(false);
   const [items, setItems] = useState<InvoiceItem[]>([]);
   const [submitting, setSubmitting] = useState(false);
+  const [confirmingDraft, setConfirmingDraft] = useState(false);
   const [showSchedDatePicker, setShowSchedDatePicker] = useState(false);
   const [showSchedTimePicker, setShowSchedTimePicker] = useState(false);
   const [showSchedModal, setShowSchedModal] = useState(false);
@@ -136,12 +167,17 @@ export function JobDetailScreen({
   const [schedDate, setSchedDate] = useState("");
   const [schedTime, setSchedTime] = useState("");
   const [savingSchedule, setSavingSchedule] = useState(false);
+  const [photoKind, setPhotoKind] = useState<JobPhotoKind>("general");
+  const [addingPhoto, setAddingPhoto] = useState(false);
 
   // The job record loads asynchronously — adopt server notes until the user
   // starts editing.
   useEffect(() => {
     if (!notesDirty) setNotes(initialNotes ?? "");
   }, [initialNotes, notesDirty]);
+  useEffect(() => {
+    if (!measurementsDirty) setMeasurements(initialMeasurements ?? []);
+  }, [initialMeasurements, measurementsDirty]);
   useEffect(() => setAssignedTo(job.assignedTo), [job.assignedTo]);
 
   // Quote-less jobs have no priced lines to inherit: the electrician builds the
@@ -157,11 +193,16 @@ export function JobDetailScreen({
   });
   const sourceQuote = sourceQuoteQuery.data;
 
+  // Quote-less invoices are scratch invoices: the backend rounds the total up
+  // once at creation per the tenant setting, so the preview must round too.
+  const roundingIncrement = useQuoteRoundingIncrement();
   const totals = useMemo(() => {
     const subtotal = items.reduce((sum, i) => sum + i.amount, 0);
     const vat = subtotal * (vatRate ?? 0.2);
-    return { subtotal, vat, total: subtotal + vat };
-  }, [items, vatRate]);
+    const rawTotal = subtotal + vat;
+    const total = roundUpToIncrement(rawTotal, roundingIncrement);
+    return { subtotal, vat, uplift: total - rawTotal, total };
+  }, [items, vatRate, roundingIncrement]);
 
   const handleStart = async () => {
     try {
@@ -185,6 +226,19 @@ export function JobDetailScreen({
     }
   };
 
+  const handleConfirmDraft = async () => {
+    if (!onConfirmDraft) return;
+    setConfirmingDraft(true);
+    try {
+      await onConfirmDraft();
+      setStatus("confirmed");
+    } catch (err) {
+      Alert.alert("Couldn't confirm the booking", errorMessage(err, "Please try again."));
+    } finally {
+      setConfirmingDraft(false);
+    }
+  };
+
   const handleSaveNotes = async () => {
     if (!onUpdateJob) return;
     setSavingNotes(true);
@@ -195,6 +249,37 @@ export function JobDetailScreen({
       Alert.alert("Couldn't save the notes", errorMessage(err, "Please try again."));
     } finally {
       setSavingNotes(false);
+    }
+  };
+
+  const updateMeasurement = (index: number, field: keyof MeasurementEntry, value: string) => {
+    setMeasurements((prev) =>
+      prev.map((entry, i) => (i === index ? { ...entry, [field]: value } : entry))
+    );
+    setMeasurementsDirty(true);
+  };
+
+  const removeMeasurement = (index: number) => {
+    setMeasurements((prev) => prev.filter((_, i) => i !== index));
+    setMeasurementsDirty(true);
+  };
+
+  const handleSaveMeasurements = async () => {
+    if (!onUpdateJob) return;
+    // Blank rows are dropped rather than rejected — the API requires a
+    // non-empty label and value on every stored entry.
+    const cleaned = measurements
+      .map((entry) => ({ label: entry.label.trim(), value: entry.value.trim() }))
+      .filter((entry) => entry.label !== "" && entry.value !== "");
+    setSavingMeasurements(true);
+    try {
+      await onUpdateJob({ measurements: cleaned });
+      setMeasurements(cleaned);
+      setMeasurementsDirty(false);
+    } catch (err) {
+      Alert.alert("Couldn't save the measurements", errorMessage(err, "Please try again."));
+    } finally {
+      setSavingMeasurements(false);
     }
   };
 
@@ -217,15 +302,17 @@ export function JobDetailScreen({
 
   // Rescheduling keeps the job's current span; an unscheduled job gets 2h.
   const scheduleDurationMs = useMemo(() => {
-    if (scheduledStart && scheduledEnd) {
-      const span = new Date(scheduledEnd).getTime() - new Date(scheduledStart).getTime();
+    const start = parseServerDate(scheduledStart);
+    const end = parseServerDate(scheduledEnd);
+    if (start && end) {
+      const span = end.getTime() - start.getTime();
       if (span > 0) return span;
     }
     return 2 * 60 * 60 * 1000;
   }, [scheduledStart, scheduledEnd]);
 
   const openSchedulePicker = () => {
-    const base = scheduledStart ? new Date(scheduledStart) : new Date();
+    const base = parseServerDate(scheduledStart) ?? new Date();
     setPendingSchedDate(base);
     setSchedDate(toLocalIsoDate(base));
     setSchedTime(toHHMM(base));
@@ -297,31 +384,20 @@ export function JobDetailScreen({
   };
 
   const navigateToAddress = async () => {
-    const address = encodeURIComponent(job.address);
-    // Platform-default routing: on iOS the universal maps URL is handed to the
-    // system, which opens the user's default maps app (Apple Maps if none was
-    // chosen); elsewhere geo: lets Android pick. The Apple scheme is only the
-    // last-resort fallback — never the first choice.
-    const schemes =
-      Platform.OS === "ios"
-        ? [`https://maps.apple.com/?q=${address}`, `maps://?q=${address}`]
-        : [
-            `geo:0,0?q=${address}`,
-            `https://www.google.com/maps/search/?api=1&query=${address}`,
-          ];
-    for (const url of schemes) {
-      const can = await Linking.canOpenURL(url);
-      if (can) {
-        await Linking.openURL(url);
-        return;
-      }
+    const opened = await openNavigation(job.address, job.postcode);
+    if (!opened) {
+      Alert.alert("Cannot open maps", "No maps application is available on this device.");
     }
-    Alert.alert("Cannot open maps", "No maps application is available on this device.");
   };
 
   const callCustomer = () =>
     Linking.openURL(`tel:${job.phone.replace(/\s/g, "")}`).catch(() =>
       Alert.alert("Cannot place call", "No dialler is available on this device.")
+    );
+
+  const textCustomer = () =>
+    Linking.openURL(`sms:${job.phone.replace(/\s/g, "")}`).catch(() =>
+      Alert.alert("Cannot send message", "No messaging app is available on this device.")
     );
 
   const emailCustomer = () =>
@@ -343,14 +419,14 @@ export function JobDetailScreen({
 
   /**
    * N5: the message button honours the customer's preferred contact method.
-   * in_app_chat → the in-app conversation; email → mailto:; phone → tel:.
+   * in_app_chat → the in-app conversation; email → mailto:; phone → sms:.
    * Unset preference falls back to in-app chat (registered customers), then
    * email; each preference degrades the same way when its channel is missing.
    */
   const messageCustomer = async () => {
     const preference = preferredContactMethod ?? "";
     if (preference === "phone") {
-      callCustomer();
+      textCustomer();
       return;
     }
     if (preference === "email" && contactEmail) {
@@ -366,6 +442,18 @@ export function JobDetailScreen({
       "No way to message",
       "This customer has no app account and no email address on file — try calling them instead."
     );
+  };
+
+  const handleAddPhoto = async () => {
+    if (!onAddPhoto) return;
+    setAddingPhoto(true);
+    try {
+      await onAddPhoto(photoKind);
+    } catch (err) {
+      Alert.alert("Couldn't add the photo", errorMessage(err, "Please try again."));
+    } finally {
+      setAddingPhoto(false);
+    }
   };
 
   const addLineItem = () => {
@@ -417,7 +505,11 @@ export function JobDetailScreen({
                 {job.endTime ? ` – ${job.endTime}` : ""}
               </Text>
               <Text variant="caption" color="secondary">
-                {status === "confirmed" ? "Confirmed with customer" : "Status updated in app"}
+                {status === "confirmed"
+                  ? "Confirmed with customer"
+                  : status === "draft"
+                    ? "Tentative — not on the calendar until confirmed"
+                    : "Status updated in app"}
               </Text>
               {onUpdateJob && status !== "cancelled" && status !== "completed" && (
                 <Button
@@ -450,6 +542,32 @@ export function JobDetailScreen({
           )}
         </View>
 
+        {status === "draft" && (
+          <View
+            testID="job-draft-notice"
+            className="rounded-2xl border border-amber-200 bg-amber-50 p-4 gap-2"
+          >
+            <Text variant="body" weight="semibold">
+              Draft booking
+            </Text>
+            <Text variant="caption" color="secondary">
+              Drafted automatically from the customer's first choice when they accepted the
+              quote. Confirm it to book the job in, or reschedule first — it never blocks the
+              calendar until then.
+            </Text>
+            {(sourceQuote?.acceptedDates ?? []).length > 0 && (
+              <>
+                <Text variant="caption" weight="semibold" color="secondary">
+                  Customer's preferred dates
+                </Text>
+                <Text testID="job-draft-preferred-dates" variant="caption" color="secondary">
+                  {(sourceQuote?.acceptedDates ?? []).join(", ")}
+                </Text>
+              </>
+            )}
+          </View>
+        )}
+
         <View className="rounded-2xl bg-slate-100 p-4 gap-2">
           <Text variant="body" weight="semibold">
             Customer
@@ -468,8 +586,12 @@ export function JobDetailScreen({
           <Text variant="body" weight="semibold">
             Address
           </Text>
-          <Text variant="body">{job.address}</Text>
-          <Button testID="job-navigate" title="Navigate" onPress={navigateToAddress} />
+          <Text variant="body">
+            {[job.address, job.postcode].filter((part) => part.trim().length > 0).join(", ") || "No address on file"}
+          </Text>
+          {job.address.trim().length > 0 || job.postcode.trim().length > 0 ? (
+            <Button testID="job-navigate" title="Navigate" onPress={() => void navigateToAddress()} />
+          ) : null}
         </View>
 
         <View className="rounded-2xl bg-slate-100 p-4 gap-3">
@@ -477,7 +599,10 @@ export function JobDetailScreen({
             <Text variant="body" weight="semibold">
               Assigned to
             </Text>
-            {members && members.length > 0 && (
+            {/* Team gating: a tenant with one active user (every sole_trader
+                plan) has nothing to reassign — the API auto-assigns that user,
+                so the Change action only appears once there is real choice. */}
+            {members && members.length > 1 && (
               <Pressable
                 testID="job-assignee-edit"
                 onPress={() => setAssigneePickerOpen((open) => !open)}
@@ -514,26 +639,119 @@ export function JobDetailScreen({
           )}
         </View>
 
-        {photos && photos.length > 0 && (
+        {(photos && photos.length > 0) || onAddPhoto ? (
           <View className="rounded-2xl bg-slate-100 p-4 gap-3">
             <Text variant="body" weight="semibold">
               Photos
             </Text>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-              <View className="flex-row gap-2">
-                {photos.map((url, index) => (
-                  <Image
-                    key={url}
-                    testID={`job-photo-${index}`}
-                    source={{ uri: url }}
-                    className="h-24 w-24 rounded-xl"
-                    accessibilityLabel={`Job photo ${index + 1}`}
-                  />
-                ))}
-              </View>
-            </ScrollView>
+            {PHOTO_KIND_ORDER.map((kind) => {
+              const group = (photos ?? []).filter((photo) => photo.kind === kind);
+              if (group.length === 0) return null;
+              return (
+                <View key={kind} className="gap-2">
+                  <Text variant="caption" color="secondary">
+                    {PHOTO_KIND_LABELS[kind]}
+                  </Text>
+                  <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+                    <View className="flex-row gap-2">
+                      {group.map((photo, index) => (
+                        <AuthenticatedImage
+                          key={photo.id}
+                          testID={`job-photo-${kind}-${index}`}
+                          uri={photo.url}
+                          style={{ width: 96, height: 96, borderRadius: 12 }}
+                          contentFit="cover"
+                          accessibilityLabel={`${PHOTO_KIND_LABELS[kind]} photo ${index + 1}`}
+                        />
+                      ))}
+                    </View>
+                  </ScrollView>
+                </View>
+              );
+            })}
+            {onAddPhoto && (
+              <>
+                <View className="flex-row gap-2">
+                  {PHOTO_KIND_ORDER.map((kind) => (
+                    <Button
+                      key={kind}
+                      testID={`job-photo-kind-${kind}`}
+                      title={PHOTO_KIND_LABELS[kind]}
+                      size="sm"
+                      variant={photoKind === kind ? "primary" : "outline"}
+                      onPress={() => setPhotoKind(kind)}
+                    />
+                  ))}
+                </View>
+                <Button
+                  testID="job-photo-add"
+                  title={addingPhoto ? "Uploading…" : `Add ${photoKind} photo`}
+                  variant="outline"
+                  size="sm"
+                  disabled={addingPhoto}
+                  onPress={() => void handleAddPhoto()}
+                />
+              </>
+            )}
           </View>
-        )}
+        ) : null}
+
+        <View className="rounded-2xl bg-slate-100 p-4 gap-2">
+          <Text variant="body" weight="semibold">
+            Measurements
+          </Text>
+          {measurements.length === 0 && (
+            <Text testID="job-measurements-empty" variant="caption" color="secondary">
+              No measurements recorded yet.
+            </Text>
+          )}
+          {measurements.map((entry, index) => (
+            <View key={index} className="flex-row items-center gap-2">
+              <TextInput
+                testID={`job-measurement-label-${index}`}
+                className="h-10 flex-1 rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-900"
+                value={entry.label}
+                onChangeText={(value) => updateMeasurement(index, "label", value)}
+                placeholder="Label (e.g. Cable run)"
+              />
+              <TextInput
+                testID={`job-measurement-value-${index}`}
+                className="h-10 flex-1 rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-900"
+                value={entry.value}
+                onChangeText={(value) => updateMeasurement(index, "value", value)}
+                placeholder="Value (e.g. 12 m)"
+              />
+              <Pressable
+                testID={`job-measurement-remove-${index}`}
+                accessibilityLabel={`Remove measurement ${index + 1}`}
+                onPress={() => removeMeasurement(index)}
+              >
+                <Text variant="body" weight="semibold" color="primary">
+                  ✕
+                </Text>
+              </Pressable>
+            </View>
+          ))}
+          <Button
+            testID="job-measurement-add"
+            title="+ Add measurement"
+            variant="outline"
+            size="sm"
+            onPress={() => {
+              setMeasurements((prev) => [...prev, { label: "", value: "" }]);
+              setMeasurementsDirty(true);
+            }}
+          />
+          {onUpdateJob && measurementsDirty && (
+            <Button
+              testID="job-measurements-save"
+              title={savingMeasurements ? "Saving…" : "Save measurements"}
+              size="sm"
+              disabled={savingMeasurements}
+              onPress={() => void handleSaveMeasurements()}
+            />
+          )}
+        </View>
 
         <View className="rounded-2xl bg-slate-100 p-4 gap-2">
           <Text variant="body" weight="semibold">
@@ -681,6 +899,16 @@ export function JobDetailScreen({
                   £{totals.vat.toFixed(2)}
                 </Text>
               </View>
+              {totals.uplift > 0.004 && (
+                <View className="flex-row justify-between">
+                  <Text variant="caption" color="secondary">
+                    Rounded up
+                  </Text>
+                  <Text variant="caption" color="secondary">
+                    +£{totals.uplift.toFixed(2)}
+                  </Text>
+                </View>
+              )}
               <View className="flex-row justify-between">
                 <Text variant="body" weight="bold">
                   Total
@@ -698,6 +926,14 @@ export function JobDetailScreen({
       </ScrollView>
 
       <View className="border-t border-slate-200 bg-white pt-4 pb-2 gap-3">
+        {status === "draft" && onConfirmDraft && (
+          <Button
+            testID="job-confirm-draft"
+            title={confirmingDraft ? "Confirming…" : "Confirm & schedule"}
+            disabled={confirmingDraft}
+            onPress={() => void handleConfirmDraft()}
+          />
+        )}
         {status === "confirmed" && (
           <Button
             testID="job-start"

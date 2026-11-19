@@ -482,6 +482,29 @@ async def test_webhook_bounce_reason_truncated(
         await _cleanup(ids["tenant_id"])
 
 
+async def test_webhook_bounce_unknown_tenant_is_noop(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    """A bounce tagged with a tenant from another environment (staging shares
+    the Resend account, so its tags hit the prod webhook) must no-op cleanly
+    instead of dying on the notifications tenant FK (#147)."""
+    monkeypatch.setattr("app.config.RESEND_WEBHOOK_SECRET", _SECRET)
+    unknown_tenant = uuid4()
+    body = _bounce_event(tenant_id=unknown_tenant, contact_id=uuid4())
+    with caplog.at_level("INFO", logger="api.email_alerts"):
+        response = await _post_resend(body, _svix_headers(body, _SECRET))
+    assert response.status_code == 200, response.text
+    assert response.json()["status"] == "ok"
+    assert [
+        record for record in caplog.records if "email_failure_unknown_tenant" in record.getMessage()
+    ], "expected an email_failure_unknown_tenant log line"
+    assert not [
+        record for record in caplog.records if "email_failure_alert_failed" in record.getMessage()
+    ], "the unknown tenant must not surface as an alert failure"
+    assert await _alert_row_count(unknown_tenant) == 0
+    assert await _failure_notifications(unknown_tenant) == []
+
+
 async def test_webhook_rejects_bad_signature(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr("app.config.RESEND_WEBHOOK_SECRET", _SECRET)
     body = b'{"type":"email.bounced","data":{"to":["x@example.com"],"tags":{}}}'

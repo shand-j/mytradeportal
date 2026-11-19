@@ -42,6 +42,11 @@ export async function seedCustomer(...args: any[]): Promise<any> {
   return mod.seedCustomer(...args);
 }
 
+export async function seedContact(...args: any[]): Promise<any> {
+  const mod = await loadSeedHelpers();
+  return mod.seedContact(...args);
+}
+
 export async function seedBusinessServices(...args: any[]): Promise<any> {
   const mod = await loadSeedHelpers();
   return mod.seedBusinessServices(...args);
@@ -70,6 +75,16 @@ export async function seedCommunication(...args: any[]): Promise<any> {
 export async function api(...args: any[]): Promise<any> {
   const mod = await loadSeedHelpers();
   return mod.api(...args);
+}
+
+export async function apiRaw(...args: any[]): Promise<any> {
+  const mod = await loadSeedHelpers();
+  return mod.apiRaw(...args);
+}
+
+export async function loginCustomer(...args: any[]): Promise<any> {
+  const mod = await loadSeedHelpers();
+  return mod.loginCustomer(...args);
 }
 
 async function resetAppState(page: Page): Promise<void> {

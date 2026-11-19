@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Alert, Animated, ActionSheetIOS, Platform, ScrollView, StyleProp, TextInput, View, ViewStyle } from "react-native";
+import { Alert, Animated, ActionSheetIOS, KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleProp, TextInput, View, ViewStyle } from "react-native";
 import { useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "expo-router";
 import { Button } from "../../components/ui/Button";
@@ -7,14 +7,17 @@ import { Header } from "../../components/ui/Header";
 import { Icon } from "../../components/ui/Icon";
 import { IconButton } from "../../components/ui/IconButton";
 import { Screen } from "../../components/ui/Screen";
+import { SelectableChip } from "../../components/ui/SelectableChip";
 import { Text } from "../../components/ui/Text";
+import { VoiceInputButton } from "../../components/ui/VoiceInputButton";
 import { ContactCustomerCard } from "../../components/trade/ContactCustomerCard";
 import { Lead, Quote, QuoteLineItem } from "../../types";
-import { updateQuote, useRefineQuote, useSendQuote, useUpdateQuote } from "../../api/quotes";
+import { updateQuote, useRateQuoteRefinement, useRefineQuote, useSendQuote, useUpdateQuote } from "../../api/quotes";
+import { useQuoteRoundingIncrement } from "../../api/businesses";
 import { useLead } from "../../api/quoteRequests";
 import { startDirectThread } from "../../api/communications";
 import { ApiError, NetworkError } from "../../lib/apiClient";
-import { formatMoneyGBP } from "../../lib/format";
+import { formatMoneyGBP, roundUpToIncrement } from "../../lib/format";
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -116,6 +119,10 @@ export type QuoteEditScreenProps = {
   onConvertToJob?: () => Promise<void>;
   /** Id of the job already created from this quote, when one exists. */
   existingJobId?: string | null;
+  /** True when the existing job is the tentative draft hold created at quote
+   * acceptance — convert-to-job adopts and confirms it in place, so the
+   * convert affordance stays offered (as "Confirm booking") for drafts. */
+  existingJobIsDraft?: boolean;
   /** True after convert-to-job 409'd without a resolvable job (legacy quote). */
   jobConvertFailed?: boolean;
   /** True once a sent/paid invoice exists for this quote: edit + refine lock. */
@@ -129,6 +136,7 @@ export function QuoteEditScreen({
   onConvertToInvoice,
   onConvertToJob,
   existingJobId,
+  existingJobIsDraft,
   jobConvertFailed,
   invoicedReadOnly,
 }: QuoteEditScreenProps) {
@@ -143,6 +151,20 @@ export function QuoteEditScreen({
   const refineQuoteMutation = useRefineQuote();
   const [refineInstructions, setRefineInstructions] = useState("");
   const [refineError, setRefineError] = useState<string | null>(null);
+  // Post-refine feedback: amends summary + refreshed confidence from the
+  // refine response, plus the electrician's thumbs up/down (recorded via
+  // POST /quotes/{id}/refine-rating). Dismissable; reappears after each refine.
+  const rateRefinementMutation = useRateQuoteRefinement();
+  const [refineOutcome, setRefineOutcome] = useState<{
+    summary: string | null;
+    confidence: number | null;
+  } | null>(null);
+  const [refineRating, setRefineRating] = useState<"up" | "down" | null>(null);
+  const [refineRatingDismissed, setRefineRatingDismissed] = useState(false);
+  // AI assumptions/warnings and the secondary action buttons both start
+  // collapsed so the quote itself fills the screen (issue #221).
+  const [aiDetailsExpanded, setAiDetailsExpanded] = useState(false);
+  const [actionsExpanded, setActionsExpanded] = useState(false);
 
   const isRealQuote = !!seedQuote && UUID_RE.test(seedQuote.id);
   // A sent/paid invoice locks the quote server-side (409 quote_invoiced).
@@ -154,11 +176,20 @@ export function QuoteEditScreen({
   // Snapshot of what the backend last saw. Null until the initial seed has
   // been recorded so mount never triggers a save.
   const lastSavedRef = useRef<QuoteLineItem[] | null>(null);
-  const pendingSaveRef = useRef<QuoteLineItem[] | null>(null);
+  // Next payload to persist: line items plus the VAT rate in effect when the
+  // edit was made, so a VAT toggle queued mid-debounce is never lost.
+  const pendingSaveRef = useRef<{ items: QuoteLineItem[]; vatRate: number } | null>(null);
   // Serialises saves so an auto-save never overlaps one already in flight.
   const saveChainRef = useRef<Promise<void>>(Promise.resolve());
 
-  const vatRate = seedQuote?.vatRate ?? 0.2;
+  // The tenant's registered rate, as captured on the quote at creation. A
+  // per-quote override may only lower/remove VAT (0), never raise it.
+  const tenantVatRate = seedQuote?.vatRate ?? 0.2;
+  const [vatRate, setVatRate] = useState(tenantVatRate);
+  // Show the VAT selector whenever the tenant is VAT-registered (either the
+  // quote still carries the tenant rate, or it was previously zero-rated and
+  // can be restored).
+  const isVatRegistered = tenantVatRate > 0 || vatRate > 0;
 
   const runPendingSave = () => {
     if (!seedQuote || !isRealQuote || readOnly) return;
@@ -168,8 +199,8 @@ export function QuoteEditScreen({
       if (!current) return;
       setSaveState("saving");
       try {
-        await updateQuote(seedQuote.id, current, vatRate);
-        lastSavedRef.current = current;
+        await updateQuote(seedQuote.id, current.items, current.vatRate);
+        lastSavedRef.current = current.items;
         pendingSaveRef.current = null;
         setSaveState("saved");
         queryClient.invalidateQueries({ queryKey: ["quotes"] });
@@ -187,11 +218,25 @@ export function QuoteEditScreen({
       return;
     }
     if (items === lastSavedRef.current) return;
-    pendingSaveRef.current = items;
+    pendingSaveRef.current = { items, vatRate };
     const timer = setTimeout(runPendingSave, AUTOSAVE_DELAY_MS);
     return () => clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [items, isRealQuote]);
+  }, [items, vatRate, isRealQuote]);
+
+  /**
+   * Switch between the tenant's registered rate and zero-rating (issue #110 —
+   * fulfils the onboarding TaxVatStep "you'll confirm per quote" promise).
+   * Persists immediately: a VAT toggle is a deliberate edit, not a keystroke,
+   * so it must not wait for the line-item debounce.
+   */
+  const applyVatRate = (next: number) => {
+    if (next === vatRate) return;
+    setVatRate(next);
+    if (!isRealQuote || readOnly) return;
+    pendingSaveRef.current = { items, vatRate: next };
+    runPendingSave();
+  };
 
   /** Persist the current line items; cancels any queued auto-save of older edits. */
   const saveNow = async (): Promise<void> => {
@@ -255,15 +300,21 @@ export function QuoteEditScreen({
   };
 
   // iOS: one "Convert to…" button opens an ActionSheet; Job navigates to the
-  // prefilled new-job page, Invoice converts in place.
+  // prefilled new-job page, Invoice converts in place. A draft hold (created
+  // at acceptance) is confirmed in place instead — convert-to-job adopts it.
   const handleConvertSheet = () => {
     if (!seedQuote) return;
     const actions: { label: string; run: () => void }[] = [];
     if (canCreateJobFromQuote) {
-      actions.push({
-        label: "Job",
-        run: () => router.push({ pathname: "/(trade)/job/new", params: { quoteId: seedQuote.id } }),
-      });
+      actions.push(
+        existingJobIsDraft
+          ? { label: "Confirm booking", run: () => void handleConvertToJob() }
+          : {
+              label: "Job",
+              run: () =>
+                router.push({ pathname: "/(trade)/job/new", params: { quoteId: seedQuote.id } }),
+            }
+      );
     }
     if (showConvertToInvoice) {
       actions.push({ label: "Invoice", run: () => void handleConvertToInvoice() });
@@ -288,7 +339,16 @@ export function QuoteEditScreen({
         id: seedQuote.id,
         instructions: refineInstructions.trim(),
       });
+      // mapQuote carries the refined line items plus the refreshed AI metadata
+      // (aiConfidence, aiRefineSummary) — apply both so the review UI and the
+      // feedback card reflect what the server actually stored.
       setItems(updated.lineItems);
+      setRefineOutcome({
+        summary: updated.aiRefineSummary ?? null,
+        confidence: updated.aiConfidence ?? null,
+      });
+      setRefineRating(null);
+      setRefineRatingDismissed(false);
       setRefineInstructions("");
     } catch (err) {
       const message =
@@ -301,6 +361,20 @@ export function QuoteEditScreen({
     }
   };
 
+  const handleRefineRating = async (rating: "up" | "down") => {
+    if (!seedQuote) return;
+    // Optimistic: a failed POST reverts so the electrician can retry.
+    setRefineRating(rating);
+    try {
+      await rateRefinementMutation.mutateAsync({ id: seedQuote.id, rating });
+    } catch {
+      setRefineRating(null);
+    }
+  };
+
+  // The backend re-applies the tenant's rounding increment on every save, so
+  // the preview must round the same way or it disagrees with the stored total.
+  const roundingIncrement = useQuoteRoundingIncrement();
   const totals = useMemo(() => {
     const subtotal = items.reduce((sum, item) => {
       const qty = parseFloat(item.qty) || 0;
@@ -308,11 +382,17 @@ export function QuoteEditScreen({
       return sum + qty * price;
     }, 0);
     const vat = subtotal * vatRate;
-    return { subtotal, vat, total: subtotal + vat };
-  }, [items, vatRate]);
+    const rawTotal = subtotal + vat;
+    const total = roundUpToIncrement(rawTotal, roundingIncrement);
+    return { subtotal, vat, uplift: total - rawTotal, total };
+  }, [items, vatRate, roundingIncrement]);
 
   const updateItem = (id: string, field: keyof QuoteLineItem, value: string) => {
-    setItems((prev) => prev.map((item) => (item.id === id ? { ...item, [field]: value } : item)));
+    // Editing a line makes it manual: clear the AI flag so a later refine
+    // preserves it instead of regenerating over the edit.
+    setItems((prev) =>
+      prev.map((item) => (item.id === id ? { ...item, [field]: value, aiGenerated: false } : item))
+    );
   };
 
   const addLine = () => {
@@ -356,14 +436,49 @@ export function QuoteEditScreen({
     seedQuote?.status !== "draft" &&
     !existingJobId &&
     (!isAccepted || !!jobConvertFailed);
+  // An acceptance-time draft hold never suppresses convert-to-job: the
+  // endpoint adopts and confirms the draft in place (DEFECT-005). Only a real
+  // (non-draft) existing job hides it.
   const showConvertToJob =
-    !!onConvertToJob && !isTerminal && isAccepted && !existingJobId && !jobConvertFailed;
+    !!onConvertToJob &&
+    !isTerminal &&
+    isAccepted &&
+    (!existingJobId || !!existingJobIsDraft) &&
+    !jobConvertFailed;
   // The iOS sheet's Job option routes to the prefilled job-create page, which
   // marks off-app-agreed sent quotes as accepted during conversion — so it can
   // be offered for sent quotes too. The web convert-to-job button converts in
-  // place and stays approved-only.
+  // place and stays approved-only. Draft holds take the same in-place confirm
+  // on both platforms.
   const canCreateJobFromQuote =
-    !!onConvertToJob && !isTerminal && (isAccepted || isSent) && !existingJobId && !jobConvertFailed;
+    !!onConvertToJob &&
+    !isTerminal &&
+    (isAccepted || isSent) &&
+    (!existingJobId || !!existingJobIsDraft) &&
+    !jobConvertFailed;
+
+  // Collapsed AI details badge: one per rendered line.
+  const aiDetailCount =
+    aiWarnings.length +
+    aiAssumptions.length +
+    (isCatalogueMiss ? 1 : 0) +
+    (aiNotes != null ? 1 : 0);
+
+  // Bottom bar: a single primary action (Send for drafts, Save once sent) with
+  // everything else behind a "More actions" disclosure, so the button cluster
+  // no longer fills half the screen — or covers it with the keyboard open.
+  const showSendPrimary = !readOnly && !isSent;
+  const showSavePrimary = !readOnly && isSent;
+  const showSaveSecondary = !readOnly && !isSent;
+  const hasConvertActions =
+    Platform.OS === "web"
+      ? showConvertToJob || showConvertToInvoice
+      : canCreateJobFromQuote || showConvertToInvoice;
+  const secondaryActionCount =
+    (showSaveSecondary ? 1 : 0) + 1 + (existingJobId ? 1 : 0) + (hasConvertActions ? 1 : 0);
+  const hasPrimaryAction = showSendPrimary || showSavePrimary;
+  const showMoreToggle = hasPrimaryAction || secondaryActionCount > 1;
+  const secondaryActionsVisible = actionsExpanded || !showMoreToggle;
 
   const quoteRequestId = seedQuote?.quoteRequestId ?? resolvedLead?.id;
   const isRefining = refineQuoteMutation.isPending;
@@ -400,6 +515,10 @@ export function QuoteEditScreen({
     <Screen>
       <Header testID="quote-edit-back" title="Review quote" onBack={onClose} />
 
+      <KeyboardAvoidingView
+        style={{ flex: 1 }}
+        behavior={Platform.OS === "ios" ? "padding" : undefined}
+      >
       <ScrollView
         className="flex-1"
         style={{ minHeight: 0 }}
@@ -453,25 +572,53 @@ export function QuoteEditScreen({
           <>
         {showAiDetails && (
           <View className="rounded-xl bg-amber-50 p-3 gap-2">
-            {aiWarnings.map((warning) => (
-              <Text key={warning} variant="caption" color="warning">
-                • {warning}
-              </Text>
-            ))}
-            {aiAssumptions.map((assumption) => (
-              <Text key={assumption} variant="caption" color="secondary">
-                • Assumed: {assumption}
-              </Text>
-            ))}
-            {isCatalogueMiss && (
-              <Text variant="caption" color="warning">
-                Priced from AI knowledge — no catalogue match
-              </Text>
-            )}
-            {aiNotes != null && (
-              <Text variant="caption" color="secondary">
-                {aiNotes}
-              </Text>
+            <Pressable
+              testID="quote-ai-details-toggle"
+              accessibilityRole="button"
+              accessibilityLabel="AI assumptions and notes"
+              onPress={() => setAiDetailsExpanded((prev) => !prev)}
+            >
+              <View className="flex-row items-center justify-between">
+                <View className="flex-row items-center gap-2">
+                  <Text variant="caption" weight="semibold" color="secondary">
+                    AI assumptions & notes
+                  </Text>
+                  <View className="rounded-full bg-amber-100 px-2 py-0.5">
+                    <Text testID="quote-ai-details-count" variant="label" color="secondary">
+                      {aiDetailCount}
+                    </Text>
+                  </View>
+                </View>
+                <Icon
+                  name={aiDetailsExpanded ? "chevron-up" : "chevron-down"}
+                  size={16}
+                  color="#B45309"
+                />
+              </View>
+            </Pressable>
+            {aiDetailsExpanded && (
+              <View className="gap-2">
+                {aiWarnings.map((warning) => (
+                  <Text key={warning} variant="caption" color="warning">
+                    • {warning}
+                  </Text>
+                ))}
+                {aiAssumptions.map((assumption) => (
+                  <Text key={assumption} variant="caption" color="secondary">
+                    • Assumed: {assumption}
+                  </Text>
+                ))}
+                {isCatalogueMiss && (
+                  <Text variant="caption" color="warning">
+                    Priced from AI knowledge — no catalogue match
+                  </Text>
+                )}
+                {aiNotes != null && (
+                  <Text variant="caption" color="secondary">
+                    {aiNotes}
+                  </Text>
+                )}
+              </View>
             )}
           </View>
         )}
@@ -547,9 +694,17 @@ export function QuoteEditScreen({
 
         {!readOnly && seedQuote?.aiGenerated && isRealQuote && (
           <View className="rounded-2xl border border-slate-200 bg-white p-3 gap-2">
-            <Text variant="body" weight="semibold">
-              Refine with AI
-            </Text>
+            <View className="flex-row items-center justify-between">
+              <Text variant="body" weight="semibold">
+                Refine with AI
+              </Text>
+              <VoiceInputButton
+                testID="refine-instructions-voice"
+                value={refineInstructions}
+                onChangeText={setRefineInstructions}
+                disabled={refineQuoteMutation.isPending}
+              />
+            </View>
             <TextInput
               testID="refine-instructions"
               className="h-20 rounded-lg border border-slate-200 px-3 pt-2 text-sm text-slate-900"
@@ -575,6 +730,74 @@ export function QuoteEditScreen({
             />
           </View>
         )}
+
+        {!readOnly &&
+          isRealQuote &&
+          !refineRatingDismissed &&
+          (refineOutcome?.summary ?? seedQuote?.aiRefineSummary) != null && (
+            <View
+              testID="refine-feedback-card"
+              className="rounded-2xl border border-slate-200 bg-white p-3 gap-2"
+            >
+              <View className="flex-row items-center justify-between">
+                <View className="flex-row items-center gap-1.5">
+                  <Icon name="sparkles" size={14} color="#D97706" />
+                  <Text variant="body" weight="semibold">
+                    Refined by AI
+                  </Text>
+                </View>
+                <IconButton
+                  icon="close"
+                  size={16}
+                  color="#6B7280"
+                  onPress={() => setRefineRatingDismissed(true)}
+                  accessibilityLabel="Dismiss refine feedback"
+                />
+              </View>
+              <Text testID="refine-summary" variant="caption" color="secondary">
+                {refineOutcome?.summary ?? seedQuote?.aiRefineSummary}
+              </Text>
+              {(refineOutcome?.confidence ?? seedQuote?.aiConfidence) != null && (
+                <Text testID="refine-confidence" variant="caption" color="secondary">
+                  AI confidence{" "}
+                  {Math.round(
+                    ((refineOutcome?.confidence ?? seedQuote?.aiConfidence) as number) * 100
+                  )}
+                  %
+                </Text>
+              )}
+              {(refineRating ?? (refineOutcome == null ? (seedQuote?.aiRefineRating ?? null) : null)) !=
+              null ? (
+                <Text testID="refine-rating-thanks" variant="caption" color="secondary">
+                  Thanks — your feedback was recorded.
+                </Text>
+              ) : (
+                <View className="flex-row items-center gap-2">
+                  <Text variant="caption" color="secondary">
+                    Was this refine helpful?
+                  </Text>
+                  <Pressable
+                    testID="refine-rate-up"
+                    accessibilityLabel="Rate refine thumbs up"
+                    disabled={rateRefinementMutation.isPending}
+                    onPress={() => void handleRefineRating("up")}
+                    className="h-8 w-8 items-center justify-center rounded-full border border-slate-200"
+                  >
+                    <Icon name="thumbs-up" size={16} color="#059669" />
+                  </Pressable>
+                  <Pressable
+                    testID="refine-rate-down"
+                    accessibilityLabel="Rate refine thumbs down"
+                    disabled={rateRefinementMutation.isPending}
+                    onPress={() => void handleRefineRating("down")}
+                    className="h-8 w-8 items-center justify-center rounded-full border border-slate-200"
+                  >
+                    <Icon name="thumbs-down" size={16} color="#DC2626" />
+                  </Pressable>
+                </View>
+              )}
+            </View>
+          )}
       </ScrollView>
 
       <View className="border-t border-slate-200 bg-white pt-3 pb-2 gap-3">
@@ -602,6 +825,27 @@ export function QuoteEditScreen({
             )}
           </View>
         )}
+        {isVatRegistered && !readOnly && (
+          <View className="flex-row items-center justify-between gap-2">
+            <Text variant="caption" color="secondary">
+              VAT treatment
+            </Text>
+            <View className="flex-row gap-2">
+              <SelectableChip
+                testID="quote-vat-standard"
+                label={`VAT ${(tenantVatRate * 100).toFixed(0)}%`}
+                selected={vatRate !== 0}
+                onPress={() => applyVatRate(tenantVatRate)}
+              />
+              <SelectableChip
+                testID="quote-vat-zero-rated"
+                label="Zero-rated 0%"
+                selected={vatRate === 0}
+                onPress={() => applyVatRate(0)}
+              />
+            </View>
+          </View>
+        )}
         <View className="flex-row items-end justify-between gap-3">
           {isRefining ? (
             <PulseBlock style={{ height: 40, flex: 1 }} />
@@ -623,6 +867,16 @@ export function QuoteEditScreen({
               {formatMoneyGBP(totals.vat)}
             </Text>
           </View>
+          {totals.uplift > 0.004 && (
+            <View>
+              <Text variant="caption" color="secondary">
+                Rounded up
+              </Text>
+              <Text variant="caption" color="secondary">
+                +{formatMoneyGBP(totals.uplift)}
+              </Text>
+            </View>
+          )}
           <View className="items-end">
             <Text variant="caption" color="secondary">
               Total
@@ -635,21 +889,50 @@ export function QuoteEditScreen({
           )}
         </View>
 
-        {!readOnly && (
+        {(hasPrimaryAction || showMoreToggle) && (
+          <View className="flex-row gap-2">
+            {showSendPrimary && (
+              <View className="flex-1">
+                <Button
+                  testID="quote-approve-send"
+                  title={sendQuoteMutation.isPending ? "Sending…" : "Send quote"}
+                  disabled={sendQuoteMutation.isPending || updateQuoteMutation.isPending || !isRealQuote}
+                  onPress={handleSend}
+                />
+              </View>
+            )}
+            {showSavePrimary && (
+              <View className="flex-1">
+                <Button
+                  testID="quote-save"
+                  title={updateQuoteMutation.isPending ? "Saving…" : "Save changes"}
+                  disabled={updateQuoteMutation.isPending || sendQuoteMutation.isPending || !isRealQuote}
+                  onPress={() => void handleSave()}
+                />
+              </View>
+            )}
+            {showMoreToggle && (
+              <View className={hasPrimaryAction ? undefined : "flex-1"}>
+                <Button
+                  testID="quote-more-actions"
+                  title={actionsExpanded ? "Fewer actions" : "More actions"}
+                  variant="outline"
+                  onPress={() => setActionsExpanded((prev) => !prev)}
+                />
+              </View>
+            )}
+          </View>
+        )}
+
+        {secondaryActionsVisible && (
+          <>
+        {showSaveSecondary && (
           <Button
             testID="quote-save"
             title={updateQuoteMutation.isPending ? "Saving…" : "Save changes"}
-            variant={isSent ? "primary" : "outline"}
+            variant="outline"
             disabled={updateQuoteMutation.isPending || sendQuoteMutation.isPending || !isRealQuote}
             onPress={() => void handleSave()}
-          />
-        )}
-        {!readOnly && !isSent && (
-          <Button
-            testID="quote-approve-send"
-            title={sendQuoteMutation.isPending ? "Sending…" : "Send quote"}
-            disabled={sendQuoteMutation.isPending || updateQuoteMutation.isPending || !isRealQuote}
-            onPress={handleSend}
           />
         )}
         {chatUnavailable && chatLead ? (
@@ -691,7 +974,9 @@ export function QuoteEditScreen({
             {showConvertToJob && (
               <Button
                 testID="quote-convert-job"
-                title={converting ? "Converting…" : "Convert to job"}
+                title={
+                  converting ? "Converting…" : existingJobIsDraft ? "Confirm booking" : "Convert to job"
+                }
                 disabled={converting}
                 onPress={handleConvertToJob}
               />
@@ -716,7 +1001,10 @@ export function QuoteEditScreen({
             />
           )
         )}
+          </>
+        )}
       </View>
+      </KeyboardAvoidingView>
     </Screen>
   );
 }

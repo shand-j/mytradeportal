@@ -17,7 +17,8 @@ export function ConfirmationStep({
   formData,
   onDone,
   showCreateAccount = false,
-}: StepPropsWithBusiness & { onDone: () => void; showCreateAccount?: boolean }) {
+  reference,
+}: StepPropsWithBusiness & { onDone: () => void; showCreateAccount?: boolean; reference?: string }) {
   const { business } = useBusiness();
   const businessName = business?.name ?? "Your electrician";
   const slaHours = 24;
@@ -38,6 +39,12 @@ export function ConfirmationStep({
       <Text variant="body" color="secondary" align="center">
         {businessName} will review your details and send your quote — usually within {slaHours} hours.
       </Text>
+
+      {reference ? (
+        <Text variant="caption" color="secondary" align="center" testID="quote-reference">
+          Reference: {reference}
+        </Text>
+      ) : null}
 
       {highConfidence ? (
         <View style={styles.confidenceBanner}>

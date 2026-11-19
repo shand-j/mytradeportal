@@ -23,6 +23,12 @@
  *     devices never talk to it — file traffic is proxied through the API.)
  *     Until then the `*_RAILWAY_PUBLIC_DOMAIN` references below stay empty.
  *   - Register custom domains (dashboard only, then `railway config pull`).
+ *     Production has `api.mytradeportal.co.uk` attached to `api` (2026-10-09)
+ *     and `mytradeportal.co.uk` + `*.mytradeportal.co.uk` attached to
+ *     `landing`; the wildcard is intentional — it powers the tenant portal
+ *     subdomains (ADR-004) and must NOT be removed to "fix" api.*.
+ *     Railway routes each hostname by its own CNAME target, so api.* serves
+ *     the api service once its DNS records (CNAME + ownership TXT) land.
  *
  * Secrets use preserve(): they are set once in the dashboard and are never
  * overwritten by applies.
@@ -44,8 +50,8 @@ import {
 const GITHUB_REPO = process.env.MTP_GITHUB_REPO ?? "shand-j/mytradeportal";
 
 const QDRANT_URL = "http://${{qdrant.RAILWAY_PRIVATE_DOMAIN}}:6333";
-// MinIO is private-network-only. The private DNS name carries no implied
-// port, and MinIO serves the S3 API on 9000 — the port is mandatory here or
+// RustFS is private-network-only. The private DNS name carries no implied
+// port, and its S3-compatible API serves on 9000 — the port is mandatory here or
 // boto3 dials 80 and uploads 503.
 const MINIO_ENDPOINT = "${{minio.RAILWAY_PRIVATE_DOMAIN}}:9000";
 // OCERP / BoQ engine is parked for the mobile-pivot MVP.
@@ -83,23 +89,17 @@ export default defineRailway(() => {
   });
 
   const minio = service("minio", {
-    // MinIO stopped publishing free images to Docker Hub in late 2025. Use
-    // the Quay.io mirror instead. The volume is mounted at /mnt/data to stay
-    // clear of the image's VOLUME /data directive, and the start command must
-    // invoke the `minio` binary explicitly — Railway replaces the image
-    // entrypoint with this command.
-    source: image("quay.io/minio/minio:RELEASE.2025-07-23T15-54-02Z"),
-    start: 'minio server /mnt/data --console-address ":9001"',
-    healthcheck: "/minio/health/live",
+    source: image("rustfs/rustfs:latest"),
+    start: "/mnt/data",
+    healthcheck: "/health",
     volumeMounts: { "/mnt/data": minioData },
     regions: { [TARGET_REGION]: 1 },
     env: {
-      // MinIO root credentials are required. Set them as environment-level
-      // variables in Railway, but IaC must reference them with preserve() so
-      // they are not deleted on apply/teardown.
+      // Keep existing MINIO_* keys for compatibility: RustFS maps these to
+      // RUSTFS_* equivalents at startup.
       MINIO_ROOT_USER: preserve(),
       MINIO_ROOT_PASSWORD: preserve(),
-      // MinIO API listens on 9000; Railway uses $PORT to target healthchecks.
+      // S3-compatible API listens on 9000; Railway uses $PORT for healthchecks.
       PORT: "9000",
     },
   });
@@ -152,10 +152,10 @@ export default defineRailway(() => {
       QDRANT_COLLECTION_NAME: "cost_items",
       QDRANT_KNOWLEDGE_COLLECTION_NAME: "quoting_knowledge",
       // OCERP_URL,
-      // MinIO is private-network-only (no public domain — avoids egress fees
+      // RustFS is private-network-only (no public domain — avoids egress fees
       // and public exposure). All file traffic from devices is proxied through
-      // the API (POST /files/upload, GET /files/download), which reaches MinIO
-      // over the private network. Never hand MinIO URLs to clients.
+      // the API (POST /files/upload, GET /files/download), which reaches object
+      // storage over the private network. Never hand storage URLs to clients.
       MINIO_ENDPOINT,
       MINIO_USE_SSL: "false",
       MINIO_BUCKET: "mtp-uploads",
@@ -178,6 +178,10 @@ export default defineRailway(() => {
       LLM_MODEL: "openai/kimi-k2.6",
       LLM_API_BASE: preserve(),
       LLM_API_KEY: preserve(),
+      // Vision model for the photo-captioning step (AI quote image evidence,
+      // #198). Empty = fall back to LLM_MODEL; must be a vision-capable model
+      // or photo captioning silently skips (fail-open by design).
+      LLM_VISION_MODEL: preserve(),
       LLM_TEMPERATURE: "",
       LLM_MAX_RETRIES: "3",
       LLM_TIMEOUT_SECONDS: "300",
@@ -189,6 +193,13 @@ export default defineRailway(() => {
       RESEND_NO_REPLY_EMAIL: preserve(),
       // Svix signing secret for the Resend bounce webhook (/webhooks/resend).
       RESEND_WEBHOOK_SECRET: preserve(),
+      // SMS appointment reminders (Telnyx Messaging API). Plan-included
+      // feature; the reminder sweep texts customers + the assigned
+      // electrician before each visit (email/push fallback when unset).
+      // API key plus one sender identity (from-number or messaging profile).
+      TELNYX_API_KEY: preserve(),
+      TELNYX_FROM_NUMBER: preserve(),
+      TELNYX_MESSAGING_PROFILE_ID: preserve(),
       // Password for the mtp_metabase BI role — init_db keeps the prod role
       // in sync with this on every deploy.
       METABASE_DB_PASSWORD: preserve(),
@@ -197,13 +208,20 @@ export default defineRailway(() => {
       SUPABASE_URL: preserve(),
       SUPABASE_ANON_KEY: preserve(),
       SUPABASE_SERVICE_ROLE_KEY: preserve(),
-      // Public URL the reset-password + quote links resolve to. Update to
-      // the App Store / landing page domain once available.
+      // Back-office (admin) origin only — NOT used for customer-facing
+      // links: portal emails use magic links on {slug}.PORTAL_BASE_DOMAIN,
+      // Stripe onboarding returns bounce through PUBLIC_DOCS_BASE_URL, and
+      // calendar feeds use CALENDAR_FEED_BASE_URL. Remaining use is
+      // staff-facing fallback links (invites, set-password).
       APP_PUBLIC_URL: preserve(),
       // Calendar feed (webcal/.ics) links must resolve to THIS service's
       // public origin — APP_PUBLIC_URL points at the back office, where the
       // feed path 404s as HTML and iOS rejects the subscription.
-      CALENDAR_FEED_BASE_URL: "https://api-production-65db.up.railway.app",
+      // Branded API custom domain (issue #181). Attached to the api service in
+      // production; only valid once the founder's DNS CNAME + ownership TXT
+      // are in place and Railway has issued the cert — until then the domain
+      // still serves the landing SPA via the *.mytradeportal.co.uk wildcard.
+      CALENDAR_FEED_BASE_URL: "https://api.mytradeportal.co.uk",
       // Where password-reset email links point: the landing site's
       // /reset-password page (NOT the back office).
       PASSWORD_RESET_BASE_URL: "https://www.mytradeportal.co.uk",
@@ -257,7 +275,12 @@ export default defineRailway(() => {
       // Express destination charges. Paddle stays subscription-only. Blank
       // defaults; set once in the Railway dashboard, preserved across applies.
       STRIPE_SECRET_KEY: preserve(),
+      // Webhook signing secrets: platform endpoint (payment_intent/charge)
+      // and Connect endpoint (account.updated/payout.paid) — the verifier
+      // accepts either. STRIPE_WEBHOOK_SECRET is the legacy platform name.
+      STRIPE_PLATFORM_WEBHOOK_SECRET: preserve(),
       STRIPE_WEBHOOK_SECRET: preserve(),
+      STRIPE_CONNECT_WEBHOOK_SECRET: preserve(),
       STRIPE_CONNECT_CLIENT_ID: preserve(),
       // Tenant portal (ADR-004): customer-facing pages at
       // https://{slug}.mytradeportal.co.uk. Literal product constant, like
@@ -293,7 +316,10 @@ export default defineRailway(() => {
       // Public by design (present in every browser bundle); values live in the
       // dashboard, picked up here via preserve().
       // API origin for browser calls (demo quote endpoints, password reset).
-      VITE_API_URL: "https://api-production-65db.up.railway.app",
+      // Per-environment reference: each environment's landing calls its OWN
+      // api — a hardcoded host means PR preview landings call the stale
+      // staging api (which wedged and failed every pr-env-verify run).
+      VITE_API_URL: "https://${{api.RAILWAY_PUBLIC_DOMAIN}}",
       VITE_PADDLE_ENV: "sandbox",
       VITE_PADDLE_CLIENT_TOKEN: preserve(),
       // Stripe.js key (pk_...) for the tenant portal invoice /pay page.

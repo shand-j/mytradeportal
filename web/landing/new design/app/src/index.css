@@ -168,6 +168,28 @@ html {
   border-color: var(--accent);
   color: var(--ink);
 }
+/* In portal mode --accent is the tenant brand colour: keep text white on
+   accent-backed hover states, matching the branded header/banner pattern. */
+.portal-mode .chip--fill:hover,
+.portal-mode .chip--on-dark:hover {
+  color: #fff;
+}
+/* Tenant-branded primary action: the shell sets --brand (tenant colour). */
+.chip--brand {
+  background: var(--brand, var(--ink));
+  border-color: var(--ink);
+  color: #fff;
+}
+.chip--brand:hover {
+  background: var(--brand, var(--ink));
+  border-color: var(--ink);
+  color: #fff;
+  filter: brightness(0.88);
+}
+.chip--brand:active {
+  transform: translateY(1px);
+  filter: brightness(0.8);
+}
 .chip--on-dark {
   border-color: var(--paper-on-dark);
   color: var(--paper-on-dark);

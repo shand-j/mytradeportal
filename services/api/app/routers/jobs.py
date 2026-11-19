@@ -22,6 +22,18 @@ appointment per subsequent working-day block (see ``app.work_blocks``).
 GET /jobs/suggest-schedule returns the earliest start where a quote's whole
 block sequence fits around existing appointments and scheduled jobs.
 
+Free/busy math lives in ``app.availability`` (shared with the public
+quote-page availability endpoint): appointments and scheduled jobs block
+time; cancelled/completed/draft jobs and cancelled/no-show appointments do
+not. A draft job is the tentative hold auto-created at quote acceptance —
+unconfirmed, so it never blocks the calendar.
+
+Dispatch guardrails (``app.dispatch``, epic #233 phase 2) run on every
+assignment/reschedule here and in the appointments/quotes routers:
+double-booking and the 10h daily cap are 409s with structured detail
+(``code``/``reason``), and in-progress/completed jobs reject
+reassignment/reschedule outright.
+
 Booking confirmation: creating a job with a real slot (``scheduled_start``
 set, directly or via quote convert-to-job) emails the customer a
 ``booking_confirmed`` email (best-effort, tenant-branded, Reply-To the
@@ -42,15 +54,40 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from app.availability import (
+    DEFAULT_JOB_DURATION,
+    NON_BLOCKING_APPOINTMENT_STATUSES,
+    busy_periods,
+    free_hours,
+)
 from app.database import get_db
-from app.dependencies import TenantDep
-from app.email import send_customer_email
+from app.dependencies import TenantDep, single_active_user
+from app.dispatch import enforce_assignment_guardrails, ensure_job_mutable
+from app.email import send_customer_email, tenant_reply_to
 from app.email_templates import booking_confirmed as booking_confirmed_template
-from app.models import Appointment, Contact, Customer, Job, Quote, QuoteLineItem, Tenant, User
+from app.models import (
+    Appointment,
+    Contact,
+    Customer,
+    Job,
+    MediaAsset,
+    Quote,
+    QuoteLineItem,
+    Tenant,
+    User,
+)
 from app.portal_links import magic_link_url
 from app.push import notify_staff
 from app.rls import set_tenant_in_session
-from app.schemas import JobCreate, JobRead, JobUpdate, ScheduleSuggestion, ScheduleSuggestionDay
+from app.schemas import (
+    JobCreate,
+    JobMediaCreate,
+    JobMediaUpdate,
+    JobRead,
+    JobUpdate,
+    ScheduleSuggestion,
+    ScheduleSuggestionDay,
+)
 from app.work_blocks import (
     WorkBlock,
     daily_working_hours,
@@ -98,6 +135,25 @@ async def _validate_assignee(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid assignee")
 
 
+def merge_contact_notes(notes: str | None, contact_notes: str | None) -> str | None:
+    """Merge the CRM contact's notes into a new quote/job's notes.
+
+    Notes typed on the creation screen win and stay first; the contact's
+    notes are appended under a "Customer notes:" heading unless they are
+    already present (e.g. the caller pre-filled them). Returns ``notes``
+    unchanged when the contact has none.
+    """
+    customer = (contact_notes or "").strip()
+    if not customer:
+        return notes
+    typed = (notes or "").strip()
+    if not typed:
+        return f"Customer notes: {customer}"
+    if customer in typed:
+        return notes
+    return f"{typed}\n\nCustomer notes: {customer}"
+
+
 def plan_job_blocks(
     settings: dict[str, Any] | None, start: datetime, end: datetime
 ) -> list[WorkBlock]:
@@ -112,6 +168,31 @@ def plan_job_blocks(
     if not is_multi_day(settings, total_hours):
         return []
     return plan_working_blocks(settings, start.date(), total_hours)
+
+
+def block_appointment_span(
+    block: WorkBlock, settings: dict[str, Any] | None
+) -> tuple[datetime, datetime]:
+    """The calendar span a working-day block appointment occupies."""
+    work_start, _, _ = working_hours(settings)
+    start_at = datetime.combine(block.day, work_start)
+    return start_at, start_at + timedelta(hours=block.hours)
+
+
+def scheduled_spans(
+    start: datetime,
+    end: datetime | None,
+    blocks: list[WorkBlock],
+    settings: dict[str, Any] | None,
+) -> list[tuple[datetime, datetime]]:
+    """Every window an assignment puts on the assignee's calendar.
+
+    The job's own (day-1) span — end-less jobs block one hour, matching the
+    availability math — plus one span per working-day block appointment.
+    """
+    spans = [(start, end or start + DEFAULT_JOB_DURATION)]
+    spans.extend(block_appointment_span(block, settings) for block in blocks[1:])
+    return spans
 
 
 async def create_block_appointments(
@@ -129,10 +210,9 @@ async def create_block_appointments(
     """
     if len(blocks) < 2:
         return
-    work_start, _, _ = working_hours(settings)
     total_days = len(blocks)
     for index, block in enumerate(blocks[1:], start=2):
-        start_at = datetime.combine(block.day, work_start)
+        start_at, end_at = block_appointment_span(block, settings)
         db.add(
             Appointment(
                 tenant_id=tenant_id,
@@ -140,7 +220,7 @@ async def create_block_appointments(
                 job_id=job.id,
                 title=f"{job.title} — day {index} of {total_days}",
                 start_at=start_at,
-                end_at=start_at + timedelta(hours=block.hours),
+                end_at=end_at,
                 address=job.address,
                 assigned_user_id=job.assigned_user_id,
             )
@@ -148,15 +228,27 @@ async def create_block_appointments(
 
 
 @router.get("")
-async def list_jobs(tenant: TenantDep, db: DbDep) -> list[JobRead]:
-    """List jobs for the current tenant."""
+async def list_jobs(
+    tenant: TenantDep,
+    db: DbDep,
+    assigned_user_id: UUID | None = Query(default=None),
+) -> list[JobRead]:
+    """List jobs for the current tenant.
+
+    ``assigned_user_id`` narrows the list to jobs assigned to that staff
+    member (the mobile calendar's "Me" view); omitting it returns the whole
+    team ("All").
+    """
     await set_tenant_in_session(db, tenant.id)
-    result = await db.execute(
+    query = (
         select(Job)
         .options(*_job_load_options())
         .where(Job.tenant_id == tenant.id)
         .order_by(Job.created_at.desc())
     )
+    if assigned_user_id is not None:
+        query = query.where(Job.assigned_user_id == assigned_user_id)
+    result = await db.execute(query)
     return [JobRead.model_validate(j) for j in result.scalars().all()]
 
 
@@ -174,7 +266,15 @@ async def create_job(data: JobCreate, tenant: TenantDep, db: DbDep) -> JobRead:
         if quote is None or quote.tenant_id != tenant.id:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid quote")
 
-    await _validate_assignee(db, tenant.id, data.assigned_user_id)
+    # Sole-staff tenants never pick an assignee (single-seat plans have no
+    # assignment UI): default to the tenant's only active user so the job is
+    # never orphaned. Multi-staff tenants keep the explicit choice (or none).
+    assigned_user_id = data.assigned_user_id
+    if assigned_user_id is None:
+        sole_user = await single_active_user(db, tenant.id)
+        if sole_user is not None:
+            assigned_user_id = sole_user.id
+    await _validate_assignee(db, tenant.id, assigned_user_id)
 
     job = Job(
         tenant_id=tenant.id,
@@ -182,7 +282,11 @@ async def create_job(data: JobCreate, tenant: TenantDep, db: DbDep) -> JobRead:
         # lat/lng stay null (no geocoding yet).
         address=contact.address,
         postcode=contact.postcode,
-        **data.model_dump(),
+        **{
+            **data.model_dump(),
+            "assigned_user_id": assigned_user_id,
+            "notes": merge_contact_notes(data.notes, contact.notes),
+        },
     )
     # Multi-day split: a duration beyond the tenant's daily working hours is
     # capped at day 1 here; the remaining blocks become appointments below.
@@ -191,6 +295,15 @@ async def create_job(data: JobCreate, tenant: TenantDep, db: DbDep) -> JobRead:
         blocks = plan_job_blocks(tenant.settings, job.scheduled_start, job.scheduled_end)
         if blocks:
             job.scheduled_end = job.scheduled_start + timedelta(hours=blocks[0].hours)
+    # Dispatch guardrails run before anything is persisted: double-booking and
+    # the 10h daily cap reject with a structured 409.
+    if job.scheduled_start is not None:
+        await enforce_assignment_guardrails(
+            db,
+            tenant.id,
+            assigned_user_id,
+            scheduled_spans(job.scheduled_start, job.scheduled_end, blocks, tenant.settings),
+        )
     db.add(job)
     await db.flush()
     if blocks:
@@ -217,7 +330,7 @@ async def create_job(data: JobCreate, tenant: TenantDep, db: DbDep) -> JobRead:
 
 async def _sync_linked_appointments(
     db: AsyncSession, tenant_id: UUID, job: Job, previous_start: datetime | None
-) -> None:
+) -> list[Appointment]:
     """One-way job → appointment schedule sync (see module docstring).
 
     Every linked appointment shifts by the job's own movement (new start
@@ -228,9 +341,12 @@ async def _sync_linked_appointments(
     job schedule keeps each appointment's existing duration; a job being
     unscheduled (no start) leaves its appointments untouched, since
     appointments cannot represent an unscheduled slot.
+
+    Returns the linked appointments (post-shift) so the caller can run the
+    dispatch guardrails over their new spans.
     """
     if job.scheduled_start is None:
-        return
+        return []
     result = await db.execute(
         select(Appointment)
         .where(Appointment.job_id == job.id, Appointment.tenant_id == tenant_id)
@@ -238,7 +354,7 @@ async def _sync_linked_appointments(
     )
     appointments = list(result.scalars().all())
     if not appointments:
-        return
+        return []
     if previous_start is not None:
         delta = job.scheduled_start - previous_start
     else:
@@ -256,6 +372,7 @@ async def _sync_linked_appointments(
             appointment.end_at = job.scheduled_end
         else:
             appointment.end_at = appointment.start_at + duration
+    return appointments
 
 
 async def _email_booking_confirmed(db: AsyncSession, tenant_id: UUID, job: Job) -> None:
@@ -325,7 +442,7 @@ async def _email_booking_confirmed(db: AsyncSession, tenant_id: UUID, job: Job) 
             event="booking_confirmed",
             template="booking_confirmed",
             from_name=business_name,
-            reply_to=(tenant_row.email if tenant_row is not None and tenant_row.email else None),
+            reply_to=tenant_reply_to(tenant_row, job_id=str(job.id)),
             context={"job_id": str(job.id), "tenant_id": str(tenant_id)},
         )
     except Exception as exc:
@@ -344,21 +461,63 @@ async def update_job(
     tenant: TenantDep,
     db: DbDep,
 ) -> JobRead:
-    """Update a job's schedule, notes or assignee."""
+    """Update a job's schedule, notes or assignee.
+
+    Dispatch guardrails apply to schedule/assignee changes: in-progress and
+    completed jobs are locked (409 ``job_locked``), and the new placement must
+    not double-book the assignee or push them over the daily hours cap.
+    """
     job = await _get_job(db, tenant.id, job_id)
     changes = data.model_dump(exclude_unset=True)
-    if "assigned_user_id" in changes:
+    schedule_changed = "scheduled_start" in changes or "scheduled_end" in changes
+    assignee_changed = "assigned_user_id" in changes
+    if schedule_changed or assignee_changed:
+        ensure_job_mutable(job)
+    if assignee_changed:
         await _validate_assignee(db, tenant.id, changes["assigned_user_id"])
     previous_start = job.scheduled_start
     for key, value in changes.items():
         setattr(job, key, value)
     if "scheduled_start" in changes or "scheduled_end" in changes:
-        await _sync_linked_appointments(db, tenant.id, job, previous_start)
+        appointments = await _sync_linked_appointments(db, tenant.id, job, previous_start)
+        # Guardrails run after the new spans are known but before the booking
+        # confirmation email and commit; a rejection rolls the mutation back.
+        if job.scheduled_start is not None:
+            try:
+                await enforce_assignment_guardrails(
+                    db,
+                    tenant.id,
+                    job.assigned_user_id,
+                    scheduled_spans(job.scheduled_start, job.scheduled_end, [], None)
+                    + [
+                        (a.start_at, a.end_at)
+                        for a in appointments
+                        if a.status not in NON_BLOCKING_APPOINTMENT_STATUSES
+                    ],
+                    exclude_job_id=job.id,
+                    exclude_appointment_ids=frozenset(a.id for a in appointments),
+                )
+            except HTTPException:
+                await db.rollback()
+                raise
         # Booking confirmation to the customer on every schedule change that
         # lands on a real slot (first scheduling and reschedules alike;
         # unscheduling sends nothing — the electrician tells them directly).
         if "scheduled_start" in changes and job.scheduled_start != previous_start:
             await _email_booking_confirmed(db, tenant.id, job)
+    elif assignee_changed and job.scheduled_start is not None:
+        # Pure reassignment: the existing slot moves to another calendar.
+        try:
+            await enforce_assignment_guardrails(
+                db,
+                tenant.id,
+                job.assigned_user_id,
+                scheduled_spans(job.scheduled_start, job.scheduled_end, [], None),
+                exclude_job_id=job.id,
+            )
+        except HTTPException:
+            await db.rollback()
+            raise
     await db.commit()
     # The assignee/media relationships were loaded by the initial _get_job;
     # expire them so the re-read reflects the values just written.
@@ -405,35 +564,13 @@ async def delete_job(job_id: UUID, tenant: TenantDep, db: DbDep) -> None:
 async def _busy_periods(
     db: AsyncSession, tenant_id: UUID, window_start: datetime, window_end: datetime
 ) -> list[tuple[datetime, datetime]]:
-    """Appointments + scheduled jobs overlapping the window, as busy intervals."""
-    busy: list[tuple[datetime, datetime]] = []
-    result = await db.execute(
-        select(Appointment).where(
-            Appointment.tenant_id == tenant_id,
-            Appointment.start_at < window_end,
-            Appointment.end_at > window_start,
-            Appointment.status.notin_({"cancelled", "no_show"}),
-        )
-    )
-    busy.extend((a.start_at, a.end_at) for a in result.scalars().all())
+    """Appointments + scheduled jobs overlapping the window, as busy intervals.
 
-    jobs_result = await db.execute(
-        select(Job).where(
-            Job.tenant_id == tenant_id,
-            Job.scheduled_start.isnot(None),
-            Job.scheduled_start < window_end,
-            Job.status.notin_({"cancelled", "completed"}),
-        )
-    )
-    for job in jobs_result.scalars().all():
-        job_start = job.scheduled_start
-        if job_start is None:  # filtered above; satisfies the type checker
-            continue
-        # Jobs without an end block one hour from their start.
-        job_end = job.scheduled_end or (job_start + timedelta(hours=1))
-        if job_end > window_start:
-            busy.append((job_start, job_end))
-    return busy
+    Thin wrapper over :func:`app.availability.busy_periods` — the shared
+    implementation used by the public quote-page availability endpoint, so
+    staff and customers see the same calendar.
+    """
+    return await busy_periods(db, tenant_id, window_start, window_end)
 
 
 def _free_hours(
@@ -443,23 +580,7 @@ def _free_hours(
     busy: list[tuple[datetime, datetime]],
 ) -> float:
     """Unbooked hours inside one day's working window."""
-    day_start = datetime.combine(day, work_start)
-    day_end = datetime.combine(day, work_end)
-    if day_end <= day_start:
-        return 0.0
-    intervals = sorted(
-        (max(start, day_start), min(end, day_end))
-        for start, end in busy
-        if start < day_end and end > day_start
-    )
-    booked = 0.0
-    cursor = day_start
-    for start, end in intervals:
-        overlap_start = max(start, cursor)
-        if end > overlap_start:
-            booked += (end - overlap_start).total_seconds()
-            cursor = max(cursor, end)
-    return max((day_end - day_start).total_seconds() - booked, 0.0) / 3600
+    return free_hours(day, work_start, work_end, busy)
 
 
 # How far ahead the schedule suggestion searches for a fitting start.
@@ -551,3 +672,50 @@ async def get_job(job_id: UUID, tenant: TenantDep, db: DbDep) -> JobRead:
     """Get a single job."""
     job = await _get_job(db, tenant.id, job_id)
     return JobRead.model_validate(job)
+
+
+@router.post("/{job_id}/media", status_code=status.HTTP_201_CREATED)
+async def attach_job_media(
+    job_id: UUID,
+    data: JobMediaCreate,
+    tenant: TenantDep,
+    db: DbDep,
+) -> JobRead:
+    """Attach an uploaded photo to a job, labelled before/after/general."""
+    job = await _get_job(db, tenant.id, job_id)
+    asset = MediaAsset(
+        tenant_id=tenant.id,
+        job_id=job.id,
+        file_url=data.file_url,
+        file_key=data.file_key,
+        mime_type=data.mime_type,
+        size_bytes=data.size_bytes,
+        source=data.source,
+        kind=data.kind,
+    )
+    db.add(asset)
+    await db.commit()
+    # The media relationship was loaded by the initial _get_job and the
+    # session does not expire on commit — expire it so the re-read sees the
+    # newly attached asset.
+    db.expire(job, ["media"])
+    return JobRead.model_validate(await _get_job(db, tenant.id, job.id))
+
+
+@router.patch("/{job_id}/media/{asset_id}")
+async def update_job_media(
+    job_id: UUID,
+    asset_id: UUID,
+    data: JobMediaUpdate,
+    tenant: TenantDep,
+    db: DbDep,
+) -> JobRead:
+    """Relabel a job photo (before/after/general)."""
+    job = await _get_job(db, tenant.id, job_id)
+    asset = await db.get(MediaAsset, asset_id)
+    if asset is None or asset.tenant_id != tenant.id or asset.job_id != job.id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Media asset not found")
+    asset.kind = data.kind
+    await db.commit()
+    db.expire(job, ["media"])
+    return JobRead.model_validate(await _get_job(db, tenant.id, job.id))

@@ -2,9 +2,11 @@
 
 from typing import Any
 from unittest.mock import AsyncMock, patch
+from uuid import UUID
 
+import httpx
 import pytest
-from app.models import Subscription
+from app.models import Subscription, Tenant
 from httpx import AsyncClient
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -17,6 +19,18 @@ def paddle_customer(monkeypatch: pytest.MonkeyPatch) -> AsyncMock:
     """Stub Paddle customer binding; returns the mock for call assertions."""
     fake = AsyncMock(return_value="ctm_test_1")
     monkeypatch.setattr("app.routers.billing.get_or_create_customer", fake)
+    return fake
+
+
+@pytest.fixture(autouse=True)
+def paddle_price(monkeypatch: pytest.MonkeyPatch) -> AsyncMock:
+    """Default Paddle price lookup: a card-REQUIRED trial price, so checkout
+    tests exercise the standard rendered-checkout path unless a test overrides
+    the return value with a cardless-trial price."""
+    fake = AsyncMock(
+        return_value={"id": "pri_test", "trial_period": {"requires_payment_method": True}}
+    )
+    monkeypatch.setattr("app.routers.billing.get_price", fake)
     return fake
 
 
@@ -112,11 +126,246 @@ async def test_checkout_bubbles_paddle_failure_as_502(
     assert response.status_code == 502
 
 
+_CARDLESS_PRICE = {"id": "pri_test_pro", "trial_period": {"requires_payment_method": False}}
+
+
+async def test_checkout_cardless_trial_with_existing_subscription_uses_payment_method_update(
+    admin_client: AsyncClient,
+    db: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+    paddle_customer: AsyncMock,
+    paddle_price: AsyncMock,
+) -> None:
+    """Regression (beta-blocker): a trialing Paddle subscription on a
+    cardless-trial price must NOT get a fresh signup transaction (Paddle
+    rejects it at render: "Cardless trial transaction is not linked to a
+    subscription"). The returned checkout is the subscription-linked
+    payment-method-update transaction, opened one-page by the checkout page."""
+    monkeypatch.setattr("app.routers.billing.settings.paddle_price_id_pro", "pri_test_pro")
+    paddle_price.return_value = _CARDLESS_PRICE
+
+    tenant_id = admin_client.headers["X-Tenant-ID"]
+    db.add(
+        Subscription(
+            tenant_id=tenant_id,
+            plan_key="pro",
+            status="trialing",
+            paddle_subscription_id="sub_trialing",
+        )
+    )
+    await db.commit()
+
+    payment_method_txn = AsyncMock(
+        return_value={"transaction_id": "txn_pm", "checkout_url": "https://pay.paddle.com/pm"}
+    )
+    with (
+        patch(
+            "app.routers.billing.get_payment_method_update_transaction", new=payment_method_txn
+        ) as pm_mock,
+        patch("app.routers.billing.create_subscription_transaction") as standard_mock,
+        patch("app.routers.billing.create_cardless_trial_transaction") as trial_mock,
+    ):
+        response = await admin_client.post("/billing/checkout", json={"plan_key": "pro"})
+
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["transaction_id"] == "txn_pm"
+    assert body["checkout_url"] == "https://pay.paddle.com/pm"
+    # The payment-method checkout is bound to the EXISTING subscription.
+    pm_mock.assert_awaited_once_with("sub_trialing")
+    standard_mock.assert_not_awaited()
+    trial_mock.assert_not_awaited()
+
+
+async def test_checkout_cardless_trial_creates_subscription_then_payment_method_checkout(
+    admin_client: AsyncClient,
+    db: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+    paddle_customer: AsyncMock,
+    paddle_price: AsyncMock,
+) -> None:
+    """Regression (beta-blocker): a tenant on a cardless trial with NO Paddle
+    subscription yet (local trial only) gets the subscription created
+    server-side (billed transaction -> Paddle creates the trialing
+    subscription), stamped with tenant custom_data, and then a
+    payment-method-update checkout to add their card."""
+    monkeypatch.setattr("app.routers.billing.settings.paddle_price_id_pro", "pri_test_pro")
+    paddle_price.return_value = _CARDLESS_PRICE
+
+    create_address = AsyncMock(return_value="add_1")
+    create_trial_txn = AsyncMock(return_value="txn_trial_1")
+    await_subscription = AsyncMock(return_value="sub_new")
+    stamp_custom_data = AsyncMock()
+    payment_method_txn = AsyncMock(
+        return_value={"transaction_id": "txn_pm", "checkout_url": "https://pay.paddle.com/pm"}
+    )
+
+    tenant_id = admin_client.headers["X-Tenant-ID"]
+    with (
+        patch("app.routers.billing.create_customer_address", new=create_address),
+        patch(
+            "app.routers.billing.create_cardless_trial_transaction", new=create_trial_txn
+        ) as trial_mock,
+        patch("app.routers.billing.await_transaction_subscription_id", new=await_subscription),
+        patch("app.routers.billing.update_subscription_custom_data", new=stamp_custom_data),
+        patch("app.routers.billing.get_payment_method_update_transaction", new=payment_method_txn),
+        patch("app.routers.billing.create_subscription_transaction") as standard_mock,
+    ):
+        response = await admin_client.post(
+            "/billing/checkout", json={"plan_key": "pro", "postcode": "SW1A 1AA"}
+        )
+
+    assert response.status_code == 200, response.text
+    assert response.json()["transaction_id"] == "txn_pm"
+    standard_mock.assert_not_awaited()
+
+    # The subscription is created server-side, bound to customer + address.
+    _, trial_kwargs = trial_mock.call_args
+    assert trial_kwargs["price_id"] == "pri_test_pro"
+    assert trial_kwargs["customer_id"] == "ctm_test_1"
+    assert trial_kwargs["address_id"] == "add_1"
+    assert trial_kwargs["tenant_id"] == tenant_id
+    await_subscription.assert_awaited_once_with("txn_trial_1")
+    payment_method_txn.assert_awaited_once_with("sub_new")
+
+    # Paddle requires postal_code for GB addresses — the postcode sent with
+    # the checkout request feeds the address create and is persisted into the
+    # tenant settings so later checkouts don't ask again.
+    create_address.assert_awaited_once_with("ctm_test_1", postal_code="SW1A 1AA")
+    tenant_row = await db.get(Tenant, UUID(tenant_id))
+    assert tenant_row is not None
+    assert (tenant_row.settings or {}).get("postcode") == "SW1A 1AA"
+
+    # Webhook events key on custom_data.tenant_id — stamped onto the
+    # subscription at creation, and mirrored onto our local row.
+    stamp_args, _ = stamp_custom_data.call_args
+    assert stamp_args[0] == "sub_new"
+    assert stamp_args[1] == {"tenant_id": tenant_id, "plan_key": "pro"}
+    tenant_sub = await db.scalar(select(Subscription).where(Subscription.tenant_id == tenant_id))
+    assert tenant_sub is not None
+    assert tenant_sub.paddle_subscription_id == "sub_new"
+    assert tenant_sub.paddle_customer_id == "ctm_test_1"
+    assert tenant_sub.paddle_transaction_id == "txn_pm"
+
+
+async def test_checkout_cardless_trial_without_postcode_returns_400(
+    admin_client: AsyncClient,
+    monkeypatch: pytest.MonkeyPatch,
+    paddle_customer: AsyncMock,
+    paddle_price: AsyncMock,
+) -> None:
+    """DEFECT-015: a tenant with no postcode on file and none in the request
+    gets a clear 400 (Paddle requires postal_code for GB addresses) instead of
+    a 502 retry loop; no Paddle address create is attempted."""
+    monkeypatch.setattr("app.routers.billing.settings.paddle_price_id_pro", "pri_test_pro")
+    paddle_price.return_value = _CARDLESS_PRICE
+
+    create_address = AsyncMock(return_value="add_1")
+    with patch("app.routers.billing.create_customer_address", new=create_address):
+        response = await admin_client.post("/billing/checkout", json={"plan_key": "pro"})
+
+    assert response.status_code == 400, response.text
+    assert response.json()["detail"] == "postcode_required"
+    create_address.assert_not_awaited()
+
+
+async def test_checkout_cardless_trial_uses_stored_tenant_postcode(
+    admin_client: AsyncClient,
+    db: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+    paddle_customer: AsyncMock,
+    paddle_price: AsyncMock,
+) -> None:
+    """A postcode already on the tenant profile (set via PATCH /tenants/me or
+    an earlier checkout) is used for the Paddle address — no need to resend."""
+    monkeypatch.setattr("app.routers.billing.settings.paddle_price_id_pro", "pri_test_pro")
+    paddle_price.return_value = _CARDLESS_PRICE
+
+    tenant_id = UUID(admin_client.headers["X-Tenant-ID"])
+    tenant_row = await db.get(Tenant, tenant_id)
+    assert tenant_row is not None
+    tenant_row.settings = {**(tenant_row.settings or {}), "postcode": "E1 6AN"}
+    await db.commit()
+
+    create_address = AsyncMock(return_value="add_1")
+    with (
+        patch("app.routers.billing.create_customer_address", new=create_address),
+        patch(
+            "app.routers.billing.create_cardless_trial_transaction",
+            new=AsyncMock(return_value="txn_trial_1"),
+        ),
+        patch(
+            "app.routers.billing.await_transaction_subscription_id",
+            new=AsyncMock(return_value="sub_new"),
+        ),
+        patch("app.routers.billing.update_subscription_custom_data", new=AsyncMock()),
+        patch(
+            "app.routers.billing.get_payment_method_update_transaction",
+            new=AsyncMock(
+                return_value={
+                    "transaction_id": "txn_pm",
+                    "checkout_url": "https://pay.paddle.com/pm",
+                }
+            ),
+        ),
+    ):
+        response = await admin_client.post("/billing/checkout", json={"plan_key": "pro"})
+
+    assert response.status_code == 200, response.text
+    create_address.assert_awaited_once_with("ctm_test_1", postal_code="E1 6AN")
+
+
+async def test_checkout_cardless_trial_paddle_postcode_rejection_returns_400(
+    admin_client: AsyncClient,
+    monkeypatch: pytest.MonkeyPatch,
+    paddle_customer: AsyncMock,
+    paddle_price: AsyncMock,
+) -> None:
+    """DEFECT-015: Paddle rejecting the postcode (400 on the address create)
+    is a client-fixable input problem — surface 400, not a 502 outage."""
+    monkeypatch.setattr("app.routers.billing.settings.paddle_price_id_pro", "pri_test_pro")
+    paddle_price.return_value = _CARDLESS_PRICE
+
+    request = httpx.Request("POST", "https://sandbox-api.paddle.com/customers/ctm_test_1/addresses")
+    paddle_response = httpx.Response(
+        400,
+        request=request,
+        json={"error": {"detail": "postal_code is required for the selected country"}},
+    )
+    create_address = AsyncMock(
+        side_effect=httpx.HTTPStatusError("400", request=request, response=paddle_response)
+    )
+    with patch("app.routers.billing.create_customer_address", new=create_address):
+        response = await admin_client.post(
+            "/billing/checkout", json={"plan_key": "pro", "postcode": "ZZ9 9ZZ"}
+        )
+
+    assert response.status_code == 400, response.text
+    assert response.json()["detail"] == "postcode_invalid"
+
+
 async def test_get_subscription_returns_none_when_missing(admin_client: AsyncClient) -> None:
     """New tenants with no sub row see ``null`` — a legitimate state."""
     response = await admin_client.get("/billing/subscription")
     assert response.status_code == 200
     assert response.json() is None
+
+
+async def test_checkout_page_forces_one_page_variant(
+    client: AsyncClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """DEFECT-016 regression: paddle.js auto-opens a checkout for the ``_ptxn``
+    query parameter with DEFAULT settings (variant multi-page), which Paddle
+    rejects for cardless-trial payment-method transactions. The hosted page
+    must strip ``_ptxn`` before Initialize (so only the explicit open fires)
+    and declare the one-page variant as the Initialize-level default."""
+    monkeypatch.setattr("app.routers.billing.settings.paddle_client_token", "test_client_token")
+    response = await client.get("/billing/checkout-page")
+    assert response.status_code == 200
+    html = response.text
+    assert 'params.delete("_ptxn")' in html
+    assert 'checkout: { settings: { variant: "one-page" } }' in html
+    assert 'Paddle.Checkout.open({ transactionId: txn, settings: { variant: "one-page" } })' in html
 
 
 async def test_get_subscription_returns_state_when_present(
@@ -384,7 +633,11 @@ async def test_checkout_never_sends_quantity_for_any_tier_or_interval(
     assert "seats" not in kwargs
 
 
-_BANNED_PLAN_VOCABULARY = ("allowance", "overage", "seat", "quota", "credit", "usage", "meter")
+# Metered-billing vocabulary that must never leak into the public plans
+# payload. ``seats`` is deliberately NOT banned: since the team-invites work
+# a seat count is an advertised tier property (a hard cap on staff users),
+# not a usage meter.
+_BANNED_PLAN_VOCABULARY = ("allowance", "overage", "quota", "credit", "usage", "meter")
 
 
 def _walk_strings(node: Any) -> "list[str]":
@@ -405,7 +658,7 @@ def _walk_strings(node: Any) -> "list[str]":
 async def test_plans_payload_contains_no_quota_vocabulary_anywhere(
     client: AsyncClient,
 ) -> None:
-    """Deep scan: no allowance/overage/seat/quota/credit/usage/meter token in
+    """Deep scan: no allowance/overage/quota/credit/usage/meter token in
     any key or string value of GET /billing/plans, at any nesting depth, for
     every tier."""
     response = await client.get("/billing/plans")
@@ -495,3 +748,224 @@ async def test_portal_session_bubbles_paddle_failure_as_502(
     with patch("app.routers.billing.create_customer_portal_session", new=fake):
         response = await admin_client.post("/billing/portal-session")
     assert response.status_code == 502
+
+
+# --- Mid-cycle plan change with proration (#82) -------------------------------
+
+
+def _paddle_subscription_entity(
+    *,
+    subscription_id: str,
+    tenant_id: str,
+    price_id: str,
+    product_id: str = "pro_test",
+    status: str = "active",
+) -> dict[str, Any]:
+    """Subscription entity in the shape Paddle's update-subscription API returns."""
+    return {
+        "id": subscription_id,
+        "status": status,
+        "customer_id": "ctm_test_1",
+        "custom_data": {"tenant_id": tenant_id},
+        "items": [{"price": {"id": price_id, "product_id": product_id}, "quantity": 1}],
+        "current_billing_period": {
+            "starts_at": "2026-09-01T00:00:00Z",
+            "ends_at": "2026-10-01T00:00:00Z",
+        },
+    }
+
+
+async def test_plan_change_prorates_and_mirrors_new_plan(
+    admin_client: AsyncClient,
+    db: AsyncSession,
+    clean_price_env: pytest.MonkeyPatch,
+) -> None:
+    """POST /billing/plan-change calls Paddle with the new tier price and
+    mirrors the response through the webhook upsert path, so the tenant's
+    plan/tier re-derive immediately."""
+    clean_price_env.setenv("PADDLE_PRICE_ID_TEAM_MONTH", "pri_new_team_m")
+
+    from uuid import UUID
+
+    tenant_id = UUID(admin_client.headers["X-Tenant-ID"])
+    db.add(
+        Subscription(
+            tenant_id=tenant_id,
+            plan_key="pro",
+            status="active",
+            paddle_subscription_id="sub_plan_1",
+            paddle_customer_id="ctm_test_1",
+        )
+    )
+    await db.commit()
+
+    fake = AsyncMock(
+        return_value=_paddle_subscription_entity(
+            subscription_id="sub_plan_1",
+            tenant_id=str(tenant_id),
+            price_id="pri_new_team_m",
+            product_id="pro_team",
+        )
+    )
+
+    # The real mirror upsert runs on its own engine session, which cannot see
+    # this test's uncommitted rows; apply the same mirror inline. The real
+    # upsert against this exact Paddle response shape is covered in
+    # test_webhooks.py::test_plan_change_response_shape_upserts_plan.
+    async def fake_upsert(event_type: str, event_data: dict[str, Any]) -> None:
+        assert event_type == "subscription.updated"
+        row = await db.scalar(select(Subscription).where(Subscription.tenant_id == tenant_id))
+        assert row is not None
+        row.paddle_price_id = event_data["items"][0]["price"]["id"]
+        row.plan_key = "team"
+        await db.commit()
+
+    with (
+        patch("app.routers.billing.update_subscription", new=fake),
+        patch("app.routers.billing._upsert_subscription", new=fake_upsert),
+    ):
+        response = await admin_client.post("/billing/plan-change", json={"plan_key": "team"})
+
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["plan_key"] == "team"  # re-derived from the mirrored price id
+    assert body["status"] == "active"
+    # The Paddle call carries the resolved price for the requested tier.
+    fake.assert_awaited_once_with("sub_plan_1", "pri_new_team_m")
+
+    # The local mirror agrees (read model used by the paywall / entitlements).
+    sub = await db.scalar(select(Subscription).where(Subscription.tenant_id == tenant_id))
+    assert sub is not None
+    assert sub.plan_key == "team"
+    assert sub.paddle_price_id == "pri_new_team_m"
+
+
+async def test_plan_change_404_without_subscription(admin_client: AsyncClient) -> None:
+    response = await admin_client.post("/billing/plan-change", json={"plan_key": "pro"})
+    assert response.status_code == 404
+
+
+async def test_plan_change_404_without_paddle_subscription(
+    admin_client: AsyncClient, db: AsyncSession
+) -> None:
+    """A trial/incomplete row that never checked out has nothing to update."""
+    from uuid import UUID
+
+    tenant_id = UUID(admin_client.headers["X-Tenant-ID"])
+    db.add(Subscription(tenant_id=tenant_id, plan_key="pro", status="trialing"))
+    await db.commit()
+
+    response = await admin_client.post("/billing/plan-change", json={"plan_key": "team"})
+    assert response.status_code == 404
+
+
+async def test_plan_change_bubbles_paddle_failure_as_502(
+    admin_client: AsyncClient,
+    db: AsyncSession,
+    clean_price_env: pytest.MonkeyPatch,
+) -> None:
+    """A declined proration charge (Paddle prevent_change) surfaces as 502 and
+    the stored plan is untouched."""
+    clean_price_env.setenv("PADDLE_PRICE_ID_TEAM_MONTH", "pri_new_team_m")
+
+    from uuid import UUID
+
+    tenant_id = UUID(admin_client.headers["X-Tenant-ID"])
+    db.add(
+        Subscription(
+            tenant_id=tenant_id,
+            plan_key="pro",
+            status="active",
+            paddle_subscription_id="sub_plan_2",
+        )
+    )
+    await db.commit()
+
+    fake = AsyncMock(side_effect=RuntimeError("paddle 402 payment_failed"))
+    with patch("app.routers.billing.update_subscription", new=fake):
+        response = await admin_client.post("/billing/plan-change", json={"plan_key": "team"})
+
+    assert response.status_code == 502
+    sub = await db.scalar(select(Subscription).where(Subscription.tenant_id == tenant_id))
+    assert sub is not None
+    assert sub.plan_key == "pro"
+
+
+async def test_plan_change_rejects_unknown_plan(
+    admin_client: AsyncClient, db: AsyncSession
+) -> None:
+    from uuid import UUID
+
+    tenant_id = UUID(admin_client.headers["X-Tenant-ID"])
+    db.add(
+        Subscription(
+            tenant_id=tenant_id,
+            plan_key="pro",
+            status="active",
+            paddle_subscription_id="sub_plan_3",
+        )
+    )
+    await db.commit()
+
+    response = await admin_client.post("/billing/plan-change", json={"plan_key": "enterprise"})
+    assert response.status_code == 400
+
+
+# --- Past-due grace: bounded window before the C22 paywall re-engages (#84) ---
+
+
+async def test_past_due_within_grace_passes_paywall(
+    admin_client: AsyncClient, db: AsyncSession
+) -> None:
+    """A recent past-due (inside the grace window) still gets app access."""
+    from datetime import datetime, timedelta
+    from uuid import UUID
+
+    tenant_id = UUID(admin_client.headers["X-Tenant-ID"])
+    db.add(
+        Subscription(
+            tenant_id=tenant_id,
+            plan_key="pro",
+            status="past_due",
+            current_period_end=datetime.utcnow() - timedelta(days=5),
+        )
+    )
+    await db.commit()
+
+    assert (await admin_client.get("/quotes")).status_code == 200
+
+
+async def test_past_due_past_grace_hits_paywall(
+    admin_client: AsyncClient, db: AsyncSession
+) -> None:
+    """Past the grace window the C22 paywall re-engages (402)."""
+    from datetime import datetime, timedelta
+    from uuid import UUID
+
+    tenant_id = UUID(admin_client.headers["X-Tenant-ID"])
+    db.add(
+        Subscription(
+            tenant_id=tenant_id,
+            plan_key="pro",
+            status="past_due",
+            current_period_end=datetime.utcnow() - timedelta(days=10),
+        )
+    )
+    await db.commit()
+
+    response = await admin_client.get("/quotes")
+    assert response.status_code == 402
+    assert response.json()["detail"] == "subscription_required"
+
+
+async def test_past_due_without_period_end_keeps_beta_access(
+    admin_client: AsyncClient, db: AsyncSession
+) -> None:
+    """No known period end → permissive default (C22 past_due passes)."""
+    from uuid import UUID
+
+    tenant_id = UUID(admin_client.headers["X-Tenant-ID"])
+    db.add(Subscription(tenant_id=tenant_id, plan_key="pro", status="past_due"))
+    await db.commit()
+
+    assert (await admin_client.get("/quotes")).status_code == 200

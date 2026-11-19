@@ -28,7 +28,7 @@ crash — callers translate that to a 503 / a ``null`` payment URL.
 import asyncio
 import contextlib
 import sys
-from typing import Any
+from typing import Any, Literal
 
 import httpx
 import structlog
@@ -137,20 +137,48 @@ async def create_connected_account_v2(
     email: str | None = None,
     display_name: str | None = None,
     tenant_id: str | None = None,
+    phone: str | None = None,
+    postcode: str | None = None,
+    entity_type: str | None = None,
 ) -> dict[str, Any]:
-    """Create a v2 connected Account with the recipient configuration (ADR-003).
+    """Create a v2 connected Account (ADR-003).
 
     Marketplace defaults per the Accounts v2 guidance: ``dashboard: "express"``
-    with the platform as both fees and losses collector (``"application"``),
-    and the ``stripe_balance.stripe_transfers`` capability requested on the
-    recipient configuration — the v2 go-live check for destination charges.
-    No ``merchant``/``card_payments`` configuration is requested (that would
-    only lengthen onboarding; the platform remains merchant of record).
+    with the platform as both fees and losses collector (``"application"``).
+    Capabilities: ``stripe_balance.stripe_transfers`` on the recipient
+    configuration plus ``card_payments`` on the merchant configuration — the
+    pinned preview REQUIRES the pair (requesting transfers alone 400s with
+    ``capability_not_available_without_other_capability`` on live; sandbox
+    historically accepted recipient-only, which is how the original shape
+    shipped). The platform remains merchant of record; the merchant capability
+    exists only to satisfy the coupling rule.
     Returns ``{"id": ...}``.
+
+    Everything we already know about the tradie is pre-filled (contact email,
+    phone, trading name, postcode, entity type from their business structure)
+    so Stripe's onboarding skips those steps. ``entity_type`` is the v2
+    identity enum: ``"individual"`` for sole traders, ``"company"`` for
+    ltd/LLP — passed only when known, never guessed.
+
+    No business-website prefill: there is no URL field on the pinned preview
+    (``identity.business_details.url`` was removed in clover and
+    ``defaults.profile.url`` never existed there — passing it 400s with
+    ``invalid_fields``). Onboarding collects the website; tenants without one
+    use their customer portal URL.
     """
+    identity: dict[str, Any] = {"country": "gb"}
+    if entity_type:
+        identity["entity_type"] = entity_type
+    business_details: dict[str, Any] = {}
+    if display_name:
+        business_details["registered_name"] = display_name
+    if postcode:
+        business_details["address"] = {"country": "gb", "postal_code": postcode}
+    if business_details:
+        identity["business_details"] = business_details
     payload: dict[str, Any] = {
         "display_name": display_name or "My Trade Portal tradesperson",
-        "identity": {"country": "gb"},
+        "identity": identity,
         "dashboard": "express",
         "defaults": {
             "responsibilities": {
@@ -164,12 +192,19 @@ async def create_connected_account_v2(
                     "stripe_balance": {"stripe_transfers": {"requested": True}},
                 },
             },
+            "merchant": {
+                "capabilities": {
+                    "card_payments": {"requested": True},
+                },
+            },
         },
         "metadata": {"tenant_id": tenant_id or ""},
         "include": ["configuration.recipient", "requirements"],
     }
     if email:
         payload["contact_email"] = email
+    if phone:
+        payload["contact_phone"] = phone
     account = await _v2_request(
         "POST",
         "/core/accounts",
@@ -204,6 +239,28 @@ async def create_account_link(
         type="account_onboarding",
     )
     return str(link["url"])
+
+
+async def create_account_session(
+    account_id: str, *, component_set: Literal["onboarding", "dashboard"] = "onboarding"
+) -> dict[str, Any]:
+    """Create an AccountSession for embedded onboarding or the account dashboard."""
+    components = (
+        {"account_onboarding": {"enabled": True}}
+        if component_set == "onboarding"
+        else {
+            "notification_banner": {"enabled": True},
+            "payouts": {"enabled": True},
+            "balances": {"enabled": True},
+        }
+    )
+    stripe = _stripe()
+    session = await asyncio.to_thread(
+        stripe.AccountSession.create,
+        account=account_id,
+        components=components,
+    )
+    return {"client_secret": session["client_secret"], "expires_at": int(session["expires_at"])}
 
 
 def _capability_flags(account: dict[str, Any]) -> dict[str, bool | str]:
@@ -246,6 +303,19 @@ async def retrieve_account(account_id: str) -> dict[str, bool | str]:
         params=[("include", "configuration.recipient"), ("include", "requirements")],
     )
     return _capability_flags(account)
+
+
+async def delete_connected_account(account_id: str) -> None:
+    """Delete a platform-controlled Express connected account (tenant offboarding).
+
+    Uses the v1 SDK ``Account.delete`` — Accounts v2 has no delete endpoint and
+    v1 deletion is still supported for platform-created Express accounts (the
+    same account ids the v2 API reads). Callers treat this as best-effort: a
+    failure leaves the account live in the Stripe dashboard and must never
+    block offboarding.
+    """
+    stripe = _stripe()
+    await asyncio.to_thread(stripe.Account.delete, account_id)
 
 
 async def create_payment_intent(
@@ -302,21 +372,32 @@ async def create_refund(payment_intent_id: str) -> dict[str, Any]:
 def construct_event(body: bytes, signature_header: str) -> dict[str, Any]:
     """Verify the Stripe-Signature header and return the event payload.
 
+    Connect destination charges need two webhook endpoints at the same URL —
+    the platform channel (payment_intent/charge events) and the Connect
+    channel (account.updated/payout.paid from connected accounts) — each with
+    its own signing secret. Verify against every configured secret.
+
     Raises :class:`PaymentsNotConfiguredError` when no webhook secret is set
     and :class:`ValueError` when the signature does not verify — the router
     maps those to 503 and 400 respectively.
     """
-    if not config.STRIPE_WEBHOOK_SECRET:
+    secrets = [
+        s
+        for s in (config.STRIPE_PLATFORM_WEBHOOK_SECRET, config.STRIPE_CONNECT_WEBHOOK_SECRET)
+        if s
+    ]
+    if not secrets:
         raise PaymentsNotConfiguredError()
     stripe = _stripe()
-    try:
-        event = stripe.Webhook.construct_event(
-            body,
-            signature_header,
-            config.STRIPE_WEBHOOK_SECRET,
-        )
-    except stripe.SignatureVerificationError as exc:
-        raise ValueError("invalid stripe webhook signature") from exc
+    event = None
+    for secret in secrets:
+        try:
+            event = stripe.Webhook.construct_event(body, signature_header, secret)
+            break
+        except stripe.SignatureVerificationError:
+            continue
+    if event is None:
+        raise ValueError("invalid stripe webhook signature")
     # stripe-python >= 15 no longer subclasses dict (``dict(event)`` raises
     # TypeError); ``to_dict()`` exists across the pinned ``stripe>=10`` range,
     # with ``dict()`` kept as the fallback for any older release lacking it.

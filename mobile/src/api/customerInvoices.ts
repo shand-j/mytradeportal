@@ -26,11 +26,12 @@ export type CustomerInvoice = {
   businessName: string;
   businessLogoUrl: string | null;
   businessPrimaryColor: string;
+  /** Stripe /pay page URL when the tenant takes card payments; null otherwise. */
+  paymentUrl: string | null;
 };
 
-export type CustomerInvoiceCheckout = {
-  checkoutId: string;
-  checkoutUrl: string;
+export type CustomerInvoicePay = {
+  paymentUrl: string;
 };
 
 /** Invoices sent to the authenticated customer (backend hides drafts). */
@@ -43,9 +44,9 @@ export async function fetchMyInvoice(id: string): Promise<CustomerInvoice> {
   return api.get<CustomerInvoice>(`/customer/invoices/${id}`);
 }
 
-/** Create a Paddle checkout URL so the customer can pay the invoice online. */
-export async function payMyInvoice(id: string): Promise<CustomerInvoiceCheckout> {
-  return api.post<CustomerInvoiceCheckout>(`/customer/invoices/${id}/pay`);
+/** Mint a Stripe /pay page URL so the customer can pay the invoice by card. */
+export async function payMyInvoice(id: string): Promise<CustomerInvoicePay> {
+  return api.post<CustomerInvoicePay>(`/customer/invoices/${id}/pay`);
 }
 
 /** The logged-in customer's invoice list. */
@@ -77,7 +78,7 @@ export function useMyInvoice(id: string | undefined) {
   };
 }
 
-/** Mutation: create a Paddle checkout for an invoice and refresh the caches. */
+/** Mutation: mint a Stripe pay link for an invoice and refresh the caches. */
 export function usePayMyInvoice() {
   const qc = useQueryClient();
   return useMutation({

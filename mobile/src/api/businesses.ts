@@ -1,5 +1,11 @@
+import { Platform } from "react-native";
+import { useQuery } from "@tanstack/react-query";
 import { api } from "../lib/apiClient";
+import { camelizeKeys } from "../lib/case";
+import { config } from "../lib/config";
+import { tokenStorage } from "../lib/tokenStorage";
 import { BusinessConfig } from "../types";
+import { postMultipartNative } from "./uploads";
 
 type PublicConfigResponse = {
   slug: string;
@@ -132,6 +138,72 @@ export async function updateCurrentTenant(input: UpdateTenantInput): Promise<Bus
   return normalizeTenant(data);
 }
 
+/** A logo image picked on-device, not yet uploaded. */
+export type LogoAsset = {
+  uri: string;
+  name: string;
+  type: string;
+};
+
+/**
+ * Upload the tenant's business logo (staff). Multipart through the API —
+ * MinIO is private-network-only, so devices never see storage URLs. The
+ * server points settings.logo_url at the public GET /businesses/{slug}/logo
+ * route; the response carries the new URL.
+ */
+export async function uploadTenantLogo(asset: LogoAsset): Promise<BusinessConfig> {
+  const [token, tenantId] = await Promise.all([
+    tokenStorage.getToken(),
+    tokenStorage.getTenantId(),
+  ]);
+  const headers: Record<string, string> = {};
+  if (token) headers["Authorization"] = `Bearer ${token}`;
+  if (tenantId) headers["X-Tenant-ID"] = tenantId;
+  // Native: uploadAsync (see postMultipartNative) — SDK 57's fetch rejects RN
+  // FormData file parts, and fetch→blob drops the mime type the server 415s
+  // on. Web: typed File so the part's Content-Type survives.
+  if (Platform.OS !== "web") {
+    const data = camelizeKeys(
+      await postMultipartNative<CurrentTenantResponse>(
+        `${config.apiBaseUrl}/tenants/me/logo`,
+        asset,
+        headers
+      )
+    ) as CurrentTenantResponse;
+    return normalizeTenant(data);
+  }
+  const fetched = await fetch(asset.uri).then((r) => r.blob());
+  const file =
+    typeof File !== "undefined"
+      ? new File([fetched], asset.name, { type: asset.type || fetched.type })
+      : fetched;
+  const form = new FormData();
+  form.append("file", file, asset.name);
+  const response = await fetch(`${config.apiBaseUrl}/tenants/me/logo`, {
+    method: "POST",
+    headers,
+    body: form,
+  });
+  if (!response.ok) {
+    let detail = `Upload failed (${response.status})`;
+    try {
+      const payload = (await response.json()) as { detail?: unknown };
+      if (payload.detail) detail = String(payload.detail);
+    } catch {
+      // Non-JSON error body — keep the status-based message.
+    }
+    throw new Error(detail);
+  }
+  const data = camelizeKeys(await response.json()) as CurrentTenantResponse;
+  return normalizeTenant(data);
+}
+
+/** Remove the tenant's logo (staff): clears the branding settings server-side. */
+export async function removeTenantLogo(): Promise<BusinessConfig> {
+  const data = await api.delete<CurrentTenantResponse>("/tenants/me/logo");
+  return normalizeTenant(data);
+}
+
 export type PaymentDetails = {
   bankAccountName: string;
   bankSortCode: string;
@@ -219,6 +291,16 @@ export async function updateFollowUpSettings(input: FollowUpSettings): Promise<F
     },
   });
   return input;
+}
+
+/**
+ * The tenant's quote-total rounding increment (£5 or £10; 0 = off). Screens
+ * that preview a total the backend will round (quote totals, scratch-invoice
+ * totals) use this so the preview matches the stored value.
+ */
+export function useQuoteRoundingIncrement(): number {
+  const query = useQuery({ queryKey: ["follow-up-settings"], queryFn: fetchFollowUpSettings });
+  return query.data?.quoteRounding ?? 0;
 }
 
 export type WorkingHours = {

@@ -9,6 +9,7 @@ from django.http import HttpRequest
 from operations.forms import TenantAdminForm, UserAdminForm
 from operations.models import (
     AiCallEvent,
+    AiRollupOrgDay,
     AiRollupUserDay,
     Appointment,
     AuditLog,
@@ -275,6 +276,58 @@ class AiRollupUserDayAdmin(admin.ModelAdmin):
         "cost_gbp",
         "latency_p50",
         "latency_p95",
+        "avg_keep_rate",
+        "quotes_sent",
+        "created_at",
+        "updated_at",
+    )
+
+    def has_add_permission(self, request: HttpRequest) -> bool:
+        return False
+
+    def has_change_permission(self, request: HttpRequest, obj: object = None) -> bool:
+        return False
+
+
+@admin.register(AiRollupOrgDay)
+class AiRollupOrgDayAdmin(admin.ModelAdmin):
+    """Per-organisation daily AI rollup — the org cost leaderboard source.
+
+    One row per org per day across all features (incl. p99 + active-user
+    counts). Sort the changelist by date + cost (the default ordering) and use
+    the date hierarchy to drill into a month; the staff ops API
+    (GET /staff/ops/ai-costs) reads the same table for the live leaderboard.
+    Read-only: rows are folded nightly by the API's rollup job.
+    """
+
+    date_hierarchy = "date"
+    list_display = (
+        "date",
+        "tenant",
+        "users_active",
+        "generations",
+        "cost_gbp",
+        "latency_p99",
+        "avg_keep_rate",
+        "quotes_sent",
+    )
+    list_filter = ("tenant",)
+    search_fields = ("tenant__name", "tenant__slug")
+    readonly_fields = (
+        "id",
+        "date",
+        "tenant",
+        "users_active",
+        "generations",
+        "retries",
+        "tokens_input",
+        "tokens_output",
+        "tokens_cached",
+        "est_cost_usd",
+        "cost_gbp",
+        "latency_p50",
+        "latency_p95",
+        "latency_p99",
         "avg_keep_rate",
         "quotes_sent",
         "created_at",

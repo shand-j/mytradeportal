@@ -4,6 +4,7 @@ import { usePortal } from '../context'
 import { PortalShell } from '../components/PortalShell'
 import { ChatThread, type ChatMessage } from '../components/ChatThread'
 import { usePageMeta } from '../../hooks/usePageMeta'
+import { serviceCategoryLabel } from '../labels'
 import {
   PortalApiError,
   postGuestMessage,
@@ -75,7 +76,7 @@ function OptionChip({
       onClick={onToggle}
       className={`min-h-[40px] border-2 px-3 py-1.5 text-[13px] font-semibold ${
         selected
-          ? 'border-[var(--ink)] bg-[var(--accent)] text-[var(--ink-deep)]'
+          ? 'border-[var(--ink)] bg-[var(--accent)] text-white'
           : 'border-[var(--rule)] bg-[var(--paper)] text-[var(--ink)]'
       }`}
     >
@@ -349,7 +350,7 @@ export default function PortalHome() {
                   key={service}
                   className="border-2 border-[var(--rule)] bg-[var(--paper-2)] px-2.5 py-1 text-[11.5px] font-semibold uppercase tracking-[0.06em] text-[var(--muted)]"
                 >
-                  {service}
+                  {serviceCategoryLabel(service)}
                 </li>
               ))}
             </ul>
@@ -448,7 +449,7 @@ export default function PortalHome() {
                     <option value="">Choose…</option>
                     {config.service_categories.map((service) => (
                       <option key={service} value={service}>
-                        {service}
+                        {serviceCategoryLabel(service)}
                       </option>
                     ))}
                   </select>
@@ -767,7 +768,7 @@ export default function PortalHome() {
         <section className="mt-[var(--space-lg)] border-2 border-[var(--ink)] bg-[var(--paper)] p-6 md:p-10">
           <p className="spec-label text-[var(--muted)]">Request received</p>
           <div className="mt-[var(--space-md)]" role="status">
-            <p className="border-2 border-[var(--ink)] bg-[var(--accent)] p-4 text-[14.5px] font-semibold leading-relaxed text-[var(--ink-deep)]">
+            <p className="border-2 border-[var(--ink)] bg-[var(--accent)] p-4 text-[14.5px] font-semibold leading-relaxed text-white">
               We're on it — you'll get an email when your quote is ready.
             </p>
             {ack?.reference && (

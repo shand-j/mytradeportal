@@ -30,13 +30,17 @@ const MIN_JOB_DETAILS_CHARS = 30;
 
 export type ManualLeadScreenProps = {
   onClose: () => void;
+  /** Pre-fill the customer name (e.g. text already typed in the quote intake). */
+  prefillName?: string;
+  /** Override the post-save navigation (e.g. return to the quote intake). */
+  onSaved?: (contact: Contact) => void;
 };
 
-export function ManualLeadScreen({ onClose }: ManualLeadScreenProps) {
+export function ManualLeadScreen({ onClose, prefillName, onSaved }: ManualLeadScreenProps) {
   const router = useRouter();
   const queryClient = useQueryClient();
   const startGeneration = useQuoteGenerationStore((s) => s.start);
-  const [name, setName] = useState("");
+  const [name, setName] = useState(prefillName ?? "");
   const [phone, setPhone] = useState("");
   const [email, setEmail] = useState("");
   const [address, setAddress] = useState("");
@@ -71,6 +75,10 @@ export function ManualLeadScreen({ onClose }: ManualLeadScreenProps) {
     setSubmitting("save");
     try {
       const contact = await saveCustomer();
+      if (onSaved) {
+        onSaved(contact);
+        return;
+      }
       router.replace(`/(trade)/customer/${contact.id}`);
     } catch (err) {
       setError(

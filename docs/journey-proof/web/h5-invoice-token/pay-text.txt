@@ -1,0 +1,8 @@
+STATUS=200
+URL=https://www.mytradeportal.co.uk/pay/vqbvkDANJLj-rH0VnMmlvVL6nkRoD8Lh5a81CNwkI7M
+
+SECURE PAYMENT LINK
+
+This invoice link is invalid or has expired. Ask your electrician to send you a fresh one — the newest email always has the working link.
+
+Back to mytradeportal.co.uk

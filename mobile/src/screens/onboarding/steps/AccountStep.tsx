@@ -1,12 +1,17 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { Pressable, ScrollView, View } from "react-native";
+import { useRouter } from "expo-router";
 import { Button } from "../../../components/ui/Button";
 import { FormField } from "../../../components/ui/FormField";
 import { Text } from "../../../components/ui/Text";
+import { checkEmailAvailability } from "../../../api/onboarding";
 
 type AccountStepProps = {
   data?: Record<string, unknown>;
   onNext: (data?: Record<string, unknown>) => void;
+  /** Set when the final registration attempt 409'd on a duplicate email — the
+   * stepper sends the user back here to resolve it inline. */
+  emailTaken?: boolean;
 };
 
 const ROLES = [
@@ -16,7 +21,10 @@ const ROLES = [
   { key: "engineer", label: "Engineer" },
 ];
 
-export function AccountStep({ data, onNext }: AccountStepProps) {
+type EmailStatus = "idle" | "checking" | "available" | "taken";
+
+export function AccountStep({ data, onNext, emailTaken = false }: AccountStepProps) {
+  const router = useRouter();
   const [fullName, setFullName] = useState((data?.fullName as string) ?? "");
   const [email, setEmail] = useState((data?.email as string) ?? "");
   const [phone, setPhone] = useState((data?.phone as string) ?? "");
@@ -24,8 +32,61 @@ export function AccountStep({ data, onNext }: AccountStepProps) {
   const [role, setRole] = useState((data?.role as string) ?? "owner");
   const [termsAccepted, setTermsAccepted] = useState((data?.termsAccepted as boolean) ?? false);
   const [showPassword, setShowPassword] = useState(false);
+  const [emailStatus, setEmailStatus] = useState<EmailStatus>(emailTaken ? "taken" : "idle");
+  // The email the last completed/started check was for, so edits reset the
+  // status and stale responses are ignored.
+  const checkedEmail = useRef(emailTaken ? ((data?.email as string) ?? "").trim().toLowerCase() : "");
 
-  const canContinue = fullName.trim().length >= 2 && email.includes("@") && password.length >= 8 && termsAccepted;
+  const handleEmailChange = (value: string) => {
+    setEmail(value);
+    if (value.trim().toLowerCase() !== checkedEmail.current) {
+      setEmailStatus("idle");
+    }
+  };
+
+  const checkEmail = async (): Promise<boolean> => {
+    const candidate = email.trim().toLowerCase();
+    checkedEmail.current = candidate;
+    setEmailStatus("checking");
+    try {
+      const available = await checkEmailAvailability(candidate);
+      if (checkedEmail.current !== candidate) {
+        return available;
+      }
+      setEmailStatus(available ? "available" : "taken");
+      return available;
+    } catch {
+      // Fail open: the final registration 409 still catches a duplicate, so a
+      // flaky pre-flight check must never block onboarding.
+      setEmailStatus("idle");
+      return true;
+    }
+  };
+
+  const handleEmailBlur = () => {
+    if (email.includes("@") && emailStatus === "idle") {
+      void checkEmail();
+    }
+  };
+
+  const handleContinue = () => {
+    void (async () => {
+      if (emailStatus === "taken") return;
+      if (emailStatus !== "available") {
+        const available = await checkEmail();
+        if (!available) return;
+      }
+      onNext({ fullName, email, phone, password, role, termsAccepted });
+    })();
+  };
+
+  const canContinue =
+    fullName.trim().length >= 2 &&
+    email.includes("@") &&
+    password.length >= 8 &&
+    termsAccepted &&
+    emailStatus !== "taken" &&
+    emailStatus !== "checking";
 
   const strength = password.length === 0 ? 0 : password.length < 8 ? 1 : password.length < 12 ? 2 : 3;
   const strengthLabels = ["", "Weak", "Good", "Strong"];
@@ -42,14 +103,39 @@ export function AccountStep({ data, onNext }: AccountStepProps) {
         </Text>
 
         <FormField label="Full name" value={fullName} onChangeText={setFullName} placeholder="Full name" />
-        <FormField
-          label="Work email"
-          value={email}
-          onChangeText={setEmail}
-          placeholder="you@business.com"
-          keyboardType="email-address"
-          autoCapitalize="none"
-        />
+        <View className="gap-2">
+          <FormField
+            label="Work email"
+            value={email}
+            onChangeText={handleEmailChange}
+            onBlur={handleEmailBlur}
+            placeholder="you@business.com"
+            keyboardType="email-address"
+            autoCapitalize="none"
+          />
+          {emailStatus === "checking" && (
+            <Text variant="caption" color="secondary">
+              Checking this email…
+            </Text>
+          )}
+          {emailStatus === "taken" && (
+            <View testID="account-email-taken" className="gap-1 rounded-xl border border-warning-200 bg-warning-50 p-3">
+              <Text variant="caption" color="warning">
+                An account with this email already exists.
+              </Text>
+              <Pressable
+                testID="account-login-link"
+                onPress={() =>
+                  router.push({ pathname: "/trade-login", params: { email: email.trim() } })
+                }
+              >
+                <Text variant="caption" color="primary" weight="semibold">
+                  Log in instead — we’ll fill in your email
+                </Text>
+              </Pressable>
+            </View>
+          )}
+        </View>
         <FormField
           label="Mobile"
           value={phone}
@@ -114,7 +200,7 @@ export function AccountStep({ data, onNext }: AccountStepProps) {
 
         <Button
           title="Continue"
-          onPress={() => onNext({ fullName, email, phone, password, role, termsAccepted })}
+          onPress={handleContinue}
           disabled={!canContinue}
         />
       </View>

@@ -81,6 +81,7 @@ def snapshot_line_items(quote: Quote) -> dict[str, Any]:
                 "description": item.description,
                 "quantity": str(item.quantity),
                 "unit_price": str(item.unit_price),
+                "unit": item.unit,
             }
             for item in quote.line_items
         ],

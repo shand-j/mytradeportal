@@ -7,7 +7,7 @@ from uuid import UUID
 
 import structlog
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -21,18 +21,34 @@ from app.calculations import (
     build_invoice_from_quote,
     calculate_invoice_totals,
     tenant_vat_rate,
+    vat_rate_within_tenant_limit,
 )
 from app.database import get_db
 from app.dependencies import CurrentUserDep, TenantDep
-from app.email import resolve_customer_magic_link, send_customer_email
+from app.email import resolve_customer_magic_link, send_customer_email, tenant_reply_to
 from app.email_templates import invoice_sent as invoice_sent_template
-from app.models import Contact, Invoice, InvoiceLineItem, Job, Quote, QuoteRequest, Tenant
+from app.models import (
+    Contact,
+    Invoice,
+    InvoiceLineItem,
+    Job,
+    Payment,
+    Quote,
+    QuoteRequest,
+    Reminder,
+    Tenant,
+)
 from app.payment_details import tenant_payment_details
 from app.payment_notifications import send_payment_received_email
 from app.push import notify_customer, notify_staff
 from app.rls import set_tenant_in_session
-from app.routers.public_docs import issue_document_token, public_document_url
-from app.schemas import InvoiceCreate, InvoiceRead, InvoiceUpdate
+from app.routers.public_docs import (
+    _invoice_payment_url,
+    issue_document_token,
+    public_document_url,
+)
+from app.schemas import InvoiceCreate, InvoiceMarkPaid, InvoiceRead, InvoiceUpdate
+from app.sms import normalize_phone, normalize_sender, send_sms, sms_configured, sms_segment_limit
 
 router = APIRouter(prefix="/invoices", tags=["Invoices"])
 logger = structlog.get_logger("api.invoices")
@@ -74,6 +90,97 @@ async def _get_invoice(db: AsyncSession, tenant_id: UUID, invoice_id: UUID) -> I
     return invoice
 
 
+def _sms_available(contact: Contact | None) -> bool:
+    """True when an invoice can be sent to this contact by SMS.
+
+    Mirrors the appointment-reminder channel choice: Telnyx is configured,
+    the contact's free-text phone normalises to E.164, and the contact has
+    not replied STOP (``reminder_preferences.sms_opt_out``, set by the Telnyx
+    inbound webhook).
+    """
+    if not sms_configured() or contact is None:
+        return False
+    if bool((contact.reminder_preferences or {}).get("sms_opt_out")):
+        return False
+    return normalize_phone(contact.phone) is not None
+
+
+def _to_invoice_read(invoice: Invoice) -> InvoiceRead:
+    """InvoiceRead with the SMS-send affordance flag filled in.
+
+    Every return site goes through ``_get_invoice`` / the list query, both of
+    which selectinload the contact, so the eligibility check never lazy-loads.
+    """
+    read = InvoiceRead.model_validate(invoice)
+    read.sms_available = _sms_available(invoice.contact)
+    return read
+
+
+def _invoice_sms_text(
+    *,
+    tenant_name: str,
+    invoice_number: str,
+    total: str,
+    url: str,
+    include_stop: bool,
+) -> str | None:
+    """Invoice SMS body, guaranteed to fit ONE SMS segment (or ``None``).
+
+    The fair-use cost model assumes one segment per message, so the secure
+    pay/view link is never split across segments: progressively terser
+    prefixes are tried around the link, and the last resort truncates the
+    prefix at a word boundary — the URL and the STOP line are always kept
+    whole. ``None`` means even the bare link does not fit (an absurdly long
+    docs base URL); the caller turns that into a 422.
+    """
+    stop = " Reply STOP to opt out." if include_stop else ""
+    suffix = f" {url}{stop}"
+    prefixes = [
+        f"{tenant_name}: Invoice {invoice_number} for £{total}. Pay or view:",
+        f"Invoice {invoice_number} for £{total}. Pay or view:",
+        f"Invoice {invoice_number}:",
+        "Invoice:",
+    ]
+    for prefix in prefixes:
+        text = f"{prefix}{suffix}"
+        if len(text) <= sms_segment_limit(text):
+            return text
+    budget = sms_segment_limit(suffix) - len(suffix)
+    if budget <= 0:
+        return None
+    trimmed = prefixes[-1][:budget].rstrip()
+    space = trimmed.rfind(" ")
+    if space > 0:
+        trimmed = trimmed[:space].rstrip()
+    if not trimmed:
+        return None
+    text = f"{trimmed}{suffix}"
+    return text if len(text) <= sms_segment_limit(text) else None
+
+
+async def _notify_customer_invoice_sent(
+    db: AsyncSession, tenant_id: UUID, invoice: Invoice
+) -> None:
+    """In-app + push notification for the customer account linked via the quote."""
+    customer_id = None
+    if invoice.quote_id is not None:
+        linked_request = await db.scalar(
+            select(QuoteRequest).where(QuoteRequest.quote_id == invoice.quote_id)
+        )
+        if linked_request is not None:
+            customer_id = linked_request.customer_id
+    if customer_id is not None:
+        await notify_customer(
+            db,
+            tenant_id,
+            customer_id,
+            kind="invoice_sent",
+            title="Invoice ready",
+            body=f"Invoice {invoice.invoice_number} is ready — £{invoice.total}.",
+            link=f"/customer/invoice/{invoice.id}",
+        )
+
+
 @router.get("")
 async def list_invoices(tenant: TenantDep, db: DbDep) -> list[InvoiceRead]:
     """List invoices for the current tenant."""
@@ -84,7 +191,7 @@ async def list_invoices(tenant: TenantDep, db: DbDep) -> list[InvoiceRead]:
         .where(Invoice.tenant_id == tenant.id)
         .order_by(Invoice.issue_date.desc())
     )
-    return [InvoiceRead.model_validate(i) for i in result.scalars().all()]
+    return [_to_invoice_read(i) for i in result.scalars().all()]
 
 
 def _lines_match_quote(quote: Quote, items: list[Any]) -> bool:
@@ -227,14 +334,14 @@ async def create_invoice(
         },
     )
     await db.commit()
-    return InvoiceRead.model_validate(await _get_invoice(db, tenant.id, invoice.id))
+    return _to_invoice_read(await _get_invoice(db, tenant.id, invoice.id))
 
 
 @router.get("/{invoice_id}")
 async def get_invoice(invoice_id: UUID, tenant: TenantDep, db: DbDep) -> InvoiceRead:
     """Get a single invoice."""
     invoice = await _get_invoice(db, tenant.id, invoice_id)
-    return InvoiceRead.model_validate(invoice)
+    return _to_invoice_read(invoice)
 
 
 @router.patch("/{invoice_id}")
@@ -245,9 +352,24 @@ async def update_invoice(
     current_user: CurrentUserDep,
     db: DbDep,
 ) -> InvoiceRead:
-    """Update due date, notes, status, card-payment override, or line items."""
+    """Update due date, notes, status, VAT rate, card-payment override, or line items."""
     invoice = await _get_invoice(db, tenant.id, invoice_id)
     changed = data.model_dump(exclude_unset=True)
+
+    totals_dirty = False
+    if "vat_rate" in data.model_fields_set:
+        new_rate = changed.pop("vat_rate")
+        if new_rate is None or not vat_rate_within_tenant_limit(tenant, new_rate):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=(
+                    f"vat_rate {new_rate} is above the tenant's registered VAT rate "
+                    f"({tenant_vat_rate(tenant)}); per-invoice VAT overrides may only "
+                    "lower or remove VAT (e.g. 0 for zero-rated jobs)"
+                ),
+            )
+        invoice.vat_rate = new_rate
+        totals_dirty = True
 
     if "line_items" in changed:
         # Full replacement, mirroring update_quote; totals recalculated.
@@ -255,11 +377,14 @@ async def update_invoice(
         for item in list(invoice.line_items):
             await db.delete(item)
         invoice.line_items = [InvoiceLineItem(tenant_id=tenant.id, **item) for item in new_items]
+        totals_dirty = True
+
+    if totals_dirty:
         calculate_invoice_totals(invoice)
         # The rounding uplift is a fixed amount set at creation (inherited
-        # from the quote, or applied to scratch invoices). Line edits keep it
-        # so subtotal + VAT + adjustment stays consistent with the total; the
-        # invoice is never re-rounded after creation.
+        # from the quote, or applied to scratch invoices). Line edits and VAT
+        # overrides keep it so subtotal + VAT + adjustment stays consistent
+        # with the total; the invoice is never re-rounded after creation.
         adjustment = invoice.rounding_adjustment or Decimal("0.00")
         if adjustment:
             invoice.total = invoice.total + adjustment
@@ -277,7 +402,7 @@ async def update_invoice(
         payload={"changed_fields": sorted(changed.keys())},
     )
     await db.commit()
-    return InvoiceRead.model_validate(await _get_invoice(db, tenant.id, invoice.id))
+    return _to_invoice_read(await _get_invoice(db, tenant.id, invoice.id))
 
 
 @router.post("/{invoice_id}/issue")
@@ -300,7 +425,7 @@ async def issue_invoice(
         entity_id=invoice.id,
     )
     await db.commit()
-    return InvoiceRead.model_validate(await _get_invoice(db, tenant.id, invoice.id))
+    return _to_invoice_read(await _get_invoice(db, tenant.id, invoice.id))
 
 
 @router.post("/{invoice_id}/send")
@@ -324,23 +449,7 @@ async def send_invoice(
     )
 
     # Notify the linked customer (in-app + push) and email the contact.
-    customer_id = None
-    if invoice.quote_id is not None:
-        linked_request = await db.scalar(
-            select(QuoteRequest).where(QuoteRequest.quote_id == invoice.quote_id)
-        )
-        if linked_request is not None:
-            customer_id = linked_request.customer_id
-    if customer_id is not None:
-        await notify_customer(
-            db,
-            tenant.id,
-            customer_id,
-            kind="invoice_sent",
-            title="Invoice ready",
-            body=f"Invoice {invoice.invoice_number} is ready — £{invoice.total}.",
-            link=f"/customer/invoice/{invoice.id}",
-        )
+    await _notify_customer_invoice_sent(db, tenant.id, invoice)
     contact = await db.get(Contact, invoice.contact_id)
     tenant_row = await db.get(Tenant, tenant.id)
     if contact is not None and contact.email:
@@ -365,6 +474,16 @@ async def send_invoice(
         portal_url = await resolve_customer_magic_link(
             db, tenant_row, contact, f"/invoices/{invoice.id}"
         )
+        # Prominent "Pay now" CTA straight to the secure /pay page — customers
+        # should not have to hunt through the view-only page to pay. Best-
+        # effort: without Stripe/card opt-in this is None and the template
+        # falls back to the view/sign-in CTAs. The caller's commit persists
+        # the freshly created PaymentIntent reference.
+        pay_url = (
+            await _invoice_payment_url(db, invoice, tenant_row, raw_token, persist=False)
+            if tenant_row is not None
+            else None
+        )
         subject, html, text = invoice_sent_template(
             customer_name=contact.name.split()[0] if contact.name else "there",
             business_name=business_name,
@@ -373,6 +492,8 @@ async def send_invoice(
             payment_details=payment_details,
             view_url=view_url,
             portal_url=portal_url,
+            pay_url=pay_url,
+            brand_color=tenant_row.primary_color if tenant_row is not None else None,
         )
         await send_customer_email(
             db,
@@ -386,12 +507,128 @@ async def send_invoice(
             event="invoice_sent",
             template="invoice_sent",
             from_name=business_name,
-            reply_to=tenant_row.email if tenant_row is not None and tenant_row.email else None,
+            reply_to=tenant_reply_to(tenant_row, invoice_id=str(invoice.id)),
             context={"invoice_id": str(invoice.id), "tenant_id": str(tenant.id)},
         )
 
     await db.commit()
-    return InvoiceRead.model_validate(await _get_invoice(db, tenant.id, invoice.id))
+    return _to_invoice_read(await _get_invoice(db, tenant.id, invoice.id))
+
+
+@router.post("/{invoice_id}/send-sms")
+async def send_invoice_sms(
+    invoice_id: UUID,
+    tenant: TenantDep,
+    current_user: CurrentUserDep,
+    db: DbDep,
+) -> InvoiceRead:
+    """Send the invoice to the contact by SMS (Telnyx) with a secure pay link.
+
+    SMS counterpart of :func:`send_invoice`: marks the invoice sent, texts a
+    one-segment tenant-branded message carrying the secure view/pay link, and
+    records the send as a ``channel="sms"`` Reminder row so it counts toward
+    the monthly SMS fair-use total. 400 when SMS is unavailable for this
+    contact (Telnyx unconfigured, no normalisable phone, or the contact has
+    replied STOP), 502 when the provider rejects the send.
+    """
+    invoice = await _get_invoice(db, tenant.id, invoice_id)
+    contact = invoice.contact
+    if not sms_configured():
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="SMS is not configured for this workspace",
+        )
+    if contact is None or normalize_phone(contact.phone) is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Contact has no phone number that can receive SMS",
+        )
+    if bool((contact.reminder_preferences or {}).get("sms_opt_out")):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Contact has opted out of SMS messages",
+        )
+
+    tenant_row = await db.get(Tenant, tenant.id)
+    business_name = tenant_row.name if tenant_row is not None else "Your electrician"
+    # Mint the secure web-link token so the customer can open (and pay) the
+    # invoice from the text. Re-sending revokes earlier tokens, same as the
+    # email path.
+    raw_token = await issue_document_token(
+        db,
+        kind="invoice",
+        document_id=invoice.id,
+        tenant_id=tenant.id,
+        contact_email=contact.email,
+    )
+    view_url = public_document_url("invoice", raw_token)
+    # STOP opt-out only makes sense when replies can reach us: an alphanumeric
+    # sender ID (tenant business name) cannot receive texts.
+    numeric_sender = normalize_sender(business_name) is None
+    text = _invoice_sms_text(
+        tenant_name=business_name,
+        invoice_number=invoice.invoice_number,
+        total=str(invoice.total),
+        url=view_url,
+        include_stop=numeric_sender,
+    )
+    if text is None:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Invoice link does not fit a single SMS segment",
+        )
+    message_id = await send_sms(
+        to_phone=contact.phone or "",
+        text=text,
+        tenant_name=business_name,
+        tenant_id=tenant.id,
+    )
+    if message_id is None:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="SMS provider rejected the send — try email instead",
+        )
+
+    invoice.status = "sent"
+    await db.flush()
+    await write_audit_log(
+        db,
+        tenant_id=tenant.id,
+        actor=current_user,
+        action=Actions.INVOICE_SENT,
+        entity_type="invoice",
+        entity_id=invoice.id,
+        payload={"channel": "sms"},
+    )
+    # Fair-use counting: the same Reminder-row convention as appointment
+    # reminders — one row per dispatched SMS, summed monthly by
+    # app.appointment_reminders._sms_fair_use_paused.
+    sequence = (
+        await db.scalar(
+            select(func.count(Reminder.id)).where(
+                Reminder.entity_type == "invoice",
+                Reminder.entity_id == invoice.id,
+            )
+        )
+        or 0
+    ) + 1
+    db.add(
+        Reminder(
+            tenant_id=tenant.id,
+            entity_type="invoice",
+            entity_id=invoice.id,
+            channel="sms",
+            sequence=sequence,
+            payload={
+                "kind": "invoice_send",
+                "to": normalize_phone(contact.phone),
+                "telnyx_message_id": message_id,
+            },
+        )
+    )
+    await _notify_customer_invoice_sent(db, tenant.id, invoice)
+    await db.commit()
+    return _to_invoice_read(await _get_invoice(db, tenant.id, invoice.id))
 
 
 @router.post("/{invoice_id}/mark-paid")
@@ -400,6 +637,7 @@ async def mark_invoice_paid(
     tenant: TenantDep,
     current_user: CurrentUserDep,
     db: DbDep,
+    data: InvoiceMarkPaid | None = None,
 ) -> InvoiceRead:
     """Mark an invoice as paid.
 
@@ -407,11 +645,38 @@ async def mark_invoice_paid(
     the customer: the same ``payment_received`` confirmation (+ review
     prompt) the Stripe webhook sends goes out with the non-card copy variant.
     Best-effort — a dispatch failure never blocks the mark-paid.
+
+    A ``payments`` row is recorded (provider = ``paid_via``, amount = invoice
+    total, status ``completed``) so manual settlements show up in the Django
+    admin Payments inline and payment-level reporting exactly like
+    Stripe-settled ones. Idempotent: a repeat mark-paid (or a mark-paid
+    against an invoice the Stripe webhook already settled) never duplicates
+    the row and never clobbers the original ``paid_via``/``paid_at``.
     """
     invoice = await _get_invoice(db, tenant.id, invoice_id)
-    invoice.status = "paid"
-    invoice.paid_at = datetime.utcnow()
-    invoice.paid_via = "manual"
+    if invoice.status != "paid":
+        invoice.status = "paid"
+        invoice.paid_at = datetime.utcnow()
+        invoice.paid_via = data.paid_via if data is not None else "manual"
+    # Count directly rather than trusting invoice.payments: a repeat mark-paid
+    # in the same session would otherwise see the selectinloaded (stale empty)
+    # collection and duplicate the row.
+    existing_payments = await db.scalar(
+        select(func.count(Payment.id)).where(Payment.invoice_id == invoice.id)
+    )
+    if not existing_payments:
+        db.add(
+            Payment(
+                tenant_id=tenant.id,
+                invoice_id=invoice.id,
+                amount=invoice.total,
+                currency_code="GBP",
+                status="completed",
+                provider=invoice.paid_via or "manual",
+                provider_payload={"recorded_via": "mark_paid"},
+                paid_at=invoice.paid_at or datetime.utcnow(),
+            )
+        )
     await db.flush()
     await write_audit_log(
         db,
@@ -444,7 +709,7 @@ async def mark_invoice_paid(
                 extra_payload={"invoice_id": str(invoice.id), "actor": "staff"},
             )
     await db.commit()
-    return InvoiceRead.model_validate(await _get_invoice(db, tenant.id, invoice.id))
+    return _to_invoice_read(await _get_invoice(db, tenant.id, invoice.id))
 
 
 @router.post("/{invoice_id}/refund")
@@ -502,7 +767,7 @@ async def refund_invoice(
         link=f"/invoices/{invoice.id}",
     )
     await db.commit()
-    return InvoiceRead.model_validate(await _get_invoice(db, tenant.id, invoice.id))
+    return _to_invoice_read(await _get_invoice(db, tenant.id, invoice.id))
 
 
 @router.post("/{invoice_id}/cancel")
@@ -525,7 +790,7 @@ async def cancel_invoice(
         entity_id=invoice.id,
     )
     await db.commit()
-    return InvoiceRead.model_validate(await _get_invoice(db, tenant.id, invoice.id))
+    return _to_invoice_read(await _get_invoice(db, tenant.id, invoice.id))
 
 
 @router.delete("/{invoice_id}", status_code=status.HTTP_204_NO_CONTENT)

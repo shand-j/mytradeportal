@@ -1,6 +1,10 @@
 name: Security Audit
 
 on:
+  # SOC2 CC4.1 (ongoing monitoring): run the audit weekly against production,
+  # not just on demand. Monday 06:17 UTC (off the :00/:30 herd marks).
+  schedule:
+    - cron: "17 6 * * 1"
   workflow_dispatch:
     inputs:
       environment:
@@ -21,7 +25,8 @@ jobs:
     runs-on: ubuntu-latest
     environment: MyTradePortal/Production
     env:
-      SECURITY_ENVIRONMENT: ${{ github.event.inputs.environment }}
+      # Scheduled runs carry no inputs; they always target production.
+      SECURITY_ENVIRONMENT: ${{ github.event.inputs.environment || 'production' }}
       SECURITY_API_BASE_URL: ${{ secrets.SECURITY_API_BASE_URL }}
       SECURITY_WEB_BASE_URL: ${{ secrets.SECURITY_WEB_BASE_URL }}
       SECURITY_ADMIN_BASE_URL: ${{ secrets.SECURITY_ADMIN_BASE_URL }}

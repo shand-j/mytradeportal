@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { KeyboardAvoidingView, Platform, ScrollView, StyleSheet, TextInput, View } from "react-native";
 import { useRouter } from "expo-router";
 import { Button } from "../../components/ui/Button";
@@ -6,8 +6,12 @@ import { Header } from "../../components/ui/Header";
 import { Screen } from "../../components/ui/Screen";
 import { Text } from "../../components/ui/Text";
 import { requestPasswordReset } from "../../api/auth";
+import { requestInviteMagicLink } from "../../api/users";
 import { useAuth } from "../../contexts/AuthContext";
 import { NetworkError } from "../../lib/apiClient";
+import { config } from "../../lib/config";
+import { openInAppBrowser } from "../../lib/inAppBrowser";
+import { pendingInviteStorage } from "../../lib/pendingInvite";
 import { useBusiness } from "../../theme/ThemeProvider";
 import { AppRole } from "../../types";
 
@@ -16,6 +20,9 @@ export type LoginScreenMode = "login" | "register";
 export type LoginScreenProps = {
   role: AppRole;
   mode?: LoginScreenMode;
+  /** Pre-fill the email field (e.g. when sent here from onboarding after a
+   * duplicate-account conflict). */
+  initialEmail?: string;
   onBack: () => void;
 };
 
@@ -27,12 +34,12 @@ const PREFERRED_CONTACT_OPTIONS = [
   { key: "email", label: "Email" },
 ];
 
-export function LoginScreen({ role, mode = "login", onBack }: LoginScreenProps) {
+export function LoginScreen({ role, mode = "login", initialEmail, onBack }: LoginScreenProps) {
   const { login, registerCustomerAccount } = useAuth();
   const { business } = useBusiness();
   const router = useRouter();
   const [currentMode, setCurrentMode] = useState<LoginScreenMode>(mode);
-  const [email, setEmail] = useState("");
+  const [email, setEmail] = useState(initialEmail ?? "");
   const [password, setPassword] = useState("");
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
@@ -43,8 +50,26 @@ export function LoginScreen({ role, mode = "login", onBack }: LoginScreenProps) 
   const [loading, setLoading] = useState(false);
   const [resetRequested, setResetRequested] = useState(false);
   const [resetLoading, setResetLoading] = useState(false);
+  const [inviteLinkRequested, setInviteLinkRequested] = useState(false);
+  const [inviteLinkLoading, setInviteLinkLoading] = useState(false);
+  // Set when the email field was pre-filled from a pending invite — prompts
+  // the invitee to set their password from the email, then log in here.
+  const [invitePrefilled, setInvitePrefilled] = useState(false);
 
   const isRegister = currentMode === "register";
+
+  // Trade login: pre-fill the email a pending invitee typed when they asked
+  // for their invite link, so after setting a password (landing page) they
+  // land back here ready to sign in.
+  useEffect(() => {
+    if (role !== "trade") return;
+    void pendingInviteStorage.getEmail().then((saved) => {
+      if (saved) {
+        setEmail((current) => current || saved);
+        setInvitePrefilled(true);
+      }
+    });
+  }, [role]);
 
   const handleForgotPassword = () => {
     setError(null);
@@ -72,6 +97,33 @@ export function LoginScreen({ role, mode = "login", onBack }: LoginScreenProps) 
     })();
   };
 
+  const handleInviteLink = () => {
+    setError(null);
+    if (!email.trim()) {
+      setError("Enter your invited email above so we know where to send your link.");
+      return;
+    }
+    setInviteLinkLoading(true);
+    void (async () => {
+      try {
+        await requestInviteMagicLink(email.trim());
+        await pendingInviteStorage.saveEmail(email.trim());
+        setInviteLinkRequested(true);
+        setInvitePrefilled(true);
+      } catch (err) {
+        // The API answers generically, so a thrown error is a transport
+        // problem, not an unknown email.
+        setError(
+          err instanceof NetworkError
+            ? "Can't reach the server. Check your connection and try again."
+            : "Something went wrong. Please try again."
+        );
+      } finally {
+        setInviteLinkLoading(false);
+      }
+    })();
+  };
+
   const handleSubmit = () => {
     setError(null);
     setLoading(true);
@@ -89,6 +141,7 @@ export function LoginScreen({ role, mode = "login", onBack }: LoginScreenProps) 
             })
           : await login(email, password, role);
         if (ok) {
+          void pendingInviteStorage.clear();
           // The auth-guard redirect lives on the index route, which is not
           // mounted here — navigate explicitly on success.
           router.replace(role === "trade" ? "/(trade)/dashboard" : "/(customer)/requests");
@@ -232,6 +285,26 @@ export function LoginScreen({ role, mode = "login", onBack }: LoginScreenProps) 
             your inbox (and spam) — the link expires in 30 minutes.
           </Text>
         )}
+        {role === "trade" && !isRegister && invitePrefilled && !inviteLinkRequested && (
+          <Text testID="login-invite-prefilled" variant="caption" color="secondary">
+            Set your password from the invite email we sent you, then log in below.
+          </Text>
+        )}
+        {role === "trade" && !isRegister && !inviteLinkRequested && (
+          <Button
+            testID="login-invite-link"
+            title={inviteLinkLoading ? "Sending your link…" : "Been invited? Get your sign-in link"}
+            variant="ghost"
+            disabled={inviteLinkLoading}
+            onPress={handleInviteLink}
+          />
+        )}
+        {inviteLinkRequested && (
+          <Text testID="login-invite-sent" variant="caption" color="secondary">
+            If {email.trim()} has a pending invite, we've emailed a link to set your
+            password. Follow it, then log in here.
+          </Text>
+        )}
         {role === "customer" && (
           <Button
             testID="login-toggle-mode"
@@ -243,6 +316,13 @@ export function LoginScreen({ role, mode = "login", onBack }: LoginScreenProps) 
             }}
           />
         )}
+        <Button
+          testID="login-help-link"
+          title="Need a hand? Browse the help guides"
+          variant="ghost"
+          size="sm"
+          onPress={() => void openInAppBrowser(config.helpUrl)}
+        />
         </ScrollView>
       </KeyboardAvoidingView>
 

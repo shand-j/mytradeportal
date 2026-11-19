@@ -41,12 +41,75 @@ def password_reset(*, name: str | None, reset_url: str) -> tuple[str, str, str]:
     return subject, html, text
 
 
-def _magic_link_cta(url: str, label: str) -> tuple[str, str]:
-    """Primary sign-in CTA block for a magic portal link, as (text, html)."""
+def staff_invite(
+    *,
+    business_name: str,
+    invitee_name: str | None,
+    invite_url: str,
+    testflight_url: str | None,
+    ttl_days: int,
+) -> tuple[str, str, str]:
+    """Team-member invite: set-password link plus the app download pointer."""
+    greeting = f"Hi {invitee_name}," if invitee_name else "Hi,"
+    subject = f"{business_name} has invited you to My Trade Portal"
+    if testflight_url:
+        app_step_text = f"1. Get the app (beta) via TestFlight: {testflight_url}\n"
+        app_step_html = (
+            f'<li>Get the app (beta) via <a href="{testflight_url}" '
+            f'style="color:#CC8F00;">TestFlight</a>.</li>'
+        )
+    else:
+        app_step_text = "1. Install the My Trade Portal app (ask the person who invited you for the beta link).\n"
+        app_step_html = (
+            "<li>Install the My Trade Portal app (ask the person who invited you "
+            "for the beta link).</li>"
+        )
+    text = (
+        f"{greeting}\n\n"
+        f"{business_name} has invited you to join their team on My Trade Portal — "
+        "the app they use for quotes, jobs and invoicing.\n\n"
+        "To get started:\n"
+        f"{app_step_text}"
+        f"2. Set your password (link expires in {ttl_days} days):\n   {invite_url}\n"
+        "3. Open the app and log in with this email address and your new password.\n\n"
+        "If you weren't expecting this invite, you can safely ignore this email.\n\n"
+        "— My Trade Portal"
+    )
+    html = f"""\
+<!doctype html>
+<html>
+  <body style="font-family:-apple-system,Segoe UI,Roboto,sans-serif;color:#0f172a;max-width:560px;margin:0 auto;padding:24px;">
+    <h1 style="font-size:22px;margin:0 0 12px;">You're invited</h1>
+    <p>{escape(greeting)}</p>
+    <p><strong>{escape(business_name)}</strong> has invited you to join their team on My Trade Portal — the app they use for quotes, jobs and invoicing.</p>
+    <ol style="padding-left:20px;line-height:1.6;">
+      {app_step_html}
+      <li>Set your password with the button below (expires in {ttl_days} days).</li>
+      <li>Open the app and log in with this email address and your new password.</li>
+    </ol>
+    <p style="margin:24px 0;">
+      <a href="{invite_url}" style="background:#FFC107;color:#0F1E26;padding:12px 20px;border-radius:8px;text-decoration:none;font-weight:700;">Set your password</a>
+    </p>
+    <p style="color:#64748b;font-size:13px;">If the button doesn't work, copy and paste this link:<br><a href="{invite_url}" style="color:#CC8F00;">{invite_url}</a></p>
+    <p style="color:#64748b;font-size:13px;">If you weren't expecting this invite, you can safely ignore this email.</p>
+    <p style="color:#64748b;font-size:13px;margin-top:32px;">— My Trade Portal</p>
+  </body>
+</html>
+"""
+    return subject, html, text
+
+
+def _magic_link_cta(url: str, label: str, brand_color: str | None = None) -> tuple[str, str]:
+    """Primary sign-in CTA block for a magic portal link, as (text, html).
+
+    ``brand_color`` tints the button with the tenant's brand; the indigo
+    fallback is the platform default for tenants without branding.
+    """
+    button_bg = brand_color or "#4F46E5"
     text = f"{label}:\n{url}\n\n"
     html = f"""\
     <p style="margin:24px 0;">
-      <a href="{url}" style="background:#4F46E5;color:#fff;padding:12px 20px;border-radius:8px;text-decoration:none;font-weight:600;">{label}</a>
+      <a href="{url}" style="background:{button_bg};color:#fff;padding:12px 20px;border-radius:8px;text-decoration:none;font-weight:600;">{label}</a>
     </p>
     <p style="color:#64748b;font-size:13px;">This link signs you in — no password needed. If the button doesn't work, copy and paste it:<br><a href="{url}" style="color:#4F46E5;">{url}</a></p>
 """
@@ -70,22 +133,24 @@ def quote_ready(
     quote_total: str,
     view_url: str,
     portal_url: str | None = None,
+    brand_color: str | None = None,
 ) -> tuple[str, str, str]:
     """Quote-issued email. (subject, html, text).
 
     ``portal_url`` is the magic sign-in link to the customer portal; when
     present it becomes the primary CTA and ``view_url`` (the view-only
     document page) drops to a secondary "view without signing in" link.
+    ``brand_color`` tints the CTA button with the tenant's brand.
     """
     subject = f"Your quote from {business_name}"
     if portal_url:
-        text_cta, html_cta = _magic_link_cta(portal_url, "View and accept your quote")
+        text_cta, html_cta = _magic_link_cta(portal_url, "View and accept your quote", brand_color)
         text_secondary, html_secondary = _view_only_secondary(view_url)
     else:
         text_cta = f"View and accept the quote here:\n{view_url}\n\n"
         html_cta = f"""\
     <p style="margin:24px 0;">
-      <a href="{view_url}" style="background:#4F46E5;color:#fff;padding:12px 20px;border-radius:8px;text-decoration:none;font-weight:600;">View quote</a>
+      <a href="{view_url}" style="background:{brand_color or "#4F46E5"};color:#fff;padding:12px 20px;border-radius:8px;text-decoration:none;font-weight:600;">View quote</a>
     </p>
     <p style="color:#64748b;font-size:13px;">If the button doesn't work, copy and paste this link:<br><a href="{view_url}" style="color:#4F46E5;">{view_url}</a></p>
 """
@@ -160,21 +225,40 @@ def invoice_sent(
     payment_details: dict[str, str] | None = None,
     view_url: str | None = None,
     portal_url: str | None = None,
+    pay_url: str | None = None,
+    brand_color: str | None = None,
 ) -> tuple[str, str, str]:
     """Invoice-issued email. (subject, html, text).
 
     ``payment_details`` carries the tenant's bank-transfer details (keys:
     ``account_name``, ``sort_code``, ``account_number``, ``reference``); the
     block is omitted entirely when the tenant has not configured them.
-    ``portal_url`` is the magic sign-in link to the customer portal; when
-    present it becomes the primary CTA and ``view_url`` (the view-only
-    document/pay page) drops to a secondary "view without signing in" link.
-    When neither is present the email falls back to the app-only copy.
+    ``pay_url`` is the absolute Stripe Connect ``/pay/<token>`` link; when
+    present it renders as the primary "Pay now" CTA, ahead of the bank
+    transfer block and the sign-in/view links. ``portal_url`` is the magic
+    sign-in link to the customer portal; when present it becomes the
+    secondary CTA and ``view_url`` (the view-only document/pay page) drops to
+    a "view without signing in" link. When none of the three is present the
+    email falls back to the app-only copy. ``brand_color`` tints the CTA
+    buttons with the tenant's brand (white button text; the unbranded
+    fallback keeps the platform dark/gold).
     """
     subject = f"Invoice {invoice_number} from {business_name}"
     payment_text, payment_html = _payment_details_block(payment_details)
+    button_bg = brand_color or "#0F1E26"
+    button_fg = "#fff" if brand_color else "#FFC107"
+    if pay_url:
+        text_pay = f"Pay now — it only takes a minute:\n{pay_url}\n\n"
+        html_pay = f"""\
+    <p style="margin:24px 0;">
+      <a href="{pay_url}" style="display:inline-block;background:{button_bg};color:{button_fg};padding:12px 24px;text-decoration:none;font-weight:700;border-radius:8px;">Pay now</a>
+    </p>
+    <p style="color:#64748b;font-size:13px;">Secure card payment. If the button doesn't work, copy and paste this link:<br><a href="{pay_url}" style="color:#4F46E5;">{pay_url}</a></p>
+"""
+    else:
+        text_pay, html_pay = "", ""
     if portal_url:
-        text_cta, html_cta = _magic_link_cta(portal_url, "View and pay your invoice")
+        text_cta, html_cta = _magic_link_cta(portal_url, "View and pay your invoice", brand_color)
         if view_url:
             text_secondary, html_secondary = _view_only_secondary(view_url)
         else:
@@ -183,7 +267,7 @@ def invoice_sent(
         text_cta = f"View your invoice online here:\n{view_url}\n\n"
         html_cta = f"""\
     <p style="margin:24px 0;">
-      <a href="{view_url}" style="background:#4F46E5;color:#fff;padding:12px 20px;border-radius:8px;text-decoration:none;font-weight:600;">View invoice</a>
+      <a href="{view_url}" style="background:{button_bg};color:{button_fg};padding:12px 20px;border-radius:8px;text-decoration:none;font-weight:600;">View invoice</a>
     </p>
     <p style="color:#64748b;font-size:13px;">If the button doesn't work, copy and paste this link:<br><a href="{view_url}" style="color:#4F46E5;">{view_url}</a></p>
 """
@@ -196,6 +280,7 @@ def invoice_sent(
         f"Hi {customer_name},\n\n"
         f"{business_name} has sent you invoice {invoice_number}.\n"
         f"Total due: {invoice_total}\n\n"
+        f"{text_pay}"
         f"{payment_text}"
         f"{text_cta}"
         f"{text_secondary}"
@@ -209,6 +294,7 @@ def invoice_sent(
     <p>Hi {customer_name},</p>
     <p><strong>{business_name}</strong> has sent you an invoice.</p>
     <p style="font-size:20px;font-weight:700;margin:16px 0;">Total due: {invoice_total}</p>
+{html_pay}\
 {payment_html}\
 {html_cta}\
 {html_secondary}\
@@ -227,6 +313,8 @@ def quote_reminder(
     quote_total: str,
     view_url: str | None = None,
     portal_url: str | None = None,
+    personal_message: str | None = None,
+    brand_color: str | None = None,
 ) -> tuple[str, str, str]:
     """Follow-up email for a sent-but-unanswered quote. (subject, html, text).
 
@@ -234,10 +322,16 @@ def quote_reminder(
     CTA and ``view_url`` (the view-only document page, when also given) drops
     to a secondary "view without signing in" link. When neither is present
     the email falls back to the app-only copy.
+
+    ``personal_message`` is an optional AI-drafted personalised paragraph
+    (F2); when present it is shown directly under the greeting, ahead of the
+    standard copy. The static template stays the skeleton either way.
+    ``brand_color`` tints the CTA button with the tenant's brand (the
+    platform indigo is the fallback when unset).
     """
     subject = f"Reminder: your quote from {business_name}"
     if portal_url:
-        text_cta, html_cta = _magic_link_cta(portal_url, "View and accept your quote")
+        text_cta, html_cta = _magic_link_cta(portal_url, "View and accept your quote", brand_color)
         if view_url:
             text_secondary, html_secondary = _view_only_secondary(view_url)
         else:
@@ -246,7 +340,7 @@ def quote_reminder(
         text_cta = f"View and accept the quote here:\n{view_url}\n\n"
         html_cta = f"""\
     <p style="margin:24px 0;">
-      <a href="{view_url}" style="background:#4F46E5;color:#fff;padding:12px 20px;border-radius:8px;text-decoration:none;font-weight:600;">View quote</a>
+      <a href="{view_url}" style="background:{brand_color or "#4F46E5"};color:#fff;padding:12px 20px;border-radius:8px;text-decoration:none;font-weight:600;">View quote</a>
     </p>
     <p style="color:#64748b;font-size:13px;">If the button doesn't work, copy and paste this link:<br><a href="{view_url}" style="color:#4F46E5;">{view_url}</a></p>
 """
@@ -255,8 +349,11 @@ def quote_reminder(
         text_cta = "Open the app to view and accept the quote.\n\n"
         html_cta = "    <p>Open the app to view and accept the quote.</p>\n"
         text_secondary, html_secondary = "", ""
+    text_personal = f"{personal_message}\n\n" if personal_message else ""
+    html_personal = f"    <p>{personal_message}</p>\n" if personal_message else ""
     text = (
         f"Hi {customer_name},\n\n"
+        f"{text_personal}"
         f"Just a friendly reminder that {business_name} sent you a quote for "
         f"'{quote_title}'.\n"
         f"Total: {quote_total}\n\n"
@@ -271,6 +368,7 @@ def quote_reminder(
   <body style="font-family:-apple-system,Segoe UI,Roboto,sans-serif;color:#0f172a;max-width:560px;margin:0 auto;padding:24px;">
     <h1 style="font-size:22px;margin:0 0 12px;">Your quote is waiting</h1>
     <p>Hi {customer_name},</p>
+{html_personal}\
     <p>Just a friendly reminder that <strong>{business_name}</strong> sent you a quote for <strong>{quote_title}</strong>.</p>
     <p style="font-size:20px;font-weight:700;margin:16px 0;">Total: {quote_total}</p>
 {html_cta}\
@@ -292,6 +390,8 @@ def invoice_reminder(
     payment_details: dict[str, str] | None = None,
     view_url: str | None = None,
     portal_url: str | None = None,
+    personal_message: str | None = None,
+    brand_color: str | None = None,
 ) -> tuple[str, str, str]:
     """Payment-chasing email for an unpaid sent invoice. (subject, html, text).
 
@@ -301,11 +401,21 @@ def invoice_reminder(
     CTA and ``view_url`` (the secure web invoice page, when also given) drops
     to a secondary "view without signing in" link. When neither is present
     the email falls back to the app-only copy.
+
+    ``personal_message`` is an optional AI-drafted personalised paragraph
+    (F2); when present it is shown directly under the greeting, ahead of the
+    standard copy. ``brand_color`` tints the CTA buttons with the tenant's
+    brand (white button text; the unbranded fallback keeps the platform
+    dark/gold, matching :func:`invoice_sent`).
     """
     subject = f"Reminder: invoice {invoice_number} from {business_name}"
     payment_text, payment_html = _payment_details_block(payment_details)
+    button_bg = brand_color or "#0F1E26"
+    button_fg = "#fff" if brand_color else "#FFC107"
     if portal_url:
-        action_text, action_html = _magic_link_cta(portal_url, "View and pay your invoice")
+        action_text, action_html = _magic_link_cta(
+            portal_url, "View and pay your invoice", brand_color
+        )
         if view_url:
             text_secondary, html_secondary = _view_only_secondary(view_url)
         else:
@@ -313,8 +423,8 @@ def invoice_reminder(
     elif view_url:
         action_text = f"View and pay online:\n{view_url}\n\n"
         action_html = (
-            f'<p><a href="{view_url}" style="display:inline-block;background:#0F1E26;'
-            'color:#FFC107;padding:12px 24px;text-decoration:none;font-weight:700;">'
+            f'<p><a href="{view_url}" style="display:inline-block;background:{button_bg};'
+            f'color:{button_fg};padding:12px 24px;text-decoration:none;font-weight:700;">'
             "View and pay online</a></p>"
         )
         text_secondary, html_secondary = "", ""
@@ -322,8 +432,11 @@ def invoice_reminder(
         action_text = "Open the app to view and pay.\n\n"
         action_html = "    <p>Open the app to view and pay.</p>"
         text_secondary, html_secondary = "", ""
+    text_personal = f"{personal_message}\n\n" if personal_message else ""
+    html_personal = f"    <p>{personal_message}</p>\n" if personal_message else ""
     text = (
         f"Hi {customer_name},\n\n"
+        f"{text_personal}"
         f"This is a reminder that invoice {invoice_number} from {business_name} "
         f"is still awaiting payment.\n"
         f"Total due: {invoice_total}\n\n"
@@ -339,6 +452,7 @@ def invoice_reminder(
   <body style="font-family:-apple-system,Segoe UI,Roboto,sans-serif;color:#0f172a;max-width:560px;margin:0 auto;padding:24px;">
     <h1 style="font-size:22px;margin:0 0 12px;">Payment reminder — invoice {invoice_number}</h1>
     <p>Hi {customer_name},</p>
+{html_personal}\
     <p>This is a reminder that invoice <strong>{invoice_number}</strong> from <strong>{business_name}</strong> is still awaiting payment.</p>
     <p style="font-size:20px;font-weight:700;margin:16px 0;">Total due: {invoice_total}</p>
 {payment_html}\
@@ -568,6 +682,64 @@ def booking_confirmed(
     return subject, html, text
 
 
+def appointment_reminder(
+    *,
+    customer_name: str,
+    business_name: str,
+    job_title: str,
+    visit_date: str,
+    time_window: str,
+    address: str | None = None,
+) -> tuple[str, str, str]:
+    """Pre-visit reminder email — the fallback when SMS is unavailable.
+
+    Sent by the reminder sweep (``app.appointment_reminders``) when the
+    customer's phone number is missing/unusable or SMS is paused for the
+    tenant. Deliberately plain: same details block as ``booking_confirmed``
+    and the same "reply to rearrange" instruction, no portal link (a reminder
+    needs no action). ``visit_date``/``time_window`` are pre-formatted
+    display strings owned by the caller.
+    """
+    subject = f"Reminder: {job_title} on {visit_date}"
+    details_text = f"Date: {visit_date}\nTime: {time_window}\n"
+    details_rows = (
+        f'<tr><td style="padding:4px 12px 4px 0;color:#64748b;">Date</td>'
+        f'<td style="padding:4px 0;font-weight:600;">{escape(visit_date)}</td></tr>'
+        f'<tr><td style="padding:4px 12px 4px 0;color:#64748b;">Time</td>'
+        f'<td style="padding:4px 0;font-weight:600;">{escape(time_window)}</td></tr>'
+    )
+    if address:
+        details_text += f"Address: {address}\n"
+        details_rows += (
+            '<tr><td style="padding:4px 12px 4px 0;color:#64748b;">Address</td>'
+            f'<td style="padding:4px 0;font-weight:600;">{escape(address)}</td></tr>'
+        )
+    text = (
+        f"Hi {customer_name},\n\n"
+        f"A quick reminder from {business_name} about your upcoming visit "
+        f"for '{job_title}'.\n\n"
+        f"{details_text}\n"
+        "Need to change it? Just reply to this email and we'll rearrange.\n\n"
+        "— My Trade Portal"
+    )
+    html = f"""\
+<!doctype html>
+<html>
+  <body style="font-family:-apple-system,Segoe UI,Roboto,sans-serif;color:#0f172a;max-width:560px;margin:0 auto;padding:24px;">
+    <h1 style="font-size:22px;margin:0 0 12px;">Your visit is coming up</h1>
+    <p>Hi {escape(customer_name)},</p>
+    <p>A quick reminder from <strong>{escape(business_name)}</strong> about your upcoming visit for <strong>{escape(job_title)}</strong>.</p>
+    <div style="background:#f1f5f9;border-radius:8px;padding:16px;margin:16px 0;">
+      <table style="border-collapse:collapse;font-size:14px;">{details_rows}</table>
+    </div>
+    <p>Need to change it? Just reply to this email and we'll rearrange.</p>
+    <p style="color:#64748b;font-size:13px;margin-top:32px;">— My Trade Portal</p>
+  </body>
+</html>
+"""
+    return subject, html, text
+
+
 def payment_received(
     *,
     customer_name: str,
@@ -680,6 +852,88 @@ def chat_message(
       <a href="{reply_url}" style="background:#4F46E5;color:#fff;padding:12px 20px;border-radius:8px;text-decoration:none;font-weight:600;">Reply in the portal</a>
     </p>
     <p style="color:#64748b;font-size:13px;">This link signs you in — no password needed. If the button doesn't work, copy and paste it:<br><a href="{reply_url}" style="color:#4F46E5;">{reply_url}</a></p>
+    <p style="color:#64748b;font-size:13px;margin-top:32px;">— My Trade Portal</p>
+  </body>
+</html>
+"""
+    return subject, html, text
+
+
+def payment_failed(
+    *,
+    business_name: str,
+    portal_url: str | None,
+    attempt: int,
+    max_attempts: int,
+) -> tuple[str, str, str]:
+    """Dunning email to the tenant owner when their subscription payment fails.
+
+    (subject, html, text). ``portal_url`` is a short-lived Paddle customer
+    portal session URL (update payment method / download invoices) — the
+    primary CTA. ``attempt``/``max_attempts`` render the "reminder N of M"
+    framing; attempt 1 is the notice, later attempts are follow-ups on the
+    dunning cadence. The email goes to the account email that pays for the
+    business's subscription, not to one of their customers.
+    """
+    subject = "Action needed: your My Trade Portal payment failed"
+    if portal_url:
+        action_text = (
+            "Update your payment method here (takes a minute):\n"
+            f"{portal_url}\n\n"
+            "The link opens your secure Paddle billing page.\n\n"
+        )
+        action_html = f"""\
+    <p style="margin:24px 0;">
+      <a href="{portal_url}" style="background:#0F1E26;color:#FFC107;padding:12px 24px;text-decoration:none;font-weight:700;">Update payment method</a>
+    </p>
+    <p style="color:#64748b;font-size:13px;">The link opens your secure Paddle billing page. If the button doesn't work, copy and paste it:<br><a href="{portal_url}" style="color:#4F46E5;">{portal_url}</a></p>
+"""
+    else:
+        action_text = (
+            "Open the app → Settings → Manage subscription to update your payment method.\n\n"
+        )
+        action_html = (
+            "    <p>Open the app → Settings → Manage subscription to update your method.</p>\n"
+        )
+    if attempt == 1:
+        lead_text = (
+            f"We tried to collect payment for {business_name}'s My Trade Portal "
+            "subscription and it failed — most often an expired or replaced card."
+        )
+        lead_html = (
+            f"<p>We tried to collect payment for <strong>{business_name}</strong>'s "
+            "My Trade Portal subscription and it failed — most often an expired or "
+            "replaced card.</p>"
+        )
+    else:
+        lead_text = (
+            f"Reminder {attempt} of {max_attempts}: payment for {business_name}'s "
+            "My Trade Portal subscription is still failing."
+        )
+        lead_html = (
+            f"<p><strong>Reminder {attempt} of {max_attempts}:</strong> payment for "
+            f"<strong>{business_name}</strong>'s My Trade Portal subscription is "
+            "still failing.</p>"
+        )
+    text = (
+        f"Hello,\n\n"
+        f"{lead_text}\n\n"
+        f"{action_text}"
+        "Your account stays active while we retry the payment, but access is "
+        "paused if it keeps failing — updating your payment method now is the "
+        "quickest fix.\n\n"
+        "Once the payment succeeds this notice stops automatically.\n\n"
+        "— My Trade Portal"
+    )
+    html = f"""\
+<!doctype html>
+<html>
+  <body style="font-family:-apple-system,Segoe UI,Roboto,sans-serif;color:#0f172a;max-width:560px;margin:0 auto;padding:24px;">
+    <h1 style="font-size:22px;margin:0 0 12px;">Your payment failed</h1>
+    {lead_html}
+{action_html}\
+    <p>Your account stays active while we retry the payment, but access is paused if it keeps failing — updating your payment method now is the quickest fix.</p>
+    <p style="color:#64748b;font-size:13px;">Once the payment succeeds this notice stops automatically.</p>
     <p style="color:#64748b;font-size:13px;margin-top:32px;">— My Trade Portal</p>
   </body>
 </html>

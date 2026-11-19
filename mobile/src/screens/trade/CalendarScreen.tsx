@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { Pressable, ScrollView, View } from "react-native";
+import { Alert, Pressable, ScrollView, View } from "react-native";
 import { useRouter } from "expo-router";
 import { Button } from "../../components/ui/Button";
 import { Header } from "../../components/ui/Header";
@@ -8,6 +8,11 @@ import { LiveBadge } from "../../components/ui/LiveBadge";
 import { Screen } from "../../components/ui/Screen";
 import { Text } from "../../components/ui/Text";
 import { useJobsList } from "../../api/jobs";
+import { CalendarAppointment, useAppointmentsList } from "../../api/appointments";
+import { useMultiSeatPlan } from "../../api/billing";
+import { openNavigation } from "../../lib/navigation";
+import { useAuthStore } from "../../stores/authStore";
+import { useCalendarStore } from "../../stores/calendarStore";
 import { Job } from "../../types";
 
 const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
@@ -17,9 +22,12 @@ const MONTHS = [
 ];
 
 // Week-grid time window: appointments outside it are clamped to the edges.
+// The week grid fits the viewport (7 equal-flex columns, no horizontal
+// scroll), so it uses a compressed hour height and a narrow time gutter.
 const GRID_START_HOUR = 7;
 const GRID_END_HOUR = 19;
-const HOUR_HEIGHT = 52;
+const HOUR_HEIGHT = 40;
+const TIME_GUTTER_WIDTH = 32;
 const DEFAULT_DURATION_MIN = 60;
 
 export type CalendarScreenProps = {
@@ -70,10 +78,22 @@ export function CalendarScreen(_props: CalendarScreenProps) {
   const router = useRouter();
   const today = useMemo(() => new Date(), []);
   const [weekOffset, setWeekOffset] = useState(0);
+  const [monthOffset, setMonthOffset] = useState(0);
   const [selectedDay, setSelectedDay] = useState(() => (today.getDay() + 6) % 7);
-  const [viewMode, setViewMode] = useState<"day" | "week">("day");
+  const [viewMode, setViewMode] = useState<"day" | "week" | "month">("day");
 
-  const { jobs, isLoading } = useJobsList();
+  const userId = useAuthStore((s) => s.user?.id);
+  const showScopeFilter = useMultiSeatPlan();
+  const scope = useCalendarStore((s) => s.scope);
+  const setScope = useCalendarStore((s) => s.setScope);
+
+  const scopeFilter = showScopeFilter && scope === "me" && userId ? { assignedUserId: userId } : undefined;
+  const { jobs, isLoading } = useJobsList(
+    // Multi-seat plans get the All/Me filter; "Me" narrows server-side to
+    // jobs assigned to the signed-in user. Single-seat plans stay unfiltered.
+    scopeFilter
+  );
+  const { appointments } = useAppointmentsList(scopeFilter);
 
   const weekStart = useMemo(() => addDays(startOfWeek(today), weekOffset * 7), [today, weekOffset]);
   const weekDays = useMemo(() => Array.from({ length: 7 }, (_, i) => addDays(weekStart, i)), [weekStart]);
@@ -92,13 +112,124 @@ export function CalendarScreen(_props: CalendarScreenProps) {
     return map;
   }, [jobs, weekDays]);
 
+  // Appointments (incl. multi-day job continuation blocks) render alongside
+  // jobs in the day and week views — until now they only fed month-view dots.
+  const appointmentsByDay = useMemo(() => {
+    const map = new Map<string, CalendarAppointment[]>();
+    weekDays.forEach((d) => map.set(toIsoDate(d), []));
+    for (const appointment of appointments) {
+      if (!appointment.date) continue;
+      const bucket = map.get(appointment.date);
+      if (bucket) bucket.push(appointment);
+    }
+    for (const bucket of map.values()) {
+      bucket.sort((a, b) => (parseMinutes(a.time) ?? 0) - (parseMinutes(b.time) ?? 0));
+    }
+    return map;
+  }, [appointments, weekDays]);
+
   const unscheduledJobs = useMemo(() => jobs.filter((job) => !job.date), [jobs]);
 
+  /** First of the month currently shown in month view. */
+  const visibleMonth = useMemo(
+    () => new Date(today.getFullYear(), today.getMonth() + monthOffset, 1),
+    [today, monthOffset]
+  );
+
+  /** Monday-start weeks covering every day of the visible month. */
+  const monthWeeks = useMemo(() => {
+    const first = startOfWeek(visibleMonth);
+    const last = startOfWeek(new Date(visibleMonth.getFullYear(), visibleMonth.getMonth() + 1, 0));
+    const weeks: Date[][] = [];
+    for (let week = first; week <= last; week = addDays(week, 7)) {
+      weeks.push(Array.from({ length: 7 }, (_, i) => addDays(week, i)));
+    }
+    return weeks;
+  }, [visibleMonth]);
+
+  /** Jobs + appointments per day across the whole visible month grid. */
+  const monthCounts = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const week of monthWeeks) {
+      for (const d of week) map.set(toIsoDate(d), 0);
+    }
+    for (const job of jobs) {
+      if (!job.date) continue;
+      const count = map.get(job.date);
+      if (count !== undefined) map.set(job.date, count + 1);
+    }
+    for (const appointment of appointments) {
+      const count = map.get(appointment.date);
+      if (count !== undefined) map.set(appointment.date, count + 1);
+    }
+    return map;
+  }, [jobs, appointments, monthWeeks]);
+
+  const monthBookingCount = useMemo(
+    () =>
+      monthWeeks.reduce(
+        (sum, week) =>
+          sum +
+          week.reduce(
+            (inner, d) =>
+              d.getMonth() === visibleMonth.getMonth() ? inner + (monthCounts.get(toIsoDate(d)) ?? 0) : inner,
+            0
+          ),
+        0
+      ),
+    [monthWeeks, monthCounts, visibleMonth]
+  );
+
+  const monthLabel = visibleMonth.toLocaleDateString("en-GB", { month: "long", year: "numeric" });
+
+  const handleNavigate = async (job: Job) => {
+    const opened = await openNavigation(job.address, job.postcode);
+    if (!opened) {
+      Alert.alert("Cannot open maps", "No maps application is available on this device.");
+    }
+  };
+
+  /** Jump to a day tapped in the month grid: open that day in day view. */
+  const handleSelectMonthDay = (date: Date) => {
+    const weekDiff = Math.round(
+      (startOfWeek(date).getTime() - startOfWeek(today).getTime()) / (7 * 24 * 60 * 60 * 1000)
+    );
+    setWeekOffset(weekDiff);
+    setSelectedDay((date.getDay() + 6) % 7);
+    setViewMode("day");
+  };
+
   const selectedDate = weekDays[selectedDay];
-  const dayBookings = jobsByDay.get(toIsoDate(selectedDate)) ?? [];
+  /** Day-view rows: jobs and appointments merged and sorted by start time. */
+  const dayEntries = useMemo(() => {
+    const iso = toIsoDate(selectedDate);
+    const entries: (
+      | { kind: "job"; job: Job }
+      | { kind: "appointment"; appointment: CalendarAppointment }
+    )[] = [
+      ...(jobsByDay.get(iso) ?? []).map((job) => ({ kind: "job" as const, job })),
+      ...(appointmentsByDay.get(iso) ?? []).map((appointment) => ({
+        kind: "appointment" as const,
+        appointment,
+      })),
+    ];
+    entries.sort((a, b) => {
+      const aTime = a.kind === "job" ? a.job.time : a.appointment.time;
+      const bTime = b.kind === "job" ? b.job.time : b.appointment.time;
+      return (parseMinutes(aTime) ?? 0) - (parseMinutes(bTime) ?? 0);
+    });
+    return entries;
+  }, [selectedDate, jobsByDay, appointmentsByDay]);
   const weekBookingCount = useMemo(
-    () => weekDays.reduce((sum, d) => sum + (jobsByDay.get(toIsoDate(d))?.length ?? 0), 0),
-    [weekDays, jobsByDay]
+    () =>
+      weekDays.reduce(
+        (sum, d) =>
+          sum +
+          (jobsByDay.get(toIsoDate(d))?.length ?? 0) +
+          (appointmentsByDay.get(toIsoDate(d))?.length ?? 0),
+        0
+      ),
+    [weekDays, jobsByDay, appointmentsByDay]
   );
 
   const rangeLabel = `${formatDay(weekDays[0])} – ${formatDay(weekDays[6])}`;
@@ -132,12 +263,14 @@ export function CalendarScreen(_props: CalendarScreenProps) {
       <View className="flex-row items-start justify-between gap-3">
         <View>
           <Text variant="body" weight="semibold">
-            {viewMode === "week" ? rangeLabel : formatDay(selectedDate)}
+            {viewMode === "week" ? rangeLabel : viewMode === "month" ? monthLabel : formatDay(selectedDate)}
           </Text>
           <Text variant="caption" color="secondary">
             {viewMode === "week"
               ? `${weekBookingCount} booking${weekBookingCount === 1 ? "" : "s"} this week`
-              : `${dayBookings.length} booking${dayBookings.length === 1 ? "" : "s"}`}
+              : viewMode === "month"
+                ? `${monthBookingCount} booking${monthBookingCount === 1 ? "" : "s"} this month`
+                : `${dayEntries.length} booking${dayEntries.length === 1 ? "" : "s"}`}
           </Text>
         </View>
         <View className="flex-row gap-1.5">
@@ -155,23 +288,66 @@ export function CalendarScreen(_props: CalendarScreenProps) {
             variant={viewMode === "week" ? "primary" : "outline"}
             onPress={() => setViewMode("week")}
           />
+          <Button
+            testID="calendar-month"
+            title="Month"
+            size="sm"
+            variant={viewMode === "month" ? "primary" : "outline"}
+            onPress={() => setViewMode("month")}
+          />
         </View>
       </View>
 
       <View className="mb-3 flex-row items-center gap-2">
-        <Button testID="calendar-prev-week" title="‹" size="sm" variant="outline" onPress={() => setWeekOffset((n) => n - 1)} />
+        <Button
+          testID="calendar-prev-week"
+          title="‹"
+          size="sm"
+          variant="outline"
+          onPress={() =>
+            viewMode === "month" ? setMonthOffset((n) => n - 1) : setWeekOffset((n) => n - 1)
+          }
+        />
         <Button
           testID="calendar-today"
           title="Today"
           size="sm"
-          variant={weekOffset === 0 ? "primary" : "outline"}
+          variant={(viewMode === "month" ? monthOffset : weekOffset) === 0 ? "primary" : "outline"}
           onPress={() => {
             setWeekOffset(0);
+            setMonthOffset(0);
             setSelectedDay((today.getDay() + 6) % 7);
           }}
         />
-        <Button testID="calendar-next-week" title="›" size="sm" variant="outline" onPress={() => setWeekOffset((n) => n + 1)} />
+        <Button
+          testID="calendar-next-week"
+          title="›"
+          size="sm"
+          variant="outline"
+          onPress={() =>
+            viewMode === "month" ? setMonthOffset((n) => n + 1) : setWeekOffset((n) => n + 1)
+          }
+        />
       </View>
+
+      {showScopeFilter && (
+        <View className="mb-3 flex-row gap-1.5">
+          <Button
+            testID="calendar-scope-all"
+            title="All"
+            size="sm"
+            variant={scope === "all" ? "primary" : "outline"}
+            onPress={() => setScope("all")}
+          />
+          <Button
+            testID="calendar-scope-me"
+            title="Me"
+            size="sm"
+            variant={scope === "me" ? "primary" : "outline"}
+            onPress={() => setScope("me")}
+          />
+        </View>
+      )}
 
       {viewMode === "day" && (
         <>
@@ -200,23 +376,62 @@ export function CalendarScreen(_props: CalendarScreenProps) {
             <Text variant="body" weight="semibold">
               Bookings
             </Text>
-            {dayBookings.map((booking) => (
-              <Pressable key={booking.id} onPress={() => router.push(`/(trade)/job/${booking.id}`)}>
-                <View testID={`booking-${booking.id}`} className="flex-row items-center gap-3 rounded-2xl border border-gray-200 bg-white p-4">
-                  <View className="h-10 w-1 rounded bg-accent-500" />
-                  <View className="flex-1">
-                    <Text variant="body" weight="semibold">
-                      {booking.time}
-                    </Text>
-                    <Text variant="body">{booking.title}</Text>
-                    <Text variant="caption" color="secondary">
-                      {booking.customerName} · {booking.postcode}
-                    </Text>
+            {dayEntries.map((entry) =>
+              entry.kind === "job" ? (
+                <Pressable
+                  key={entry.job.id}
+                  onPress={() => router.push(`/(trade)/job/${entry.job.id}`)}
+                >
+                  <View testID={`booking-${entry.job.id}`} className="flex-row items-center gap-3 rounded-2xl border border-gray-200 bg-white p-4">
+                    <View className="h-10 w-1 rounded bg-accent-500" />
+                    <View className="flex-1">
+                      <Text variant="body" weight="semibold">
+                        {entry.job.time}
+                      </Text>
+                      <Text variant="body">{entry.job.title}</Text>
+                      <Text variant="caption" color="secondary">
+                        {entry.job.customerName} · {entry.job.postcode}
+                      </Text>
+                    </View>
+                    {entry.job.address || entry.job.postcode ? (
+                      <IconButton
+                        testID={`booking-navigate-${entry.job.id}`}
+                        icon="navigate"
+                        size={20}
+                        color="#0F1E26"
+                        accessibilityLabel={`Get directions to ${entry.job.title}`}
+                        onPress={() => void handleNavigate(entry.job)}
+                      />
+                    ) : null}
                   </View>
-                </View>
-              </Pressable>
-            ))}
-            {dayBookings.length === 0 && (
+                </Pressable>
+              ) : (
+                <Pressable
+                  key={entry.appointment.id}
+                  disabled={!entry.appointment.jobId}
+                  onPress={() =>
+                    entry.appointment.jobId &&
+                    router.push(`/(trade)/job/${entry.appointment.jobId}`)
+                  }
+                >
+                  <View testID={`appointment-${entry.appointment.id}`} className="flex-row items-center gap-3 rounded-2xl border border-gray-200 bg-white p-4">
+                    <View className="h-10 w-1 rounded bg-primary-300" />
+                    <View className="flex-1">
+                      <Text variant="body" weight="semibold">
+                        {entry.appointment.time}
+                        {entry.appointment.endTime ? ` – ${entry.appointment.endTime}` : ""}
+                      </Text>
+                      <Text variant="body">{entry.appointment.title}</Text>
+                      <Text variant="caption" color="secondary">
+                        Appointment
+                        {entry.appointment.address ? ` · ${entry.appointment.address}` : ""}
+                      </Text>
+                    </View>
+                  </View>
+                </Pressable>
+              )
+            )}
+            {dayEntries.length === 0 && (
               <Text variant="caption" color="secondary">
                 No bookings on this day.
               </Text>
@@ -225,117 +440,190 @@ export function CalendarScreen(_props: CalendarScreenProps) {
         </>
       )}
 
-      {viewMode === "week" && (
+      {viewMode === "month" && (
         <ScrollView className="flex-1" contentContainerStyle={{ paddingBottom: 24 }}>
-          <ScrollView horizontal showsHorizontalScrollIndicator>
-            <View>
-              {/* Day header row */}
-              <View className="flex-row">
-                <View style={{ width: 44 }} />
-                {weekDays.map((date) => {
-                  const isToday = isSameDay(date, today);
-                  return (
-                    <View
-                      key={toIsoDate(date)}
-                      className={`items-center gap-0.5 border-b border-gray-200 p-2 ${isToday ? "bg-primary-50" : ""}`}
-                      style={{ width: 132 }}
-                    >
-                      <Text variant="caption" weight={isToday ? "bold" : "semibold"} align="center">
-                        {DAYS[(date.getDay() + 6) % 7]}
-                      </Text>
+          {/* Weekday header row */}
+          <View className="flex-row">
+            {DAYS.map((day) => (
+              <View key={day} className="flex-1 items-center py-1">
+                <Text variant="caption" color="secondary" weight="semibold">
+                  {day}
+                </Text>
+              </View>
+            ))}
+          </View>
+          {monthWeeks.map((week) => (
+            <View key={toIsoDate(week[0])} className="flex-row">
+              {week.map((date) => {
+                const iso = toIsoDate(date);
+                const isToday = isSameDay(date, today);
+                const inMonth = date.getMonth() === visibleMonth.getMonth();
+                const count = monthCounts.get(iso) ?? 0;
+                return (
+                  <Pressable
+                    key={iso}
+                    testID={`month-day-${iso}`}
+                    className="flex-1"
+                    accessibilityLabel={`Open ${formatDay(date)} in day view`}
+                    onPress={() => handleSelectMonthDay(date)}
+                  >
+                    <View className={`items-center gap-1 rounded-xl py-1.5 ${isToday ? "bg-primary-50" : ""}`}>
                       <View
                         className={`h-7 w-7 items-center justify-center rounded-full ${isToday ? "bg-primary" : ""}`}
                       >
                         <Text
                           variant="caption"
-                          align="center"
+                          weight={isToday ? "bold" : "normal"}
                           style={isToday ? { color: "#FFFFFF" } : undefined}
-                          color={isToday ? undefined : "secondary"}
+                          color={isToday ? undefined : inMonth ? "text" : "secondary"}
                         >
                           {date.getDate()}
                         </Text>
                       </View>
+                      <View className="h-1.5 flex-row items-center gap-0.5">
+                        {Array.from({ length: Math.min(count, 3) }, (_, i) => (
+                          <View key={i} className="h-1.5 w-1.5 rounded-full bg-accent-500" />
+                        ))}
+                      </View>
                     </View>
-                  );
-                })}
-              </View>
+                  </Pressable>
+                );
+              })}
+            </View>
+          ))}
+        </ScrollView>
+      )}
 
-              {/* Time grid */}
-              <View className="flex-row">
-                <View style={{ width: 44 }}>
-                  {Array.from({ length: GRID_END_HOUR - GRID_START_HOUR }, (_, i) => (
-                    <View key={i} style={{ height: HOUR_HEIGHT }} className="items-end pr-1">
-                      <Text variant="caption" color="secondary" style={{ fontSize: 10 }}>
-                        {String(GRID_START_HOUR + i).padStart(2, "0")}:00
+      {viewMode === "week" && (
+        <ScrollView className="flex-1" contentContainerStyle={{ paddingBottom: 24 }}>
+          <View>
+            {/* Day header row — 7 equal-flex columns, all days on screen */}
+            <View className="flex-row">
+              <View style={{ width: TIME_GUTTER_WIDTH }} />
+              {weekDays.map((date) => {
+                const isToday = isSameDay(date, today);
+                return (
+                  <View
+                    key={toIsoDate(date)}
+                    className={`flex-1 items-center gap-0.5 border-b border-gray-200 px-0.5 py-2 ${isToday ? "bg-primary-50" : ""}`}
+                  >
+                    <Text variant="caption" weight={isToday ? "bold" : "semibold"} align="center" style={{ fontSize: 10 }}>
+                      {DAYS[(date.getDay() + 6) % 7]}
+                    </Text>
+                    <View
+                      className={`h-6 w-6 items-center justify-center rounded-full ${isToday ? "bg-primary" : ""}`}
+                    >
+                      <Text
+                        variant="caption"
+                        align="center"
+                        style={[{ fontSize: 10 }, isToday ? { color: "#FFFFFF" } : undefined]}
+                        color={isToday ? undefined : "secondary"}
+                      >
+                        {date.getDate()}
                       </Text>
                     </View>
-                  ))}
-                </View>
-                {weekDays.map((date) => {
-                  const isToday = isSameDay(date, today);
-                  const dayJobs = jobsByDay.get(toIsoDate(date)) ?? [];
-                  return (
-                    <View
-                      key={toIsoDate(date)}
-                      className={`border-l border-gray-100 ${isToday ? "bg-primary-50/40" : ""}`}
-                      style={{
-                        width: 132,
-                        height: (GRID_END_HOUR - GRID_START_HOUR) * HOUR_HEIGHT,
-                        position: "relative",
-                      }}
-                    >
-                      {Array.from({ length: GRID_END_HOUR - GRID_START_HOUR }, (_, i) => (
-                        <View
-                          key={i}
-                          className="border-t border-gray-100"
-                          style={{ position: "absolute", top: i * HOUR_HEIGHT, left: 0, right: 0 }}
-                        />
-                      ))}
-                      {dayJobs.map((job) => {
-                        const startMin = parseMinutes(job.time);
-                        if (startMin === null) return null;
-                        const endMin = job.endTime
-                          ? parseMinutes(job.endTime) ?? startMin + DEFAULT_DURATION_MIN
-                          : startMin + DEFAULT_DURATION_MIN;
-                        const clampedStart = Math.max(startMin, GRID_START_HOUR * 60);
-                        const clampedEnd = Math.min(Math.max(endMin, clampedStart + 30), GRID_END_HOUR * 60);
-                        const top = ((clampedStart - GRID_START_HOUR * 60) / 60) * HOUR_HEIGHT;
-                        const height = Math.max(((clampedEnd - clampedStart) / 60) * HOUR_HEIGHT, 28);
-                        return (
-                          <Pressable
-                            key={job.id}
-                            testID={`booking-${job.id}`}
-                            onPress={() => router.push(`/(trade)/job/${job.id}`)}
-                            style={{ position: "absolute", top, left: 3, right: 3, height }}
-                          >
-                            <View className="flex-1 gap-0.5 overflow-hidden rounded-lg border border-primary-200 bg-primary-50 p-1.5">
-                              <Text variant="caption" weight="semibold" numberOfLines={1} style={{ fontSize: 11 }}>
-                                {job.time}
-                              </Text>
-                              <Text variant="caption" color="secondary" numberOfLines={2} style={{ fontSize: 11 }}>
-                                {job.title}
-                              </Text>
-                              {job.address || job.postcode ? (
-                                <Text
-                                  testID={`booking-address-${job.id}`}
-                                  variant="caption"
-                                  color="secondary"
-                                  numberOfLines={1}
-                                  style={{ fontSize: 10 }}
-                                >
-                                  {job.address || job.postcode}
-                                </Text>
-                              ) : null}
-                            </View>
-                          </Pressable>
-                        );
-                      })}
-                    </View>
-                  );
-                })}
-              </View>
+                  </View>
+                );
+              })}
             </View>
-          </ScrollView>
+
+            {/* Time grid */}
+            <View className="flex-row">
+              <View style={{ width: TIME_GUTTER_WIDTH }}>
+                {Array.from({ length: GRID_END_HOUR - GRID_START_HOUR }, (_, i) => (
+                  <View key={i} style={{ height: HOUR_HEIGHT }} className="items-end pr-1">
+                    <Text variant="caption" color="secondary" style={{ fontSize: 9 }}>
+                      {String(GRID_START_HOUR + i).padStart(2, "0")}:00
+                    </Text>
+                  </View>
+                ))}
+              </View>
+              {weekDays.map((date) => {
+                const isToday = isSameDay(date, today);
+                const dayJobs = jobsByDay.get(toIsoDate(date)) ?? [];
+                const dayAppointments = appointmentsByDay.get(toIsoDate(date)) ?? [];
+                return (
+                  <View
+                    key={toIsoDate(date)}
+                    className={`flex-1 border-l border-gray-100 ${isToday ? "bg-primary-50/40" : ""}`}
+                    style={{
+                      height: (GRID_END_HOUR - GRID_START_HOUR) * HOUR_HEIGHT,
+                      position: "relative",
+                    }}
+                  >
+                    {Array.from({ length: GRID_END_HOUR - GRID_START_HOUR }, (_, i) => (
+                      <View
+                        key={i}
+                        className="border-t border-gray-100"
+                        style={{ position: "absolute", top: i * HOUR_HEIGHT, left: 0, right: 0 }}
+                      />
+                    ))}
+                    {dayJobs.map((job) => {
+                      const startMin = parseMinutes(job.time);
+                      if (startMin === null) return null;
+                      const endMin = job.endTime
+                        ? parseMinutes(job.endTime) ?? startMin + DEFAULT_DURATION_MIN
+                        : startMin + DEFAULT_DURATION_MIN;
+                      const clampedStart = Math.max(startMin, GRID_START_HOUR * 60);
+                      const clampedEnd = Math.min(Math.max(endMin, clampedStart + 30), GRID_END_HOUR * 60);
+                      const top = ((clampedStart - GRID_START_HOUR * 60) / 60) * HOUR_HEIGHT;
+                      const height = Math.max(((clampedEnd - clampedStart) / 60) * HOUR_HEIGHT, 24);
+                      return (
+                        <Pressable
+                          key={job.id}
+                          testID={`booking-${job.id}`}
+                          onPress={() => router.push(`/(trade)/job/${job.id}`)}
+                          style={{ position: "absolute", top, left: 1, right: 1, height }}
+                        >
+                          <View className="flex-1 gap-0.5 overflow-hidden rounded-md border border-primary-200 bg-primary-50 p-1">
+                            <Text variant="caption" weight="semibold" numberOfLines={1} style={{ fontSize: 9 }}>
+                              {job.time}
+                            </Text>
+                            <Text variant="caption" color="secondary" numberOfLines={3} style={{ fontSize: 9 }}>
+                              {job.title}
+                            </Text>
+                          </View>
+                        </Pressable>
+                      );
+                    })}
+                    {/* Appointment blocks (incl. multi-day job day-2+ continuations) —
+                        same grid math as jobs, slate tint instead of primary. */}
+                    {dayAppointments.map((appointment) => {
+                      const startMin = parseMinutes(appointment.time);
+                      if (startMin === null) return null;
+                      const endMin = appointment.endTime
+                        ? parseMinutes(appointment.endTime) ?? startMin + DEFAULT_DURATION_MIN
+                        : startMin + DEFAULT_DURATION_MIN;
+                      const clampedStart = Math.max(startMin, GRID_START_HOUR * 60);
+                      const clampedEnd = Math.min(Math.max(endMin, clampedStart + 30), GRID_END_HOUR * 60);
+                      const top = ((clampedStart - GRID_START_HOUR * 60) / 60) * HOUR_HEIGHT;
+                      const height = Math.max(((clampedEnd - clampedStart) / 60) * HOUR_HEIGHT, 24);
+                      return (
+                        <Pressable
+                          key={appointment.id}
+                          testID={`appointment-${appointment.id}`}
+                          disabled={!appointment.jobId}
+                          onPress={() =>
+                            appointment.jobId && router.push(`/(trade)/job/${appointment.jobId}`)
+                          }
+                          style={{ position: "absolute", top, left: 1, right: 1, height }}
+                        >
+                          <View className="flex-1 gap-0.5 overflow-hidden rounded-md border border-slate-300 bg-slate-100 p-1">
+                            <Text variant="caption" weight="semibold" numberOfLines={1} style={{ fontSize: 9 }}>
+                              {appointment.time}
+                            </Text>
+                            <Text variant="caption" color="secondary" numberOfLines={3} style={{ fontSize: 9 }}>
+                              {appointment.title}
+                            </Text>
+                          </View>
+                        </Pressable>
+                      );
+                    })}
+                  </View>
+                );
+              })}
+            </View>
+          </View>
 
           {unscheduledJobs.length > 0 && (
             <View className="mt-4 gap-2">
@@ -357,6 +645,16 @@ export function CalendarScreen(_props: CalendarScreenProps) {
                         {job.customerName}
                       </Text>
                     </View>
+                    {job.address || job.postcode ? (
+                      <IconButton
+                        testID={`unscheduled-navigate-${job.id}`}
+                        icon="navigate"
+                        size={20}
+                        color="#0F1E26"
+                        accessibilityLabel={`Get directions to ${job.title}`}
+                        onPress={() => void handleNavigate(job)}
+                      />
+                    ) : null}
                   </View>
                 </Pressable>
               ))}

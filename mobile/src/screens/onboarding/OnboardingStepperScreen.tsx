@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { ComponentType, useEffect, useRef, useState } from "react";
 import { KeyboardAvoidingView, Platform, ScrollView, StyleSheet, View } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { Header } from "../../components/ui/Header";
@@ -7,6 +7,7 @@ import { Text } from "../../components/ui/Text";
 import { useAuth } from "../../contexts/AuthContext";
 import { useBusiness } from "../../theme/ThemeProvider";
 import { ApiError } from "../../lib/apiClient";
+import { uploadTenantLogo, type LogoAsset } from "../../api/businesses";
 import {
   RegisterBusinessInput,
   completeOnboardingSteps,
@@ -14,8 +15,10 @@ import {
 } from "../../api/onboarding";
 import { AccountStep } from "./steps/AccountStep";
 import { AddressServiceAreaStep } from "./steps/AddressServiceAreaStep";
+import { BankDetailsStep } from "./steps/BankDetailsStep";
 import { BrandingStep } from "./steps/BrandingStep";
 import { BusinessIdentityStep } from "./steps/BusinessIdentityStep";
+import { CardPaymentsStep } from "./steps/CardPaymentsStep";
 import { ComplianceStep } from "./steps/ComplianceStep";
 import { PlanPaymentStep } from "./steps/PlanPaymentStep";
 import { ReviewLaunchStep } from "./steps/ReviewLaunchStep";
@@ -23,7 +26,15 @@ import { ServicesStep } from "./steps/ServicesStep";
 import { TaxVatStep } from "./steps/TaxVatStep";
 import { WelcomeStep } from "./steps/WelcomeStep";
 
-const STEPS = [
+type WizardStepProps = {
+  data?: Record<string, unknown>;
+  onNext: (data?: Record<string, unknown>) => void;
+  /** Account step only: set when the final registration attempt hit a
+   * duplicate-email 409, so the conflict is shown inline under the field. */
+  emailTaken?: boolean;
+};
+
+const STEPS: { key: string; label: string; component: ComponentType<WizardStepProps> }[] = [
   { key: "welcome", label: "Welcome", component: WelcomeStep },
   { key: "account", label: "Account", component: AccountStep },
   { key: "identity", label: "Identity", component: BusinessIdentityStep },
@@ -33,6 +44,10 @@ const STEPS = [
   { key: "services", label: "Services", component: ServicesStep },
   { key: "branding", label: "Branding", component: BrandingStep },
   { key: "review", label: "Review", component: ReviewLaunchStep },
+  // Post-registration steps: the tenant exists from the review step, so bank
+  // details (always) and the card-payments gate save straight to it (#188/189).
+  { key: "bank_details", label: "Bank details", component: BankDetailsStep },
+  { key: "card_payments", label: "Card payments", component: CardPaymentsStep },
   { key: "plan", label: "Plan", component: PlanPaymentStep },
 ];
 
@@ -69,7 +84,7 @@ function buildRegisterInput(data: Record<string, unknown>): RegisterBusinessInpu
 
 export function OnboardingStepperScreen() {
   const { business } = useBusiness();
-  const { logout, finishRegistration, loading } = useAuth();
+  const { logout, finishRegistration, completeOnboarding, loading } = useAuth();
   const router = useRouter();
   const { resume } = useLocalSearchParams<{ resume?: string }>();
   // Resume mode: user logged back in with a tenant that never finished
@@ -81,10 +96,18 @@ export function OnboardingStepperScreen() {
   );
   const [data, setData] = useState<Record<string, unknown>>({});
   const [error, setError] = useState<string | null>(null);
-  // The tenant is registered when leaving the review step, so the plan step's
-  // Paddle checkout call (/billing/checkout) runs with an authenticated tenant.
+  // Set when the review-step registration 409'd on a duplicate email: the
+  // wizard jumps back to the account step, which shows the conflict inline.
+  const [emailConflict, setEmailConflict] = useState(false);
+  // The tenant is registered when leaving the review step. The plan step is
+  // read-only (App Store 3.1.1: subscriptions are sold on the website), so no
+  // billing calls happen in-app.
   const [registered, setRegistered] = useState(isResume);
   const scrollRef = useRef<ScrollView>(null);
+  // Registration at the review step is 7 sequential network calls; without a
+  // guard a second tap fires a parallel registration that 409s against the
+  // first and the wizard jumps back to the account step (#225).
+  const submittingRef = useRef(false);
 
   // Prefill the wizard from the server-side onboarding progress so the review
   // summary (and any back-navigation) shows what was already captured.
@@ -99,6 +122,7 @@ export function OnboardingStepperScreen() {
           compliance: "compliance",
           services: "services",
           branding: "branding",
+          tax: "tax",
           plan: "plan",
         };
         const prefill: Record<string, unknown> = {};
@@ -131,7 +155,13 @@ export function OnboardingStepperScreen() {
     if (stepData) {
       setData(merged);
     }
+    if (STEPS[stepIndex].key === "account") {
+      // The user fixed (or re-confirmed) their email; drop any stale conflict.
+      setEmailConflict(false);
+    }
     if (STEPS[stepIndex].key === "review") {
+      if (submittingRef.current) return;
+      submittingRef.current = true;
       setError(null);
       try {
         if (!registered) {
@@ -140,7 +170,32 @@ export function OnboardingStepperScreen() {
           await completeOnboardingSteps(merged);
         }
         setRegistered(true);
+        // A logo staged during the branding step can only upload now — the
+        // tenant did not exist before registration. Best-effort: a failed
+        // upload never blocks onboarding; Settings can re-upload later.
+        const stagedLogo = (merged.branding as Record<string, unknown> | undefined)
+          ?.logoAsset as LogoAsset | undefined;
+        if (stagedLogo) {
+          try {
+            await uploadTenantLogo(stagedLogo);
+          } catch {
+            // Swallow: the logo is optional polish, not a launch gate.
+          }
+        }
       } catch (err) {
+        if (
+          err instanceof ApiError &&
+          err.status === 409 &&
+          err.detail.toLowerCase().includes("email")
+        ) {
+          // Duplicate account: back to the email step, shown inline there
+          // with a link to log in — not as a banner that trails the user
+          // through every screen.
+          setError(null);
+          setEmailConflict(true);
+          setStepIndex(STEPS.findIndex((s) => s.key === "account"));
+          return;
+        }
         const message =
           err instanceof ApiError && err.status === 409
             ? `${err.detail} Log in from the home screen instead — onboarding will resume where you left off.`
@@ -151,10 +206,16 @@ export function OnboardingStepperScreen() {
                 : "We couldn't create your business account. Please try again.";
         setError(message);
         return;
+      } finally {
+        submittingRef.current = false;
       }
     }
     if (isLast) {
-      // Already registered at the review step; plan checkout opened by the step.
+      // Already registered at the review step; the plan step only points to
+      // web subscription (no in-app purchase). Mark onboarding complete so
+      // the index route never bounces a
+      // finished (esp. resumed) wizard back into /onboarding?resume=1 (#225).
+      completeOnboarding();
       router.replace("/(trade)/dashboard");
     } else {
       setStepIndex((i) => i + 1);
@@ -162,6 +223,8 @@ export function OnboardingStepperScreen() {
   };
 
   const goBack = () => {
+    // Errors belong to the step that raised them; don't trail them backwards.
+    setError(null);
     if (isFirst) {
       logout();
       router.replace("/");
@@ -219,12 +282,15 @@ export function OnboardingStepperScreen() {
             key={stepIndex}
             // Steps normally receive only their own slice of the wizard state.
             // ReviewLaunchStep is the exception: it summarises earlier steps,
-            // so it needs the root state (compliance/services/etc.).
+            // so it needs the root state (compliance/services/etc.) plus the
+            // resume flag (its checklist marks the account complete when the
+            // tenant already exists server-side).
             data={
               (STEPS[stepIndex].key === "review"
-                ? data
+                ? { ...data, __resume: isResume }
                 : data[STEPS[stepIndex].key]) as Record<string, unknown>
             }
+            emailTaken={emailConflict}
             onNext={(stepData?: Record<string, unknown>) => {
               void goNext(stepData);
             }}

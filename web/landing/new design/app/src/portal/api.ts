@@ -265,10 +265,17 @@ export async function consumeMagicToken(token: string): Promise<MagicAuthRespons
 }
 
 /** Always resolves (202 generic) — never reveals whether the email exists. */
-export async function requestMagicLink(email: string): Promise<void> {
+export async function requestMagicLink(email: string, slug?: string): Promise<void> {
   const res = await fetch(`${API_BASE}/customer/auth/magic/request`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: {
+      'Content-Type': 'application/json',
+      // The api resolves the tenant from the Host subdomain, which only works
+      // when this bundle is served from a tenant subdomain. Served from the
+      // marketing origin (VITE_API_URL set), Host is the api domain — pin the
+      // tenant explicitly so the right customer gets the link.
+      ...(slug ? { 'X-Tenant-Slug': slug } : {}),
+    },
     body: JSON.stringify({ email }),
   })
   if (!res.ok && res.status === 429) await parseError(res)
@@ -331,6 +338,13 @@ export interface CustomerQuote {
   line_items: CustomerLineItem[]
 }
 
+export interface CustomerInvoicePaymentDetails {
+  account_name: string
+  sort_code: string
+  account_number: string
+  reference: string
+}
+
 export interface CustomerInvoice {
   id: string
   invoice_number: string
@@ -347,6 +361,8 @@ export interface CustomerInvoice {
   /** Pending backend: online-pay handoff for the portal pay flow. */
   payment_url?: string | null
   payment_client_secret?: string | null
+  /** Bank-transfer details to show when there is no card pay URL. */
+  payment_details?: CustomerInvoicePaymentDetails | null
 }
 
 export interface CustomerQuoteRequest {

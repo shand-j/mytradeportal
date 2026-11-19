@@ -7,6 +7,7 @@ by the pipeline are compatible with the cost_items Qdrant collection.
 from typing import Any
 
 from litellm import aembedding
+from mtp_shared.embeddings import get_embedding_dimension as _shared_embedding_dimension
 from openai import APIError
 
 from data_pipeline.config import settings
@@ -16,12 +17,7 @@ def get_embedding_dimension() -> int:
     """Return the vector dimension for the configured embedding model."""
     if settings.embedding_dimensions:
         return settings.embedding_dimensions
-
-    known_dimensions = {
-        "text-embedding-3-small": 1536,
-        "text-embedding-3-large": 3072,
-    }
-    return known_dimensions.get(settings.embedding_model, 1536)
+    return _shared_embedding_dimension(settings.embedding_model)
 
 
 def _embedding_kwargs(texts: list[str]) -> dict[str, Any]:

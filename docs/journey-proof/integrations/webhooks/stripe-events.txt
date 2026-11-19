@@ -1,0 +1,11 @@
+ provider |           event_id           |        event_type        |         created_at         
+----------+------------------------------+--------------------------+----------------------------
+ stripe   | evt_3UG3gd5pCtc1F7Y71qTJR5Nl | payment_intent.succeeded | 2026-09-15 21:14:44.807377
+ stripe   | evt_3UH0w95pCtc1F7Y71kNjSqcV | payment_intent.succeeded | 2026-09-18 12:39:17.582525
+ stripe   | evt_3UH1b95pCtc1F7Y713faXI6Z | payment_intent.succeeded | 2026-09-18 13:26:01.111078
+ stripe   | evt_3UH1zJ5pCtc1F7Y711DXExWo | payment_intent.succeeded | 2026-09-18 13:47:46.071905
+ stripe   | evt_3UOKUI5pCtc1F7Y71IEGgIS3 | payment_intent.succeeded | 2026-10-08 16:58:53.380497
+ stripe   | evt_1UTrvgKFac4T4rfGI3zixg0C | account.updated          | 2026-10-23 23:31:21.508544
+ stripe   | evt_1UTrw1KFac4T4rfGienGsyes | account.updated          | 2026-10-23 23:31:42.065842
+(7 rows)
+

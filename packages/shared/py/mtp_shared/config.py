@@ -69,6 +69,12 @@ class Settings(BaseSettings):
     embedding_model: str = Field(default="text-embedding-3-large")
     embedding_dimensions: int | None = Field(default=None)
     llm_model: str = Field(default="gpt-4o-mini")
+    # Optional vision-capable model override for the photo-observation step
+    # that captions customer photos attached to quote requests. Empty falls
+    # back to ``llm_model`` — set this when the configured chat model cannot
+    # accept image input. Routed through the same LiteLLM provider settings
+    # (``llm_api_base`` / ``llm_api_key``) as quote generation.
+    llm_vision_model: str = Field(default="")
     # Model for the public landing-page demo quote endpoints. The demo favours
     # speed and reliability over flagship quality, so it routes to OpenAI
     # (gpt-4o-mini by default) whenever ``openai_api_key`` is set, ignoring the
@@ -119,7 +125,8 @@ class Settings(BaseSettings):
     # Per-attempt timeout/retry budget for one chat turn — deliberately much
     # tighter than quote generation (llm_timeout_seconds/llm_max_retries)
     # because the customer is waiting on the reply and the guest-thread
-    # wrapper bounds the whole turn separately.
+    # wrapper already bounds the whole turn at
+    # ``guest_followup_timeout_seconds`` (default 90s).
     llm_followup_timeout_seconds: int = Field(default=30)
     llm_followup_max_retries: int = Field(default=1)
 
@@ -215,14 +222,31 @@ class Settings(BaseSettings):
     resend_from_email: str = Field(default="")
     resend_no_reply_email: str = Field(default="")
 
+    # SMS appointment reminders (Telnyx Messaging API). Plan-included feature:
+    # customers and the assigned electrician get a text before each appointment.
+    # ``telnyx_api_key`` plus at least one of ``telnyx_from_number`` /
+    # ``telnyx_messaging_profile_id`` must be set for SMS to be attempted;
+    # otherwise appointment reminders degrade to email/push.
+    telnyx_api_key: str = Field(default="")
+    telnyx_from_number: str = Field(default="")
+    telnyx_messaging_profile_id: str = Field(default="")
+    # Ed25519 public key (base64, from Mission Control → Keys & Credentials)
+    # verifying POST /webhooks/telnyx signatures (delivery receipts + inbound
+    # STOP opt-outs). Empty disables the endpoint: it answers 503 so Telnyx
+    # keeps retrying until configured.
+    telnyx_public_key: str = Field(default="")
+
     # PostHog product analytics (optional passthrough from ``app.analytics``).
     # Empty ``posthog_api_key`` disables the integration entirely — events are
     # still written to the local ``events`` table.
     posthog_api_key: str = Field(default="")
     posthog_host: str = Field(default="https://eu.i.posthog.com")
 
-    # Public base URL used to build customer/staff email links. Falls back to
-    # the API's own origin at runtime when unset.
+    # Back-office (admin) origin. Never used for customer-facing links —
+    # those resolve via portal magic links ({slug}.PORTAL_BASE_DOMAIN),
+    # PUBLIC_DOCS_BASE_URL document/bounce pages, PASSWORD_RESET_BASE_URL
+    # and CALENDAR_FEED_BASE_URL. Remaining use is staff-facing fallback
+    # links (invites, set-password) only.
     app_public_url: str = Field(default="")
 
     # Auth
@@ -264,11 +288,6 @@ class Settings(BaseSettings):
     # ``fx_rates`` table has no row yet (the weekly refresh job is responsible
     # for keeping it populated); never for customer billing.
     fx_usd_gbp_fallback_rate: float = Field(default=0.79)
-
-    # Supabase Auth (optional — when set, email/password login is handled by Supabase)
-    supabase_url: str = Field(default="")
-    supabase_anon_key: str = Field(default="")
-    supabase_service_role_key: str = Field(default="")
 
     # Setup / bootstrap token required to create the first tenant in production.
     setup_token: str = Field(default="")

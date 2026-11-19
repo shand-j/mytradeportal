@@ -26,7 +26,6 @@ from app.database import engine
 from app.models import Base, Tenant, User
 from app.rls import bypass_rls_in_session
 from app.security import get_password_hash
-from app.supabase import admin_create_user, is_supabase_configured
 from app.utils.tenant_code import generate_unique_tenant_code
 
 
@@ -77,38 +76,6 @@ async def seed() -> None:
             select(User).where(User.email == admin_email, User.tenant_id == tenant.id)
         )
         user = user_result.scalar_one_or_none()
-        supabase_uid: str | None = None
-        password_hash: str | None = None
-
-        if is_supabase_configured():
-            try:
-                sb_user = admin_create_user(admin_email, admin_password)
-                supabase_uid = sb_user.get("id")
-                print(f"Created Supabase auth user: {supabase_uid}")
-            except RuntimeError as exc:
-                # The user may already exist in Supabase; try to fetch by email.
-                import httpx
-
-                with httpx.Client() as client:
-                    response = client.get(
-                        f"{settings.supabase_url.rstrip('/')}/auth/v1/admin/users",
-                        params={"email": admin_email},
-                        headers={
-                            "apikey": settings.supabase_service_role_key,
-                            "Authorization": f"Bearer {settings.supabase_service_role_key}",
-                        },
-                    )
-                    if response.status_code == 200:
-                        users = response.json().get("users", [])
-                        if users:
-                            supabase_uid = users[0]["id"]
-                            print(f"Linked existing Supabase auth user: {supabase_uid}")
-                        else:
-                            raise exc
-                    else:
-                        raise exc
-        else:
-            password_hash = get_password_hash(admin_password)
 
         if user is None:
             user = User(
@@ -116,21 +83,14 @@ async def seed() -> None:
                 email=admin_email,
                 full_name=admin_name,
                 role="admin",
-                password_hash=password_hash,
-                supabase_uid=supabase_uid,
+                password_hash=get_password_hash(admin_password),
                 is_active=True,
             )
             session.add(user)
             await session.commit()
             print(f"Created admin user: {user.email} / role={user.role}")
         else:
-            # Ensure the existing user is linked to Supabase if we just created one.
-            if supabase_uid and not user.supabase_uid:
-                user.supabase_uid = supabase_uid
-                await session.commit()
-                print(f"Linked admin user to Supabase: {user.email}")
-            else:
-                print(f"Admin user already exists: {user.email}")
+            print(f"Admin user already exists: {user.email}")
 
         print("\nSeed complete.")
         print(f"  Tenant slug: {tenant.slug}")

@@ -104,8 +104,15 @@ linked to the in-progress job), tomorrow, +2 days (cancelled), +3 days,
 +8 days (next week), plus a completed one yesterday.
 
 **Invoices** — 3 per tenant: `INV-001` draft, `INV-002` sent (due in 11 days),
-`INV-003` **paid** (`paid_at` set, plus a completed Paddle `Payment` row with a
-`txn_seed_*` transaction id). All are linked to their source quote and job.
+`INV-003` **paid** (`paid_at` set, `paid_via="stripe"`, plus a completed Stripe
+`Payment` row mirroring the `payment_intent.succeeded` webhook with a
+`pi_seed_*` PaymentIntent id). All are linked to their source quote and job.
+
+**Payments (Stripe Connect)** — every seeded tenant also gets a fully onboarded
+`StripeAccount` row (`acct_seed_<slug>`, charges/payouts enabled), so the
+invoice `payment_url` flow offers card payment exactly as in production.
+Receivables are Stripe-only; Paddle is platform subscription billing and never
+appears on invoice payments.
 
 **Reviews** — 3 per tenant: ratings 5/4/5, sources `in_app`/`google`, two
 `approved` (one with a business response), one `pending`.

@@ -17,6 +17,17 @@ Connection: ``DATABASE_URL`` env var, defaulting to the docker-compose local
 Postgres (``postgresql+asyncpg://mtp:mtp@localhost:5432/mtp``). The script
 refuses to run when ``ENVIRONMENT=production``.
 
+.. warning:: Dual-Postgres trap (port 5432)
+
+   On dev machines where a Homebrew Postgres also listens on
+   ``localhost:5432``, running this script on the host writes to the
+   *Homebrew* database while the Dockerised API serves the *container*
+   database — the seed appears to succeed but the app shows no demo data.
+   Either seed inside the container (``docker compose cp`` + ``docker compose
+   exec -T api python /app/scripts/seed_demo_estate.py``) or point
+   ``DATABASE_URL`` at the database the API actually uses. See
+   ``docs/testing-accounts.md`` → "Troubleshooting" for the full recipe.
+
 All seeded logins use the password ``GoLive2026!`` — local testing only.
 See ``docs/testing-accounts.md`` for the full account list and test flows.
 """
@@ -51,6 +62,7 @@ from app.models import (  # noqa: E402
     QuoteLineItem,
     QuoteRequest,
     Review,
+    StripeAccount,
     Tenant,
     User,
 )
@@ -433,6 +445,22 @@ async def seed_tenant(session: AsyncSession, spec: dict[str, Any]) -> dict[str, 
     )
     session.add(tenant)
     await session.flush()
+
+    # Stripe Connect (ADR-003): receivables run through destination charges on
+    # the tradie's own Express account, so demo tenants get a fully onboarded
+    # StripeAccount row — that is what makes the invoice payment_url flow
+    # offer card payment. Paddle is platform subscription billing only and
+    # must never appear on invoice payments.
+    session.add(
+        StripeAccount(
+            tenant_id=tenant.id,
+            stripe_account_id=f"acct_seed_{spec['slug']}",
+            details_submitted=True,
+            charges_enabled=True,
+            payouts_enabled=True,
+            onboarding_complete=True,
+        )
+    )
 
     password_hash = get_password_hash(SEED_PASSWORD)
 
@@ -904,19 +932,29 @@ async def seed_tenant(session: AsyncSession, spec: dict[str, Any]) -> dict[str, 
     invoice_paid.status = "paid"
     invoice_paid.issue_date = NOW - timedelta(days=7)
     invoice_paid.paid_at = NOW - timedelta(days=6)
+    invoice_paid.paid_via = "stripe"
+    invoice_paid.stripe_payment_intent_id = f"pi_seed_{spec['slug']}_001"
     invoice_paid.job_id = job_completed.id
     session.add_all([invoice_draft, invoice_sent, invoice_paid])
     await session.flush()
 
+    # Mirror what the Stripe webhook writes on payment_intent.succeeded:
+    # provider="stripe", the PaymentIntent id as the transaction reference,
+    # and no checkout id (Stripe card payment is an intent, not a checkout).
     payment = Payment(
         tenant_id=tenant.id,
         invoice_id=invoice_paid.id,
         amount=invoice_paid.total,
         currency_code="GBP",
         status="completed",
-        provider="paddle",
-        provider_transaction_id=f"txn_seed_{spec['slug']}_001",
-        provider_checkout_id=f"chk_seed_{spec['slug']}_001",
+        provider="stripe",
+        provider_transaction_id=f"pi_seed_{spec['slug']}_001",
+        provider_payload={
+            "id": f"pi_seed_{spec['slug']}_001",
+            "object": "payment_intent",
+            "amount_received": int(invoice_paid.total * 100),
+            "currency": "gbp",
+        },
         paid_at=invoice_paid.paid_at,
     )
     session.add(payment)

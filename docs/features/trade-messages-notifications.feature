@@ -21,6 +21,15 @@ Feature: Messages and notifications
     # mobile/e2e/messages.spec.ts.
 
   @automated-e2e
+  Scenario: Empty inbox renders the designed empty state
+    Given a freshly onboarded tradesperson with no quote requests or threads
+    When they open the Messages tab
+    Then the inbox shows the designed empty state ("No conversations yet — new
+      quote requests will appear here."), not a blank screen or an error
+      (backlog N24)
+    # mobile/e2e/messages.spec.ts.
+
+  @automated-e2e
   Scenario: Request more info on a quote opens the customer chat
     When the tradesperson taps "Request more info" on a lead
     Then the customer chat opens in all cases, falling back to a direct thread

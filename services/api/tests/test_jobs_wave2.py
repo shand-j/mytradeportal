@@ -102,6 +102,76 @@ async def test_create_job_with_notes_and_assignee(client: AsyncClient, db: Async
     assert fetched.json()["assigned_to"] == "Spark One"
 
 
+async def test_list_jobs_filters_by_assignee(client: AsyncClient, db: AsyncSession) -> None:
+    """?assigned_user_id narrows the list ("Me"); omitting it returns all ("All")."""
+    tenant = await _create_tenant(client, f"job-{uuid4().hex[:8]}")
+    contact = await _create_contact(client, tenant["id"], "List Filter")
+    spark_one = await _create_user(db, tenant["id"], "Spark One")
+    spark_two = await _create_user(db, tenant["id"], "Spark Two")
+
+    async def create(title: str, assignee: User | None) -> dict[str, Any]:
+        payload: dict[str, Any] = {"contact_id": contact["id"], "title": title}
+        if assignee is not None:
+            payload["assigned_user_id"] = str(assignee.id)
+        response = await client.post("/jobs", headers={"X-Tenant-ID": tenant["id"]}, json=payload)
+        assert response.status_code == 201, response.text
+        data: dict[str, Any] = response.json()
+        return data
+
+    mine = await create("Job for one", spark_one)
+    theirs = await create("Job for two", spark_two)
+    unassigned = await create("Unassigned job", None)
+
+    all_response = await client.get("/jobs", headers={"X-Tenant-ID": tenant["id"]})
+    assert all_response.status_code == 200
+    all_ids = {job["id"] for job in all_response.json()}
+    assert all_ids == {mine["id"], theirs["id"], unassigned["id"]}
+
+    filtered = await client.get(
+        "/jobs",
+        headers={"X-Tenant-ID": tenant["id"]},
+        params={"assigned_user_id": str(spark_one.id)},
+    )
+    assert filtered.status_code == 200
+    assert {job["id"] for job in filtered.json()} == {mine["id"]}
+
+
+async def test_create_job_merges_contact_notes(client: AsyncClient) -> None:
+    """The CRM contact's notes are appended to the job notes at creation,
+    keeping whatever the user typed on the create screen first."""
+    tenant = await _create_tenant(client, f"job-{uuid4().hex[:8]}")
+    contact_response = await client.post(
+        "/contacts",
+        headers={"X-Tenant-ID": tenant["id"]},
+        json={"name": "Notes Carrier", "notes": "Gate code 4521; dog on site"},
+    )
+    assert contact_response.status_code == 201
+    contact = contact_response.json()
+
+    response = await client.post(
+        "/jobs",
+        headers={"X-Tenant-ID": tenant["id"]},
+        json={
+            "contact_id": contact["id"],
+            "title": "Rewire kitchen",
+            "notes": "Parking on driveway",
+        },
+    )
+    assert response.status_code == 201, response.text
+    job = response.json()
+    assert job["notes"].startswith("Parking on driveway")
+    assert "Gate code 4521; dog on site" in job["notes"]
+
+    # No notes typed → the contact's notes alone seed the job notes.
+    bare = await client.post(
+        "/jobs",
+        headers={"X-Tenant-ID": tenant["id"]},
+        json={"contact_id": contact["id"], "title": "EICR"},
+    )
+    assert bare.status_code == 201, bare.text
+    assert "Gate code 4521; dog on site" in bare.json()["notes"]
+
+
 async def test_create_job_rejects_unknown_assignee(client: AsyncClient) -> None:
     tenant = await _create_tenant(client, f"job-{uuid4().hex[:8]}")
     contact = await _create_contact(client, tenant["id"], "Bad Assignee")
@@ -142,6 +212,9 @@ async def test_update_job_notes_and_assignee(client: AsyncClient, db: AsyncSessi
     tenant = await _create_tenant(client, f"job-{uuid4().hex[:8]}")
     contact = await _create_contact(client, tenant["id"], "Job Editor")
     user = await _create_user(db, tenant["id"], "Spark Two")
+    # Second active user: with a single user the create would auto-assign
+    # them (team gating), leaving nothing to patch.
+    await _create_user(db, tenant["id"], "Spark Three")
 
     created = await client.post(
         "/jobs",
@@ -355,3 +428,120 @@ async def test_availability_job_without_end_blocks_one_hour(client: AsyncClient)
     assert "2026-09-14T13:00:00" in slots
     assert "2026-09-14T14:00:00" not in slots
     assert "2026-09-14T15:00:00" in slots
+
+
+async def _create_job(client: AsyncClient, tenant_id: str, contact_id: str) -> dict[str, Any]:
+    response = await client.post(
+        "/jobs",
+        headers={"X-Tenant-ID": tenant_id},
+        json={"contact_id": contact_id, "title": "Photo job"},
+    )
+    assert response.status_code == 201, response.text
+    data: dict[str, Any] = response.json()
+    return data
+
+
+async def test_attach_job_media_defaults_to_general(client: AsyncClient) -> None:
+    """Photos attached without a kind are general, and surface on the job read."""
+    tenant = await _create_tenant(client, f"job-{uuid4().hex[:8]}")
+    contact = await _create_contact(client, tenant["id"], "General Kind")
+    job = await _create_job(client, tenant["id"], contact["id"])
+
+    attached = await client.post(
+        f"/jobs/{job['id']}/media",
+        headers={"X-Tenant-ID": tenant["id"]},
+        json={"file_url": "https://api.example.com/files/media/site.jpg"},
+    )
+    assert attached.status_code == 201, attached.text
+    body = attached.json()
+    assert body["photos"] == ["https://api.example.com/files/media/site.jpg"]
+    assert len(body["media_assets"]) == 1
+    assert body["media_assets"][0]["kind"] == "general"
+
+    fetched = await client.get(f"/jobs/{job['id']}", headers={"X-Tenant-ID": tenant["id"]})
+    assert fetched.status_code == 200
+    assert fetched.json()["media_assets"][0]["kind"] == "general"
+
+
+async def test_attach_job_media_with_kind_and_relabel(client: AsyncClient) -> None:
+    """kind persists on attach, and PATCH relabels an existing photo."""
+    tenant = await _create_tenant(client, f"job-{uuid4().hex[:8]}")
+    contact = await _create_contact(client, tenant["id"], "Labelled Kind")
+    job = await _create_job(client, tenant["id"], contact["id"])
+
+    attached = await client.post(
+        f"/jobs/{job['id']}/media",
+        headers={"X-Tenant-ID": tenant["id"]},
+        json={"file_url": "https://api.example.com/files/media/before.jpg", "kind": "before"},
+    )
+    assert attached.status_code == 201, attached.text
+    asset = attached.json()["media_assets"][0]
+    assert asset["kind"] == "before"
+    assert asset["file_url"] == "https://api.example.com/files/media/before.jpg"
+
+    relabelled = await client.patch(
+        f"/jobs/{job['id']}/media/{asset['id']}",
+        headers={"X-Tenant-ID": tenant["id"]},
+        json={"kind": "after"},
+    )
+    assert relabelled.status_code == 200, relabelled.text
+    assert relabelled.json()["media_assets"][0]["kind"] == "after"
+
+    # Relabel rejects an invalid kind.
+    invalid = await client.patch(
+        f"/jobs/{job['id']}/media/{asset['id']}",
+        headers={"X-Tenant-ID": tenant["id"]},
+        json={"kind": "during"},
+    )
+    assert invalid.status_code == 422
+
+    # An asset from another job is not reachable under this job.
+    other_job = await _create_job(client, tenant["id"], contact["id"])
+    wrong_job = await client.patch(
+        f"/jobs/{other_job['id']}/media/{asset['id']}",
+        headers={"X-Tenant-ID": tenant["id"]},
+        json={"kind": "general"},
+    )
+    assert wrong_job.status_code == 404
+
+
+async def test_convert_to_job_preserves_media_kind(client: AsyncClient, db: AsyncSession) -> None:
+    """A labelled quote-request photo keeps its kind when carried onto the job."""
+    tenant = await _create_tenant(client, f"quote-{uuid4().hex[:8]}")
+    contact = await _create_contact(client, tenant["id"], "Kind Convert")
+    quote = await _create_quote(client, tenant["id"], contact["id"])
+
+    await set_tenant_in_session(db, UUID(tenant["id"]))
+    quote_request = QuoteRequest(
+        tenant_id=UUID(tenant["id"]),
+        contact_id=UUID(contact["id"]),
+        source="web_form",
+    )
+    db.add(quote_request)
+    await db.flush()
+    asset = MediaAsset(
+        tenant_id=UUID(tenant["id"]),
+        quote_request_id=quote_request.id,
+        file_url="https://api.example.com/files/media/board.jpg",
+        file_key="media/board.jpg",
+        mime_type="image/jpeg",
+        kind="before",
+    )
+    db.add(asset)
+    await db.execute(
+        sa_update(QuoteModel)
+        .where(QuoteModel.id == UUID(quote["id"]))
+        .values(quote_request_id=quote_request.id)
+    )
+    await db.commit()
+    await _approve_quote(client, tenant["id"], quote["id"])
+
+    response = await client.post(
+        f"/quotes/{quote['id']}/convert-to-job",
+        headers={"X-Tenant-ID": tenant["id"]},
+        json={},
+    )
+    assert response.status_code == 201, response.text
+    job = response.json()
+    assert job["media_assets"][0]["kind"] == "before"
+    assert job["photos"] == ["https://api.example.com/files/media/board.jpg"]

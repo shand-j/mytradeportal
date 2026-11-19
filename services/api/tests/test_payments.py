@@ -9,8 +9,9 @@ functions are mocked throughout.
 import re
 from datetime import datetime
 from decimal import Decimal
+from types import SimpleNamespace
 from typing import Any
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, Mock
 from uuid import UUID, uuid4
 
 import pytest
@@ -174,6 +175,87 @@ async def test_connect_returns_onboarding_url_and_reuses_account(
     create_account.assert_awaited_once()
     assert account_link.await_count == 2
 
+    # http(s) URLs reach Stripe unchanged.
+    for call in account_link.await_args_list:
+        assert call.kwargs["return_url"] == "https://app.example/ok"
+        assert call.kwargs["refresh_url"] == "https://app.example/re"
+
+
+async def test_connect_swaps_deep_link_urls_for_https_bounce(
+    admin_client: AsyncClient, db: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Build-20 mobile sends mtp:// deep links; Stripe only accepts http(s).
+
+    The API must substitute the public landing bounce URL carrying the
+    original deep link as an encoded ``next`` param instead of passing the
+    custom scheme verbatim (Stripe 400s "Not a valid URL" otherwise).
+    """
+    monkeypatch.setattr("app.config.STRIPE_SECRET_KEY", "sk_test_x")
+    monkeypatch.setattr("app.config.PUBLIC_DOCS_BASE_URL", "https://www.mytradeportal.co.uk")
+    monkeypatch.setattr(
+        "app.stripe_client.create_connected_account_v2", AsyncMock(return_value={"id": "acct_dl"})
+    )
+    account_link = AsyncMock(return_value="https://connect.stripe.com/setup/s/test")
+    monkeypatch.setattr("app.stripe_client.create_account_link", account_link)
+
+    response = await admin_client.post(
+        "/payments/connect",
+        json={
+            "return_url": "mtp://payments/stripe-return",
+            "refresh_url": "mtp://payments/stripe-refresh",
+        },
+    )
+    assert response.status_code == 200
+
+    account_link.assert_awaited_once()
+    call = account_link.await_args
+    assert call is not None
+    assert call.kwargs["return_url"] == (
+        "https://www.mytradeportal.co.uk/payments/stripe-bounce"
+        "?next=mtp%3A%2F%2Fpayments%2Fstripe-return"
+    )
+    assert call.kwargs["refresh_url"] == (
+        "https://www.mytradeportal.co.uk/payments/stripe-bounce"
+        "?next=mtp%3A%2F%2Fpayments%2Fstripe-refresh"
+    )
+
+
+async def test_connect_default_urls_bounce_through_public_landing(
+    admin_client: AsyncClient, db: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Empty connect body: defaults must never expose APP_PUBLIC_URL.
+
+    The default return/refresh used to point at the back-office payments
+    settings page derived from APP_PUBLIC_URL (the Django admin host — a
+    404 for the Stripe redirect). They now default to the app's own deep
+    links bounced through the public https landing page, exactly like
+    client-supplied deep links.
+    """
+    monkeypatch.setattr("app.config.STRIPE_SECRET_KEY", "sk_test_x")
+    monkeypatch.setattr("app.config.PUBLIC_DOCS_BASE_URL", "https://www.mytradeportal.co.uk")
+    # Even with APP_PUBLIC_URL set, it must not leak into Stripe redirects.
+    monkeypatch.setattr("app.config.settings.app_public_url", "https://admin.example.com")
+    monkeypatch.setattr(
+        "app.stripe_client.create_connected_account_v2", AsyncMock(return_value={"id": "acct_dflt"})
+    )
+    account_link = AsyncMock(return_value="https://connect.stripe.com/setup/s/test")
+    monkeypatch.setattr("app.stripe_client.create_account_link", account_link)
+
+    response = await admin_client.post("/payments/connect", json={})
+    assert response.status_code == 200
+
+    account_link.assert_awaited_once()
+    call = account_link.await_args
+    assert call is not None
+    assert call.kwargs["return_url"] == (
+        "https://www.mytradeportal.co.uk/payments/stripe-bounce"
+        "?next=mtp%3A%2F%2Fpayments%2Fstripe-return"
+    )
+    assert call.kwargs["refresh_url"] == (
+        "https://www.mytradeportal.co.uk/payments/stripe-bounce"
+        "?next=mtp%3A%2F%2Fpayments%2Fstripe-refresh"
+    )
+
 
 async def test_onboarding_return_syncs_flags(
     admin_client: AsyncClient, db: AsyncSession, monkeypatch: pytest.MonkeyPatch
@@ -208,6 +290,329 @@ async def test_onboarding_return_syncs_flags(
     status = await admin_client.get("/payments/status")
     assert status.json()["connected"] is True
     assert status.json()["charges_enabled"] is True
+
+
+# ---------------------------------------------------------------------------
+# POST /payments/connect/session (embedded onboarding AccountSession)
+# ---------------------------------------------------------------------------
+
+
+async def test_connect_session_503_when_stripe_unconfigured(
+    admin_client: AsyncClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr("app.config.STRIPE_SECRET_KEY", "")
+    response = await admin_client.post("/payments/connect/session")
+    assert response.status_code == 503
+    assert response.json()["detail"] == "payments_not_configured"
+
+
+async def test_connect_session_creates_account_and_returns_client_secret(
+    admin_client: AsyncClient, db: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr("app.config.STRIPE_SECRET_KEY", "sk_test_x")
+    monkeypatch.setattr("app.config.STRIPE_PUBLISHABLE_KEY", "pk_test_x")
+    create_account = AsyncMock(return_value={"id": "acct_sess_1"})
+    account_session = AsyncMock(
+        return_value={"client_secret": "accs_secret_1", "expires_at": 1730000000}
+    )
+    monkeypatch.setattr("app.stripe_client.create_connected_account_v2", create_account)
+    monkeypatch.setattr("app.stripe_client.create_account_session", account_session)
+
+    response = await admin_client.post("/payments/connect/session")
+    assert response.status_code == 200
+    data = response.json()
+    assert data["client_secret"] == "accs_secret_1"
+    assert data["expires_at"] == 1730000000
+    assert data["stripe_account_id"] == "acct_sess_1"
+    assert data["publishable_key"] == "pk_test_x"
+
+    tenant_id = _tenant_id(admin_client)
+    await set_tenant_in_session(db, tenant_id)
+    account = await db.scalar(select(StripeAccount).where(StripeAccount.tenant_id == tenant_id))
+    assert account is not None
+    assert account.stripe_account_id == "acct_sess_1"
+
+    # A second call reuses the existing account and only mints a new session.
+    response = await admin_client.post("/payments/connect/session")
+    assert response.status_code == 200
+    create_account.assert_awaited_once()
+    assert account_session.await_count == 2
+    assert account_session.await_args is not None
+    assert account_session.await_args.kwargs["component_set"] == "onboarding"
+
+
+async def test_connect_session_dashboard_enables_dashboard_components(
+    admin_client: AsyncClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr("app.config.STRIPE_SECRET_KEY", "sk_test_x")
+    monkeypatch.setattr(
+        "app.stripe_client.create_connected_account_v2",
+        AsyncMock(return_value={"id": "acct_dashboard_1"}),
+    )
+    account_session = AsyncMock(
+        return_value={"client_secret": "accs_secret_dashboard", "expires_at": 1730000000}
+    )
+    monkeypatch.setattr("app.stripe_client.create_account_session", account_session)
+
+    response = await admin_client.post(
+        "/payments/connect/session", json={"components": "dashboard"}
+    )
+
+    assert response.status_code == 200
+    assert response.json()["client_secret"] == "accs_secret_dashboard"
+    assert account_session.await_args is not None
+    assert account_session.await_args.kwargs["component_set"] == "dashboard"
+
+
+async def test_account_session_dashboard_component_payload(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app import stripe_client
+
+    create = Mock(return_value={"client_secret": "accs_secret_dashboard", "expires_at": 1})
+    stripe = SimpleNamespace(AccountSession=SimpleNamespace(create=create))
+    monkeypatch.setattr(stripe_client, "_stripe", lambda: stripe)
+
+    await stripe_client.create_account_session("acct_dashboard_1", component_set="dashboard")
+
+    assert create.call_args is not None
+    assert create.call_args.kwargs["components"] == {
+        "notification_banner": {"enabled": True},
+        "payouts": {"enabled": True},
+        "balances": {"enabled": True},
+    }
+
+
+async def test_connect_session_503_payments_unavailable_when_stripe_rejects(
+    admin_client: AsyncClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from app import stripe_client
+
+    monkeypatch.setattr("app.config.STRIPE_SECRET_KEY", "sk_test_x")
+    create_session = AsyncMock(
+        side_effect=stripe_client.StripeV2Error(400, "unknown", "stripe blew up")
+    )
+    monkeypatch.setattr(
+        "app.stripe_client.create_connected_account_v2",
+        AsyncMock(return_value={"id": "acct_sess_2"}),
+    )
+    monkeypatch.setattr("app.stripe_client.create_account_session", create_session)
+
+    response = await admin_client.post("/payments/connect/session")
+    assert response.status_code == 503
+    assert response.json()["detail"] == "payments_unavailable"
+
+
+async def test_connect_prefills_known_business_fields(
+    admin_client: AsyncClient, db: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Account creation pre-fills what onboarding already captured (#188),
+    plus the tenant portal URL as the business website (#222)."""
+    monkeypatch.setattr("app.config.STRIPE_SECRET_KEY", "sk_test_x")
+    create_account = AsyncMock(return_value={"id": "acct_prefill_1"})
+    monkeypatch.setattr("app.stripe_client.create_connected_account_v2", create_account)
+    monkeypatch.setattr(
+        "app.stripe_client.create_account_link",
+        AsyncMock(return_value="https://connect.stripe.com/setup/s/prefill"),
+    )
+
+    tenant_id = _tenant_id(admin_client)
+    await set_tenant_in_session(db, tenant_id)
+    tenant = await db.get(Tenant, tenant_id)
+    assert tenant is not None
+    tenant.structure = "sole_trader"
+    tenant.settings = {"phone": "+447700900123", "postcode": "SK8 3NJ"}
+    await db.commit()
+
+    payload = {"return_url": "https://app.example/ok", "refresh_url": "https://app.example/re"}
+    response = await admin_client.post("/payments/connect", json=payload)
+    assert response.status_code == 200
+
+    assert create_account.await_args is not None
+    kwargs = create_account.await_args.kwargs
+    assert kwargs["email"] == "admin@test.local"
+    assert kwargs["display_name"] == "Test Electrical"
+    assert kwargs["phone"] == "+447700900123"
+    assert kwargs["postcode"] == "SK8 3NJ"
+    assert kwargs["entity_type"] == "individual"
+    assert "business_url" not in kwargs
+
+
+# ---------------------------------------------------------------------------
+# GET /payments/status syncs mirrored flags from Stripe
+# ---------------------------------------------------------------------------
+
+
+async def test_status_syncs_flags_from_stripe(
+    admin_client: AsyncClient, db: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr("app.config.STRIPE_SECRET_KEY", "sk_test_x")
+    retrieve = AsyncMock(
+        return_value={
+            "id": "acct_sync_1",
+            "details_submitted": True,
+            "charges_enabled": True,
+            "payouts_enabled": True,
+        }
+    )
+    monkeypatch.setattr("app.stripe_client.retrieve_account", retrieve)
+
+    tenant_id = _tenant_id(admin_client)
+    await set_tenant_in_session(db, tenant_id)
+    db.add(StripeAccount(tenant_id=tenant_id, stripe_account_id="acct_sync_1"))
+    await db.commit()
+
+    response = await admin_client.get("/payments/status")
+    assert response.status_code == 200
+    data = response.json()
+    assert data["connected"] is True
+    assert data["charges_enabled"] is True
+    assert data["onboarding_complete"] is True
+
+    account = await db.scalar(select(StripeAccount).where(StripeAccount.tenant_id == tenant_id))
+    assert account is not None
+    assert account.charges_enabled is True
+    assert account.onboarding_complete is True
+
+
+async def test_status_tolerates_stripe_sync_failure(
+    admin_client: AsyncClient, db: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A Stripe outage degrades to the mirrored flags instead of failing."""
+    monkeypatch.setattr("app.config.STRIPE_SECRET_KEY", "sk_test_x")
+    retrieve = AsyncMock(side_effect=RuntimeError("stripe api down"))
+    monkeypatch.setattr("app.stripe_client.retrieve_account", retrieve)
+
+    tenant_id = _tenant_id(admin_client)
+    await set_tenant_in_session(db, tenant_id)
+    db.add(StripeAccount(tenant_id=tenant_id, stripe_account_id="acct_sync_2"))
+    await db.commit()
+
+    response = await admin_client.get("/payments/status")
+    assert response.status_code == 200
+    assert response.json()["connected"] is True
+    assert response.json()["charges_enabled"] is False
+
+
+# ---------------------------------------------------------------------------
+# POST /invoices/{id}/mark-paid — manual settlement records a Payment row (#309)
+# ---------------------------------------------------------------------------
+
+
+async def test_mark_paid_records_manual_payment_row(
+    admin_client: AsyncClient, db: AsyncSession
+) -> None:
+    tenant_id = _tenant_id(admin_client)
+    invoice = await _create_invoice(admin_client, tenant_id)
+
+    response = await admin_client.post(f"/invoices/{invoice['id']}/mark-paid")
+    assert response.status_code == 200
+    assert response.json()["status"] == "paid"
+    assert response.json()["paid_via"] == "manual"
+
+    await set_tenant_in_session(db, tenant_id)
+    payments = (
+        await db.scalars(select(Payment).where(Payment.invoice_id == UUID(invoice["id"])))
+    ).all()
+    assert len(payments) == 1
+    payment = payments[0]
+    assert payment.tenant_id == tenant_id
+    # Same shape as the Stripe-webhook rows: full invoice total, completed.
+    assert payment.amount == Decimal(invoice["total"])
+    assert payment.currency_code == "GBP"
+    assert payment.status == "completed"
+    assert payment.provider == "manual"
+    assert payment.provider_transaction_id is None
+    assert payment.paid_at is not None
+
+    # The create/mark-paid calls cached the invoice's payments collection in
+    # the shared session's identity map; expire so the endpoint re-queries.
+    db.expire_all()
+    listed = await admin_client.get(f"/payments/invoice/{invoice['id']}")
+    assert listed.status_code == 200
+    assert [p["id"] for p in listed.json()] == [str(payment.id)]
+
+
+async def test_mark_paid_bank_transfer_method(admin_client: AsyncClient, db: AsyncSession) -> None:
+    tenant_id = _tenant_id(admin_client)
+    invoice = await _create_invoice(admin_client, tenant_id)
+
+    response = await admin_client.post(
+        f"/invoices/{invoice['id']}/mark-paid", json={"paid_via": "bank_transfer"}
+    )
+    assert response.status_code == 200
+    assert response.json()["paid_via"] == "bank_transfer"
+
+    await set_tenant_in_session(db, tenant_id)
+    payment = await db.scalar(select(Payment).where(Payment.invoice_id == UUID(invoice["id"])))
+    assert payment is not None
+    assert payment.provider == "bank_transfer"
+    assert payment.amount == Decimal(invoice["total"])
+
+
+async def test_mark_paid_twice_does_not_duplicate_payment(
+    admin_client: AsyncClient, db: AsyncSession
+) -> None:
+    tenant_id = _tenant_id(admin_client)
+    invoice = await _create_invoice(admin_client, tenant_id)
+
+    first = await admin_client.post(f"/invoices/{invoice['id']}/mark-paid")
+    assert first.status_code == 200
+    second = await admin_client.post(f"/invoices/{invoice['id']}/mark-paid")
+    assert second.status_code == 200
+
+    await set_tenant_in_session(db, tenant_id)
+    payments = (
+        await db.scalars(select(Payment).where(Payment.invoice_id == UUID(invoice["id"])))
+    ).all()
+    assert len(payments) == 1
+    # The repeat call must not move the settlement metadata.
+    assert second.json()["paid_at"] == first.json()["paid_at"]
+    assert second.json()["paid_via"] == "manual"
+
+
+async def test_mark_paid_after_stripe_settlement_does_not_clobber(
+    admin_client: AsyncClient, db: AsyncSession
+) -> None:
+    """A Stripe-webhook-settled invoice marked paid by staff afterwards keeps
+    the stripe Payment row and paid_via — no duplicate manual row."""
+    tenant_id = _tenant_id(admin_client)
+    invoice = await _create_invoice(admin_client, tenant_id)
+
+    await set_tenant_in_session(db, tenant_id)
+    row = await db.get(Invoice, UUID(invoice["id"]))
+    assert row is not None
+    row.status = "paid"
+    row.paid_via = "stripe"
+    row.stripe_payment_intent_id = "pi_settled_1"
+    row.paid_at = datetime.utcnow()
+    db.add(
+        Payment(
+            tenant_id=tenant_id,
+            invoice_id=row.id,
+            amount=row.total,
+            currency_code="GBP",
+            status="completed",
+            provider="stripe",
+            provider_transaction_id="pi_settled_1",
+            provider_payload={"id": "pi_settled_1"},
+            paid_at=row.paid_at,
+        )
+    )
+    await db.commit()
+
+    response = await admin_client.post(f"/invoices/{invoice['id']}/mark-paid")
+    assert response.status_code == 200
+    assert response.json()["paid_via"] == "stripe"
+
+    db.expire_all()
+    await set_tenant_in_session(db, tenant_id)
+    payments = (
+        await db.scalars(select(Payment).where(Payment.invoice_id == UUID(invoice["id"])))
+    ).all()
+    assert len(payments) == 1
+    assert payments[0].provider == "stripe"
+    assert payments[0].provider_transaction_id == "pi_settled_1"
 
 
 # ---------------------------------------------------------------------------
@@ -344,7 +749,17 @@ async def test_public_invoice_payment_url_when_connected_and_enabled(
 ) -> None:
     monkeypatch.setattr("app.config.STRIPE_SECRET_KEY", "sk_test_x")
     create_intent = AsyncMock(return_value={"id": "pi_123", "client_secret": "pi_123_secret_abc"})
+    # The send mints the intent; the view retrieves and reuses it.
+    retrieve_intent = AsyncMock(
+        return_value={
+            "id": "pi_123",
+            "client_secret": "pi_123_secret_abc",
+            "status": "requires_payment_method",
+            "amount": 60000,
+        }
+    )
     monkeypatch.setattr("app.stripe_client.create_payment_intent", create_intent)
+    monkeypatch.setattr("app.stripe_client.retrieve_payment_intent", retrieve_intent)
 
     tenant, invoice, raw = await _setup_public_invoice(client, db, monkeypatch)
 

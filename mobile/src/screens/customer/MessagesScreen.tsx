@@ -8,6 +8,7 @@ import { Text } from "../../components/ui/Text";
 import { useBusiness } from "../../theme/ThemeProvider";
 import { ChatMessage, ChatSenderRole, useCommunications } from "../../api/communications";
 import { ApiError } from "../../lib/apiClient";
+import { parseServerDate } from "../../lib/datetime";
 import {
   ContactCustomerCard,
   ContactCustomerCardProps,
@@ -31,7 +32,10 @@ function toDisplayMessages(
     sender: m.senderRole === "ai" ? "agent" : m.senderRole,
     text: m.body,
     timestamp: m.createdAt
-      ? new Date(m.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
+      ? (parseServerDate(m.createdAt)?.toLocaleTimeString([], {
+          hour: "2-digit",
+          minute: "2-digit",
+        }) ?? clock())
       : clock(),
   }));
 }

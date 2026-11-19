@@ -9,6 +9,7 @@ import { requestMagicLink } from '../api'
  * answers 202 generic whether or not the address is known.
  */
 export function SignInPanel({ heading = 'Sign in to continue' }: { heading?: string }) {
+  const { slug } = usePortal()
   const [email, setEmail] = useState('')
   const [status, setStatus] = useState<'idle' | 'sending' | 'sent'>('idle')
 
@@ -17,7 +18,7 @@ export function SignInPanel({ heading = 'Sign in to continue' }: { heading?: str
     if (!email || status === 'sending') return
     setStatus('sending')
     try {
-      await requestMagicLink(email)
+      await requestMagicLink(email, slug)
     } finally {
       setStatus('sent')
     }
@@ -26,7 +27,7 @@ export function SignInPanel({ heading = 'Sign in to continue' }: { heading?: str
   if (status === 'sent') {
     return (
       <div className="border-2 border-[var(--ink)] bg-[var(--accent)] p-5" role="status">
-        <p className="text-[14.5px] font-semibold leading-relaxed text-[var(--ink-deep)]">
+        <p className="text-[14.5px] font-semibold leading-relaxed text-white">
           Check your inbox — if {email} has quotes or invoices with us, a sign-in link is on its
           way. The link works on this device and lasts a short while.
         </p>

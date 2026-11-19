@@ -55,6 +55,9 @@ class Actions:
     QUOTE_CONVERTED_TO_INVOICE = "quote.converted_to_invoice"
     QUOTE_CONVERTED_TO_JOB = "quote.converted_to_job"
     QUOTE_REMINDER_SENT = "quote.reminder_sent"
+    QUOTE_REFINE_RATED = "quote.refine_rated"
+
+    APPOINTMENT_REMINDER_SENT = "appointment.reminder_sent"
 
     QUOTE_REQUEST_CREATED = "quote_request.created"
     QUOTE_REQUEST_UPDATED = "quote_request.updated"
@@ -71,6 +74,7 @@ class Actions:
 
     TENANT_CREATED = "tenant.created"
     TENANT_UPDATED = "tenant.updated"
+    TENANT_OFFBOARDED = "tenant.offboarded"
 
 
 async def write_audit_log(

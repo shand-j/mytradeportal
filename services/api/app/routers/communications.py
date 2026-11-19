@@ -14,7 +14,7 @@ from app.ai_telemetry import ACTOR_CUSTOMER, ACTOR_STAFF, AiCallContext
 from app.config import settings as settings
 from app.database import get_db
 from app.dependencies import TenantDep, _extract_token
-from app.email import send_customer_email
+from app.email import send_customer_email, tenant_reply_to
 from app.email_templates import chat_message as chat_message_template
 from app.models import Communication, Contact, Customer, QuoteRequest, Tenant, User
 from app.portal_links import APP_CONTACT_PREFERENCE, magic_link_url
@@ -194,6 +194,8 @@ async def _email_customer_staff_message(
             text_body=text,
             event="chat_message",
             template="chat_message",
+            from_name=tenant.name,
+            reply_to=tenant_reply_to(tenant, quote_request_id=str(quote_request.id)),
             context={
                 "quote_request_id": str(quote_request.id),
                 "customer_id": str(customer.id),

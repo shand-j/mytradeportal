@@ -24,7 +24,7 @@ API_BASE_URL="${EXPO_PUBLIC_API_BASE_URL:-http://localhost:8000}"
 # enables the in-app "Register my business" flow to provision a real tenant.
 SETUP_TOKEN_VALUE="${EXPO_PUBLIC_SETUP_TOKEN:-dev-manual-testing}"
 
-REPO_ROOT="$(cd "$(dirname "$0")/../../.." && pwd)"
+REPO_ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 MOBILE_DIR="$REPO_ROOT/mobile"
 
 # The iOS Simulator shares the host network, so http://localhost:8000 reaches the

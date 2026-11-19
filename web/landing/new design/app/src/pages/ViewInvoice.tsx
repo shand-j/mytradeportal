@@ -62,7 +62,10 @@ export default function ViewInvoice() {
 
   const heading = doc?.invoice_number ? `Invoice ${doc.invoice_number}` : 'Invoice'
   const unpaid = doc != null && doc.status !== 'paid' && doc.status !== 'cancelled'
-  const canPay = unpaid && doc.payment_url
+  // Returning from the Stripe checkout while the webhook is still settling:
+  // the pay CTA must be hidden — offering it again invites a double payment.
+  const paymentInFlight = paymentReturning && unpaid
+  const canPay = unpaid && doc.payment_url && !paymentInFlight
 
   return (
     <main className="relative flex min-h-screen flex-col">
@@ -90,7 +93,8 @@ export default function ViewInvoice() {
             {paymentReturning && doc.status !== 'paid' && (
               <p
                 role="status"
-                className="mt-[var(--space-xl)] border-2 border-[var(--ink)] bg-[var(--accent)] p-4 text-[14px] font-semibold leading-relaxed text-[var(--ink-deep)]"
+                className="mt-[var(--space-xl)] border-2 border-[var(--ink)] p-4 text-[14px] font-semibold leading-relaxed text-white"
+                style={{ backgroundColor: 'var(--brand)' }}
               >
                 Thank you — your payment is being confirmed. This page will show the invoice as
                 paid shortly.
@@ -105,7 +109,7 @@ export default function ViewInvoice() {
                   href={doc.payment_url ?? '#'}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="chip chip--fill mt-[var(--space-md)] justify-center"
+                  className="chip chip--fill chip--brand mt-[var(--space-md)] justify-center"
                 >
                   Pay this invoice
                 </a>
@@ -115,7 +119,10 @@ export default function ViewInvoice() {
               <BankTransferBlock doc={doc} secondary={Boolean(canPay)} />
             )}
             {doc.status === 'paid' && (
-              <p className="mt-[var(--space-xl)] border-2 border-[var(--ink)] bg-[var(--accent)] p-4 text-[14px] font-semibold leading-relaxed text-[var(--ink-deep)]">
+              <p
+                className="mt-[var(--space-xl)] border-2 border-[var(--ink)] p-4 text-[14px] font-semibold leading-relaxed text-white"
+                style={{ backgroundColor: 'var(--brand)' }}
+              >
                 This invoice is paid — thank you.
               </p>
             )}

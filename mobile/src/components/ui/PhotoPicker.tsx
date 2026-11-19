@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Pressable, View } from "react-native";
 import * as ImagePicker from "expo-image-picker";
-import { Image } from "expo-image";
+import { AuthenticatedImage } from "./AuthenticatedImage";
 import { Icon } from "./Icon";
 import { Text } from "./Text";
 import { uploadFileToApi } from "../../api/uploads";
@@ -67,8 +67,8 @@ export function PhotoPicker({ photos, onChange, maxPhotos = 5, testID }: PhotoPi
         <View className="flex-row flex-wrap gap-2">
           {photos.map((photo, idx) => (
             <View key={photo.key} className="relative">
-              <Image
-                source={{ uri: photo.url }}
+              <AuthenticatedImage
+                uri={photo.url}
                 style={{ width: 80, height: 80, borderRadius: 8 }}
                 contentFit="cover"
               />

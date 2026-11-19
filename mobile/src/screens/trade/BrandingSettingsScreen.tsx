@@ -1,12 +1,19 @@
 import { useEffect, useState } from "react";
 import { Pressable, ScrollView, View } from "react-native";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { Image } from "expo-image";
+import * as ImagePicker from "expo-image-picker";
 import { Button } from "../../components/ui/Button";
 import { FormField } from "../../components/ui/FormField";
 import { Header } from "../../components/ui/Header";
 import { Screen } from "../../components/ui/Screen";
 import { Text } from "../../components/ui/Text";
-import { fetchCurrentTenant, updateCurrentTenant } from "../../api/businesses";
+import {
+  fetchCurrentTenant,
+  removeTenantLogo,
+  updateCurrentTenant,
+  uploadTenantLogo,
+} from "../../api/businesses";
 import { ApiError, NetworkError } from "../../lib/apiClient";
 import { useBusiness } from "../../theme/ThemeProvider";
 
@@ -65,6 +72,52 @@ export function BrandingSettingsScreen({ onClose }: BrandingSettingsScreenProps)
   const [hexError, setHexError] = useState<string | null>(null);
   const [reviewUrl, setReviewUrl] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [logoError, setLogoError] = useState<string | null>(null);
+  const [logoBusy, setLogoBusy] = useState(false);
+
+  const pickLogo = async () => {
+    setLogoError(null);
+    const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!permission.granted) {
+      setLogoError("Photo library access denied");
+      return;
+    }
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      quality: 0.9,
+      allowsMultipleSelection: false,
+    });
+    if (result.canceled || result.assets.length === 0) return;
+    const asset = result.assets[0];
+    setLogoBusy(true);
+    try {
+      const updated = await uploadTenantLogo({
+        uri: asset.uri,
+        name: asset.fileName ?? `logo-${Date.now()}.jpg`,
+        type: asset.mimeType ?? "image/jpeg",
+      });
+      setBusiness({ ...(business ?? updated), ...updated });
+      void queryClient.invalidateQueries({ queryKey: ["current-tenant"] });
+    } catch (err) {
+      setLogoError(err instanceof Error ? err.message : "Couldn't upload the logo. Try again.");
+    } finally {
+      setLogoBusy(false);
+    }
+  };
+
+  const clearLogo = async () => {
+    setLogoError(null);
+    setLogoBusy(true);
+    try {
+      const updated = await removeTenantLogo();
+      setBusiness({ ...(business ?? updated), ...updated });
+      void queryClient.invalidateQueries({ queryKey: ["current-tenant"] });
+    } catch {
+      setLogoError("Couldn't remove the logo. Try again.");
+    } finally {
+      setLogoBusy(false);
+    }
+  };
 
   const pickPreset = (colour: string) => {
     setPrimaryColor(colour);
@@ -146,6 +199,65 @@ export function BrandingSettingsScreen({ onClose }: BrandingSettingsScreenProps)
             keyboardType="phone-pad"
           />
           <FormField label="Address" value={address} onChangeText={setAddress} placeholder="Address" />
+        </View>
+
+        <View className="rounded-2xl bg-slate-100 p-4 gap-3">
+          <Text variant="body" weight="semibold">
+            Business logo
+          </Text>
+          <Text variant="caption" color="secondary">
+            Shown on your customer portal, quotes, and invoices. PNG, JPEG or WebP, up to 2 MB.
+          </Text>
+          {tenant?.logoUrl ? (
+            <View className="flex-row items-center gap-4">
+              <View className="h-16 w-16 items-center justify-center rounded-xl border border-slate-300 bg-white">
+                <Image
+                  testID="branding-logo-preview"
+                  source={{ uri: tenant.logoUrl }}
+                  style={{ width: 56, height: 56 }}
+                  contentFit="contain"
+                />
+              </View>
+              <View className="flex-1 gap-2">
+                <Button
+                  testID="branding-logo-change"
+                  title={logoBusy ? "Uploading…" : "Change logo"}
+                  variant="outline"
+                  disabled={logoBusy}
+                  onPress={() => void pickLogo()}
+                />
+                <Button
+                  testID="branding-logo-remove"
+                  title="Remove"
+                  variant="outline"
+                  disabled={logoBusy}
+                  onPress={() => void clearLogo()}
+                />
+              </View>
+            </View>
+          ) : (
+            <Pressable
+              testID="branding-logo-add"
+              onPress={logoBusy ? undefined : () => void pickLogo()}
+              className={`flex-row items-center gap-3 rounded-xl border border-dashed p-4 ${
+                logoBusy ? "border-slate-200 bg-slate-100 opacity-60" : "border-slate-300 bg-slate-50"
+              }`}
+            >
+              <View className="flex-1">
+                <Text variant="body" weight="semibold">
+                  {logoBusy ? "Uploading…" : "Add your logo"}
+                </Text>
+                <Text variant="caption" color="secondary">
+                  Optional — your business name is shown instead until you add one
+                </Text>
+              </View>
+            </Pressable>
+          )}
+          {logoError && (
+            <Text testID="branding-logo-error" variant="caption" color="warning">
+              {logoError}
+            </Text>
+          )}
         </View>
 
         <View className="rounded-2xl bg-slate-100 p-4 gap-3">

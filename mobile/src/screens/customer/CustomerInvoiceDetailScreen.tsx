@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Linking, ScrollView, StyleSheet, View } from "react-native";
+import { ScrollView, StyleSheet, View } from "react-native";
 import { Button } from "../../components/ui/Button";
 import { Header } from "../../components/ui/Header";
 import { Icon } from "../../components/ui/Icon";
@@ -8,6 +8,7 @@ import { Text } from "../../components/ui/Text";
 import { CustomerInvoice, usePayMyInvoice } from "../../api/customerInvoices";
 import { ApiError } from "../../lib/apiClient";
 import { formatDateUK, formatMoneyGBP } from "../../lib/format";
+import { openInAppBrowser } from "../../lib/inAppBrowser";
 
 const STATUS_STYLES: Record<string, { background: string; label: string }> = {
   sent: { background: "#E2E8EB", label: "AWAITING PAYMENT" },
@@ -37,8 +38,8 @@ export function CustomerInvoiceDetailScreen({ invoice, onBack }: CustomerInvoice
   const handlePay = async () => {
     setPayError(null);
     try {
-      const checkout = await pay.mutateAsync(invoice.id);
-      await Linking.openURL(checkout.checkoutUrl);
+      const payLink = await pay.mutateAsync(invoice.id);
+      await openInAppBrowser(payLink.paymentUrl);
     } catch (err) {
       setPayError(errorMessage(err, "Couldn't start the payment. Please try again."));
     }
@@ -146,7 +147,7 @@ export function CustomerInvoiceDetailScreen({ invoice, onBack }: CustomerInvoice
         </View>
       </ScrollView>
 
-      {!isPaid && (
+      {!isPaid && invoice.paymentUrl && (
         <View style={styles.footer}>
           {payError && (
             <View className="rounded-2xl bg-amber-50 p-3">
@@ -163,6 +164,14 @@ export function CustomerInvoiceDetailScreen({ invoice, onBack }: CustomerInvoice
           />
           <Text variant="caption" color="secondary" align="center">
             You'll be taken to a secure card checkout to pay {invoice.businessName}.
+          </Text>
+        </View>
+      )}
+      {!isPaid && !invoice.paymentUrl && (
+        <View style={styles.footer}>
+          <Text variant="caption" color="secondary" align="center">
+            To pay, use the bank transfer details on your invoice email — or contact{" "}
+            {invoice.businessName}.
           </Text>
         </View>
       )}

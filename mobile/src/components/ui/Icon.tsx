@@ -40,7 +40,11 @@ export type IconName =
   | "clipboard"
   | "circle-check"
   | "whatsapp"
-  | "notifications";
+  | "notifications"
+  | "chevron-down"
+  | "chevron-up"
+  | "thumbs-up"
+  | "thumbs-down";
 
 const ICONS: Record<IconName, keyof typeof Ionicons.glyphMap> = {
   dashboard: "home",
@@ -83,6 +87,10 @@ const ICONS: Record<IconName, keyof typeof Ionicons.glyphMap> = {
   "circle-check": "checkmark-circle",
   whatsapp: "logo-whatsapp",
   notifications: "notifications",
+  "chevron-down": "chevron-down",
+  "chevron-up": "chevron-up",
+  "thumbs-up": "thumbs-up",
+  "thumbs-down": "thumbs-down",
 };
 
 export function Icon({

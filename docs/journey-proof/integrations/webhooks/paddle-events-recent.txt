@@ -1,0 +1,29 @@
+ provider |            event_id            |       event_type       |         created_at         
+----------+--------------------------------+------------------------+----------------------------
+ paddle   | evt_01m5np7jr207n2w4z8baaxx0pt | transaction.completed  | 2026-10-24 00:51:05.589495
+ paddle   | evt_01m5np7hk6ykyx7rgn6qmjkxey | transaction.paid       | 2026-10-24 00:51:04.307072
+ paddle   | evt_01m5np7f0m3y4ja0sd22wrbvax | subscription.activated | 2026-10-24 00:51:01.859357
+ paddle   | evt_01m5np7f8x7y320t5wdqdmm5d0 | transaction.billed     | 2026-10-24 00:51:01.712936
+ paddle   | evt_01m5np7f0mr6srha5d4f7tsct4 | subscription.updated   | 2026-10-24 00:51:01.71212
+ paddle   | evt_01m5np5s9g5jbf8mxskrmjjyns | transaction.completed  | 2026-10-24 00:50:06.851246
+ paddle   | evt_01m5np5r2pmpp4ebkepqey5ntj | transaction.paid       | 2026-10-24 00:50:05.34262
+ paddle   | evt_01m5np5nxbr1b0ttmhj6qqjd17 | transaction.billed     | 2026-10-24 00:50:02.784153
+ paddle   | evt_01m5np5na1g6pq9rb9shh12p8f | subscription.activated | 2026-10-24 00:50:02.783656
+ paddle   | evt_01m5np5na1kaamv6h4hpcfhb1e | subscription.updated   | 2026-10-24 00:50:02.782595
+ paddle   | evt_01m5nj79hqfey2wxjjsrc0t8e4 | subscription.updated   | 2026-10-23 23:41:01.757798
+ paddle   | evt_01m5nj79hqwz6282rzdnmhedbf | subscription.canceled  | 2026-10-23 23:41:01.573854
+ paddle   | evt_01m5nj79f0ccxy7qy3z3jmr8r6 | transaction.canceled   | 2026-10-23 23:41:01.299743
+ paddle   | evt_01m5nhtfwapdrvvt4b8tf01d2p | subscription.canceled  | 2026-10-23 23:34:01.925072
+ paddle   | evt_01m5nhtfwa1625dahtdhgtt6m0 | subscription.updated   | 2026-10-23 23:34:01.876589
+ paddle   | evt_01m5nhtfrzv8nrnqzh11gwf79h | transaction.canceled   | 2026-10-23 23:34:01.870342
+ paddle   | evt_01m5n528tv3evk7d4q77k9q129 | transaction.completed  | 2026-10-23 19:51:05.613904
+ paddle   | evt_01m5n527gpnr0hynb27z40c16v | transaction.paid       | 2026-10-23 19:51:04.005342
+ paddle   | evt_01m5n527fme15trhva81tm5zww | transaction.billed     | 2026-10-23 19:51:03.941468
+ paddle   | evt_01m5n5274dqrhcxmdy1847p20n | subscription.updated   | 2026-10-23 19:51:03.688543
+ paddle   | evt_01m5jv6axkjqefa8cgvy62e8ss | transaction.completed  | 2026-10-22 22:20:04.491728
+ paddle   | evt_01m5jv69fstz32kms9g590h3c8 | transaction.paid       | 2026-10-22 22:20:03.261523
+ paddle   | evt_01m5jv69eymmga70d4zsk5sk12 | transaction.billed     | 2026-10-22 22:20:03.17321
+ paddle   | evt_01m5jv692wr9006daf5jr1n534 | subscription.updated   | 2026-10-22 22:20:02.847759
+ paddle   | evt_01m4hmm7y3gmn5gn3t1gsmwkjy | subscription.updated   | 2026-10-10 00:50:23.182617
+(25 rows)
+

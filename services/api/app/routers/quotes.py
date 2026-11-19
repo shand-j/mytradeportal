@@ -2,10 +2,13 @@
 
 import asyncio
 import time
+from collections import Counter
+from dataclasses import replace
 from datetime import date, datetime, timedelta
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 from io import BytesIO
 from typing import Annotated, Any
+from urllib.parse import parse_qs, urlparse
 from uuid import UUID, uuid4
 
 import structlog
@@ -23,12 +26,15 @@ from app.ai_quality import (
     finalize_draft_feedback,
 )
 from app.ai_telemetry import (
+    FEATURE_MEDIA_OBSERVATION,
     FEATURE_QUOTE_DRAFT,
     FEATURE_QUOTE_REFINE,
+    FEATURE_QUOTE_REFINE_RATING,
     AiCallContext,
     get_last_event_id,
     get_or_create_trace_id,
     next_attempt_no,
+    record_ai_event,
     record_quote_outcome,
     set_last_event_id,
 )
@@ -38,11 +44,13 @@ from app.calculations import (
     build_invoice_from_quote,
     calculate_quote_totals,
     tenant_vat_rate,
+    vat_rate_within_tenant_limit,
 )
 from app.config import settings
 from app.database import get_db
-from app.dependencies import AiAllowanceDep, CurrentUserDep, TenantDep
-from app.email import resolve_customer_magic_link, send_customer_email
+from app.dependencies import AiAllowanceDep, CurrentUserDep, TenantDep, single_active_user
+from app.dispatch import enforce_assignment_guardrails
+from app.email import resolve_customer_magic_link, send_customer_email, tenant_reply_to
 from app.email_templates import quote_ready as quote_ready_template
 from app.limiter import limiter, tenant_key
 from app.models import (
@@ -59,6 +67,7 @@ from app.models import (
     Tenant,
     User,
 )
+from app.preferred_dates import parse_preferred_date
 from app.push import notify_customer
 from app.rag import (
     estimate_llm_cost_usd,
@@ -68,9 +77,22 @@ from app.rag import (
     validate_generated_quote,
 )
 from app.rag.validation import build_quote_from_validation
+from app.rag.vision import (
+    MAX_OBSERVED_IMAGES,
+    ImageRef,
+    build_data_url,
+    caption_images,
+)
 from app.rls import set_tenant_in_session
+from app.routers.files import s3_client
 from app.routers.invoices import _get_invoice, generate_invoice_number
-from app.routers.jobs import _email_booking_confirmed, create_block_appointments, plan_job_blocks
+from app.routers.jobs import (
+    _email_booking_confirmed,
+    create_block_appointments,
+    merge_contact_notes,
+    plan_job_blocks,
+    scheduled_spans,
+)
 from app.routers.public_docs import issue_document_token, public_document_url
 from app.schemas import (
     InvoiceRead,
@@ -82,6 +104,7 @@ from app.schemas import (
     QuoteGenerateAsyncResponse,
     QuoteGenerateRequest,
     QuoteRead,
+    QuoteRefineRatingRequest,
     QuoteRefineRequest,
     QuoteTrainingEventRead,
     QuoteUpdate,
@@ -192,6 +215,7 @@ async def create_quote(
         contact_id=data.contact_id,
         title=data.title,
         description=data.description,
+        notes=merge_contact_notes(data.notes, contact.notes),
         # QuoteCreate.vat_rate defaults to 0.20, so "not sent" is only
         # detectable via model_fields_set — otherwise non-VAT-registered
         # tenants would never fall through to their 0% rate.
@@ -200,7 +224,10 @@ async def create_quote(
         estimated_hours=data.estimated_hours,
     )
     quote.line_items = [
-        QuoteLineItem(tenant_id=tenant.id, **item.model_dump()) for item in data.line_items
+        # QuoteLineItemCreate.unit is None when the client omits it; the column
+        # is NOT NULL, so coalesce to the "ea" default here.
+        QuoteLineItem(tenant_id=tenant.id, **{**item.model_dump(), "unit": item.unit or "ea"})
+        for item in data.line_items
     ]
     calculate_quote_totals(quote)
     apply_quote_rounding(quote, tenant.settings)
@@ -283,11 +310,85 @@ async def update_quote(
     # Snapshot before mutating so the training event keeps the pre-edit state.
     lines_before = _line_items_snapshot(quote) if "line_items" in update_data else None
 
+    totals_dirty = False
+    if "vat_rate" in data.model_fields_set:
+        new_rate = update_data.pop("vat_rate")
+        if new_rate is None or not vat_rate_within_tenant_limit(tenant, new_rate):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=(
+                    f"vat_rate {new_rate} is above the tenant's registered VAT rate "
+                    f"({tenant_vat_rate(tenant)}); per-quote VAT overrides may only "
+                    "lower or remove VAT (e.g. 0 for zero-rated jobs)"
+                ),
+            )
+        quote.vat_rate = new_rate
+        totals_dirty = True
+
     if "line_items" in update_data:
         new_items = update_data.pop("line_items")
+        # An ``ai_generated`` flag is only honoured when the line still matches
+        # an existing AI-drafted line exactly (description, quantity, price,
+        # unit). Anything the electrician changed or added is manual —
+        # otherwise /quotes/{id}/refine would regenerate over the edit.
+        #
+        # Unit matching is lenient for clients that omit the field entirely
+        # (``unit`` arrives as None — the mobile/web auto-save payloads carry
+        # no unit): the line keeps its lineage AND its stored unit. Without
+        # this, every AI line drafted in a non-"ea" unit ("job", "hour",
+        # "each", ...) silently flipped to manual on the next save and refine
+        # became a no-op.
+        existing_ai_exact: Counter[tuple[str, Decimal, Decimal, str]] = Counter()
+        existing_ai_units: dict[tuple[str, Decimal, Decimal], Counter[str]] = {}
+        for li in quote.line_items:
+            if not li.ai_generated:
+                continue
+            content_key = (li.description.strip().lower(), li.quantity, li.unit_price)
+            existing_ai_exact[(*content_key, li.unit)] += 1
+            existing_ai_units.setdefault(content_key, Counter())[li.unit] += 1
         for item in list(quote.line_items):
             await db.delete(item)
-        quote.line_items = [QuoteLineItem(tenant_id=tenant.id, **item) for item in new_items]
+        rebuilt_items = []
+        for item in new_items:
+            content_key = (
+                item["description"].strip().lower(),
+                item["quantity"],
+                item["unit_price"],
+            )
+            sent_unit = item.get("unit")
+            ai_generated = False
+            unit = sent_unit
+            if item.get("ai_generated"):
+                if sent_unit is not None and existing_ai_exact[(*content_key, sent_unit)] > 0:
+                    # Exact match including the unit the client sent.
+                    existing_ai_exact[(*content_key, sent_unit)] -= 1
+                    existing_ai_units[content_key][sent_unit] -= 1
+                    ai_generated = True
+                elif sent_unit is None and any(
+                    n > 0 for n in existing_ai_units.get(content_key, {}).values()
+                ):
+                    # Unit omitted: preserve lineage and the stored unit.
+                    units = existing_ai_units[content_key]
+                    stored_unit = next(u for u, n in units.items() if n > 0)
+                    units[stored_unit] -= 1
+                    existing_ai_exact[(*content_key, stored_unit)] -= 1
+                    unit = stored_unit
+                    ai_generated = True
+                # A sent unit that doesn't match the stored AI line's unit is a
+                # genuine unit edit: the line correctly falls through to manual.
+            rebuilt_items.append(
+                QuoteLineItem(
+                    tenant_id=tenant.id,
+                    **{**item, "unit": unit or "ea", "ai_generated": ai_generated},
+                )
+            )
+        quote.line_items = rebuilt_items
+        totals_dirty = True
+
+    if totals_dirty:
+        # Mirror the create-time math exactly: rebuild subtotal/VAT/total from
+        # the line items, then re-apply the tenant's rounding increment so the
+        # rounding adjustment reflects the new VAT-inclusive total.
         calculate_quote_totals(quote)
         apply_quote_rounding(quote, tenant.settings)
 
@@ -393,6 +494,7 @@ async def send_quote(
         quote_total=f"£{quote.total}",
         view_url=view_url,
         portal_url=portal_url,
+        brand_color=tenant_row.primary_color if tenant_row is not None else None,
     )
     await send_customer_email(
         db,
@@ -406,7 +508,7 @@ async def send_quote(
         event="quote_sent",
         template="quote_ready",
         from_name=business_name,
-        reply_to=(tenant_row.email if tenant_row is not None and tenant_row.email else None),
+        reply_to=tenant_reply_to(tenant_row, quote_id=str(quote.id)),
         context={
             "quote_id": str(quote.id),
             "contact_id": str(quote.contact_id),
@@ -507,22 +609,46 @@ async def refine_quote(
 
     # Snapshot pre-refine so the training event keeps the pre-edit state.
     lines_before = _line_items_snapshot(quote)
+    total_before = quote.total
 
     ai_items = [li for li in quote.line_items if li.ai_generated]
     manual_items = [li for li in quote.line_items if not li.ai_generated]
 
+    if not ai_items and _heal_ai_lineage_from_baseline(quote):
+        # Quotes drafted before the unit-lenient lineage fix (or saved by a
+        # client that omits ``unit``) lost every ai_generated flag on PATCH,
+        # which made refine a no-op. Recover lineage from the stored AI draft
+        # baseline: lines still matching it are AI-drafted and refinable;
+        # anything else (genuine manual additions/edits) stays manual.
+        ai_items = [li for li in quote.line_items if li.ai_generated]
+        manual_items = [li for li in quote.line_items if not li.ai_generated]
+
+    previous_rag = (quote.extra_data or {}).get("rag")
+    previous_rag = previous_rag if isinstance(previous_rag, dict) else {}
+    # Photo observations belong to the lead, not to a single generation: they
+    # are carried across the refine below and re-fed to the model so the
+    # regeneration stays conditioned on what the customer's photos show (#198).
+    image_observations = previous_rag.get("observations") or []
+
     current_ai_lines = "\n".join(
-        f"- {li.description} | quantity {li.quantity} | unit price £{li.unit_price}"
+        f"- {li.description} | quantity {li.quantity} | unit {li.unit} | unit price £{li.unit_price}"
         for li in ai_items
     )
-    description = (
-        f"Quote: {quote.title}\n"
-        f"{quote.description or ''}\n\n"
-        f"AI-drafted line items to regenerate:\n{current_ai_lines or '(none)'}\n\n"
-    )
+    description = f"Quote: {quote.title}\n{quote.description or ''}\n"
+    # Customer context: the original generation saw the lead's contact and
+    # intake data, so the refine must too (e.g. "make it cheaper" needs the
+    # same grounding).
+    if quote.contact is not None:
+        customer_bits = [quote.contact.name]
+        if quote.contact.postcode:
+            customer_bits.append(f"postcode {quote.contact.postcode}")
+        description += f"Customer: {', '.join(b for b in customer_bits if b)}\n"
+    if quote.notes:
+        description += f"Internal notes: {quote.notes}\n"
+    description += f"\nAI-drafted line items to regenerate:\n{current_ai_lines or '(none)'}\n\n"
     if manual_items:
         manual_lines = "\n".join(
-            f"- {li.description} | quantity {li.quantity} | unit price £{li.unit_price}"
+            f"- {li.description} | quantity {li.quantity} | unit {li.unit} | unit price £{li.unit_price}"
             for li in manual_items
         )
         description += (
@@ -531,7 +657,9 @@ async def refine_quote(
         )
     description += (
         f"Electrician's refinement instructions (apply these to the line items):\n"
-        f"{data.instructions}"
+        f"{data.instructions}\n\n"
+        "Also return a ``refine_summary`` key: one short sentence describing what "
+        "you changed and why (shown to the electrician with the refined quote)."
     )
 
     started = time.perf_counter()
@@ -567,6 +695,7 @@ async def refine_quote(
                 job_description=description,
                 cost_items=retrieved,
                 tenant_settings=tenant.settings,
+                image_observations=image_observations or None,
                 model=refine_model,
                 api_base=refine_api_base,
                 api_key=refine_api_key,
@@ -648,7 +777,14 @@ async def refine_quote(
         lines_before,
         extra={"instructions": data.instructions},
     )
-    previous_rag = (quote.extra_data or {}).get("rag")
+    # The amends summary surfaced with the refined quote: prefer the model's
+    # own ``refine_summary``; fall back to a deterministic server-side diff of
+    # the before/after line items so the electrician always sees what changed.
+    refine_summary = generated.get("refine_summary")
+    if not isinstance(refine_summary, str) or not refine_summary.strip():
+        refine_summary = _summarise_refine_amends(
+            lines_before, quote.line_items, total_before, quote.total
+        )
     quote.extra_data = {
         **(quote.extra_data or {}),
         "rag": {
@@ -658,10 +794,18 @@ async def refine_quote(
             "notes": validated["notes"],
             "retrieval_status": retrieval_status,
             "generation_seconds": round(time.perf_counter() - started, 2),
+            "refine_summary": refine_summary.strip(),
         },
     }
+    # Photo observations belong to the lead, not to a single generation, so
+    # carry them across the refine that replaces the rest of the rag record.
+    if previous_rag.get("observations"):
+        quote.extra_data["rag"]["observations"] = previous_rag["observations"]
+    # A prior refine rating judged the previous output, so it is NOT carried
+    # across: the fresh refine resets it (the rating history lives on the
+    # append-only ai_call_events rows written by /refine-rating).
     llm_usage = _accumulate_llm_usage(
-        previous_rag if isinstance(previous_rag, dict) else {},
+        previous_rag,
         generated.get("usage"),
         generated.get("model"),
     )
@@ -684,8 +828,65 @@ async def refine_quote(
             "instructions_chars": len(data.instructions),
             "retrieval_status": retrieval_status,
             "confidence": validated["confidence"],
+            "refine_summary": refine_summary.strip(),
             "total": str(quote.total),
         },
+    )
+    await db.commit()
+    return QuoteRead.model_validate(await _get_quote(db, tenant.id, quote.id))
+
+
+@router.post("/{quote_id}/refine-rating")
+async def rate_quote_refine(
+    quote_id: UUID,
+    data: QuoteRefineRatingRequest,
+    tenant: TenantDep,
+    current_user: CurrentUserDep,
+    db: DbDep,
+) -> QuoteRead:
+    """Record the electrician's thumbs up/down on an AI-refined quote.
+
+    Writes an audit-log entry (``quote.refine_rated``) and an
+    ``ai_call_events`` quality row (``quote_refine_rating``) linked to the
+    quote's trace id, so the rating shows up in cost/quality analytics
+    alongside the refine's spend. The latest rating is also stored on the
+    quote's rag record and surfaced as ``ai_refine_rating``.
+    """
+    quote = await _get_quote(db, tenant.id, quote_id)
+    rag = (quote.extra_data or {}).get("rag")
+    if not isinstance(rag, dict) or not rag.get("refine_summary"):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="This quote has no AI refinement to rate.",
+        )
+
+    quote.extra_data = {
+        **(quote.extra_data or {}),
+        "rag": {**rag, "refine_rating": data.rating},
+    }
+    await db.flush()
+    await write_audit_log(
+        db,
+        tenant_id=tenant.id,
+        actor=current_user,
+        action=Actions.QUOTE_REFINE_RATED,
+        entity_type="quote",
+        entity_id=quote.id,
+        payload={"rating": data.rating, "refine_summary": rag.get("refine_summary")},
+    )
+    # Quality signal for the telemetry pipeline: joins the refine's cost rows
+    # via trace_id/parent_event_id. Fail-open by design (record_ai_event).
+    await record_ai_event(
+        db,
+        feature=FEATURE_QUOTE_REFINE_RATING,
+        tenant_id=tenant.id,
+        user_id=current_user.id if current_user is not None else None,
+        trace_id=(quote.ai_metadata or {}).get("trace_id"),
+        parent_event_id=get_last_event_id(quote),
+        quote_id=quote.id,
+        quote_request_id=quote.quote_request_id,
+        confidence=1.0 if data.rating == "up" else 0.0,
+        raw_payload={"rating": data.rating, "refine_summary": rag.get("refine_summary")},
     )
     await db.commit()
     return QuoteRead.model_validate(await _get_quote(db, tenant.id, quote.id))
@@ -725,12 +926,98 @@ def _snapshot_ai_draft(quote: Quote) -> None:
                     "description": item.description,
                     "quantity": str(item.quantity),
                     "unit_price": str(item.unit_price),
+                    "unit": item.unit,
                 }
                 for item in quote.line_items
             ],
             "total": str(quote.total),
         },
     }
+
+
+def _heal_ai_lineage_from_baseline(quote: Quote) -> bool:
+    """Re-derive lost ``ai_generated`` flags from the stored AI draft baseline.
+
+    Quotes whose flags were wiped by a unitless PATCH (see ``update_quote``)
+    would otherwise make refine a no-op. Lines whose content still matches the
+    baseline snapshot are AI-drafted and refinable; anything else (genuine
+    manual additions/edits) stays manual. Returns True when any flag changed.
+    """
+    draft = (quote.extra_data or {}).get("ai_draft")
+    if not isinstance(draft, dict):
+        return False
+    baseline: Counter[tuple[str, Decimal, Decimal]] = Counter()
+    for raw in draft.get("line_items") or []:
+        if not isinstance(raw, dict):
+            continue
+        try:
+            key = (
+                str(raw.get("description", "")).strip().lower(),
+                Decimal(str(raw.get("quantity", "0") or "0")),
+                Decimal(str(raw.get("unit_price", "0") or "0")),
+            )
+        except InvalidOperation:
+            continue
+        baseline[key] += 1
+    if not baseline:
+        return False
+    healed = False
+    for li in quote.line_items:
+        if li.ai_generated:
+            continue
+        key = (li.description.strip().lower(), li.quantity, li.unit_price)
+        if baseline[key] > 0:
+            baseline[key] -= 1
+            li.ai_generated = True
+            healed = True
+    return healed
+
+
+def _summarise_refine_amends(
+    before: list[dict[str, Any]],
+    after: list[QuoteLineItem],
+    total_before: Decimal,
+    total_after: Decimal,
+) -> str:
+    """Short human-readable amends summary for a refine, diffed server-side.
+
+    Fallback for when the model doesn't return its own ``refine_summary`` so
+    the electrician always sees what the refinement actually changed.
+    """
+
+    def _key(desc: Any, qty: Any, price: Any, unit: Any) -> tuple[str, Decimal, Decimal, str]:
+        return (
+            " ".join(str(desc).strip().lower().split()),
+            Decimal(str(qty)),
+            Decimal(str(price)),
+            str(unit or "ea"),
+        )
+
+    before_keys = Counter(
+        _key(li["description"], li["quantity"], li["unit_price"], li.get("unit")) for li in before
+    )
+    after_keys = Counter(_key(li.description, li.quantity, li.unit_price, li.unit) for li in after)
+    removed = before_keys - after_keys
+    added = after_keys - before_keys
+    # A removal+addition pair sharing a description is one line updated.
+    removed_descs = Counter(k[0] for k, n in removed.items() for _ in range(n))
+    added_descs = Counter(k[0] for k, n in added.items() for _ in range(n))
+    n_updated = sum((removed_descs & added_descs).values())
+    n_removed = sum(removed.values()) - n_updated
+    n_added = sum(added.values()) - n_updated
+    parts = []
+    if n_updated:
+        parts.append(f"{n_updated} line{'s' if n_updated != 1 else ''} updated")
+    if n_added:
+        parts.append(f"{n_added} line{'s' if n_added != 1 else ''} added")
+    if n_removed:
+        parts.append(f"{n_removed} line{'s' if n_removed != 1 else ''} removed")
+    if not parts:
+        parts.append("no line changes")
+    summary = "Refined: " + ", ".join(parts)
+    if total_before != total_after:
+        summary += f"; total £{total_before:.2f} → £{total_after:.2f} incl. VAT"
+    return summary
 
 
 def _line_items_snapshot(quote: Quote) -> list[dict[str, Any]]:
@@ -1094,6 +1381,91 @@ def _accumulate_llm_usage(
     }
 
 
+_IMAGE_URL_EXTENSIONS = (".jpg", ".jpeg", ".png", ".webp", ".heic", ".heif")
+
+
+def _is_image_asset(asset: MediaAsset) -> bool:
+    """Filter media rows down to photos the vision step can caption."""
+    if asset.mime_type:
+        return asset.mime_type.lower().startswith("image/")
+    return asset.file_url.lower().split("?")[0].endswith(_IMAGE_URL_EXTENSIONS)
+
+
+def _fetch_object_bytes(file_key: str) -> bytes:
+    obj = s3_client().get_object(Bucket=settings.minio_bucket, Key=file_key)
+    return obj["Body"].read()  # type: ignore[no-any-return]
+
+
+async def _load_quote_request_image_refs(
+    db: AsyncSession, tenant_id: UUID, quote_request_id: UUID
+) -> list[ImageRef]:
+    """Resolve a lead's photos to image references the LLM provider can read.
+
+    MinIO is private-network-only, so objects stored there are fetched
+    server-side and inlined as base64 data URLs; absolute http(s) URLs pass
+    through for the provider to fetch. Fail-open per asset: anything
+    unreadable is logged and skipped so quote generation is never blocked by
+    a bad photo.
+    """
+    await set_tenant_in_session(db, tenant_id)
+    result = await db.execute(
+        select(MediaAsset)
+        .where(
+            MediaAsset.tenant_id == tenant_id,
+            MediaAsset.quote_request_id == quote_request_id,
+        )
+        .order_by(MediaAsset.created_at.asc())
+    )
+    refs: list[ImageRef] = []
+    for asset in result.scalars():
+        if len(refs) >= MAX_OBSERVED_IMAGES:
+            break
+        if not _is_image_asset(asset):
+            continue
+        try:
+            if asset.file_key:
+                content = await asyncio.to_thread(_fetch_object_bytes, asset.file_key)
+                mime_type = asset.mime_type or "image/jpeg"
+                data_url = build_data_url(content, mime_type)
+                if data_url:
+                    refs.append(ImageRef(url=data_url, mime_type=mime_type))
+            elif asset.file_url.lower().startswith(("http://", "https://")):
+                refs.append(ImageRef(url=asset.file_url, mime_type=asset.mime_type or "image/jpeg"))
+        except Exception as exc:
+            logger.warning(
+                "media_observation_fetch_failed",
+                media_asset_id=str(asset.id),
+                error_type=type(exc).__name__,
+            )
+    return refs
+
+
+async def _caption_quote_request_media(
+    db: AsyncSession,
+    tenant_id: UUID,
+    quote_request: QuoteRequest | None,
+    telemetry: AiCallContext | None,
+) -> list[str]:
+    """Caption the lead's photos so generation is conditioned on what they show.
+
+    Returns the vision-step observations (empty when the lead has no photos or
+    captioning failed — generation then proceeds exactly as before). Caption
+    calls are tracked under the ``media_observation`` feature so their cost is
+    attributable separately from the draft generation itself.
+    """
+    if quote_request is None:
+        return []
+    image_refs = await _load_quote_request_image_refs(db, tenant_id, quote_request.id)
+    if not image_refs:
+        return []
+    caption_context = (
+        replace(telemetry, feature=FEATURE_MEDIA_OBSERVATION, parent_event_id=None)
+        if telemetry is not None
+        else None
+    )
+    return await caption_images(image_refs, telemetry=caption_context)
+
+
 async def _generate_rag_quote(
     db: AsyncSession,
     quote: Quote,
@@ -1105,12 +1477,14 @@ async def _generate_rag_quote(
     """Populate a quote using the faster RAG path (retrieval + LLM)."""
     started = time.perf_counter()
     retrieved, retrieval_status = await search_cost_items_with_status(data.description)
+    image_observations = await _caption_quote_request_media(db, tenant.id, quote_request, telemetry)
     generated = await generate_quote_from_prompt(
         job_description=data.description,
         cost_items=retrieved,
         tenant_settings=tenant.settings,
         property_type=data.property_type,
         site_survey=data.site_survey,
+        image_observations=image_observations,
         telemetry=telemetry,
     )
     generation_seconds = round(time.perf_counter() - started, 2)
@@ -1153,6 +1527,10 @@ async def _generate_rag_quote(
     quote.extra_data = {**(quote.extra_data or {})}
     quote.extra_data["rag"]["generation_seconds"] = generation_seconds
     quote.extra_data["rag"]["completeness"] = completeness
+    if image_observations:
+        # Surfaced on QuoteRead as ai_observations — the visible evidence that
+        # the customer's photos informed the draft.
+        quote.extra_data["rag"]["observations"] = image_observations
     llm_usage = _accumulate_llm_usage(
         quote.extra_data["rag"], generated.get("usage"), generated.get("model")
     )
@@ -1299,6 +1677,7 @@ async def _generate_quote_impl(
         contact_id=contact.id,
         title=str(lead_title or data.description)[:80].strip() or "AI-drafted quote",
         description=data.description,
+        notes=merge_contact_notes(None, contact.notes),
         vat_rate=tenant_vat_rate(tenant),
     )
     # Assign the id up-front (the column default would only fire at INSERT) so
@@ -1482,14 +1861,6 @@ async def regenerate_quote_boq(
 _HOUR_UNITS = frozenset({"h", "hr", "hrs", "hour", "hours"})
 # Fallback visit length when the quote has no per-hour labour lines.
 _DEFAULT_JOB_DURATION = timedelta(hours=2)
-# English month abbreviations, parsed manually so label parsing is locale-independent.
-_MONTH_ABBREVS = {
-    mon: num
-    for num, mon in enumerate(
-        ("jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"),
-        start=1,
-    )
-}
 
 
 def _quoted_labour_hours(quote: Quote) -> float:
@@ -1504,36 +1875,12 @@ def _quoted_labour_hours(quote: Quote) -> float:
 def _parse_accepted_date(raw: Any, today: date) -> date | None:
     """Parse one accepted_dates entry into a concrete date.
 
-    Entries are either ISO dates ("2026-09-15") or the en-GB short labels the
-    customer app offers ("Fri 12 Sep" — no year, so the current year is
-    assumed, rolling to next year when that day has already passed).
-    Unparseable entries are ignored.
+    Delegates to :func:`app.preferred_dates.parse_preferred_date` — the
+    shared implementation (ISO dates, ISO dates with a "(window)" suffix,
+    and the en-GB short labels the customer app offers). Unparseable entries
+    are ignored.
     """
-    if not isinstance(raw, str):
-        return None
-    text = raw.strip()
-    if not text:
-        return None
-    try:
-        return datetime.fromisoformat(text).date()
-    except ValueError:
-        pass
-    day: int | None = None
-    month: int | None = None
-    for token in text.replace(",", " ").split():
-        if token.isdigit() and day is None and 1 <= int(token) <= 31:
-            day = int(token)
-        elif month is None:
-            month = _MONTH_ABBREVS.get(token.lower()[:3])
-    if day is None or month is None:
-        return None
-    try:
-        candidate = date(today.year, month, day)
-        if candidate < today:
-            candidate = date(today.year + 1, month, day)
-    except ValueError:
-        return None
-    return candidate
+    return parse_preferred_date(raw, today)
 
 
 def _earliest_accepted_date(accepted_dates: list[str]) -> date | None:
@@ -1541,6 +1888,52 @@ def _earliest_accepted_date(accepted_dates: list[str]) -> date | None:
     today = datetime.utcnow().date()
     parsed = [d for d in (_parse_accepted_date(raw, today) for raw in accepted_dates) if d]
     return min(parsed) if parsed else None
+
+
+def _file_key_from_url(url: str) -> str | None:
+    """Storage key inside an API-proxied download URL, when the URL carries one."""
+    keys = parse_qs(urlparse(url).query).get("key")
+    return keys[0] if keys else None
+
+
+async def _carry_intake_photos_to_job(
+    db: AsyncSession, tenant_id: UUID, quote: Quote, job: Job
+) -> None:
+    """Promote the quote request's ``media_urls`` photos onto the job.
+
+    The public intake form and staff quote-request create store photos only in
+    the quote request's ``media_urls`` JSONB — never as ``MediaAsset`` rows —
+    so the re-point above cannot see them and they vanish from the job record.
+    URLs already attached as media assets (customer-app uploads) are skipped.
+    """
+    if quote.quote_request_id is None:
+        return
+    quote_request = await db.get(QuoteRequest, quote.quote_request_id)
+    if quote_request is None:
+        return
+    urls = [url for url in (quote_request.media_urls or []) if url]
+    if not urls:
+        return
+    existing = await db.scalars(
+        select(MediaAsset.file_url).where(
+            MediaAsset.tenant_id == tenant_id, MediaAsset.job_id == job.id
+        )
+    )
+    seen = set(existing.all())
+    for url in urls:
+        if url in seen:
+            continue
+        seen.add(url)
+        db.add(
+            MediaAsset(
+                tenant_id=tenant_id,
+                quote_request_id=quote_request.id,
+                job_id=job.id,
+                file_url=url,
+                file_key=_file_key_from_url(url),
+                source="intake",
+            )
+        )
 
 
 @router.post("/{quote_id}/convert-to-job", status_code=status.HTTP_201_CREATED)
@@ -1565,7 +1958,11 @@ async def convert_quote_to_job(
     the job. The job's address and postcode are denormalised from the contact
     at this point — a later contact edit does not rewrite the job. When the
     conversion lands on a schedule the customer gets the ``booking_confirmed``
-    email, same as job create and reschedules.
+    email, same as job create and reschedules. Photos attached to the quote or
+    its quote request (``MediaAsset`` rows and the intake form's ``media_urls``)
+    move onto the job record. When the acceptance flow already auto-created a
+    tentative DRAFT job for the quote, conversion adopts and confirms that job
+    in place instead of raising the usual already-has-a-job 409.
     """
     quote = await _get_quote(db, tenant.id, quote_id)
     if quote.status != "approved":
@@ -1577,22 +1974,32 @@ async def convert_quote_to_job(
     existing = await db.scalar(
         select(Job).where(Job.quote_id == quote.id, Job.tenant_id == tenant.id)
     )
-    if existing is not None:
+    # A DRAFT job is the tentative hold auto-created at quote acceptance (see
+    # app.quote_acceptance.ensure_draft_job): conversion adopts and confirms
+    # it in place instead of refusing. Any other existing job still conflicts.
+    if existing is not None and existing.status != "draft":
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="This quote already has a job",
         )
 
     schedule = data or JobConvertRequest()
-    if schedule.assigned_user_id is not None:
-        assignee = await db.get(User, schedule.assigned_user_id)
+    assigned_user_id = schedule.assigned_user_id
+    if assigned_user_id is not None:
+        assignee = await db.get(User, assigned_user_id)
         if assignee is None or assignee.tenant_id != tenant.id or not assignee.is_active:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid assignee")
+    else:
+        # Same sole-staff default as POST /jobs: a single-seat tenant's only
+        # active user is the implicit assignee when none is supplied.
+        sole_user = await single_active_user(db, tenant.id)
+        if sole_user is not None:
+            assigned_user_id = sole_user.id
 
     dates_note = ""
     if quote.accepted_dates:
         dates_note = "Customer confirmed preferred dates: " + ", ".join(quote.accepted_dates)
-    notes_parts = [p for p in [schedule.notes, dates_note] if p]
+    notes_parts = [p for p in [schedule.notes, quote.notes, dates_note] if p]
 
     # Carry the AI quote's assumptions/footnotes into the job notes so the
     # electrician sees on-site what the estimator assumed.
@@ -1642,6 +2049,17 @@ async def convert_quote_to_job(
             if blocks:
                 scheduled_end = scheduled_start + timedelta(hours=blocks[0].hours)
 
+    # Dispatch guardrails (double-booking / 10h daily cap) apply to the
+    # converted job's whole block sequence before anything is persisted. The
+    # adopted draft never self-conflicts: drafts don't block the calendar.
+    if scheduled_start is not None:
+        await enforce_assignment_guardrails(
+            db,
+            tenant.id,
+            assigned_user_id,
+            scheduled_spans(scheduled_start, scheduled_end, blocks, tenant.settings),
+        )
+
     job = Job(
         tenant_id=tenant.id,
         contact_id=quote.contact_id,
@@ -1650,14 +2068,30 @@ async def convert_quote_to_job(
         description=quote.description,
         scheduled_start=scheduled_start,
         scheduled_end=scheduled_end,
-        assigned_user_id=schedule.assigned_user_id,
+        assigned_user_id=assigned_user_id,
         # Denormalise the contact's current address for display stability;
         # lat/lng stay null (no geocoding yet).
         address=quote.contact.address,
         postcode=quote.contact.postcode,
-        notes="\n\n".join(notes_parts) or None,
+        # quote.notes already carries the contact's CRM notes for quotes
+        # created after they were merged at creation; the merge also covers
+        # older quotes and is a no-op when the notes are already present.
+        notes=merge_contact_notes("\n\n".join(notes_parts) or None, quote.contact.notes),
+        # Structured measurements recorded at conversion time ride onto the job.
+        measurements=[m.model_dump() for m in schedule.measurements],
     )
-    db.add(job)
+    if existing is not None:
+        # Adopt the acceptance-time draft: confirm it in place with the
+        # requested schedule/notes/assignee (id, contact and quote link stay).
+        existing.scheduled_start = job.scheduled_start
+        existing.scheduled_end = job.scheduled_end
+        existing.assigned_user_id = job.assigned_user_id
+        existing.notes = job.notes
+        existing.measurements = job.measurements
+        existing.status = "scheduled"
+        job = existing
+    else:
+        db.add(job)
     await db.flush()
     if blocks:
         await create_block_appointments(db, tenant.id, job, blocks, tenant.settings)
@@ -1678,6 +2112,9 @@ async def convert_quote_to_job(
         .where(MediaAsset.tenant_id == tenant.id, or_(*media_conditions))
         .values(job_id=job.id)
     )
+    # Intake photos live only in the quote request's media_urls JSONB; promote
+    # them to media assets on the job or they would be lost here.
+    await _carry_intake_photos_to_job(db, tenant.id, quote, job)
 
     await write_audit_log(
         db,

@@ -23,4 +23,6 @@ export const config = {
    * the tenant. Empty = generic/marketplace build.
    */
   businessSlug: process.env.EXPO_PUBLIC_BUSINESS_SLUG?.trim() ?? "",
+  /** Help centre on the marketing site — opened in the in-app browser. */
+  helpUrl: "https://www.mytradeportal.co.uk/help",
 };
