@@ -114,3 +114,8 @@ marketing/recordings/
 
 # Agentic QA run artifacts (mtp-qa-* skills)
 reports/
+
+skills/testing-sdk/
+.playwright-cli/
+rec.pid
+dump.rdb
