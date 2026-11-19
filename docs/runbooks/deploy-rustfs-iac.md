@@ -103,6 +103,38 @@ railway config apply --confirm-destructive
 
 Then create an incident issue.
 
+## Gotchas hit in the production rollout (2026-11-19)
+
+1. **Never set `start` for the RustFS service.** Railway execs the IaC
+   `start` value directly as the container command — unlike
+   docker-compose's `command:`, it is NOT passed to the image entrypoint.
+   `start: "/mnt/data"` tried to exec a directory and failed the deploy with
+   "We don't have permission to execute your start command". Leave `start`
+   unset and point the entrypoint at the volume via `RUSTFS_VOLUMES`
+   (resolved by `/etc/rustfs/entrypoint.sh`).
+2. **Volume ownership: MinIO ran as root, RustFS runs as uid 10001
+   (`rustfs`).** The pre-existing volume mountpoint and files are
+   root-owned, so the first RustFS boot dies with
+   `[FATAL] Server runtime failed: File access denied` (a subdirectory
+   under the mount fails the same way). Fix once by temporarily pointing the
+   service at a root image with a one-shot chown, then reverting:
+   - `source: image("alpine:latest")`,
+     `start: 'sh -c "chown -R 10001:10001 /mnt/data && echo CHOWN-DONE && sleep 600"'`
+     → `railway config apply`, wait for `CHOWN-DONE` in the logs
+     (`railway logs --deployment <id>` — the service-level log tail lags and
+     interleaves old deployments; query by deployment id).
+   - Revert to the RustFS block → apply again. Deploy goes green.
+3. **Pre-migration objects are orphaned.** RustFS builds its own metadata
+   namespace; MinIO's on-disk objects in the volume are NOT served by its
+   S3 API (logos/photos 404 until re-uploaded). The old files remain in the
+   volume if a salvage is ever needed.
+4. **Credential check:** RustFS maps `MINIO_ROOT_USER`/`MINIO_ROOT_PASSWORD`
+   at startup; the API signs with `MINIO_ACCESS_KEY`/`MINIO_SECRET_KEY`.
+   Both pairs must hold the same values (production verified aligned).
+   The "RUSTFS_ACCESS_KEY is not set" warnings are benign — the entrypoint
+   prints them whenever the direct RUSTFS_* vars are unset, even when the
+   MINIO_* mapping provides credentials.
+
 ## Related
 - **PR #318:** Migrate object-storage runtime configs from MinIO image to RustFS
 - **Issue:** CI token rejection with Railway CLI v5.28+ (documented in `ci.yml:177-191`)
