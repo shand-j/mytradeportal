@@ -4,8 +4,10 @@
 This is the single source of truth for the API schema (there are no Alembic
 migrations). It creates the SQLAlchemy-managed tables from the current models,
 creates the non-privileged application role used by the API plus the read-only
-``mtp_metabase`` BI role, and applies the Row-Level Security policies that
-enforce tenant isolation.
+``mtp_metabase`` BI role, applies the Row-Level Security policies that enforce
+tenant isolation, and runs ``run_data_migrations`` — idempotent data
+corrections for existing rows (add new data fixes there, not in ad-hoc
+scripts).
 
 The script is idempotent and is intended to run as the API preDeploy command
 (and optionally as the admin preDeploy command for Django's own tables).
@@ -240,6 +242,30 @@ def sync_missing_columns(conn: Connection, metadata: MetaData) -> list[str]:
     return added
 
 
+def run_data_migrations(conn: Connection) -> None:
+    """Idempotent data corrections applied on every deploy.
+
+    ``create_all`` + ``sync_missing_columns`` bring the schema forward; this
+    section is where data fixes for existing rows belong so they reach every
+    environment at deploy time. Each step MUST be idempotent (safe to re-run
+    on every deploy) and narrowly scoped (tight WHERE clauses) — add new steps
+    at the bottom with the reason they exist.
+    """
+    # Lapsed trials: the API gate (is_subscription_active) treats a trialing
+    # row past trial_ends_at as inactive, but nothing moved the stored status,
+    # so the DB (and every client reading it) kept saying "trialing" forever.
+    # Mirrors app.trial.expire_lapsed_trials, which sweeps hourly in the API.
+    result = conn.execute(
+        text(
+            "UPDATE subscriptions SET status = 'trial_expired' "
+            "WHERE status = 'trialing' "
+            "AND trial_ends_at IS NOT NULL AND trial_ends_at < now()"
+        )
+    )
+    if result.rowcount:
+        print(f"[init_db] data migration: expired {result.rowcount} lapsed trial(s)")
+
+
 def _create_metabase_database(engine) -> None:
     """Create Metabase's own metadata database, owned by the BI role.
 
@@ -275,6 +301,8 @@ def init_api_schema() -> None:
         _create_app_role(conn)
         _create_metabase_role(conn)
         apply_tenant_rls_sync(conn)
+        # Data fixes for existing rows (idempotent, run on every deploy).
+        run_data_migrations(conn)
 
     # Sanity check: every expected tenant-scoped table must have RLS + FORCE.
     with engine.connect() as conn:
