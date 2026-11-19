@@ -67,6 +67,7 @@ function SubscriptionCard() {
   const statusLabel: Record<string, string> = {
     incomplete: "Setup incomplete",
     trialing: "Free trial",
+    trial_expired: "Trial expired",
     active: "Active",
     past_due: "Payment past due",
     paused: "Paused",
@@ -104,7 +105,9 @@ function SubscriptionCard() {
           Checkout wasn't completed — try again to finish activating your plan.
         </Text>
       )}
-      {(data.status === "incomplete" || data.status === "canceled") && (
+      {(data.status === "incomplete" ||
+        data.status === "canceled" ||
+        data.status === "trial_expired") && (
         <Button
           testID="settings-restart-checkout"
           title="Choose a plan"
@@ -197,7 +200,7 @@ export function SettingsScreen() {
     },
     {
       title: "Follow-up settings",
-      subtitle: "Quote & invoice reminders, total rounding",
+      subtitle: "Reminders, quote rounding, AI quote style",
       onPress: () => router.push("/(trade)/follow-ups"),
     },
     {

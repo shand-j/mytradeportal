@@ -5,7 +5,7 @@ import { Button } from "../../components/ui/Button";
 import { Icon } from "../../components/ui/Icon";
 import { Screen } from "../../components/ui/Screen";
 import { Text } from "../../components/ui/Text";
-import { createBillingCheckout, useSubscription, type PlanKey } from "../../api/billing";
+import { createBillingCheckout, isSubscriptionActive, useSubscription, type PlanKey } from "../../api/billing";
 import { config } from "../../lib/config";
 import { usePaywallStore } from "../../stores/paywallStore";
 
@@ -24,14 +24,24 @@ const PLAN_NAMES: Record<PlanKey, string> = {
 export function PaywallScreen() {
   const router = useRouter();
   const setRequired = usePaywallStore((s) => s.setRequired);
-  const { data: subscription } = useSubscription();
+  // Poll while inactive so a web checkout (webhook → status flip) releases
+  // the paywall automatically.
+  const { data: subscription } = useSubscription({ pollWhileInactive: true });
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
   const planKey = subscription?.planKey ?? "pro";
 
-  // useSubscription polls every 3s while status is "incomplete".
-  const active = subscription && ["trialing", "active", "past_due"].includes(subscription.status);
+  // Mirrors the server gate (is_subscription_active): a "trialing" row whose
+  // trial_ends_at has passed is NOT active. Releasing on a lapsed trial is
+  // the paywall↔dashboard loop — the next gated call 402s and the global gate
+  // routes straight back here.
+  const active = isSubscriptionActive(subscription);
+  const trialExpired =
+    subscription?.status === "trial_expired" ||
+    (subscription?.status === "trialing" &&
+      subscription.trialEndsAt != null &&
+      new Date(subscription.trialEndsAt).getTime() <= Date.now());
   useEffect(() => {
     if (active) {
       setRequired(false);
@@ -67,11 +77,12 @@ export function PaywallScreen() {
           <Icon name="shield" size={28} color="#0F1E26" />
         </View>
         <Text variant="title" weight="bold" align="center">
-          Finish setting up your plan
+          {trialExpired ? "Your free trial has ended" : "Finish setting up your plan"}
         </Text>
         <Text variant="body" color="secondary" align="center">
-          Your {PLAN_NAMES[planKey]} plan checkout wasn't completed. Free during beta — no charge on
-          your card until we come out of beta.
+          {trialExpired
+            ? `Subscribe to the ${PLAN_NAMES[planKey]} plan to keep using My Trade Portal. Free during beta — no charge on your card until we come out of beta.`
+            : `Your ${PLAN_NAMES[planKey]} plan checkout wasn't completed. Free during beta — no charge on your card until we come out of beta.`}
         </Text>
         {error && (
           <View className="rounded-2xl bg-red-50 p-4">

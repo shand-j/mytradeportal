@@ -166,6 +166,8 @@ export async function updatePaymentDetails(input: PaymentDetails): Promise<Payme
   };
 }
 
+export type QuoteLineStyle = "itemised" | "job_summary";
+
 export type FollowUpSettings = {
   quoteRemindersEnabled: boolean;
   /** How many quote reminders to send before giving up (1-10). */
@@ -177,6 +179,8 @@ export type FollowUpSettings = {
   invoiceReminderIntervalDays: number;
   /** Round quote totals up to the nearest £5 or £10; 0 = off. */
   quoteRounding: number;
+  /** AI quote lines: full labour/materials breakdown or one plain-English line per task. */
+  quoteLineStyle: QuoteLineStyle;
 };
 
 function clampInt(value: unknown, fallback: number, min: number, max: number): number {
@@ -197,6 +201,7 @@ export async function fetchFollowUpSettings(): Promise<FollowUpSettings> {
     invoiceRemindersEnabled: s.invoiceRemindersEnabled !== false,
     invoiceReminderIntervalDays: clampInt(s.invoiceReminderIntervalDays, 7, 1, 90),
     quoteRounding: rounding === 5 || rounding === 10 ? rounding : 0,
+    quoteLineStyle: s.quoteLineStyle === "job_summary" ? "job_summary" : "itemised",
   };
 }
 
@@ -210,6 +215,7 @@ export async function updateFollowUpSettings(input: FollowUpSettings): Promise<F
       invoiceRemindersEnabled: input.invoiceRemindersEnabled,
       invoiceReminderIntervalDays: input.invoiceReminderIntervalDays,
       quoteRounding: input.quoteRounding,
+      quoteLineStyle: input.quoteLineStyle,
     },
   });
   return input;

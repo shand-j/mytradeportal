@@ -50,7 +50,7 @@ export function useBillingPlans() {
 export type SubscriptionRead = {
   id: string;
   planKey: PlanKey;
-  status: "incomplete" | "trialing" | "active" | "past_due" | "paused" | "canceled";
+  status: "incomplete" | "trialing" | "trial_expired" | "active" | "past_due" | "paused" | "canceled";
   paddleSubscriptionId: string | null;
   paddleCustomerId: string | null;
   trialEndsAt: string | null;
@@ -82,6 +82,23 @@ export async function getSubscription(): Promise<SubscriptionRead | null> {
   return api.get<SubscriptionRead | null>("/billing/subscription");
 }
 
+/**
+ * Mirror of the server's ``is_subscription_active`` (app/routers/billing.py):
+ * trialing counts only while ``trialEndsAt`` is still in the future. The two
+ * MUST agree — when the paywall's check is looser than the middleware's, a
+ * lapsed-trial tenant bounces between /paywall and the dashboard: the paywall
+ * releases on "trialing", the first gated call 402s, and the gate routes
+ * straight back.
+ */
+export function isSubscriptionActive(subscription: SubscriptionRead | null | undefined): boolean {
+  if (!subscription) return false;
+  if (!["trialing", "active", "past_due"].includes(subscription.status)) return false;
+  if (subscription.status === "trialing" && subscription.trialEndsAt) {
+    return new Date(subscription.trialEndsAt).getTime() > Date.now();
+  }
+  return true;
+}
+
 export type BillingPortalSessionRead = {
   portalUrl: string;
 };
@@ -91,16 +108,20 @@ export async function createPortalSession(): Promise<BillingPortalSessionRead> {
   return api.post<BillingPortalSessionRead>("/billing/portal-session");
 }
 
-export function useSubscription() {
+export function useSubscription(options?: { pollWhileInactive?: boolean }) {
   return useQuery({
     queryKey: ["billing", "subscription"],
     queryFn: getSubscription,
     // A completed Paddle checkout arrives via webhook — poll for a few
-    // seconds after the user returns from the checkout URL.
+    // seconds after the user returns from the checkout URL. With
+    // pollWhileInactive (the paywall), keep polling on ANY inactive status so
+    // the screen self-clears when a web checkout lands — an expired trial
+    // still reads "trialing" server-side, so "incomplete" alone misses it.
     refetchInterval: (query) => {
       const data = query.state.data;
       if (!data) return false;
       if (data.status === "incomplete") return 3000;
+      if (options?.pollWhileInactive && !isSubscriptionActive(data)) return 3000;
       return false;
     },
   });

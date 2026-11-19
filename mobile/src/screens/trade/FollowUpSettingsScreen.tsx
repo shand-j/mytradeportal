@@ -8,6 +8,7 @@ import { Screen } from "../../components/ui/Screen";
 import { SelectableChip } from "../../components/ui/SelectableChip";
 import { Text } from "../../components/ui/Text";
 import { fetchFollowUpSettings, updateFollowUpSettings } from "../../api/businesses";
+import type { QuoteLineStyle } from "../../api/businesses";
 import { ApiError, NetworkError } from "../../lib/apiClient";
 
 export type FollowUpSettingsScreenProps = {
@@ -20,6 +21,11 @@ const ROUNDING_OPTIONS: { value: number; label: string }[] = [
   { value: 10, label: "£10" },
 ];
 
+const QUOTE_LINE_STYLE_OPTIONS: { value: QuoteLineStyle; label: string }[] = [
+  { value: "itemised", label: "Itemised breakdown" },
+  { value: "job_summary", label: "Job summary" },
+];
+
 export function FollowUpSettingsScreen({ onClose }: FollowUpSettingsScreenProps) {
   const queryClient = useQueryClient();
   const settingsQuery = useQuery({ queryKey: ["follow-up-settings"], queryFn: fetchFollowUpSettings });
@@ -30,6 +36,7 @@ export function FollowUpSettingsScreen({ onClose }: FollowUpSettingsScreenProps)
   const [quoteInterval, setQuoteInterval] = useState("3");
   const [invoiceInterval, setInvoiceInterval] = useState("7");
   const [rounding, setRounding] = useState(0);
+  const [quoteLineStyle, setQuoteLineStyle] = useState<QuoteLineStyle>("itemised");
   const [error, setError] = useState<string | null>(null);
   // Hydrate local state from the server exactly once — a late-resolving query
   // must not clobber a rounding choice the user has already tapped (the
@@ -46,6 +53,7 @@ export function FollowUpSettingsScreen({ onClose }: FollowUpSettingsScreenProps)
     setQuoteInterval(String(settings.quoteReminderIntervalDays));
     setInvoiceInterval(String(settings.invoiceReminderIntervalDays));
     setRounding(settings.quoteRounding);
+    setQuoteLineStyle(settings.quoteLineStyle);
   }, [settingsQuery.data]);
 
   const saveMutation = useMutation({
@@ -96,6 +104,7 @@ export function FollowUpSettingsScreen({ onClose }: FollowUpSettingsScreenProps)
       invoiceRemindersEnabled: invoiceReminderEnabled,
       invoiceReminderIntervalDays: parsedInvoiceInterval,
       quoteRounding: rounding,
+      quoteLineStyle,
     });
   };
 
@@ -198,6 +207,28 @@ export function FollowUpSettingsScreen({ onClose }: FollowUpSettingsScreenProps)
                   label={option.label}
                   selected={rounding === option.value}
                   onPress={() => setRounding(option.value)}
+                />
+              ))}
+            </View>
+          </View>
+
+          <View className="rounded-2xl bg-slate-100 p-4 gap-3">
+            <Text variant="body" weight="semibold">
+              AI quote style
+            </Text>
+            <Text variant="caption" color="secondary">
+              How AI-drafted quotes and invoices list the work. Itemised breakdown shows labour and
+              materials line by line (2× double socket, 20m cable). Job summary shows one
+              plain-English line per task (Install a socket in the bedroom).
+            </Text>
+            <View className="flex-row gap-2">
+              {QUOTE_LINE_STYLE_OPTIONS.map((option) => (
+                <SelectableChip
+                  key={option.value}
+                  testID={`follow-up-line-style-${option.value}`}
+                  label={option.label}
+                  selected={quoteLineStyle === option.value}
+                  onPress={() => setQuoteLineStyle(option.value)}
                 />
               ))}
             </View>
