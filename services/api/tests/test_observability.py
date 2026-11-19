@@ -26,15 +26,26 @@ async def test_request_id_propagated_when_present() -> None:
     assert response.headers["x-request-id"] == "req-abc-123"
 
 
-async def test_readiness_reports_dependencies(client: AsyncClient) -> None:
-    """/ready returns 200 with Postgres reachable; Qdrant is reported either way."""
+async def test_readiness_reports_dependencies(
+    client: AsyncClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """/ready returns 200 with Postgres + storage healthy; soft deps are reported either way."""
+    # The local test stack has no object-storage container; simulate a healthy
+    # storage probe here (the real round-trip is covered in test_health.py).
+    monkeypatch.setattr("app.routers.health._storage_ok", lambda: _true())
     response = await client.get("/ready")
     assert response.status_code == 200, response.text
     body = response.json()
     assert body["checks"]["postgres"] == "ok"
+    assert body["checks"]["storage"] == "ok"
     assert body["checks"]["qdrant"] in {"ok", "error"}
-    expected = "ready" if body["checks"]["qdrant"] == "ok" else "degraded"
-    assert body["status"] == expected
+    assert body["checks"]["redis"] in {"ok", "error"}
+    degraded = any(body["checks"][dep] == "error" for dep in ("qdrant", "redis"))
+    assert body["status"] == ("degraded" if degraded else "ready")
+
+
+async def _true() -> bool:
+    return True
 
 
 async def test_readiness_503_when_db_down(monkeypatch: pytest.MonkeyPatch) -> None:
