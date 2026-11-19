@@ -26,6 +26,7 @@ from openai import APIError
 from app.ai_pricing import estimate_cost
 from app.ai_telemetry import AiCallContext, AiCallTracker
 from app.config import settings
+from app.rag.validation import QUOTE_LINE_STYLE_JOB_SUMMARY, resolve_quote_line_style
 
 logger = structlog.get_logger("api.rag")
 
@@ -33,6 +34,7 @@ logger = structlog.get_logger("api.rag")
 # prompts above change materially so quality/cost can be compared across
 # prompt iterations.
 QUOTE_DRAFT_PROMPT_VERSION = "quote-draft.v9"
+QUOTE_DRAFT_JOB_SUMMARY_PROMPT_VERSION = "quote-draft-job-summary.v1"
 TRIAGE_FOLLOWUP_PROMPT_VERSION = "triage-followup.v3"
 
 
@@ -133,6 +135,45 @@ genuine fixed-price whole-job line. Never default every line to "job".
 """
 
 
+JOB_SUMMARY_SYSTEM_PROMPT = """You are an expert UK electrical estimator. Produce a \
+GUIDE quote for the job described as a short list of plain-English task lines \
+that the homeowner will read on their quote — one line per distinct task, \
+worded the way the customer described the work.
+
+Rules:
+- Each line is ONE task written in plain, customer-friendly language, e.g. \
+"Install a double socket in the bedroom" or "Replace the consumer unit". \
+NEVER break a task into separate material and labour lines, and never mention \
+product codes, part numbers, pack sizes, brands or cable metreage in a \
+description — those stay in your reasoning, not on the customer's quote.
+- Each line's price is the TOTAL for that task in GBP, excluding VAT, \
+covering ALL labour and materials needed to complete it. Work the totals out \
+from real costs: apply the business hourly labour rate when one is provided, \
+and use any catalogue prices below as a cost reference. These are estimates \
+the electrician will review and edit.
+- Every line uses "kind": "labour", "quantity": 1, "unit": "job" and a \
+per-task "unit_price". Always set ``catalogue_ref`` to null.
+- Prefer between 1 and 8 task lines. Do not invent unrelated work. Never \
+return an empty quote for a plausible electrical job — if the description is \
+vague, return your best-effort minimal draft and record what you assumed.
+- Always set ``estimated_hours``: your best estimate of the TOTAL on-site \
+working hours the whole job will take one electrician (a number, e.g. 6.5). \
+It drives scheduling, so be realistic rather than optimistic.
+
+Respond with valid JSON in exactly this shape:
+{
+  "line_items": [
+    {"description": "Install a double socket in the bedroom", "kind": "labour", \
+"quantity": 1, "unit": "job", "unit_price": 120.00, "catalogue_ref": null, \
+"reason": "brief justification"}
+  ],
+  "estimated_hours": 4.0,
+  "assumptions": ["Any assumptions you made"],
+  "notes": "Any warnings or clarifications for the electrician"
+}
+"""
+
+
 def _build_user_prompt(
     job_description: str,
     property_type: str | None,
@@ -190,21 +231,36 @@ def _build_user_prompt(
         lines.append("")
 
     if cost_items:
-        lines.append(
-            "Catalogue matches for this job. When a MATERIAL line matches one "
-            "of the numbered items below, set that line's `catalogue_ref` to "
-            "the item's number:"
-        )
-        for index, item in enumerate(cost_items, start=1):
+        if resolve_quote_line_style(tenant_settings) == QUOTE_LINE_STYLE_JOB_SUMMARY:
+            # Job-summary lines must stay plain English — the catalogue is a
+            # cost reference for pricing each task, never something to cite.
             lines.append(
-                f"  {index}. {item['description']} | "
-                f"unit={item['unit']} | price={item['unit_price']} GBP"
+                "Catalogue prices for cost reference only — use them to price "
+                "each task realistically, but NEVER set `catalogue_ref` and "
+                "never mention product names, codes or pack sizes in a line "
+                "description:"
             )
-        lines.append(
-            "`catalogue_ref` is ALWAYS a small integer matching a catalogue "
-            f"line number (1-{len(cost_items)}) or null when nothing matches. "
-            "Never invent codes or reference numbers outside that range."
-        )
+            for index, item in enumerate(cost_items, start=1):
+                lines.append(
+                    f"  {index}. {item['description']} | "
+                    f"unit={item['unit']} | price={item['unit_price']} GBP"
+                )
+        else:
+            lines.append(
+                "Catalogue matches for this job. When a MATERIAL line matches one "
+                "of the numbered items below, set that line's `catalogue_ref` to "
+                "the item's number:"
+            )
+            for index, item in enumerate(cost_items, start=1):
+                lines.append(
+                    f"  {index}. {item['description']} | "
+                    f"unit={item['unit']} | price={item['unit_price']} GBP"
+                )
+            lines.append(
+                "`catalogue_ref` is ALWAYS a small integer matching a catalogue "
+                f"line number (1-{len(cost_items)}) or null when nothing matches. "
+                "Never invent codes or reference numbers outside that range."
+            )
     else:
         lines.append(
             "No catalogue reference available — price materials from typical UK trade prices."
@@ -470,6 +526,56 @@ def _sanitize_string_list(value: Any, *, max_items: int, max_length: int) -> lis
     return sanitized
 
 
+def _resolve_fast_route(override_model: str, *, log_event: str) -> tuple[str, str, str]:
+    """Shared resolver for the cheap/fast routes (follow-up chat, refine).
+
+    A bare OpenAI-style id uses the OpenAI key with any configured non-OpenAI
+    base suppressed (the demo idiom); a LiteLLM-style ``provider/model`` id
+    (or an empty override, which inherits ``llm_model``) uses the configured
+    LLM provider. When only a third-party provider is configured (no OpenAI
+    key, non-OpenAI base set), a bare-id call could not authenticate, so the
+    flagship route is kept — never worse than the pre-override behaviour.
+    """
+    model = override_model or settings.llm_model
+    if model == settings.llm_model or "/" in model:
+        return model, settings.resolved_llm_api_key, settings.llm_api_base
+    if settings.openai_api_key:
+        return model, settings.openai_api_key, ""
+    if not settings.llm_api_base:
+        # OpenAI-only deployment keyed via LLM_API_KEY/OPENAI_API_KEY fallback.
+        return model, settings.resolved_llm_api_key, ""
+    logger.warning(
+        log_event,
+        override_model=model,
+        reason="third-party provider only; bare-id route cannot authenticate",
+    )
+    return settings.llm_model, settings.resolved_llm_api_key, settings.llm_api_base
+
+
+def _resolve_followup_route() -> tuple[str, str, str]:
+    """Return (model, api_key, api_base) for the follow-up chat call.
+
+    The chat turn defaults to the cheap/fast ``llm_followup_model`` because
+    the customer waits on each reply synchronously and the flagship
+    ``llm_model`` (e.g. Kimi k2.6) reliably takes 60-120s — far beyond a
+    chat budget. See :func:`_resolve_fast_route` for the routing rules.
+    """
+    return _resolve_fast_route(settings.llm_followup_model, log_event="followup_route_fallback")
+
+
+def resolve_refine_route() -> tuple[str, str, str]:
+    """Return (model, api_key, api_base) for the quote-refine generation call.
+
+    A refine is a constrained edit of existing line items, so it defaults to
+    the cheap/fast ``llm_refine_model``: on the flagship ``llm_model`` (e.g.
+    Kimi k2.6) a single chat completion reliably takes 60-120s, which races
+    the 120s server-side refine budget even on a healthy provider. Set
+    ``llm_refine_model`` empty (or to the flagship id) to opt back into the
+    flagship. See :func:`_resolve_fast_route` for the routing rules.
+    """
+    return _resolve_fast_route(settings.llm_refine_model, log_event="refine_route_fallback")
+
+
 async def generate_followup(
     job_description: str,
     prior_messages: list[dict[str, str]],
@@ -491,29 +597,30 @@ async def generate_followup(
     tenant) recorded by :class:`app.ai_telemetry.AiCallTracker` — this is what
     captures the token usage that used to be computed then dropped here.
     """
-    if not settings.resolved_llm_api_key:
+    model, api_key, api_base = _resolve_followup_route()
+    if not api_key:
         raise RuntimeError("LLM API key is not configured")
 
     messages = _build_followup_messages(job_description, prior_messages, final_turn=final_turn)
     completion_kwargs: dict[str, Any] = {
-        "model": settings.llm_model,
+        "model": model,
         "messages": messages,
-        "api_key": settings.resolved_llm_api_key,
+        "api_key": api_key,
         "response_format": {"type": "json_object"},
-        "timeout": settings.llm_timeout_seconds,
-        "num_retries": settings.llm_max_retries,
+        # Chat-sized budget: the customer waits on each turn, so the timeout
+        # and retries are far tighter than quote generation's.
+        "timeout": settings.llm_followup_timeout_seconds,
+        "num_retries": settings.llm_followup_max_retries,
         "max_tokens": settings.llm_followup_max_tokens,
     }
-    if settings.llm_temperature is not None and _model_allows_custom_temperature(
-        settings.llm_model
-    ):
+    if settings.llm_temperature is not None and _model_allows_custom_temperature(model):
         completion_kwargs["temperature"] = settings.llm_temperature
-    if settings.llm_api_base:
-        completion_kwargs["api_base"] = settings.llm_api_base
+    if api_base:
+        completion_kwargs["api_base"] = api_base
 
     tracker = AiCallTracker(
         telemetry,
-        model=settings.llm_model,
+        model=model,
         prompt_version=TRIAGE_FOLLOWUP_PROMPT_VERSION,
         prompt_text="\n".join(m["content"] for m in messages) if telemetry is not None else None,
     )
@@ -526,7 +633,7 @@ async def generate_followup(
         logger.error(
             "llm_error",
             phase="followup",
-            model=settings.llm_model,
+            model=model,
             error_type=type(exc).__name__,
         )
         raise RuntimeError(f"LLM generation failed: {exc.message}") from exc
@@ -534,7 +641,7 @@ async def generate_followup(
         logger.error(
             "llm_error",
             phase="followup",
-            model=settings.llm_model,
+            model=model,
             error_type=type(exc).__name__,
         )
         raise RuntimeError(f"LLM service unavailable: {exc}") from exc
@@ -543,7 +650,7 @@ async def generate_followup(
     if not content:
         logger.warning(
             "llm_followup_empty",
-            model=settings.llm_model,
+            model=model,
             finish_reason=getattr(response.choices[0], "finish_reason", None),
             duration_ms=round((time.perf_counter() - started) * 1000, 2),
         )
@@ -570,7 +677,7 @@ async def generate_followup(
     )
     logger.info(
         "llm_followup_generated",
-        model=settings.llm_model,
+        model=model,
         duration_ms=round((time.perf_counter() - started) * 1000, 2),
         prior_message_count=len(prior_messages),
         message_count=len(messages),
@@ -590,9 +697,10 @@ async def generate_followup(
         "options": options,
         "suggested_questions": suggested_questions,
         "usage": _extract_usage(response),
-        # Actual model used — callers recording spend must not assume
-        # settings.llm_model on override paths (the model-label bug).
-        "model": settings.llm_model,
+        # Actual model used (route-resolved) — callers recording spend must
+        # not assume settings.llm_model on override paths (the model-label
+        # bug).
+        "model": model,
     }
 
 
@@ -639,6 +747,12 @@ async def generate_quote_from_prompt(
 
         knowledge_chunks = await search_knowledge_chunks(job_description, top_k=3)
 
+    line_style = resolve_quote_line_style(tenant_settings)
+    job_summary = line_style == QUOTE_LINE_STYLE_JOB_SUMMARY
+    system_prompt = JOB_SUMMARY_SYSTEM_PROMPT if job_summary else SYSTEM_PROMPT
+    prompt_version = (
+        QUOTE_DRAFT_JOB_SUMMARY_PROMPT_VERSION if job_summary else QUOTE_DRAFT_PROMPT_VERSION
+    )
     prompt = _build_user_prompt(
         job_description,
         property_type,
@@ -650,7 +764,7 @@ async def generate_quote_from_prompt(
     completion_kwargs: dict[str, Any] = {
         "model": resolved_model,
         "messages": [
-            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "system", "content": system_prompt},
             {"role": "user", "content": prompt},
         ],
         "api_key": resolved_api_key,
@@ -670,7 +784,7 @@ async def generate_quote_from_prompt(
     tracker = AiCallTracker(
         telemetry,
         model=resolved_model,
-        prompt_version=QUOTE_DRAFT_PROMPT_VERSION,
+        prompt_version=prompt_version,
         prompt_text=prompt if telemetry is not None else None,
     )
     try:
@@ -715,6 +829,7 @@ async def generate_quote_from_prompt(
         model=resolved_model,
         duration_ms=round((time.perf_counter() - started) * 1000, 2),
         prompt_chars=len(prompt),
+        line_style=line_style,
         catalogue_items=len(cost_items),
         line_items=len(parsed.get("line_items") or []),
         assumption_count=len(parsed.get("assumptions") or []),

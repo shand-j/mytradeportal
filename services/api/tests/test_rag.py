@@ -14,9 +14,12 @@ from app.database import AsyncSessionLocal
 from app.models import CostItem, QuoteRequest
 from app.rag.generation import (
     FOLLOWUP_SYSTEM_PROMPT,
+    JOB_SUMMARY_SYSTEM_PROMPT,
     SYSTEM_PROMPT,
+    _resolve_followup_route,
     generate_followup,
     generate_quote_from_prompt,
+    resolve_refine_route,
 )
 from app.rag.retrieval import (
     _embedding_cache,
@@ -26,7 +29,7 @@ from app.rag.retrieval import (
     search_cost_items,
     search_cost_items_with_status,
 )
-from app.rag.validation import validate_generated_quote
+from app.rag.validation import resolve_quote_line_style, validate_generated_quote
 from sqlalchemy import delete as sa_delete
 from sqlalchemy import func as sa_func
 from sqlalchemy import select
@@ -296,7 +299,9 @@ def test_validate_generated_quote() -> None:
     assert len(result["line_items"]) == 1
     assert result["line_items"][0]["quantity"] == Decimal("2")
     assert result["line_items"][0]["unit_price"] == Decimal("85.00")
-    assert result["confidence"] == 1.0
+    # Mechanical rubric: validity 1.0, coverage 0.5 (no job description),
+    # plausibility 1.0, grounding 1.0, no hours estimate 0.0, intake 0.5.
+    assert result["confidence"] == 0.75
     assert not result["warnings"]
 
 
@@ -338,7 +343,8 @@ def test_validate_generated_quote_keeps_guide_priced_item() -> None:
     assert grounded["unit_price"] == Decimal("85.00")
     assert guide["description"] == "Consumer unit replacement (labour)"
     assert guide["unit_price"] == Decimal("320.00")
-    # Half the lines are catalogue-grounded → 0.5 baseline + 0.5 * 0.5.
+    # Mechanical rubric: validity/plausibility/grounding pass, coverage and
+    # intake neutral, no duration estimate.
     assert result["confidence"] == 0.75
 
 
@@ -791,6 +797,172 @@ def test_followup_system_prompt_foregrounds_stated_problem() -> None:
     assert '"suggested_questions"' in FOLLOWUP_SYSTEM_PROMPT
 
 
+def _set_flagship_kimi_route(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Configure the production-shaped route: Kimi flagship + OpenAI key set."""
+    monkeypatch.setattr(generation_config.settings, "llm_model", "openai/kimi-k2.6")
+    monkeypatch.setattr(generation_config.settings, "llm_api_base", "https://api.moonshot.ai/v1")
+    monkeypatch.setattr(generation_config.settings, "llm_api_key", "sk-moonshot")
+    monkeypatch.setattr(generation_config.settings, "openai_api_key", "sk-openai")
+
+
+def test_resolve_followup_route_defaults_to_cheap_model(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Default: the chat turn uses the cheap model via the demo-route idiom —
+    OpenAI key, non-OpenAI base suppressed — never the slow flagship."""
+    _set_flagship_kimi_route(monkeypatch)
+    monkeypatch.setattr(generation_config.settings, "llm_followup_model", "gpt-4o-mini")
+
+    model, api_key, api_base = _resolve_followup_route()
+
+    assert (model, api_key, api_base) == ("gpt-4o-mini", "sk-openai", "")
+
+
+def test_resolve_followup_route_provider_prefixed_override(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A LiteLLM-style provider/model override routes through the configured
+    LLM provider (key + base), like the intake triage resolver."""
+    _set_flagship_kimi_route(monkeypatch)
+    monkeypatch.setattr(generation_config.settings, "llm_followup_model", "openai/moonshot-v1-8k")
+
+    model, api_key, api_base = _resolve_followup_route()
+
+    assert (model, api_key, api_base) == (
+        "openai/moonshot-v1-8k",
+        "sk-moonshot",
+        "https://api.moonshot.ai/v1",
+    )
+
+
+def test_resolve_followup_route_empty_override_inherits_flagship(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """An empty follow-up model inherits llm_model and its provider route —
+    the pre-override behaviour."""
+    _set_flagship_kimi_route(monkeypatch)
+    monkeypatch.setattr(generation_config.settings, "llm_followup_model", "")
+
+    model, api_key, api_base = _resolve_followup_route()
+
+    assert (model, api_key, api_base) == (
+        "openai/kimi-k2.6",
+        "sk-moonshot",
+        "https://api.moonshot.ai/v1",
+    )
+
+
+def test_resolve_followup_route_third_party_only_falls_back(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Without an OpenAI key on a third-party-provider deployment, a bare-id
+    cheap model could not authenticate — fall back to the flagship route
+    rather than degrading the chat to guaranteed failures."""
+    monkeypatch.setattr(generation_config.settings, "llm_model", "openai/kimi-k2.6")
+    monkeypatch.setattr(generation_config.settings, "llm_api_base", "https://api.moonshot.ai/v1")
+    monkeypatch.setattr(generation_config.settings, "llm_api_key", "sk-moonshot")
+    monkeypatch.setattr(generation_config.settings, "openai_api_key", "")
+    monkeypatch.setattr(generation_config.settings, "llm_followup_model", "gpt-4o-mini")
+
+    model, api_key, api_base = _resolve_followup_route()
+
+    assert (model, api_key, api_base) == (
+        "openai/kimi-k2.6",
+        "sk-moonshot",
+        "https://api.moonshot.ai/v1",
+    )
+
+
+def test_resolve_followup_route_openai_only_uses_configured_key(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """An OpenAI-only deployment keyed via LLM_API_KEY (no dedicated
+    OPENAI_API_KEY) reuses that key for the bare-id cheap model."""
+    monkeypatch.setattr(generation_config.settings, "llm_model", "gpt-4o")
+    monkeypatch.setattr(generation_config.settings, "llm_api_base", "")
+    monkeypatch.setattr(generation_config.settings, "llm_api_key", "sk-main")
+    monkeypatch.setattr(generation_config.settings, "openai_api_key", "")
+    monkeypatch.setattr(generation_config.settings, "llm_followup_model", "gpt-4o-mini")
+
+    model, api_key, api_base = _resolve_followup_route()
+
+    assert (model, api_key, api_base) == ("gpt-4o-mini", "sk-main", "")
+
+
+@pytest.mark.asyncio
+async def test_generate_followup_uses_chat_route_and_budget(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The chat call goes to the resolved cheap route with the chat-sized
+    timeout/retry budget, and reports the actual model used."""
+    _set_flagship_kimi_route(monkeypatch)
+    monkeypatch.setattr(generation_config.settings, "llm_followup_model", "gpt-4o-mini")
+    mock_response = MagicMock()
+    mock_response.choices = [
+        MagicMock(message=MagicMock(content='{"confidence": 60, "message": "Next?"}'))
+    ]
+
+    with patch(
+        "app.rag.generation.acompletion", new=AsyncMock(return_value=mock_response)
+    ) as mock_acompletion:
+        result = await generate_followup("Consumer unit replacement", [])
+
+    kwargs = mock_acompletion.call_args.kwargs
+    assert kwargs["model"] == "gpt-4o-mini"
+    assert kwargs["api_key"] == "sk-openai"
+    assert "api_base" not in kwargs  # suppressed, not inherited from the Kimi base
+    assert kwargs["timeout"] == generation_config.settings.llm_followup_timeout_seconds
+    assert kwargs["num_retries"] == generation_config.settings.llm_followup_max_retries
+    assert result["model"] == "gpt-4o-mini"
+
+
+def test_resolve_refine_route_defaults_to_cheap_model(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Default: refine uses the cheap model via the demo-route idiom — OpenAI
+    key, non-OpenAI base suppressed — never the slow flagship (a 60-120s Kimi
+    completion races the 120s refine budget)."""
+    _set_flagship_kimi_route(monkeypatch)
+    monkeypatch.setattr(generation_config.settings, "llm_refine_model", "gpt-4o-mini")
+
+    model, api_key, api_base = resolve_refine_route()
+
+    assert (model, api_key, api_base) == ("gpt-4o-mini", "sk-openai", "")
+
+
+def test_resolve_refine_route_empty_override_inherits_flagship(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """An empty refine model inherits llm_model and its provider route — the
+    flagship opt-in, matching the pre-override behaviour."""
+    _set_flagship_kimi_route(monkeypatch)
+    monkeypatch.setattr(generation_config.settings, "llm_refine_model", "")
+
+    model, api_key, api_base = resolve_refine_route()
+
+    assert (model, api_key, api_base) == (
+        "openai/kimi-k2.6",
+        "sk-moonshot",
+        "https://api.moonshot.ai/v1",
+    )
+
+
+def test_resolve_refine_route_third_party_only_falls_back(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Without an OpenAI key on a third-party-provider deployment, a bare-id
+    cheap model could not authenticate — fall back to the flagship route."""
+    monkeypatch.setattr(generation_config.settings, "llm_model", "openai/kimi-k2.6")
+    monkeypatch.setattr(generation_config.settings, "llm_api_base", "https://api.moonshot.ai/v1")
+    monkeypatch.setattr(generation_config.settings, "llm_api_key", "sk-moonshot")
+    monkeypatch.setattr(generation_config.settings, "openai_api_key", "")
+    monkeypatch.setattr(generation_config.settings, "llm_refine_model", "gpt-4o-mini")
+
+    model, api_key, api_base = resolve_refine_route()
+
+    assert (model, api_key, api_base) == (
+        "openai/kimi-k2.6",
+        "sk-moonshot",
+        "https://api.moonshot.ai/v1",
+    )
+
+
 def test_validate_generated_quote_clamps_out_of_range_prices() -> None:
     generated = {
         "line_items": [
@@ -915,7 +1087,7 @@ async def test_generate_quote_omits_temperature_for_kimi_k_models(
 
 
 def test_validate_generated_quote_confidence_with_completeness() -> None:
-    """Confidence 2.0: 0.3 + 0.3 * grounded_ratio + 0.4 * completeness."""
+    """Mechanical rubric: checks + weighted intake completeness."""
     retrieved = [
         {
             "code": "ELEC-SOCKET-ADD",
@@ -938,25 +1110,27 @@ def test_validate_generated_quote_confidence_with_completeness() -> None:
         "notes": "",
     }
 
-    # Half grounded (ratio 0.5), complete intake → 0.3 + 0.15 + 0.4 = 0.85.
+    # validity 1.0, coverage 0.5 (no description), plausibility 1.0,
+    # grounding 1.0, no hours estimate 0.0, intake 1.0
+    # → 0.30 + 0.125 + 0.15 + 0.15 + 0 + 0.05.
     result = validate_generated_quote(
         generated=generated,
         retrieved_items=retrieved,
         tenant_settings={},
         completeness=1.0,
     )
-    assert result["confidence"] == 0.85
+    assert result["confidence"] == 0.78
 
-    # Same grounding, sparse intake → 0.3 + 0.15 + 0.1 = 0.55.
+    # Same draft, sparse intake → intake check contributes 0.25 * 0.05.
     result = validate_generated_quote(
         generated=generated,
         retrieved_items=retrieved,
         tenant_settings={},
         completeness=0.25,
     )
-    assert result["confidence"] == 0.55
+    assert result["confidence"] == 0.74
 
-    # Fully grounded + rich intake saturates at 1.0.
+    # Single fully-grounded line, complete intake.
     fully_grounded = {"line_items": [{"code": "ELEC-SOCKET-ADD", "quantity": 1}], "notes": ""}
     result = validate_generated_quote(
         generated=fully_grounded,
@@ -964,11 +1138,83 @@ def test_validate_generated_quote_confidence_with_completeness() -> None:
         tenant_settings={},
         completeness=1.0,
     )
+    assert result["confidence"] == 0.78
+
+
+def test_mechanical_confidence_high_for_complete_grounded_quote() -> None:
+    """A fully specified, grounded draft that covers the request and has a
+    consistent duration estimate scores ~1.0 — high confidence is earned by
+    passing every mechanical check, not by formula floor."""
+    retrieved = [
+        {
+            "code": "ELEC-SOCKET-ADD",
+            "description": "Add a double socket",
+            "unit": "each",
+            "unit_price": "85.00",
+        }
+    ]
+    generated = {
+        "line_items": [
+            {
+                "description": "Double socket outlet",
+                "kind": "material",
+                "quantity": 2,
+                "unit": "each",
+                "unit_price": 85.00,
+                "code": "ELEC-SOCKET-ADD",
+            },
+            {
+                "description": "Install two double sockets in the bedroom (labour)",
+                "kind": "labour",
+                "quantity": 2,
+                "unit": "hour",
+                "unit_price": 65.00,
+            },
+        ],
+        "estimated_hours": 2.0,
+        "notes": "",
+    }
+
+    result = validate_generated_quote(
+        generated=generated,
+        retrieved_items=retrieved,
+        tenant_settings={},
+        completeness=1.0,
+        job_description="Install two double sockets in the bedroom",
+    )
+
     assert result["confidence"] == 1.0
+    checks = {c["check"]: c["score"] for c in result["confidence_checks"]}
+    assert checks == {
+        "line_validity": 1.0,
+        "request_coverage": 1.0,
+        "price_plausibility": 1.0,
+        "catalogue_grounding": 1.0,
+        "estimated_hours": 1.0,
+        "intake_completeness": 1.0,
+    }
+
+
+def test_mechanical_confidence_low_for_broken_draft() -> None:
+    """A draft with a placeholder description and zero price/quantity fails
+    the validity and plausibility checks and scores low."""
+    generated = {
+        "line_items": [{"description": "Line item", "quantity": 0, "unit_price": 0}],
+        "notes": "",
+    }
+
+    result = validate_generated_quote(generated=generated, retrieved_items=[], tenant_settings={})
+
+    # validity 0, coverage 0.5, plausibility 0 (price clamped), grounding 1.0
+    # (no materials), hours 0, intake 0.5 → 0.125 + 0.15 + 0.025.
+    assert result["confidence"] == 0.30
+    checks = {c["check"]: c["score"] for c in result["confidence_checks"]}
+    assert checks["line_validity"] == 0.0
+    assert checks["price_plausibility"] == 0.0
 
 
 def test_validate_generated_quote_confidence_legacy_without_completeness() -> None:
-    """Without a completeness score the legacy 0.5 + 0.5 * ratio formula holds."""
+    """Without a completeness score the intake check sits at neutral (0.5)."""
     retrieved = [
         {
             "code": "ELEC-SOCKET-ADD",
@@ -993,6 +1239,8 @@ def test_validate_generated_quote_confidence_legacy_without_completeness() -> No
     result = validate_generated_quote(
         generated=generated, retrieved_items=retrieved, tenant_settings={}
     )
+    # validity 1.0, coverage 0.5, plausibility 1.0, grounding 1.0,
+    # hours 0.0, intake 0.5 (unknown) → 0.30 + 0.125 + 0.15 + 0.15 + 0 + 0.025.
     assert result["confidence"] == 0.75
 
 
@@ -1088,7 +1336,8 @@ def test_validate_caps_confidence_when_retrieval_quality_fails() -> None:
         tenant_settings={},
         retrieval_quality=quality_pass,
     )
-    # No cap: legacy 0.5 + 0.5 * grounded_ratio; 1 of 2 lines grounded = 0.75.
+    # No cap: mechanical rubric — validity 1.0, coverage 0.5, plausibility
+    # 1.0, grounding 1.0, no hours 0.0, intake 0.5 → 0.75.
     assert result["confidence"] == 0.75
     assert result["confidence_capped"] is False
 
@@ -1357,3 +1606,113 @@ def test_intake_completeness_ai_chat_meaningfully_raises_score() -> None:
         f"baseline={baseline}, enriched={enriched}"
     )
     assert enriched >= 0.85
+
+
+def test_resolve_quote_line_style_defaults_to_itemised() -> None:
+    assert resolve_quote_line_style(None) == "itemised"
+    assert resolve_quote_line_style({}) == "itemised"
+    assert resolve_quote_line_style({"quote_line_style": "unexpected"}) == "itemised"
+
+
+def test_resolve_quote_line_style_reads_job_summary() -> None:
+    assert resolve_quote_line_style({"quote_line_style": "job_summary"}) == "job_summary"
+    assert resolve_quote_line_style({"quote_line_style": " Job_Summary "}) == "job_summary"
+
+
+@pytest.mark.asyncio
+async def test_generate_quote_from_prompt_job_summary_uses_plain_english_prompt() -> None:
+    mock_response = MagicMock()
+    mock_response.choices = [
+        MagicMock(
+            message=MagicMock(
+                content='{"line_items": [{"description": "Install a double socket in the bedroom", "kind": "labour", "quantity": 1, "unit": "job", "unit_price": 120.00, "catalogue_ref": null}], "estimated_hours": 2.0, "notes": ""}'
+            )
+        )
+    ]
+    cost_items = [
+        {
+            "code": "ELEC-SOCKET-ADD",
+            "description": "Add a double socket",
+            "unit": "each",
+            "unit_price": "85.00",
+        }
+    ]
+
+    with patch(
+        "app.rag.generation.acompletion", new=AsyncMock(return_value=mock_response)
+    ) as mock_acompletion:
+        generation_config.settings.openai_api_key = "sk-test"
+        await generate_quote_from_prompt(
+            job_description="install a socket in the bedroom",
+            cost_items=cost_items,
+            tenant_settings={"quote_line_style": "job_summary"},
+            knowledge_chunks=[],
+        )
+
+    messages = mock_acompletion.call_args.kwargs["messages"]
+    assert messages[0]["role"] == "system"
+    assert messages[0]["content"] == JOB_SUMMARY_SYSTEM_PROMPT
+    # The catalogue stays in the prompt as a cost reference, but the model is
+    # told never to cite it (grounding would overwrite the plain-English text).
+    assert "cost reference only" in messages[1]["content"]
+    assert "NEVER set `catalogue_ref`" in messages[1]["content"]
+
+
+def test_validate_generated_quote_job_summary_skips_grounding() -> None:
+    """Job-summary lines keep their plain-English description and whole-task
+    price even when the model cites a catalogue code — grounding would swap in
+    the supplier's product name."""
+    retrieved = [
+        {
+            "code": "ELEC-SOCKET-ADD",
+            "description": "Add a double socket",
+            "unit": "each",
+            "unit_price": "85.00",
+        }
+    ]
+    generated = {
+        "line_items": [
+            {
+                "description": "Install a double socket in the bedroom",
+                "kind": "labour",
+                "quantity": 1,
+                "unit": "job",
+                "unit_price": 120.00,
+                "code": "ELEC-SOCKET-ADD",
+            }
+        ],
+        "estimated_hours": 2.0,
+        "notes": "",
+    }
+
+    result = validate_generated_quote(
+        generated=generated,
+        retrieved_items=retrieved,
+        tenant_settings={"quote_line_style": "job_summary"},
+        completeness=0.8,
+    )
+
+    assert result["line_style"] == "job_summary"
+    assert len(result["line_items"]) == 1
+    line = result["line_items"][0]
+    assert line["description"] == "Install a double socket in the bedroom"
+    assert line["unit_price"] == Decimal("120.00")
+    assert line["code"] is None
+    assert result["auto_grounded"] == 0
+    # Mechanical rubric: validity 1.0, coverage 0.5 (no job description),
+    # plausibility 1.0, grounding 0.5 (not verifiable for job-summary),
+    # hours 0.8 (present, no time-billed lines), intake 0.8.
+    # → 0.30 + 0.125 + 0.15 + 0.075 + 0.08 + 0.04.
+    assert result["confidence"] == 0.77
+    checks = {c["check"]: c["score"] for c in result["confidence_checks"]}
+    assert checks["catalogue_grounding"] == 0.5
+
+
+def test_validate_generated_quote_itemised_reports_line_style() -> None:
+    result = validate_generated_quote(
+        generated={"line_items": [], "notes": ""},
+        retrieved_items=[],
+        tenant_settings={},
+    )
+    assert result["line_style"] == "itemised"
+    assert result["confidence"] == 0.0

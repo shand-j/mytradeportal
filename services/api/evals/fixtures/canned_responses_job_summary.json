@@ -1,0 +1,138 @@
+{
+  "ev-charger-install": {
+    "line_items": [
+      {"description": "Supply and install a 7kW EV charger on the front wall, including the dedicated cable run and RCBO protection", "kind": "labour", "quantity": 1, "unit": "job", "unit_price": 1150.0, "catalogue_ref": null, "reason": "Charger unit plus half-day install and circuit"},
+      {"description": "Earthing checks, testing and certification of the new charger circuit", "kind": "labour", "quantity": 1, "unit": "job", "unit_price": 95.0, "catalogue_ref": null, "reason": "BS 7671 certification"}
+    ],
+    "estimated_hours": 5.0,
+    "assumptions": ["Existing consumer unit has spare capacity", "No DNO notification delays"],
+    "notes": "Confirm earthing arrangement (TT may need earth rod)."
+  },
+  "consumer-unit-replacement": {
+    "line_items": [
+      {"description": "Replace the old fuse box with a modern metal consumer unit with RCBOs and surge protection", "kind": "labour", "quantity": 1, "unit": "job", "unit_price": 620.0, "catalogue_ref": null, "reason": "10-way board plus fitting"},
+      {"description": "Testing and certification of all 10 circuits", "kind": "labour", "quantity": 1, "unit": "job", "unit_price": 110.0, "catalogue_ref": null, "reason": "Full test schedule per circuit"}
+    ],
+    "estimated_hours": 4.5,
+    "assumptions": ["Existing circuits are in serviceable condition"],
+    "notes": "Power will be off for most of the visit."
+  },
+  "eicr-3-bed": {
+    "line_items": [
+      {"description": "EICR inspection, testing and certificate for the 3-bed rental property", "kind": "labour", "quantity": 1, "unit": "job", "unit_price": 240.0, "catalogue_ref": null, "reason": "Standard 3-bed EICR with report"}
+    ],
+    "estimated_hours": 3.5,
+    "assumptions": ["No known issues; remedial work quoted separately if found"],
+    "notes": "Any C1/C2 observations will need remedial work before a satisfactory report."
+  },
+  "additional-sockets": {
+    "line_items": [
+      {"description": "Install two double sockets in the living room with surface trunking", "kind": "labour", "quantity": 1, "unit": "job", "unit_price": 160.0, "catalogue_ref": null, "reason": "Brick walls, surface containment agreed"},
+      {"description": "Install one double socket in the bedroom, including cable and back box", "kind": "labour", "quantity": 1, "unit": "job", "unit_price": 110.0, "catalogue_ref": null, "reason": "Single socket addition"}
+    ],
+    "estimated_hours": 3.0,
+    "assumptions": ["Existing circuit has capacity for three additional sockets"],
+    "notes": ""
+  },
+  "garden-office-power": {
+    "line_items": [
+      {"description": "Run power to the garden office with buried armoured (SWA) cable, about 20m", "kind": "labour", "quantity": 1, "unit": "job", "unit_price": 750.0, "catalogue_ref": null, "reason": "Trench, SWA cable and glands"},
+      {"description": "Fit a small consumer unit in the office with its own earthing", "kind": "labour", "quantity": 1, "unit": "job", "unit_price": 320.0, "catalogue_ref": null, "reason": "Garage-style board plus earth rod"},
+      {"description": "Install 4 sockets, lighting and a small heater circuit in the office", "kind": "labour", "quantity": 1, "unit": "job", "unit_price": 380.0, "catalogue_ref": null, "reason": "First fix plus fittings"}
+    ],
+    "estimated_hours": 16.0,
+    "assumptions": ["Customer to reinstate garden after trench", "No wayleave issues crossing the garden"],
+    "notes": "Trench depth and warning tape per BS 7671."
+  },
+  "fault-finding-emergency": {
+    "line_items": [
+      {"description": "Emergency call-out to trace and diagnose the tripping fault", "kind": "labour", "quantity": 1, "unit": "job", "unit_price": 95.0, "catalogue_ref": null, "reason": "First hour on site including diagnostics"},
+      {"description": "Repair the fault and test the kitchen sockets circuit", "kind": "labour", "quantity": 1, "unit": "job", "unit_price": 140.0, "catalogue_ref": null, "reason": "Estimate; depends on what the diagnostics find"}
+    ],
+    "estimated_hours": 2.5,
+    "assumptions": ["Fault is on the kitchen socket circuit", "No parts beyond standard repair stock"],
+    "notes": "Repair cost is an estimate until the fault is located."
+  },
+  "kitchen-downlights": {
+    "line_items": [
+      {"description": "Remove the old fluorescent strip lighting and install 6 LED downlights", "kind": "labour", "quantity": 1, "unit": "job", "unit_price": 320.0, "catalogue_ref": null, "reason": "Loft access available for the cable runs"},
+      {"description": "Fit a dimmer switch for the new downlights", "kind": "labour", "quantity": 1, "unit": "job", "unit_price": 95.0, "catalogue_ref": null, "reason": "LED-compatible dimmer"}
+    ],
+    "estimated_hours": 4.0,
+    "assumptions": ["Ceiling void accessible from the loft", "Existing circuit suitable for LED load"],
+    "notes": "Making good around the old strip fitting included."
+  },
+  "bathroom-extractor": {
+    "line_items": [
+      {"description": "Supply and fit a bathroom extractor fan with timer, with ducting through the external wall", "kind": "labour", "quantity": 1, "unit": "job", "unit_price": 180.0, "catalogue_ref": null, "reason": "Fan, core drilling and ducting"},
+      {"description": "Fit an isolation switch and test the fan", "kind": "labour", "quantity": 1, "unit": "job", "unit_price": 70.0, "catalogue_ref": null, "reason": "Isolator plus circuit test"}
+    ],
+    "estimated_hours": 2.5,
+    "assumptions": ["External wall is suitable for core drilling"],
+    "notes": ""
+  },
+  "cooker-circuit": {
+    "line_items": [
+      {"description": "Install a dedicated cooker circuit from the consumer unit for the new induction hob", "kind": "labour", "quantity": 1, "unit": "job", "unit_price": 300.0, "catalogue_ref": null, "reason": "10m run through kitchen units, RCBO protected"},
+      {"description": "Fit a cooker isolator and connection unit by the hob", "kind": "labour", "quantity": 1, "unit": "job", "unit_price": 85.0, "catalogue_ref": null, "reason": "Isolator plus outlet plate"}
+    ],
+    "estimated_hours": 3.5,
+    "assumptions": ["Consumer unit has a spare way"],
+    "notes": "Hob connection assumes a standard induction hob rating."
+  },
+  "smoke-alarms": {
+    "line_items": [
+      {"description": "Fit interlinked mains smoke alarms in the hallway and landing", "kind": "labour", "quantity": 1, "unit": "job", "unit_price": 180.0, "catalogue_ref": null, "reason": "Two mains interlinked alarms"},
+      {"description": "Fit an interlinked heat alarm in the kitchen", "kind": "labour", "quantity": 1, "unit": "job", "unit_price": 110.0, "catalogue_ref": null, "reason": "Kitchen heat alarm on the same circuit"}
+    ],
+    "estimated_hours": 3.0,
+    "assumptions": ["Two-storey layout, standard ceiling access"],
+    "notes": "Interlinking meets the insurance requirement."
+  },
+  "outdoor-lighting": {
+    "line_items": [
+      {"description": "Install 4 outdoor wall lights with the cable clipped externally", "kind": "labour", "quantity": 1, "unit": "job", "unit_price": 300.0, "catalogue_ref": null, "reason": "External rated fittings and cable"},
+      {"description": "Install a PIR security light by the garage, switched from inside the hallway", "kind": "labour", "quantity": 1, "unit": "job", "unit_price": 160.0, "catalogue_ref": null, "reason": "PIR fitting plus switch wire"}
+    ],
+    "estimated_hours": 5.0,
+    "assumptions": ["Existing lighting circuit has capacity"],
+    "notes": ""
+  },
+  "partial-rewire": {
+    "line_items": [
+      {"description": "Rewire the kitchen and utility room with new socket, hob and oven circuits", "kind": "labour", "quantity": 1, "unit": "job", "unit_price": 1900.0, "catalogue_ref": null, "reason": "Plaster already off, straight rewiring"},
+      {"description": "Rewire the lighting circuits in the kitchen and utility room", "kind": "labour", "quantity": 1, "unit": "job", "unit_price": 500.0, "catalogue_ref": null, "reason": "New lighting circuit and switching"},
+      {"description": "Testing and certification of the new circuits", "kind": "labour", "quantity": 1, "unit": "job", "unit_price": 250.0, "catalogue_ref": null, "reason": "EIC for the rewired circuits"}
+    ],
+    "estimated_hours": 24.0,
+    "assumptions": ["Old rubber cabling fully removed during renovation", "Access throughout the two rooms"],
+    "notes": "Old rubber cabling must be fully removed — included here because plaster is coming off anyway."
+  },
+  "immersion-heater": {
+    "line_items": [
+      {"description": "Replace the immersion heater element and thermostat in the airing cupboard cylinder", "kind": "labour", "quantity": 1, "unit": "job", "unit_price": 210.0, "catalogue_ref": null, "reason": "Element plus thermostat parts and labour"},
+      {"description": "Check the wiring and test the immersion heater circuit", "kind": "labour", "quantity": 1, "unit": "job", "unit_price": 60.0, "catalogue_ref": null, "reason": "Wiring check while on site"}
+    ],
+    "estimated_hours": 2.0,
+    "assumptions": ["Cylinder is otherwise sound", "Standard 27-inch element fits"],
+    "notes": "Cylinder will need draining down."
+  },
+  "shower-circuit": {
+    "line_items": [
+      {"description": "Install the 9.5kW electric shower, upgrading the circuit cable and breaker as needed", "kind": "labour", "quantity": 1, "unit": "job", "unit_price": 450.0, "catalogue_ref": null, "reason": "10mm cable and 45A breaker upgrade included"},
+      {"description": "Replace the faulty ceiling pull cord", "kind": "labour", "quantity": 1, "unit": "job", "unit_price": 60.0, "catalogue_ref": null, "reason": "New 45A pull cord switch"}
+    ],
+    "estimated_hours": 4.0,
+    "assumptions": ["Existing circuit route can be reused for the new cable"],
+    "notes": "Final price depends on whether the existing cable run needs upgrading once inspected."
+  },
+  "doorbell-transformer": {
+    "line_items": [
+      {"description": "Replace the wired doorbell transformer in the hallway", "kind": "labour", "quantity": 1, "unit": "job", "unit_price": 85.0, "catalogue_ref": null, "reason": "Transformer part and fitting"},
+      {"description": "Check the bell push and test the doorbell", "kind": "labour", "quantity": 1, "unit": "job", "unit_price": 55.0, "catalogue_ref": null, "reason": "Bell push check while on site"}
+    ],
+    "estimated_hours": 1.0,
+    "assumptions": ["Wiring between transformer and bell push is intact"],
+    "notes": ""
+  }
+}

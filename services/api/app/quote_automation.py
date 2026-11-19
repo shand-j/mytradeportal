@@ -599,6 +599,7 @@ async def requote_after_triage_close(tenant_id: UUID, quote_request_id: UUID) ->
                 retrieved_items=retrieved,
                 tenant_settings=tenant.settings,
                 completeness=completeness,
+                job_description=description,
             )
             if not validated["line_items"]:
                 logger.warning(
@@ -631,7 +632,9 @@ async def requote_after_triage_close(tenant_id: UUID, quote_request_id: UUID) ->
             quote.extra_data = {
                 **(quote.extra_data or {}),
                 "rag": {
+                    "line_style": validated.get("line_style"),
                     "confidence": validated["confidence"],
+                    "confidence_checks": validated.get("confidence_checks") or [],
                     "warnings": validated["warnings"],
                     "assumptions": validated.get("assumptions", []),
                     "notes": validated["notes"],

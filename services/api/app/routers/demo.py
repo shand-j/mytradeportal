@@ -330,6 +330,7 @@ def _run_validation(
         retrieved_items=retrieved,
         tenant_settings=DEMO_TENANT_SETTINGS,
         completeness=completeness,
+        job_description=description,
     )
     if not validated["line_items"]:
         validated["warnings"].append(

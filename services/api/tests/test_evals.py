@@ -11,6 +11,7 @@ from decimal import Decimal
 import pytest
 from evals.run_evals import (
     GOLDEN_PATH,
+    JOB_SUMMARY_FIXTURES_PATH,
     MAX_LINE_ITEMS,
     MIN_LINE_ITEMS,
     GoldenJob,
@@ -60,6 +61,20 @@ def test_fixtures_cover_all_golden_jobs() -> None:
         assert MIN_LINE_ITEMS <= len(lines) <= MAX_LINE_ITEMS
         for line in lines:
             assert {"description", "kind", "quantity", "unit", "unit_price"} <= set(line)
+
+
+def test_job_summary_fixtures_cover_all_golden_jobs() -> None:
+    fixtures = load_fixtures(JOB_SUMMARY_FIXTURES_PATH)
+    jobs = load_golden_jobs()
+    for job in jobs:
+        assert job.id in fixtures, f"no job-summary canned fixture for {job.id}"
+        lines = fixtures[job.id]["line_items"]
+        assert 1 <= len(lines) <= 8
+        for line in lines:
+            assert {"description", "kind", "quantity", "unit", "unit_price"} <= set(line)
+            # Job-summary fixtures must be plain-English task lines.
+            assert line["kind"] == "labour"
+            assert line["unit"] == "job"
 
 
 async def test_offline_run_passes_threshold() -> None:
@@ -199,3 +214,58 @@ def test_main_exits_nonzero_when_threshold_unmet() -> None:
     """A 100% threshold cannot be met if any single job fails."""
     exit_code = main(["--threshold", "101"])
     assert exit_code == 1
+
+
+async def test_offline_run_job_summary_passes_threshold() -> None:
+    """The job-summary canned fixtures should pass the style-aware scoring."""
+    jobs = load_golden_jobs()
+    scores = await run_eval(jobs, live=False, line_style="job_summary")
+    assert len(scores) == len(jobs)
+    assert all(score.error is None for score in scores)
+    pass_rate = 100.0 * sum(1 for s in scores if s.passed) / len(scores)
+    assert pass_rate >= 70.0
+
+
+def test_score_job_job_summary_rejects_non_task_lines() -> None:
+    """In job_summary style, a material/per-metre line fails the style check
+    (the kinds column becomes style conformance)."""
+    job = _make_job()
+    generated = _generated(
+        [
+            _line("Install two double sockets", "labour", "170"),
+            {
+                "description": "20m twin and earth cable",
+                "kind": "material",
+                "quantity": 20,
+                "unit": "m",
+                "unit_price": 4.5,
+                "code": None,
+                "reason": "",
+            },
+        ]
+    )
+    validated = _validated([("1", "170"), ("20", "4.5")])
+    score = score_job(job, generated, validated, line_style="job_summary")
+    assert not score.kinds_ok
+    assert not score.passed
+
+
+def test_score_job_job_summary_accepts_task_lines() -> None:
+    job = _make_job()
+    generated = _generated(
+        [
+            _line("Install two double sockets", "labour", "170"),
+            _line("Run the cable and test", "labour", "80"),
+        ]
+    )
+    validated = _validated([("1", "170"), ("1", "80")])
+    score = score_job(job, generated, validated, line_style="job_summary")
+    assert score.passed
+
+
+def test_main_offline_job_summary_exits_zero(capsys: pytest.CaptureFixture[str]) -> None:
+    exit_code = main(["--line-style", "job_summary"])
+    assert exit_code == 0
+    out = capsys.readouterr().out
+    assert "Line style: job_summary" in out
+    assert "Overall pass rate" in out

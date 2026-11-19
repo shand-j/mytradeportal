@@ -63,6 +63,7 @@ from app.push import notify_customer
 from app.rag import (
     estimate_llm_cost_usd,
     generate_quote_from_prompt,
+    resolve_refine_route,
     search_cost_items_with_status,
     validate_generated_quote,
 )
@@ -96,6 +97,12 @@ router = APIRouter(prefix="/quotes", tags=["Quotes"])
 DbDep = Annotated[AsyncSession, Depends(get_db)]
 MONEY_QUANTIZE = Decimal("0.01")
 logger = structlog.get_logger("api.quotes")
+
+# Hard ceiling for the refine round-trip (catalogue retrieval + LLM generation).
+# Each LLM attempt already has its own timeout, but retries stack, so without an
+# overall budget a slow provider holds the request open long past the mobile
+# client's patience. Exceeding it returns a retryable 503.
+_REFINE_LLM_TIMEOUT_SECONDS = 120.0
 
 
 async def _get_quote(db: AsyncSession, tenant_id: UUID, quote_id: UUID) -> Quote:
@@ -542,16 +549,37 @@ async def refine_quote(
         quote_id=quote.id,
         quote_request_id=quote.quote_request_id,
     )
+    # Route refine through the dedicated fast model (LLM_REFINE_MODEL, cheap by
+    # default): on the flagship (e.g. Kimi k2.6) one chat completion alone takes
+    # 60-120s, so it races the overall budget below even on a healthy provider.
+    refine_model, refine_api_key, refine_api_base = resolve_refine_route()
     try:
-        retrieved, retrieval_status = await search_cost_items_with_status(
-            f"{quote.title} {data.instructions}"
-        )
-        generated = await generate_quote_from_prompt(
-            job_description=description,
-            cost_items=retrieved,
-            tenant_settings=tenant.settings,
-            telemetry=telemetry,
-        )
+        async with asyncio.timeout(_REFINE_LLM_TIMEOUT_SECONDS):
+            # Retrieval re-runs per refine: the original retrieval context is
+            # not persisted on the quote, and the instructions can introduce
+            # new materials/scope the original query never covered. Both
+            # lookups are one embedding each (fast, per-text cached) — the
+            # chat completion above is the real latency driver.
+            retrieved, retrieval_status = await search_cost_items_with_status(
+                f"{quote.title} {data.instructions}"
+            )
+            generated = await generate_quote_from_prompt(
+                job_description=description,
+                cost_items=retrieved,
+                tenant_settings=tenant.settings,
+                model=refine_model,
+                api_base=refine_api_base,
+                api_key=refine_api_key,
+                telemetry=telemetry,
+            )
+    except TimeoutError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=(
+                "The AI service took too long to respond — your quote is unchanged. "
+                "Please try again."
+            ),
+        ) from exc
     except RuntimeError as exc:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -562,6 +590,7 @@ async def refine_quote(
         generated=generated,
         retrieved_items=retrieved,
         tenant_settings=tenant.settings,
+        job_description=quote.description or data.instructions,
     )
     if not validated["line_items"]:
         raise HTTPException(
@@ -1096,6 +1125,7 @@ async def _generate_rag_quote(
         retrieved_items=retrieved,
         tenant_settings=tenant.settings,
         completeness=completeness,
+        job_description=data.description,
     )
     build_quote_from_validation(quote, validated, retrieval_status=retrieval_status)
     if not quote.line_items:

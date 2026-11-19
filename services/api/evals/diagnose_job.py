@@ -113,6 +113,7 @@ async def diagnose(job_id: str) -> int:
         retrieved_items=items,
         tenant_settings=DEFAULT_TENANT_SETTINGS,
         retrieval_quality=quality,
+        job_description=job.description,
     )
     print("\n=== After validation (auto-grounding + confidence gates) ===")
     print(

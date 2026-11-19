@@ -3,15 +3,18 @@
 Runs the golden jobs in ``golden_jobs.json`` through the quote pipeline and
 scores each result on four criteria:
 
-- expected_kinds coverage (labour/material/callout kinds present)
+- expected_kinds coverage (labour/material/callout kinds present) — in
+  ``itemised`` line style. In ``job_summary`` style this becomes a style
+  check: every line must be a plain-English task line (kind labour, unit job).
 - expected_keywords hit-rate (line-item descriptions mention >= N terms)
 - ex-VAT total within the guide price band
-- line-item count sanity (3-12 items)
+- line-item count sanity (3-12 itemised / 1-8 job-summary)
 
 Two modes:
 
 - default (offline): replays canned LLM responses from ``fixtures/`` so the
-  harness logic is testable without API keys.
+  harness logic is testable without API keys. Fixtures are per line style:
+  ``canned_responses.json`` (itemised) and ``canned_responses_job_summary.json``.
 - ``--live``: calls the real LLM via
   :func:`app.rag.generation.generate_quote_from_prompt` with an empty catalogue
   and default tenant settings. Requires ``LLM_*`` settings to be configured.
@@ -23,6 +26,9 @@ Usage (from ``services/api``)::
     python -m evals.run_evals --live --with-retrieval
                                                      # real LLM + real Qdrant
                                                      # /lexical retrieval
+    python -m evals.run_evals --line-style job_summary
+                                                     # evaluate the plain-English
+                                                     # job-summary quote style
     python -m evals.run_evals --threshold 80        # custom pass-rate gate
     python -m evals.run_evals --json-out out.json   # persist per-job scores
 """
@@ -44,15 +50,31 @@ _API_ROOT = Path(__file__).resolve().parent.parent
 if str(_API_ROOT) not in sys.path:
     sys.path.insert(0, str(_API_ROOT))
 
-from app.rag.validation import validate_generated_quote  # noqa: E402
+from app.rag.validation import (  # noqa: E402
+    QUOTE_LINE_STYLE_ITEMISED,
+    QUOTE_LINE_STYLE_JOB_SUMMARY,
+    validate_generated_quote,
+)
 
 EVALS_DIR = Path(__file__).resolve().parent
 GOLDEN_PATH = EVALS_DIR / "golden_jobs.json"
 FIXTURES_PATH = EVALS_DIR / "fixtures" / "canned_responses.json"
+JOB_SUMMARY_FIXTURES_PATH = EVALS_DIR / "fixtures" / "canned_responses_job_summary.json"
 
-# Line-item count sanity bounds, matching the guidance in the LLM system prompt.
+# Default canned-response fixture per line style.
+STYLE_FIXTURES = {
+    QUOTE_LINE_STYLE_ITEMISED: FIXTURES_PATH,
+    QUOTE_LINE_STYLE_JOB_SUMMARY: JOB_SUMMARY_FIXTURES_PATH,
+}
+
+# Line-item count sanity bounds per line style, matching the guidance in the
+# LLM system prompts (itemised: 3-12 lines; job summary: 1-8 task lines).
 MIN_LINE_ITEMS = 3
 MAX_LINE_ITEMS = 12
+STYLE_COUNT_BOUNDS = {
+    QUOTE_LINE_STYLE_ITEMISED: (MIN_LINE_ITEMS, MAX_LINE_ITEMS),
+    QUOTE_LINE_STYLE_JOB_SUMMARY: (1, 8),
+}
 
 # Default business pricing rules for live runs, mirroring what a typical tenant
 # would have configured. The catalogue is intentionally empty: the eval checks
@@ -145,7 +167,7 @@ def load_fixtures(path: Path = FIXTURES_PATH) -> dict[str, Any]:
 
 
 async def generate_live(
-    job: GoldenJob, *, with_retrieval: bool = False
+    job: GoldenJob, *, with_retrieval: bool = False, line_style: str = QUOTE_LINE_STYLE_ITEMISED
 ) -> tuple[
     dict[str, Any],
     str | None,
@@ -156,7 +178,7 @@ async def generate_live(
 
     Returns ``(generated, retrieval_status, cost_items, retrieval_quality)``.
     ``cost_items`` is the real retrieved-items list (used for grounding score
-    AND passed into validation so the confidence formula sees the same items
+    AND passed into validation so the confidence rubric sees the same items
     the LLM did). ``retrieval_quality`` is the score against the configured
     gates, or ``None`` when retrieval was not exercised.
     """
@@ -177,7 +199,7 @@ async def generate_live(
     generated = await generate_quote_from_prompt(
         job_description=job.description,
         cost_items=cost_items,
-        tenant_settings=DEFAULT_TENANT_SETTINGS,
+        tenant_settings={**DEFAULT_TENANT_SETTINGS, "quote_line_style": line_style},
         property_type=job.property_type,
     )
     return generated, retrieval_status, cost_items, retrieval_quality
@@ -189,6 +211,7 @@ def score_job(
     validated: dict[str, Any],
     *,
     catalogue_codes: set[str] | None = None,
+    line_style: str = QUOTE_LINE_STYLE_ITEMISED,
 ) -> JobScore:
     """Score one generated quote against the golden expectations.
 
@@ -196,13 +219,29 @@ def score_job(
     price and count scoring use the validated line items, which are what would
     actually land on the quote. When ``catalogue_codes`` is provided, grounding
     counts how many material lines cite one of those codes.
+
+    In ``job_summary`` line style the kinds check becomes a style check (every
+    line must be a plain-English task: kind labour, unit job) and grounding is
+    skipped — job-summary lines deliberately carry no catalogue codes.
     """
     raw_lines = generated.get("line_items", []) or []
     validated_lines = validated.get("line_items", []) or []
+    job_summary = line_style == QUOTE_LINE_STYLE_JOB_SUMMARY
 
-    kinds_present = {str(line.get("kind", "")).lower() for line in raw_lines}
-    missing_kinds = [k for k in job.expected_kinds if k not in kinds_present]
-    kinds_ok = not missing_kinds
+    if job_summary:
+        non_task_lines = [
+            line
+            for line in raw_lines
+            if str(line.get("kind", "")).lower() != "labour"
+            or str(line.get("unit", "")).lower() != "job"
+        ]
+        kinds_ok = not non_task_lines and bool(raw_lines)
+        missing_kinds: list[str] = []
+    else:
+        kinds_present = {str(line.get("kind", "")).lower() for line in raw_lines}
+        missing_kinds = [k for k in job.expected_kinds if k not in kinds_present]
+        kinds_ok = not missing_kinds
+        non_task_lines = []
 
     haystack = " ".join(str(line.get("description", "")) for line in raw_lines).lower()
     hits = [kw for kw in job.expected_keywords if kw.lower() in haystack]
@@ -215,11 +254,12 @@ def score_job(
     low, high = job.price_band_gbp
     price_ok = low <= total <= high
 
+    min_count, max_count = STYLE_COUNT_BOUNDS.get(line_style, (MIN_LINE_ITEMS, MAX_LINE_ITEMS))
     line_count = len(validated_lines)
-    count_ok = MIN_LINE_ITEMS <= line_count <= MAX_LINE_ITEMS
+    count_ok = min_count <= line_count <= max_count
 
     grounded_lines = 0
-    if catalogue_codes is not None:
+    if catalogue_codes is not None and not job_summary:
         # Count validated (post-processed) lines so auto-grounded material
         # lines credit the aggregate. LLM-only grounding is still visible via
         # the ``auto_grounded`` field on JobScore.
@@ -230,19 +270,26 @@ def score_job(
             and str(line.get("code") or "") in catalogue_codes
         )
     # Grounding is only enforced when retrieval ran (catalogue_codes is not
-    # None); no-retrieval baselines still get an ``ok`` on this dimension so
+    # None) and the style cites catalogue codes; no-retrieval baselines and
+    # job-summary runs still get an ``ok`` on this dimension so
     # baseline-vs-Phase-1 comparisons stay meaningful.
-    grounding_ok = catalogue_codes is None or grounded_lines >= job.min_grounded_lines
+    grounding_ok = (
+        catalogue_codes is None or job_summary or grounded_lines >= job.min_grounded_lines
+    )
 
     details: list[str] = []
     if missing_kinds:
         details.append(f"missing kinds: {missing_kinds}")
+    if non_task_lines:
+        details.append(
+            f"{len(non_task_lines)} line(s) not plain task lines (kind labour, unit job)"
+        )
     if not keywords_ok:
         details.append(f"keyword hits {len(hits)}/{job.min_keyword_hits}: {hits}")
     if not price_ok:
         details.append(f"total £{total} outside band £{low}-£{high}")
     if not count_ok:
-        details.append(f"line count {line_count} outside {MIN_LINE_ITEMS}-{MAX_LINE_ITEMS}")
+        details.append(f"line count {line_count} outside {min_count}-{max_count}")
     if not grounding_ok:
         details.append(f"grounded lines {grounded_lines}/{job.min_grounded_lines}")
 
@@ -267,11 +314,13 @@ async def run_eval(
     live: bool,
     with_retrieval: bool = False,
     fixtures: dict[str, Any] | None = None,
+    line_style: str = QUOTE_LINE_STYLE_ITEMISED,
 ) -> list[JobScore]:
     """Run every golden job through the pipeline and return per-job scores."""
     if not live and fixtures is None:
-        fixtures = load_fixtures()
+        fixtures = load_fixtures(STYLE_FIXTURES.get(line_style, FIXTURES_PATH))
 
+    tenant_settings = {**DEFAULT_TENANT_SETTINGS, "quote_line_style": line_style}
     scores: list[JobScore] = []
     for job in jobs:
         retrieval_status: str | None = None
@@ -285,7 +334,7 @@ async def run_eval(
                     retrieval_status,
                     cost_items,
                     retrieval_quality,
-                ) = await generate_live(job, with_retrieval=with_retrieval)
+                ) = await generate_live(job, with_retrieval=with_retrieval, line_style=line_style)
                 retrieved_count = len(cost_items)
                 catalogue_codes = (
                     {str(item["code"]) for item in cost_items if item.get("code") is not None}
@@ -301,10 +350,13 @@ async def run_eval(
             validated = validate_generated_quote(
                 generated=generated,
                 retrieved_items=cost_items,
-                tenant_settings=DEFAULT_TENANT_SETTINGS,
+                tenant_settings=tenant_settings,
                 retrieval_quality=retrieval_quality,
+                job_description=job.description,
             )
-            score = score_job(job, generated, validated, catalogue_codes=catalogue_codes)
+            score = score_job(
+                job, generated, validated, catalogue_codes=catalogue_codes, line_style=line_style
+            )
             score.retrieval_status = retrieval_status
             score.retrieved_count = retrieved_count
             score.confidence_capped = bool(validated.get("confidence_capped"))
@@ -333,10 +385,12 @@ async def run_eval(
     return scores
 
 
-def print_report(scores: list[JobScore], threshold: float) -> float:
+def print_report(scores: list[JobScore], threshold: float, line_style: str) -> float:
     """Print the per-job table plus aggregate summary; return overall pass rate."""
+    kinds_header = "style" if line_style == QUOTE_LINE_STYLE_JOB_SUMMARY else "kinds"
+    print(f"Line style: {line_style}")
     print(
-        f"{'job':<28} {'kinds':<6} {'kw':<6} {'price':<6} {'count':<6} "
+        f"{'job':<28} {kinds_header:<6} {'kw':<6} {'price':<6} {'count':<6} "
         f"{'grnd':<6} {'conf':<5} total"
     )
     print("-" * 84)
@@ -366,11 +420,16 @@ def print_report(scores: list[JobScore], threshold: float) -> float:
         return f"{100.0 * ok / total:.0f}%" if total else "n/a"
 
     print("\nAggregate:")
-    print(f"  kinds coverage:  {rate(sum(1 for s in scores if s.kinds_ok))}")
-    print(f"  keyword hit-rate: {rate(sum(1 for s in scores if s.keywords_ok))}")
-    print(f"  price in band:   {rate(sum(1 for s in scores if s.price_ok))}")
-    print(f"  count sanity:    {rate(sum(1 for s in scores if s.count_ok))}")
-    print(f"  catalogue grounded lines: {rate(sum(1 for s in scores if s.grounding_ok))}")
+    kinds_label = (
+        "style conformance (task lines only)"
+        if line_style == QUOTE_LINE_STYLE_JOB_SUMMARY
+        else "kinds coverage:"
+    )
+    print(f"  {kinds_label:<40} {rate(sum(1 for s in scores if s.kinds_ok))}")
+    print(f"  {'keyword hit-rate':<40} {rate(sum(1 for s in scores if s.keywords_ok))}")
+    print(f"  {'price in band':<40} {rate(sum(1 for s in scores if s.price_ok))}")
+    print(f"  {'count sanity':<40} {rate(sum(1 for s in scores if s.count_ok))}")
+    print(f"  {'catalogue grounded lines':<40} {rate(sum(1 for s in scores if s.grounding_ok))}")
 
     statuses = [s.retrieval_status for s in scores if s.retrieval_status is not None]
     if statuses:
@@ -430,6 +489,16 @@ def main(argv: list[str] | None = None) -> int:
         help="Persist per-job scores as JSON for before/after comparison.",
     )
     parser.add_argument(
+        "--line-style",
+        choices=[QUOTE_LINE_STYLE_ITEMISED, QUOTE_LINE_STYLE_JOB_SUMMARY],
+        default=QUOTE_LINE_STYLE_ITEMISED,
+        help=(
+            "Quote line style to evaluate: itemised labour/materials breakdown "
+            "(default) or job_summary plain-English task lines. Picks the "
+            "matching canned fixtures in offline mode."
+        ),
+    )
+    parser.add_argument(
         "--threshold",
         type=float,
         default=70.0,
@@ -444,8 +513,9 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--fixtures",
         type=Path,
-        default=FIXTURES_PATH,
-        help="Path to the canned-response fixtures JSON file (offline mode).",
+        default=None,
+        help="Path to the canned-response fixtures JSON file (offline mode; "
+        "defaults to the fixture file for --line-style).",
     )
     args = parser.parse_args(argv)
 
@@ -471,16 +541,20 @@ def main(argv: list[str] | None = None) -> int:
             return 2
 
     jobs = load_golden_jobs(args.golden)
-    fixtures = None if args.live else load_fixtures(args.fixtures)
+    fixtures = None
+    if not args.live:
+        fixtures_path = args.fixtures or STYLE_FIXTURES.get(args.line_style, FIXTURES_PATH)
+        fixtures = load_fixtures(fixtures_path)
     scores = asyncio.run(
         run_eval(
             jobs,
             live=args.live,
             with_retrieval=args.with_retrieval,
             fixtures=fixtures,
+            line_style=args.line_style,
         )
     )
-    pass_rate = print_report(scores, args.threshold)
+    pass_rate = print_report(scores, args.threshold, args.line_style)
     if args.json_out is not None:
         args.json_out.write_text(
             json.dumps(
@@ -489,6 +563,7 @@ def main(argv: list[str] | None = None) -> int:
                     "threshold": args.threshold,
                     "live": args.live,
                     "with_retrieval": args.with_retrieval,
+                    "line_style": args.line_style,
                     "scores": [{**asdict(s), "total": str(s.total)} for s in scores],
                 },
                 indent=2,

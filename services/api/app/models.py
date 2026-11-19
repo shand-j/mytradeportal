@@ -670,7 +670,7 @@ class Subscription(Base, TimestampMixin):
     plan_key: Mapped[str] = mapped_column(String(50), nullable=False)  # starter | pro | business
     status: Mapped[str] = mapped_column(
         String(50), default="incomplete", nullable=False
-    )  # incomplete | trialing | active | past_due | paused | canceled
+    )  # incomplete | trialing | trial_expired | active | past_due | paused | canceled
     paddle_subscription_id: Mapped[str | None] = mapped_column(
         String(255), nullable=True, unique=True, index=True
     )

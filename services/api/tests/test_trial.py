@@ -27,7 +27,7 @@ from app.plans import (
 )
 from app.routers.billing import is_subscription_active
 from app.routers.webhooks import _upsert_subscription
-from app.trial import TRIAL_EXTENDED_SETTINGS_KEY
+from app.trial import TRIAL_EXPIRED_STATUS, TRIAL_EXTENDED_SETTINGS_KEY, expire_lapsed_trials
 from httpx import AsyncClient
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -420,3 +420,57 @@ async def test_trial_extension_counts_only_sent_statuses(
     assert tenant is not None
     await db.refresh(tenant)
     assert tenant.settings[TRIAL_EXTENDED_SETTINGS_KEY]
+
+
+# --- Lapsed-trial sweep (trialing → trial_expired) ----------------------------
+
+
+async def test_expire_lapsed_trials_flips_expired_rows(
+    client: AsyncClient, db: AsyncSession
+) -> None:
+    """A trialing row past trial_ends_at moves to trial_expired — the stored
+    status then matches what is_subscription_active already enforced."""
+    tenant_id = await _signup_and_login(client, f"trial-{uuid4().hex[:8]}")
+    sub = await _get_subscription(db, tenant_id)
+    sub.trial_ends_at = datetime.utcnow() - timedelta(hours=1)
+    await db.commit()
+
+    expired = await expire_lapsed_trials(db)
+    await db.commit()
+
+    assert expired >= 1
+    sub = await _get_subscription(db, tenant_id)
+    assert sub.status == TRIAL_EXPIRED_STATUS
+    assert is_subscription_active(sub) is False
+
+
+async def test_expire_lapsed_trials_leaves_live_rows_untouched(
+    client: AsyncClient, db: AsyncSession
+) -> None:
+    """In-window trials and non-trialing rows survive the sweep."""
+    trialing_id = await _signup_and_login(client, f"trial-{uuid4().hex[:8]}")
+
+    await expire_lapsed_trials(db)
+    await db.commit()
+
+    sub = await _get_subscription(db, trialing_id)
+    assert sub.status == "trialing"
+    assert is_subscription_active(sub) is True
+
+
+async def test_expire_lapsed_trials_is_idempotent(client: AsyncClient, db: AsyncSession) -> None:
+    """A second sweep finds nothing to do — safe to run every scheduler tick
+    and on every deploy via scripts/init_db.py's data-migration step."""
+    tenant_id = await _signup_and_login(client, f"trial-{uuid4().hex[:8]}")
+    sub = await _get_subscription(db, tenant_id)
+    sub.trial_ends_at = datetime.utcnow() - timedelta(hours=1)
+    await db.commit()
+
+    first = await expire_lapsed_trials(db)
+    await db.commit()
+    second = await expire_lapsed_trials(db)
+    await db.commit()
+
+    assert first >= 1
+    assert second == 0
+    assert (await _get_subscription(db, tenant_id)).status == TRIAL_EXPIRED_STATUS

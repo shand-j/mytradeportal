@@ -25,16 +25,27 @@ extension itself is a no-op unless the subscription is still ``trialing``.
 """
 
 from datetime import datetime, timedelta
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, cast
 from uuid import UUID
 
+import structlog
 from sqlalchemy import func, select
+from sqlalchemy import update as sa_update
 
 from app.models import Quote, QuoteLineItem, Subscription, Tenant
 from app.plans import TRIAL_EXTENSION_DAYS, TRIAL_EXTENSION_SENT_AI_QUOTES
 
 if TYPE_CHECKING:
+    from sqlalchemy.engine import CursorResult
     from sqlalchemy.ext.asyncio import AsyncSession
+
+logger = structlog.get_logger("api.trial")
+
+# Terminal status for a trial whose window passed without a Paddle checkout.
+# Distinct from "canceled" (a deliberate user action) so BI and support can
+# tell lapsed trials apart; is_subscription_active treats it as inactive
+# because it is not in ACTIVE_STATUSES.
+TRIAL_EXPIRED_STATUS = "trial_expired"
 
 # Tenant settings key recording when the trial extension fired (ISO timestamp).
 TRIAL_EXTENDED_SETTINGS_KEY = "trial_extended_at"
@@ -85,3 +96,31 @@ async def maybe_extend_trial(db: "AsyncSession", tenant_id: UUID) -> bool:
     sub.trial_ends_at = now + timedelta(days=TRIAL_EXTENSION_DAYS)
     tenant.settings = {**tenant.settings, TRIAL_EXTENDED_SETTINGS_KEY: now.isoformat()}
     return True
+
+
+async def expire_lapsed_trials(db: "AsyncSession", now: datetime | None = None) -> int:
+    """Flip ``trialing`` rows whose trial window has passed to ``trial_expired``.
+
+    Data hygiene for the paywall gate: ``is_subscription_active`` already
+    treats a lapsed trial as inactive, but nothing moved the row's status, so
+    the DB (and every client reading it) kept saying "trialing" forever. After
+    this sweep the stored status matches the enforced reality. Idempotent, and
+    safe for ``beta_comped`` tenants — their override lives in tenant settings,
+    which this never touches. A later Paddle checkout resurrects the same row
+    via the webhook upsert keyed on tenant_id. The same UPDATE runs at deploy
+    time in ``scripts/init_db.py`` for environments without the scheduler.
+    """
+    now = now or datetime.utcnow()
+    result = await db.execute(
+        sa_update(Subscription)
+        .where(
+            Subscription.status == "trialing",
+            Subscription.trial_ends_at.is_not(None),
+            Subscription.trial_ends_at < now,
+        )
+        .values(status=TRIAL_EXPIRED_STATUS)
+    )
+    count = cast("CursorResult[Any]", result).rowcount
+    if count:
+        logger.info("trials_expired", count=count)
+    return int(count)

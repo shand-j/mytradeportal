@@ -430,15 +430,30 @@ async def run_reminder_tick(
 ) -> dict[str, int]:
     """Run one reminder sweep across all active tenants.
 
+    Also sweeps lapsed trials (``trialing`` → ``trial_expired``) so the stored
+    subscription status matches what the paywall gate already enforces. The
+    sweep runs in its own session on the production path so a broken tenant's
+    rollback can never undo it; with an injected ``db`` it joins the caller's
+    transaction (test isolation).
+
     ``db`` is injectable for tests (which run inside a rolled-back outer
     transaction the default session factory cannot see); production callers
     get a fresh session. Returns a summary dict for logging.
     """
+    from app.trial import expire_lapsed_trials
+
     now = now or datetime.utcnow()
     if db is not None:
-        return await _run_tick(db, now)
-    async with AsyncSessionLocal() as session:
-        return await _run_tick(session, now)
+        expired = await expire_lapsed_trials(db, now)
+        summary = await _run_tick(db, now)
+    else:
+        async with AsyncSessionLocal() as session:
+            expired = await expire_lapsed_trials(session, now)
+            await session.commit()
+        async with AsyncSessionLocal() as session:
+            summary = await _run_tick(session, now)
+    summary["trials_expired"] = expired
+    return summary
 
 
 async def reminder_loop(stop: asyncio.Event) -> None:
