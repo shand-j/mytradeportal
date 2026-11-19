@@ -1,0 +1,51 @@
+name: IaC Drift Alarm
+
+# Weekly check that the live Railway project still matches .railway/railway.ts.
+# Drift happens when someone edits a variable/service in the Railway dashboard
+# (or an apply silently failed) — this job turns that slow, silent divergence
+# into a red workflow run instead of a surprise at the next deploy.
+#
+# Fails when `railway config plan` reports anything other than
+# "Your Railway configuration is already up to date." Also fails on any CLI
+# error (including an invalid RAILWAY_TOKEN) — an alarm that can't check is
+# an alarm that's broken, not green.
+
+on:
+  schedule:
+    # Mondays 09:17 UTC — off the :00/:30 herd marks.
+    - cron: "17 9 * * 1"
+  workflow_dispatch:
+
+jobs:
+  drift:
+    runs-on: ubuntu-latest
+    environment: MyTradePortal/Production
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+          cache-dependency-path: .railway/package-lock.json
+
+      - name: Install Railway CLI
+        run: npm install -g @railway/cli
+
+      - name: Install IaC runner dependencies
+        working-directory: .railway
+        run: npm ci
+
+      - name: Plan must be empty
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+          RAILWAY_ENVIRONMENT: production
+          RAILWAY_IAC_TS_BIN: .railway/node_modules/.bin/railway-iac-ts
+        run: |
+          OUTPUT=$(railway config plan 2>&1)
+          echo "$OUTPUT"
+          if ! echo "$OUTPUT" | grep -q "already up to date"; then
+            echo "::error::Railway project has drifted from .railway/railway.ts — review the plan above and either apply the IaC or reconcile the dashboard change into code."
+            exit 1
+          fi
