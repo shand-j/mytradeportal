@@ -2,8 +2,10 @@
 
 import asyncio
 import uuid
+from collections.abc import Awaitable, Callable
 from typing import Any
 
+import structlog
 from fastapi import APIRouter
 from fastapi.responses import JSONResponse
 from sqlalchemy import text
@@ -14,6 +16,7 @@ from app.qdrant import get_qdrant_client
 from app.redis_client import get_redis
 from app.routers.files import _ensure_bucket, s3_client
 
+logger = structlog.get_logger("api.health")
 router = APIRouter(tags=["Health"])
 
 # Dependency probes must not hang the readiness endpoint when a service is
@@ -36,27 +39,44 @@ async def health_check() -> dict[str, Any]:
     }
 
 
+async def _probe(
+    name: str, fn: Callable[[], Awaitable[bool]], timeout: float = _PROBE_TIMEOUT_SECONDS
+) -> bool:
+    """Run one dependency probe; log the failure reason, never raise."""
+    try:
+        async with asyncio.timeout(timeout):
+            return await fn()
+    except Exception as exc:
+        logger.warning(
+            "readiness_probe_failed",
+            probe=name,
+            error_type=type(exc).__name__,
+            error=str(exc)[:300],
+        )
+        return False
+
+
 async def _postgres_ok() -> bool:
     """Ping Postgres with ``SELECT 1``; any failure means not ready."""
-    try:
-        async with asyncio.timeout(_PROBE_TIMEOUT_SECONDS):
-            async with engine.connect() as conn:
-                await conn.execute(text("SELECT 1"))
+
+    async def _check() -> bool:
+        async with engine.connect() as conn:
+            await conn.execute(text("SELECT 1"))
         return True
-    except Exception:
-        return False
+
+    return await _probe("postgres", _check)
 
 
 async def _qdrant_ok() -> bool:
     """Report Qdrant reachability (needed by the AI quote pipeline)."""
-    try:
-        async with asyncio.timeout(_PROBE_TIMEOUT_SECONDS):
-            client = get_qdrant_client()
-            await client.get_collections()
-            await client.close()
+
+    async def _check() -> bool:
+        client = get_qdrant_client()
+        await client.get_collections()
+        await client.close()
         return True
-    except Exception:
-        return False
+
+    return await _probe("qdrant", _check)
 
 
 async def _storage_ok() -> bool:
@@ -84,21 +104,20 @@ async def _storage_ok() -> bool:
             client.delete_object(Bucket=settings.minio_bucket, Key=key)
         return bool(body == payload)
 
-    try:
-        async with asyncio.timeout(_STORAGE_PROBE_TIMEOUT_SECONDS):
-            return await asyncio.to_thread(_round_trip)
-    except Exception:
-        return False
+    async def _check() -> bool:
+        return await asyncio.to_thread(_round_trip)
+
+    return await _probe("storage", _check, timeout=_STORAGE_PROBE_TIMEOUT_SECONDS)
 
 
 async def _redis_ok() -> bool:
     """Report Redis reachability (best-effort cache, so degraded only)."""
-    try:
-        async with asyncio.timeout(_PROBE_TIMEOUT_SECONDS):
-            await get_redis().ping()
+
+    async def _check() -> bool:
+        await get_redis().ping()
         return True
-    except Exception:
-        return False
+
+    return await _probe("redis", _check)
 
 
 @router.get("/ready")
