@@ -60,7 +60,12 @@ def main() -> None:
 
     token = os.environ.get("RAILWAY_TOKEN", "")
     project_id = os.environ.get("RAILWAY_PROJECT_ID", "")
-    if not project_id:
+    # Environment-scoped tokens (Railway dashboard tokens bound to one
+    # environment) cannot run the project(id) query. When the caller pins
+    # RAILWAY_ENVIRONMENT_ID, skip project discovery entirely and query the
+    # environment directly — true per-environment CI tokens keep working.
+    env_id = os.environ.get("RAILWAY_ENVIRONMENT_ID", "")
+    if not project_id and not env_id:
         cfg_path = os.path.expanduser("~/.railway/config.json")
         try:
             with open(cfg_path) as fh:
@@ -68,8 +73,8 @@ def main() -> None:
             project_id = next((p.get("project") for p in projects.values() if p.get("project")), "")
         except (OSError, json.JSONDecodeError):
             project_id = ""
-    if not token or not project_id:
-        fail("RAILWAY_TOKEN and RAILWAY_PROJECT_ID are required (or a linked project locally)")
+    if not token or (not project_id and not env_id):
+        fail("RAILWAY_TOKEN and RAILWAY_PROJECT_ID (or RAILWAY_ENVIRONMENT_ID) are required")
 
     def gql(query: str, variables: dict | None = None) -> dict:
         req = urllib.request.Request(
@@ -93,21 +98,24 @@ def main() -> None:
             fail(f"Railway API error: {payload['errors']}")
         return payload["data"]
 
-    data = gql(
-        """
-        query ($id: String!) {
-          project(id: $id) {
-            environments { edges { node { id name } } }
-          }
-        }
-        """,
-        {"id": project_id},
-    )
-    nodes = [e["node"] for e in data["project"]["environments"]["edges"] if e.get("node")]
-    env = next((n for n in nodes if n.get("name") == env_name), None)
-    if env is None:
-        available = ", ".join(n.get("name", "?") for n in nodes) or "(none)"
-        fail(f"no environment named '{env_name}'; available: {available}", 3)
+    if env_id:
+        env = {"id": env_id, "name": env_name}
+    else:
+        data = gql(
+            """
+            query ($id: String!) {
+              project(id: $id) {
+                environments { edges { node { id name } } }
+              }
+            }
+            """,
+            {"id": project_id},
+        )
+        nodes = [e["node"] for e in data["project"]["environments"]["edges"] if e.get("node")]
+        env = next((n for n in nodes if n.get("name") == env_name), None)
+        if env is None:
+            available = ", ".join(n.get("name", "?") for n in nodes) or "(none)"
+            fail(f"no environment named '{env_name}'; available: {available}", 3)
 
     data = gql(
         """

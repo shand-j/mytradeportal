@@ -46,10 +46,11 @@ import urllib.request
 env_name = os.environ["ENV_NAME"]
 token = os.environ.get("RAILWAY_TOKEN", "")
 project_id = os.environ.get("RAILWAY_PROJECT_ID", "")
+pinned_env_id = os.environ.get("RAILWAY_ENVIRONMENT_ID", "")
 if not token:
     print("RAILWAY_TOKEN is not set", file=sys.stderr)
     sys.exit(3)
-if not project_id:
+if not project_id and not pinned_env_id:
     cfg_path = os.path.expanduser("~/.railway/config.json")
     try:
         with open(cfg_path) as fh:
@@ -59,9 +60,9 @@ if not project_id:
         )
     except (OSError, json.JSONDecodeError):
         project_id = ""
-if not project_id:
+if not project_id and not pinned_env_id:
     print(
-        "no project: set RAILWAY_PROJECT_ID or link a project (railway link)",
+        "no project: set RAILWAY_PROJECT_ID / RAILWAY_ENVIRONMENT_ID or link a project",
         file=sys.stderr,
     )
     sys.exit(3)
@@ -96,27 +97,32 @@ def gql(query: str, variables: dict | None = None) -> dict:
     return payload["data"]
 
 
-# 1. Find the named environment.
-data = gql(
-    """
-    query ($id: String!) {
-      project(id: $id) {
-        environments { edges { node { id name isEphemeral } } }
-      }
-    }
-    """,
-    {"id": project_id},
-)
-nodes = [e["node"] for e in data["project"]["environments"]["edges"] if e.get("node")]
-envs = [n for n in nodes if n.get("name") == env_name]
-if not envs:
-    available = ", ".join(n.get("name", "?") for n in nodes) or "(none)"
-    print(
-        f"no environment named '{env_name}'; available: {available}",
-        file=sys.stderr,
+# 1. Find the named environment. RAILWAY_ENVIRONMENT_ID pins the id directly
+# for environment-scoped tokens, which cannot run the project(id) query.
+pinned_env_id = os.environ.get("RAILWAY_ENVIRONMENT_ID", "")
+if pinned_env_id:
+    env = {"id": pinned_env_id, "name": env_name}
+else:
+    data = gql(
+        """
+        query ($id: String!) {
+          project(id: $id) {
+            environments { edges { node { id name isEphemeral } } }
+          }
+        }
+        """,
+        {"id": project_id},
     )
-    sys.exit(3)
-env = envs[0]
+    nodes = [e["node"] for e in data["project"]["environments"]["edges"] if e.get("node")]
+    envs = [n for n in nodes if n.get("name") == env_name]
+    if not envs:
+        available = ", ".join(n.get("name", "?") for n in nodes) or "(none)"
+        print(
+            f"no environment named '{env_name}'; available: {available}",
+            file=sys.stderr,
+        )
+        sys.exit(3)
+    env = envs[0]
 
 # 2. List service domains in that environment.
 data = gql(

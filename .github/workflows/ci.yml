@@ -212,6 +212,7 @@ jobs:
         env:
           RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
           RAILWAY_PROJECT_ID: ${{ vars.RAILWAY_PROJECT_ID }}
+          RAILWAY_ENVIRONMENT_ID: 33a94d33-d672-4698-914d-8ce1e775f115
           DJANGO_SUPERUSER_PASSWORD: ${{ secrets.DJANGO_SUPERUSER_PASSWORD }}
         run: |
           if [ -n "$DJANGO_SUPERUSER_PASSWORD" ]; then
@@ -244,6 +245,7 @@ jobs:
         env:
           RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
           RAILWAY_PROJECT_ID: ${{ vars.RAILWAY_PROJECT_ID }}
+          RAILWAY_ENVIRONMENT_ID: 33a94d33-d672-4698-914d-8ce1e775f115
           # Freshness anchor: the pushed commit's timestamp — robust even when
           # the Railway build finishes before the quality gates let this job
           # start (the deployment is always created after the commit exists).
