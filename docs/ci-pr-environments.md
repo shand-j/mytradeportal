@@ -97,6 +97,29 @@ How it works:
 
 Production is untouched and continues to send via Resend.
 
+### Rebuilding Mailpit after a staging-environment recreate (2026-11-19)
+
+When the staging environment is deleted/recreated, the fork from production
+has NO `mailpit` service and the api inherits production's Resend config —
+so staging would send REAL email until re-routed. Rebuild:
+
+1. `railway add --service mailpit --image axllent/mailpit:latest` (linked to
+   staging) with `MP_UI_AUTH` / `MP_SMTP_AUTH` = `e2e:<password>` and
+   `MP_SMTP_AUTH_ALLOW_INSECURE=true`. Do NOT create the service via the
+   GraphQL `serviceCreate` mutation — that lands it in the project's default
+   environment (production); `railway add` targets the linked environment.
+2. UI domain: `railway domain --service mailpit --port 8025`.
+3. SMTP proxy: `tcpProxyCreate` with `applicationPort: 1025` (the TCPProxy
+   type exposes `proxyPort`, not `port`).
+4. Point the repo secrets `MAILPIT_URL` / `MAILPIT_SMTP` /
+   `MAILPIT_BASIC_AUTH` at the new instance.
+5. Re-route staging email: `MAILPIT_SMTP=... MAILPIT_BASIC_AUTH=... \
+   python3 scripts/ci/route_env_email.py <staging-environment-id>` — deletes
+   `RESEND_API_KEY` from the STAGING api only and sets `SMTP_*`.
+6. Trigger staging-e2e via a push, not `workflow_dispatch`: dispatch leaves
+   `DEPLOY_SINCE` empty ("now"), so an already-live deployment reads stale
+   and `wait_for_deploy.py` times out despite a healthy service.
+
 ## Required GitHub secrets
 
 | Secret | Purpose |
