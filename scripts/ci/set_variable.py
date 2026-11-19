@@ -50,27 +50,49 @@ def main() -> None:
     if not token or (not project_id and not pinned_env_id):
         fail("RAILWAY_TOKEN and RAILWAY_PROJECT_ID (or RAILWAY_ENVIRONMENT_ID) are required")
 
+    # Account/workspace tokens authenticate as Bearer; project tokens (the
+    # environment-scoped CI tokens) must use the Project-Access-Token header.
+    # Try Bearer first and fall back once on "Not Authorized", remembering
+    # the scheme that worked for the rest of the process.
+    auth_scheme = "bearer"
+
     def gql(query: str, variables: dict | None = None) -> dict:
-        req = urllib.request.Request(
-            API,
-            data=json.dumps({"query": query, "variables": variables or {}}).encode(),
-            headers={
-                "Authorization": f"Bearer {token}",
+        nonlocal auth_scheme
+        for attempt in range(2):
+            scheme = (
+                auth_scheme
+                if attempt == 0
+                else ("project-token" if auth_scheme == "bearer" else "bearer")
+            )
+            headers = {
                 "Content-Type": "application/json",
                 # Cloudflare on backboard blocks the default Python-urllib UA (1010).
                 "User-Agent": "curl/8.0",
-            },
-        )
-        try:
-            with urllib.request.urlopen(req, timeout=30) as resp:
-                payload = json.load(resp)
-        except urllib.error.HTTPError as exc:
-            fail(f"Railway API HTTP {exc.code}: {exc.read()[:200]!r}")
-        except urllib.error.URLError as exc:
-            fail(f"Railway API unreachable: {exc}")
-        if payload.get("errors"):
-            fail(f"Railway API error: {payload['errors']}")
-        return payload["data"]
+            }
+            if scheme == "bearer":
+                headers["Authorization"] = f"Bearer {token}"
+            else:
+                headers["project-access-token"] = token
+            req = urllib.request.Request(
+                API,
+                data=json.dumps({"query": query, "variables": variables or {}}).encode(),
+                headers=headers,
+            )
+            try:
+                with urllib.request.urlopen(req, timeout=30) as resp:
+                    payload = json.load(resp)
+            except urllib.error.HTTPError as exc:
+                fail(f"Railway API HTTP {exc.code}: {exc.read()[:200]!r}")
+            except urllib.error.URLError as exc:
+                fail(f"Railway API unreachable: {exc}")
+            errors = payload.get("errors") or []
+            if any("Not Authorized" in str(e.get("message", "")) for e in errors):
+                continue
+            if errors:
+                fail(f"Railway API error: {errors}")
+            auth_scheme = scheme
+            return payload["data"]
+        fail("Railway API: Not Authorized with both Bearer and project-access-token auth")
 
     if pinned_env_id:
         env = {"id": pinned_env_id, "name": env_name}

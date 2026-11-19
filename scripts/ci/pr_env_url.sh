@@ -69,31 +69,55 @@ if not project_id:
 API = "https://backboard.railway.com/graphql/v2"
 
 
+# Account/workspace tokens authenticate as Bearer; project tokens must use
+# the Project-Access-Token header. Try Bearer first and fall back once on
+# "Not Authorized", remembering the scheme that worked for subsequent calls.
+auth_scheme = "bearer"
+
+
 def gql(query: str, variables: dict | None = None) -> dict:
-    req = urllib.request.Request(
-        API,
-        data=json.dumps({"query": query, "variables": variables or {}}).encode(),
-        headers={
-            "Authorization": f"Bearer {token}",
+    global auth_scheme
+    for attempt in range(2):
+        scheme = auth_scheme if attempt == 0 else (
+            "project-token" if auth_scheme == "bearer" else "bearer"
+        )
+        headers = {
             "Content-Type": "application/json",
             # Cloudflare on backboard blocks the default Python-urllib UA (1010).
             "User-Agent": "curl/8.0",
-        },
+        }
+        if scheme == "bearer":
+            headers["Authorization"] = f"Bearer {token}"
+        else:
+            headers["project-access-token"] = token
+        req = urllib.request.Request(
+            API,
+            data=json.dumps({"query": query, "variables": variables or {}}).encode(),
+            headers=headers,
+        )
+        try:
+            with urllib.request.urlopen(req, timeout=30) as resp:
+                payload = json.load(resp)
+        except urllib.error.HTTPError as exc:
+            body = exc.read()[:200].decode(errors="replace")
+            print(f"Railway API HTTP {exc.code}: {body}", file=sys.stderr)
+            sys.exit(3)
+        except urllib.error.URLError as exc:
+            print(f"Railway API unreachable: {exc}", file=sys.stderr)
+            sys.exit(3)
+        errors = payload.get("errors") or []
+        if any("Not Authorized" in str(e.get("message", "")) for e in errors):
+            continue
+        if errors:
+            print(f"Railway API error: {errors}", file=sys.stderr)
+            sys.exit(3)
+        auth_scheme = scheme
+        return payload["data"]
+    print(
+        "Railway API: Not Authorized with both Bearer and project-access-token auth",
+        file=sys.stderr,
     )
-    try:
-        with urllib.request.urlopen(req, timeout=30) as resp:
-            payload = json.load(resp)
-    except urllib.error.HTTPError as exc:
-        body = exc.read()[:200].decode(errors="replace")
-        print(f"Railway API HTTP {exc.code}: {body}", file=sys.stderr)
-        sys.exit(3)
-    except urllib.error.URLError as exc:
-        print(f"Railway API unreachable: {exc}", file=sys.stderr)
-        sys.exit(3)
-    if payload.get("errors"):
-        print(f"Railway API error: {payload['errors']}", file=sys.stderr)
-        sys.exit(3)
-    return payload["data"]
+    sys.exit(3)
 
 
 # 1. Find the PR's ephemeral environment.
