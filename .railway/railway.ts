@@ -90,7 +90,6 @@ export default defineRailway(() => {
 
   const minio = service("minio", {
     source: image("rustfs/rustfs:latest"),
-    start: "/mnt/data",
     healthcheck: "/health",
     volumeMounts: { "/mnt/data": minioData },
     regions: { [TARGET_REGION]: 1 },
@@ -99,6 +98,11 @@ export default defineRailway(() => {
       // RUSTFS_* equivalents at startup.
       MINIO_ROOT_USER: preserve(),
       MINIO_ROOT_PASSWORD: preserve(),
+      // Data lives on the mounted volume. Do NOT set a start command: Railway
+      // execs it directly (no entrypoint), and the RustFS entrypoint is what
+      // resolves RUSTFS_VOLUMES into the server invocation. Overriding start
+      // with the volume path fails deploys ("no permission to execute").
+      RUSTFS_VOLUMES: "/mnt/data",
       // S3-compatible API listens on 9000; Railway uses $PORT for healthchecks.
       PORT: "9000",
     },
