@@ -131,6 +131,12 @@ Then create an incident issue.
 4. **Credential check:** RustFS maps `MINIO_ROOT_USER`/`MINIO_ROOT_PASSWORD`
    at startup; the API signs with `MINIO_ACCESS_KEY`/`MINIO_SECRET_KEY`.
    Both pairs must hold the same values (production verified aligned).
+   **Compare with `railway variables --service <svc> --kv`** — the default
+   table view truncates long values, and "aligning" a password to a
+   truncated prefix breaks a pair that was already correct (staging,
+   2026-11-19: `HeadBucket 403 Forbidden` until the full value was
+   restored). The `readiness_probe_failed` warning in the api logs names
+   the failing operation.
    The "RUSTFS_ACCESS_KEY is not set" warnings are benign — the entrypoint
    prints them whenever the direct RUSTFS_* vars are unset, even when the
    MINIO_* mapping provides credentials.
