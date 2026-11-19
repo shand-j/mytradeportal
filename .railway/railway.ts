@@ -89,12 +89,11 @@ export default defineRailway(() => {
   });
 
   const minio = service("minio", {
-    // MinIO stopped publishing free images to Docker Hub in late 2025. Use
-    // the Quay.io mirror instead. The volume is mounted at /mnt/data to stay
+    // Use the public Docker Hub MinIO image. The volume is mounted at /mnt/data to stay
     // clear of the image's VOLUME /data directive, and the start command must
     // invoke the `minio` binary explicitly — Railway replaces the image
     // entrypoint with this command.
-    source: image("quay.io/minio/minio:RELEASE.2025-07-23T15-54-02Z"),
+    source: image("minio/minio:latest"),
     start: 'minio server /mnt/data --console-address ":9001"',
     healthcheck: "/minio/health/live",
     volumeMounts: { "/mnt/data": minioData },

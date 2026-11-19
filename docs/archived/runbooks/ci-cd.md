@@ -164,7 +164,7 @@ The entire production stack is defined in [`.railway/railway.ts`](../../.railway
 | `db` | `postgres` | Operational PostgreSQL 16 database |
 | `redis` | `redis` | Cache and future task broker |
 | `qdrant` | `service` with Docker image | Vector database on `qdrant/qdrant:v1.11.5` |
-| `minio` | `service` with Docker image | S3-compatible object storage on `quay.io/minio/minio:RELEASE.2025-07-23T15-54-02Z` |
+| `minio` | `service` with Docker image | S3-compatible object storage on `minio/minio:latest` |
 | `api` | GitHub repo build | FastAPI backend, built from `services/api/Dockerfile` |
 | `ocerp` | GitHub repo build | BoQ / pricing engine, built from `services/ocerp/Dockerfile` |
 | `web` | GitHub repo build | React back-office SPA, built from `web/app/Dockerfile` |

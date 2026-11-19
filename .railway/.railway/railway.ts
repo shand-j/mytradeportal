@@ -10,7 +10,7 @@ export default defineRailway(() => {
   const redisVolumeFUQP = volume("redis-volume-fUQP", { alerts: { usage: { "100": {}, "80": {}, "95": {} } }, allowOnlineResize: true, region: "europe-west4-drams3a", sizeMB: 5000 });
   const redisVolume3_Qv = volume("redis-volume-3_Qv", { alerts: { usage: { "100": {}, "80": {}, "95": {} } }, allowOnlineResize: true, region: "sfo", sizeMB: 5000 });
   const minio = service("minio", {
-    source: image("quay.io/minio/minio:RELEASE.2025-07-23T15-54-02Z"),
+    source: image("minio/minio:latest"),
     start: "minio server /mnt/data --console-address \":9001\"",
     healthcheck: "/minio/health/live",
     replicas: { "europe-west4-drams3a": 1 },
