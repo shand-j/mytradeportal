@@ -218,10 +218,12 @@ export default defineRailway(() => {
       // public origin — APP_PUBLIC_URL points at the back office, where the
       // feed path 404s as HTML and iOS rejects the subscription.
       // Branded API custom domain (issue #181). Attached to the api service in
-      // production; only valid once the founder's DNS CNAME + ownership TXT
-      // are in place and Railway has issued the cert — until then the domain
-      // still serves the landing SPA via the *.mytradeportal.co.uk wildcard.
+      // production and verified live (https://api.mytradeportal.co.uk/health
+      // → 200, 2026-11-19).
       CALENDAR_FEED_BASE_URL: "https://api.mytradeportal.co.uk",
+      // Absolute public base for API-served asset URLs (tenant logo
+      // settings.logo_url) — branded domain, same origin as the feed URL.
+      PUBLIC_API_BASE_URL: "https://api.mytradeportal.co.uk",
       // Where password-reset email links point: the landing site's
       // /reset-password page (NOT the back office).
       PASSWORD_RESET_BASE_URL: "https://www.mytradeportal.co.uk",
@@ -282,6 +284,9 @@ export default defineRailway(() => {
       STRIPE_WEBHOOK_SECRET: preserve(),
       STRIPE_CONNECT_WEBHOOK_SECRET: preserve(),
       STRIPE_CONNECT_CLIENT_ID: preserve(),
+      // Publishable key (pk_live_...) served to clients that init Stripe.js /
+      // Stripe mobile SDKs — public by design. Lives in the dashboard.
+      STRIPE_PUBLISHABLE_KEY: preserve(),
       // Tenant portal (ADR-004): customer-facing pages at
       // https://{slug}.mytradeportal.co.uk. Literal product constant, like
       // PASSWORD_RESET_BASE_URL.
@@ -321,6 +326,9 @@ export default defineRailway(() => {
       // staging api (which wedged and failed every pr-env-verify run).
       VITE_API_URL: "https://${{api.RAILWAY_PUBLIC_DOMAIN}}",
       VITE_PADDLE_ENV: "sandbox",
+      // Live Paddle price preview on the pricing page (set once the W2-B
+      // catalog went live; false falls back to static prices).
+      VITE_PADDLE_LIVE_PRICING: "true",
       VITE_PADDLE_CLIENT_TOKEN: preserve(),
       // Stripe.js key (pk_...) for the tenant portal invoice /pay page.
       // Public by design (browser-side); set in the dashboard.

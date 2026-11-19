@@ -862,10 +862,11 @@ Key variables (see `.env.example` for the full template):
 
 ## Known issues and follow-up
 
-1. **Calendar feed branded domain (issue #181).** Calendar subscription
-(webcal/.ics) links fall back to the request origin until
-`CALENDAR_FEED_BASE_URL` is pointed at a branded API domain
-(`api.mytradeportal.co.uk`) — the custom domain has not landed yet.
+1. **Calendar feed branded domain (issue #181) — landed.** The branded API
+domain `api.mytradeportal.co.uk` is attached and serving
+(`/health` → 200, verified 2026-11-19); `CALENDAR_FEED_BASE_URL` is set to it
+in IaC and flips on the next `railway config apply` (production previously
+carried the generated `api-production-*` origin).
 2. **Live-verification residue.** Code-complete but only verifiable against
 live providers, tracked in `docs/beta-test-plan.md` §3: a real-card payment
 against live Stripe keys (go-live gate), live SMS delivery to a real handset
