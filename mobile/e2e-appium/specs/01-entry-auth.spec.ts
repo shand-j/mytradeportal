@@ -84,8 +84,11 @@ describe("01 entry: pre-auth surfaces", () => {
     await waitForId("splash", 15000);
     await waitForId("role-select", 15000);
     await waitForText("Get started");
-    await waitForText("I'm an Electrician");
-    await waitForText("I'm a Customer");
+    // The RoleCard Pressable flattens into a single accessible button whose
+    // label is the concatenation of icon + title + subtitle, so the title
+    // text is not queryable on its own — assert the cards by testID.
+    await waitForId("role-electrician");
+    await waitForId("role-customer");
 
     // Customer side: code lookup + customer login.
     await tapId("role-customer");

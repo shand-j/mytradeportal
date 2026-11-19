@@ -12,7 +12,16 @@ import { byId, dismissKeyboard, dismissPasswordPrompt, openTradeSettings, tapId,
  */
 export async function pickRole(role: "electrician" | "customer") {
   const select = byId("role-select");
-  if (await select.isExisting()) {
+  // Right after a relaunch the splash/entry tree takes seconds to mount; an
+  // instant isExisting() probe misreads that window as "not on role select"
+  // and skips the tap, stranding the caller on the role screen. Wait briefly
+  // instead; no-op only when role-select genuinely never appears (white-label
+  // business card, or a role screen already displayed).
+  const visible = await select
+    .waitForExist({ timeout: 15000 })
+    .then(() => true)
+    .catch(() => false);
+  if (visible) {
     await tapId(`role-${role}`);
   }
 }
@@ -76,35 +85,54 @@ export async function ensureLoggedOut() {
   // anywhere in a group the logout button lives on the settings screen.
   // Cheap probe: try opening trade settings via deep link is unavailable on
   // the TestFlight build, so probe for entry markers first.
-  if (
-    (await byId("entry-trade-login").isExisting()) ||
-    (await byId("entry-customer-login").isExisting()) ||
-    (await byId("role-select").isExisting())
-  ) {
+  // The RN tree can take ~10s to mount after a cold launch, and before it
+  // does NO markers exist — an instant probe misreads that window as
+  // "inside a session". Wait for the markers before concluding anything.
+  const entryMarker = await Promise.race([
+    byId("entry-trade-login")
+      .waitForExist({ timeout: 12000 })
+      .then(() => true)
+      .catch(() => false),
+    byId("role-select")
+      .waitForExist({ timeout: 12000 })
+      .then(() => true)
+      .catch(() => false),
+  ]);
+  if (entryMarker) {
     return;
   }
-  // We are inside a session. Screens reached mid-flow (e.g. manual lead
-  // entry) have neither header-settings nor any "Settings" label — go via
-  // the dashboard tab, whose three-dot button carries the "Settings" label.
-  // Stack screens (job create, quote edit) have no tab bar: back out until
+  // We are inside a session. A cold launch with a persisted session can
+  // spend 15s+ on splash + auth rehydrate + first data fetch before the tab
+  // bar mounts, so WAIT for the dashboard tab rather than instant-probing.
+  // Stack screens (job create, quote edit) hide the tab bar: back out until
   // it appears.
-  for (let i = 0; i < 6 && !(await byId("tab-dashboard").isExisting()); i++) {
+  const dashTab = byId("tab-dashboard");
+  let tradeShell = await dashTab
+    .waitForExist({ timeout: 20000 })
+    .then(() => true)
+    .catch(() => false);
+  for (let i = 0; i < 6 && !tradeShell; i++) {
     const back = byId("back-button");
     if (!(await back.isExisting())) break;
     await back.click();
     await driver.pause(500);
+    tradeShell = await dashTab.isExisting();
   }
-  const dashTab = byId("tab-dashboard");
-  if (await dashTab.isExisting()) {
+  if (tradeShell) {
     await dashTab.click();
     await driver.pause(600);
   }
   // Customer session: no dashboard tab — the profile screen carries the
   // logout button. New builds reach it via the bottom `tab-profile` tab;
-  // older builds via a header "Profile" action.
-  if (!(await byId("tab-dashboard").isExisting())) {
+  // older builds via a header "Profile" action. The customer tab bar can be
+  // just as slow to mount as the trade one, so wait for it too.
+  if (!tradeShell) {
     const profileTab = byId("tab-profile");
-    if (await profileTab.isExisting()) {
+    const profileVisible = await profileTab
+      .waitForExist({ timeout: 15000 })
+      .then(() => true)
+      .catch(() => false);
+    if (profileVisible) {
       await profileTab.click();
       await driver.pause(600);
     } else if (await textEl("Profile").isExisting()) {

@@ -19,11 +19,17 @@ describe("smoke: app launches on device", () => {
   });
 
   it("renders the entry screen or restores a session", async () => {
+    // The RN tree can take ~10s to mount after a cold launch — wait for any
+    // of the candidates instead of checking instantly at t=0.
     // Either the unauthenticated entry screen or a restored session surface.
-    const onEntry =
-      (await byId("entry-trade-login").isExisting()) ||
-      (await byId("entry-customer-login").isExisting()) ||
-      (await byId("role-select").isExisting());
+    const candidates = ["entry-trade-login", "entry-customer-login", "role-select"];
+    let onEntry = false;
+    for (const id of candidates) {
+      onEntry =
+        (await byId(id)
+          .waitForExist({ timeout: 20000 })
+          .catch(() => false)) || onEntry;
+    }
     const inSession = await hasText("Dashboard").catch(() => false);
     expect(onEntry || inSession).toBe(true);
     await waitAppReady();

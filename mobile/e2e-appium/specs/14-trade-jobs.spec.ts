@@ -162,10 +162,29 @@ describe("trade jobs", () => {
     await waitForText("New job");
 
     await setValue(await waitForId("job-create-title"), JOB_TITLE);
-    await scrollUntilId(`job-create-contact-${contactId}`);
-    await tapId(`job-create-contact-${contactId}`);
-    await setValue(await waitForId("job-create-date"), jobDate);
-    await setValue(await waitForId("job-create-time"), "09:30");
+    // The customer picker only lists contacts after a search query is typed,
+    // and rows are testID'd job-create-contact-option-<id>.
+    const search = await scrollUntilId("job-create-customer-search");
+    await search.click();
+    await search.setValue(CUSTOMER_NAME);
+    await waitForId(`job-create-contact-option-${contactId}`, 15000);
+    await tapId(`job-create-contact-option-${contactId}`);
+    // Native date/time fields are spinner pickers behind Pressables (the
+    // text-input layout is web-only). The date under test is today — exactly
+    // what the picker opens on — so confirm it as-is.
+    await scrollUntilId("job-create-date");
+    await tapId("job-create-date");
+    await waitForId("job-create-date-done", 10000);
+    await tapId("job-create-date-done");
+
+    // Double-booking is rejected ("The assignee already has … in that
+    // window") and leftover E2E jobs cluster around the current time, so any
+    // fixed clock time — and the picker default of "now" — is inherently
+    // flaky. The availability-aware "first free slot" suggestion picks a
+    // conflict-free time for today: tap it instead of fighting the
+    // time-spinner wheels (which silently ignore setValue anyway).
+    const suggestion = await scrollUntilId("job-create-suggested-slot", 30000);
+    await suggestion.click();
     await scrollUntilId("job-create-notes");
     await setValue(await waitForId("job-create-notes"), JOB_NOTES);
     // The notes field is multiline: Return inserts "\n" instead of closing

@@ -22,6 +22,7 @@ import {
   type ApiTenantContext,
 } from "../helpers/api";
 import { loginAsTrade } from "../helpers/auth";
+import { relaunchApp } from "../helpers/app";
 import {
   byId,
   dismissKeyboard,
@@ -51,6 +52,7 @@ interface ApiQuoteRequestRow {
   raw_text: string | null;
   status: string;
   customer_id: string | null;
+  customer: { id: string } | null;
   quote: { id: string; line_items: unknown[] } | null;
 }
 
@@ -144,6 +146,7 @@ describe("trade leads", () => {
   let ctx: ApiTenantContext;
   let contactId = "";
   let leadId = "";
+  let secondLeadId = "";
   let generatedQuoteId = "";
 
   before(async () => {
@@ -162,6 +165,10 @@ describe("trade leads", () => {
         await deleteTestData("quote_request_id = $1", [leadId]);
         await deleteTestData("id = $1", [leadId]);
       }
+      if (secondLeadId) {
+        await deleteTestData("quote_request_id = $1", [secondLeadId]);
+        await deleteTestData("id = $1", [secondLeadId]);
+      }
       if (generatedQuoteId) {
         await deleteTestData("quote_id = $1", [generatedQuoteId]);
         await deleteTestData("id = $1", [generatedQuoteId]);
@@ -177,9 +184,9 @@ describe("trade leads", () => {
   });
 
   it("manual lead entry creates a persisted lead and contact", async () => {
-    await tapId("tab-dashboard");
-    await waitForText("Dashboard");
-    await tapText("+ New lead");
+    await tapId("tab-customers");
+    await waitForId("customers-new-customer");
+    await tapId("customers-new-customer");
     await waitForText("Add New Customer");
 
     await setValue(await messageTextView(), LEAD_MESSAGE, "Urgency");
@@ -189,21 +196,29 @@ describe("trade leads", () => {
     await setValue(await waitForId("manual-lead-email"), CUSTOMER_EMAIL);
     await setValue(await inputByPlaceholder("Postcode"), CUSTOMER_POSTCODE);
 
-    await tapId("manual-lead-submit");
-    await waitForText("Lead saved — opening it now…", 25000);
-    await waitForText("Lead detail", 25000);
+    // With job details of 30+ chars the primary action is "Generate AI
+    // quote": it saves the contact, creates the lead, kicks off generation
+    // and lands on the quotes list showing the progress banner.
+    await tapId("manual-lead-generate-quote");
+    await waitForId("quote-generating-banner", 30000);
 
     // The created lead opens straight away; its id comes from the API.
     const leads = (await apiGet(ctx, "/quote-requests")) as ApiQuoteRequestRow[];
     const lead = leads.find((l) => l.raw_text === LEAD_MESSAGE);
     expect(lead).toBeTruthy();
-    if (lead) leadId = lead.id;
+    if (lead) {
+      leadId = lead.id;
+      // The lead payload carries the CRM contact — the DB lookup below is a
+      // cross-check, not the source (MTP_DB_URL is optional).
+      contactId = lead.customer?.id ?? contactId;
+    }
+    expect(contactId).toBeTruthy();
 
     if (dbConfigured()) {
       const contact = await findContactByEmail(CUSTOMER_EMAIL);
       expect(contact).toBeTruthy();
       if (contact) {
-        contactId = String(contact.id);
+        expect(String(contact.id)).toBe(contactId);
         expect(contact.name).toBe(CUSTOMER_NAME);
         expect(contact.phone).toBe(CUSTOMER_PHONE);
         expect(String(contact.postcode).toUpperCase()).toBe(CUSTOMER_POSTCODE);
@@ -214,6 +229,10 @@ describe("trade leads", () => {
   });
 
   it("lead detail renders the captured data and unregistered-account state", async () => {
+    // The create flow lands on the quotes list; open the lead from its card.
+    await waitForId(`lead-card-${leadId}`, 20000);
+    await tapId(`lead-card-${leadId}`);
+    await waitForText("Lead detail", 25000);
     await waitForText(CUSTOMER_NAME);
     await waitForText(CUSTOMER_PHONE);
     await waitForText(CUSTOMER_EMAIL);
@@ -232,6 +251,28 @@ describe("trade leads", () => {
   });
 
   it("lead converts to an AI-generated quote via the intake screen", async () => {
+    // Lead #1 already has a quote (creation kicks generation off), so the
+    // intake conversion is exercised on a SECOND, quoteless lead — the
+    // web-form/QR path in production. Created via API to keep the UI steps
+    // focused on the conversion itself.
+    const second = (await apiPost(ctx, "/quote-requests", {
+      contact_id: contactId,
+      source: "manual",
+      raw_text: `E2E lead ${TAG} follow-up: add two outside sockets to the patio wall.`,
+      urgency: "this_week",
+    })) as ApiQuoteRequestRow;
+    secondLeadId = second.id;
+
+    // The second lead was created behind the app's back; the mounted quotes
+    // screen holds a stale React Query cache and never renders the new card
+    // (same class as spec 11's request-info fix). Relaunch to force a fresh
+    // fetch — the session token survives relaunch.
+    await relaunchApp();
+    await tapId("tab-quotes");
+    await waitForText("Quotes");
+    await scrollUntilId(`lead-card-${secondLeadId}`);
+    await tapId(`lead-card-${secondLeadId}`);
+    await waitForText("Lead detail", 25000);
     await tapId("lead-generate-quote");
     await waitForText("Quote intake");
     // Contact line renders as a composite: "Name · POSTCODE · Urgency".
@@ -247,7 +288,7 @@ describe("trade leads", () => {
     const deadline = Date.now() + 150000;
     let quoteId: string | null = null;
     while (Date.now() < deadline) {
-      const lead = (await apiGet(ctx, `/quote-requests/${leadId}`)) as ApiQuoteRequestRow;
+      const lead = (await apiGet(ctx, `/quote-requests/${secondLeadId}`)) as ApiQuoteRequestRow;
       if (lead.quote) {
         quoteId = lead.quote.id;
         break;
@@ -268,7 +309,7 @@ describe("trade leads", () => {
       line_items: unknown[];
       quote_request_id: string | null;
     };
-    expect(quote.quote_request_id).toBe(leadId);
+    expect(quote.quote_request_id).toBe(secondLeadId);
     expect(quote.line_items.length).toBeGreaterThanOrEqual(1);
   });
 });

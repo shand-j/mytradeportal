@@ -22,6 +22,7 @@ import {
 } from "../helpers/api";
 import { API_BASE } from "../helpers/env";
 import {
+  byId,
   hasText,
   scrollToTextAndTap,
   tapId,
@@ -138,8 +139,18 @@ describe("22: customer profile", () => {
   it("back button returns to the requests screen", async () => {
     await openCustomerProfile();
     await waitForText("Profile", 15000);
-    await tapId("back-button", 8000);
-    await waitForId("request-new-quote", 25000);
+    // openCustomerProfile re-selects the profile tab, and a same-route
+    // router.replace remounts the screen — a back tap landing mid-transition
+    // is swallowed. Verify navigation actually happened and retry the tap.
+    let arrived = false;
+    for (let attempt = 0; attempt < 3 && !arrived; attempt++) {
+      await tapId("back-button", 8000);
+      arrived = await byId("request-new-quote")
+        .waitForExist({ timeout: 8000 })
+        .then(() => true)
+        .catch(() => false);
+    }
+    if (!arrived) throw new Error("back button never returned to the requests screen");
     expect(await textElContains("Track your quote requests").isExisting()).toBe(true);
   });
 });

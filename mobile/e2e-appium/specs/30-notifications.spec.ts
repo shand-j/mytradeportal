@@ -208,9 +208,10 @@ describe("30 notifications: customer bell opens the notifications list", () => {
     // notifications-back is the whole header (inert container); the tappable
     // control is the back-button inside it.
     await tapId("back-button");
-    // Back-navigation can lag behind the modal dismissal — wait for the
-    // requests screen title before re-asserting the header bell.
-    await waitForText("My quotes", 20000);
+    // Back-navigation can lag behind the modal dismissal. The requests
+    // screen header shows the BUSINESS NAME when one is set ("My quotes" is
+    // only the fallback), so the header bell is the stable re-arrival marker.
+    await driver.pause(1500);
     await waitForId("notifications-bell-customer", 20000);
   });
 

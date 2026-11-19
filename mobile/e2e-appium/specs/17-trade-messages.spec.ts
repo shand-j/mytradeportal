@@ -1,29 +1,61 @@
 /**
- * 17 — Trade messages: inbox list, open the first lead thread, send a message
- * as the business, and assert it persisted in the communications table with
+ * 17 — Trade messages: inbox list, open a lead thread, send a message as the
+ * business, and assert it persisted in the communications table with
  * direction "outbound" (business) — customer-authored rows are "inbound".
+ *
+ * The thread must belong to a chat-reachable customer: for account-less
+ * contacts the app replaces the composer with the phone/email contact card
+ * (customerReachable === false), so the spec creates its own lead on the
+ * registered E2E customer's CRM contact via the API.
  */
 import { loginAsTrade } from "../helpers/auth";
+import { relaunchApp } from "../helpers/app";
 import {
+  apiGet,
   closeDb,
   countRows,
+  CUSTOMER_EMAIL,
+  customerCredsConfigured,
   dbConfigured,
   deleteTestData,
   loginTradeApi,
   tradeCredsConfigured,
   TRADE_EMAIL,
   TRADE_PASSWORD,
+  type ApiTenantContext,
 } from "../helpers/api";
 import {
+  byId,
+  swipeUp,
   tapId,
   textElContains,
   waitForId,
   waitForText,
   dismissKeyboard,
 } from "../helpers/ui";
+import { API_BASE } from "../helpers/env";
 
 const tag = Date.now().toString(36);
 const MESSAGE = `E2E business reply ${tag} - we can attend this week.`;
+const LEAD_TEXT = `E2E inbox lead ${tag}: consumer unit keeps tripping, need a visit.`;
+
+async function apiPost(
+  ctx: ApiTenantContext,
+  path: string,
+  payload?: Record<string, unknown>
+): Promise<unknown> {
+  const res = await fetch(`${API_BASE}${path}`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${ctx.token}`,
+      "X-Tenant-ID": ctx.tenantId,
+      "Content-Type": "application/json",
+    },
+    body: payload === undefined ? undefined : JSON.stringify(payload),
+  });
+  if (!res.ok) throw new Error(`POST ${path} failed: ${res.status} ${await res.text()}`);
+  return res.json();
+}
 
 /** First element whose accessibility id starts with the given prefix. */
 async function firstByIdPrefix(
@@ -33,6 +65,20 @@ async function firstByIdPrefix(
   return els.length > 0 ? els[0] : null;
 }
 
+/** Swipe up until the testID exists. */
+async function scrollUntilId(id: string, timeoutMs = 20000) {
+  const el = byId(id);
+  const start = Date.now();
+  while (!(await el.isExisting())) {
+    if (Date.now() - start > timeoutMs) {
+      throw new Error(`scrollUntilId timed out looking for testID: ${id}`);
+    }
+    await swipeUp();
+    await driver.pause(350);
+  }
+  return el;
+}
+
 describe("17: trade messages (inbox + chat thread)", () => {
   if (!tradeCredsConfigured()) {
     console.log("SKIP: E2E_TRADE_EMAIL/E2E_TRADE_PASSWORD not set");
@@ -40,9 +86,33 @@ describe("17: trade messages (inbox + chat thread)", () => {
   }
 
   let messageSent = false;
+  let leadId = "";
 
   before(async () => {
     await loginAsTrade(TRADE_EMAIL, TRADE_PASSWORD);
+
+    if (customerCredsConfigured()) {
+      const ctx = await loginTradeApi();
+      const contacts = (await apiGet(ctx, "/contacts")) as Array<{
+        id: string;
+        email: string | null;
+      }>;
+      const reachable = contacts.find((c) => c.email === CUSTOMER_EMAIL);
+      if (!reachable) {
+        console.log(`NOTE: no CRM contact for ${CUSTOMER_EMAIL} — thread tests will skip`);
+        return;
+      }
+      const lead = (await apiPost(ctx, "/quote-requests", {
+        contact_id: reachable.id,
+        source: "manual",
+        raw_text: LEAD_TEXT,
+        urgency: "this_week",
+      })) as { id: string };
+      leadId = lead.id;
+      // The lead was created behind the app's back; a relaunch forces the
+      // inbox to refetch (the session token survives relaunch).
+      await relaunchApp();
+    }
   });
 
   after(async () => {
@@ -50,6 +120,10 @@ describe("17: trade messages (inbox + chat thread)", () => {
       // `body` only exists on communications/notifications; other scoped
       // tables fail silently in deleteTestData.
       await deleteTestData("body = $1", [MESSAGE]);
+    }
+    if (leadId && dbConfigured()) {
+      await deleteTestData("quote_request_id = $1", [leadId]);
+      await deleteTestData("id = $1", [leadId]);
     }
     await closeDb();
   });
@@ -68,12 +142,12 @@ describe("17: trade messages (inbox + chat thread)", () => {
   });
 
   it("opens a lead thread", async () => {
-    const lead = await firstByIdPrefix("inbox-lead-");
-    if (!lead) {
-      console.log("SKIP: no lead threads available");
+    if (!leadId) {
+      console.log("SKIP: no reachable lead thread available");
       return;
     }
-    await lead.click();
+    await scrollUntilId(`inbox-lead-${leadId}`);
+    await tapId(`inbox-lead-${leadId}`);
     await waitForText("Messages", 15000);
     await waitForId("chat-composer", 15000);
     await tapId("back-button", 8000).catch(() => undefined);
@@ -81,12 +155,12 @@ describe("17: trade messages (inbox + chat thread)", () => {
   });
 
   it("sends a message as the business and persists it outbound", async () => {
-    const lead = await firstByIdPrefix("inbox-lead-");
-    if (!lead) {
-      console.log("SKIP: no lead threads available");
+    if (!leadId) {
+      console.log("SKIP: no reachable lead thread available");
       return;
     }
-    await lead.click();
+    await scrollUntilId(`inbox-lead-${leadId}`);
+    await tapId(`inbox-lead-${leadId}`);
     const composer = await waitForId("chat-composer", 15000);
     await composer.click();
     await composer.setValue(MESSAGE);

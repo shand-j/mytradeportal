@@ -37,8 +37,10 @@ describe("trade dashboard", () => {
 
   it("renders the dashboard stats and header actions", async () => {
     await waitForText("Dashboard");
-    await waitForText("Active leads");
-    await waitForText("Outstanding quotes");
+    await waitForText("Hours saved by AI");
+    // The outstanding-quotes card is an accessible Pressable: its children
+    // flatten into one composite label, so assert the card by testID.
+    await waitForId("dashboard-outstanding-quotes-card");
     await waitForId("notifications-bell-trade");
     await waitForId("dashboard-more");
   });
@@ -69,14 +71,14 @@ describe("trade dashboard", () => {
     const stops: Array<[string, string]> = [
       // [tab testID, screen-unique iOS predicate]
       ["tab-quotes", `label == "+ New quote"`],
-      ["tab-customers", `label == "New Customer"`],
-      ["tab-calendar", `label == "+ New job"`],
+      ["tab-customers", `label == "Add New Customer"`],
+      ["tab-calendar", `label == "New job"`],
       // Inbox: either the empty state or at least one conversation row.
       [
         "tab-messages",
         `name BEGINSWITH 'inbox-lead-' OR label == "No conversations yet — new quote requests will appear here."`,
       ],
-      ["tab-dashboard", `label == "Active leads"`],
+      ["tab-dashboard", `label == "Hours saved by AI"`],
     ];
     for (const [tabId, predicate] of stops) {
       await tapId(tabId);

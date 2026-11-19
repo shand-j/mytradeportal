@@ -15,6 +15,8 @@ import {
   apiPatch,
   closeDb,
   countRows,
+  CUSTOMER_EMAIL,
+  customerCredsConfigured,
   dbConfigured,
   deleteTestData,
   findContactByEmail,
@@ -25,6 +27,7 @@ import {
   type ApiTenantContext,
 } from "../helpers/api";
 import { loginAsTrade } from "../helpers/auth";
+import { relaunchApp } from "../helpers/app";
 import {
   byId,
   hasText,
@@ -276,15 +279,34 @@ describe("trade quotes", () => {
   });
 
   it("request-info flow opens the customer conversation", async () => {
+    // "Request more info" only renders for leads whose customer can receive
+    // in-app chat (LeadDetailScreen hides it behind `customerReachable`; an
+    // account-less contact gets the phone/email ContactCustomerCard instead).
+    // Thread the lead through the registered E2E customer's CRM contact so the
+    // chat path is the one under test.
+    if (!customerCredsConfigured()) {
+      console.log("SKIP: E2E_CUSTOMER_EMAIL/E2E_CUSTOMER_PASSWORD not set — no reachable contact");
+      return;
+    }
+    const contacts = (await apiGet(ctx, "/contacts")) as ApiContactRow[];
+    const reachable = contacts.find((c) => c.email === CUSTOMER_EMAIL);
+    if (!reachable) {
+      throw new Error(`no CRM contact for ${CUSTOMER_EMAIL} — register the E2E customer first`);
+    }
+
     // A lead (quote request) is the entity a conversation threads around.
     const lead = (await apiPost(ctx, "/quote-requests", {
-      contact_id: contactId,
+      contact_id: reachable.id,
       source: "manual",
       raw_text: LEAD_TEXT,
       urgency: "this_week",
     })) as { id: string };
     leadId = lead.id;
 
+    // The lead was created behind the app's back; the mounted quotes screen
+    // holds a stale React Query cache and never renders the new card. A
+    // relaunch forces a fresh fetch (the session token survives relaunch).
+    await relaunchApp();
     await tapId("tab-quotes");
     await waitForText("Quotes");
     await scrollUntilId(`lead-card-${leadId}`);
@@ -307,8 +329,27 @@ describe("trade quotes", () => {
     await waitForText("Review quote");
 
     await tapId("quote-approve-send");
-    await waitForText("Send quote?");
-    await tapText("Send");
+    // The confirmation is a native UIAlertController. The wdio
+    // autoAcceptAlerts capability races the test: it can accept the alert
+    // before a text poll ever sees it (the alert is then absent from the page
+    // source and waitForText times out). Poll the alert API directly; if no
+    // alert surfaces within a short window, auto-accept already fired and the
+    // send is in flight.
+    try {
+      await driver.waitUntil(
+        async () => {
+          try {
+            return (await driver.getAlertText()).includes("Send quote?");
+          } catch {
+            return false; // no alert present yet (or already auto-accepted)
+          }
+        },
+        { timeout: 4000, interval: 250, timeoutMsg: "no alert" }
+      );
+      await driver.acceptAlert();
+    } catch {
+      console.log("NOTE: send confirmation alert not seen — assuming autoAcceptAlerts accepted it");
+    }
     // Sending saves latest edits then POSTs /quotes/{id}/send and navigates back.
     await waitForText("Quotes", 25000);
 
@@ -344,8 +385,45 @@ describe("trade quotes", () => {
     await scrollUntilId(`quote-card-${quoteId}`);
     await tapId(`quote-card-${quoteId}`);
     await waitForText("Review quote");
-    await scrollUntilId("quote-convert-job");
-    await tapId("quote-convert-job");
+
+    // Native convert path: the "More actions" disclosure → "Convert to…" →
+    // ActionSheetIOS (web's in-place `quote-convert-job` button is web-only).
+    // The sheet is a native alert — autoAcceptAlerts can dismiss it (possibly
+    // via Cancel) before the "Job" option is tapped, so retry the sheet
+    // interaction until the prefilled new-job page opens.
+    await scrollUntilId("quote-more-actions");
+    await tapId("quote-more-actions");
+    await scrollUntilId("quote-convert");
+    let onJobCreate = false;
+    for (let attempt = 0; attempt < 3 && !onJobCreate; attempt++) {
+      await byId("quote-convert").click();
+      await driver.pause(800);
+      if (await byId("job-create-submit").isExisting()) {
+        // autoAcceptAlerts picked "Job" for us.
+        onJobCreate = true;
+        break;
+      }
+      const jobOption = $(
+        `-ios predicate string:type == "XCUIElementTypeButton" AND label == "Job"`
+      );
+      if (await jobOption.isExisting()) {
+        // The sheet can be auto-dismissed between the existence probe and
+        // the tap (stale element) — tolerate and re-check instead of dying.
+        await jobOption.click().catch(() => undefined);
+        onJobCreate = await byId("job-create-submit")
+          .waitForExist({ timeout: 8000 })
+          .then(() => true)
+          .catch(() => false);
+      }
+    }
+    if (!onJobCreate) {
+      throw new Error("convert ActionSheet never yielded the prefilled new-job page");
+    }
+
+    // Quote-locked form: customer/title/lines prefilled and the schedule is
+    // optional, so submit straight away. Creation routes to the job detail.
+    await waitForText("New job");
+    await tapId("job-create-submit", 15000);
 
     await waitForText("Job detail", 30000);
     await waitForText(QUOTE_TITLE);

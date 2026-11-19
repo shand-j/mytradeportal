@@ -130,8 +130,9 @@ describe("18: trade settings, branding, billing, logout", () => {
     await swatch.waitForExist({ timeout: 15000 });
     await swatch.click();
     // Hex input mirrors the picked swatch.
+    // Render order on this screen: name, phone, address, review link, custom hex.
     const fields = await (await $$("-ios class chain:**/XCUIElementTypeTextField")).getElements();
-    expect(await fieldValue(fields[3])).toBe(NEW_COLOUR);
+    expect(await fieldValue(fields[4])).toBe(NEW_COLOUR);
     await tapId("branding-save", 25000);
     await driver.pause(800);
 
@@ -149,7 +150,17 @@ describe("18: trade settings, branding, billing, logout", () => {
     await rowAgain.click();
     await waitForText("Branding", 15000);
     const relaunched = await (await $$("-ios class chain:**/XCUIElementTypeTextField")).getElements();
-    expect(await fieldValue(relaunched[3])).toBe(NEW_COLOUR);
+    // Field order has shifted before — locate the hex input by its value
+    // shape instead of a positional index.
+    let relaunchedHex = "";
+    for (const field of relaunched) {
+      const value = await fieldValue(field);
+      if (/^#[0-9A-Fa-f]{6}$/.test(value)) {
+        relaunchedHex = value;
+        break;
+      }
+    }
+    expect(relaunchedHex).toBe(NEW_COLOUR);
     await tapId("back-button", 8000);
   });
 

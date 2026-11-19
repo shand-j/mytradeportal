@@ -33,6 +33,25 @@ import {
   waitForText,
   dismissKeyboard,
 } from "../helpers/ui";
+import { API_BASE } from "../helpers/env";
+
+async function apiPost(
+  ctx: ApiTenantContext,
+  path: string,
+  payload?: Record<string, unknown>
+): Promise<unknown> {
+  const res = await fetch(`${API_BASE}${path}`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${ctx.token}`,
+      "X-Tenant-ID": ctx.tenantId,
+      "Content-Type": "application/json",
+    },
+    body: payload === undefined ? undefined : JSON.stringify(payload),
+  });
+  if (!res.ok) throw new Error(`POST ${path} failed: ${res.status} ${await res.text()}`);
+  return res.json();
+}
 
 const TAG = Date.now().toString(36);
 const CUSTOMER_NAME = `E2E Customer ${TAG}`;
@@ -148,25 +167,23 @@ describe("trade customers", () => {
     await tapId("customers-new-customer");
     await waitForText("Add New Customer");
 
-    await setValue(await messageTextView(), LEAD_MESSAGE);
+    // No job details: the form's only action is "Save customer", which
+    // creates the contact and lands on its detail screen. (With 30+ chars of
+    // job details a "Generate AI quote" action appears instead — that lead
+    // path is covered by 12-trade-leads.)
     await setValue(await inputByPlaceholder("Name"), CUSTOMER_NAME);
     await setValue(await inputByPlaceholder("Phone"), CUSTOMER_PHONE);
     await setValue(await waitForId("manual-lead-email"), CUSTOMER_EMAIL);
     await setValue(await inputByPlaceholder("Postcode"), CUSTOMER_POSTCODE);
 
     await tapId("manual-lead-submit");
-    await waitForText("Lead detail", 25000);
+    await waitForText("Customer", 25000);
 
     const contacts = (await apiGet(ctx, "/contacts")) as ApiContactRow[];
     const created = contacts.find((c) => c.email === CUSTOMER_EMAIL);
     expect(created).toBeTruthy();
     if (!created) return;
     contactId = created.id;
-
-    const leads = (await apiGet(ctx, "/quote-requests")) as ApiQuoteRequestRow[];
-    const lead = leads.find((l) => l.raw_text === LEAD_MESSAGE);
-    expect(lead).toBeTruthy();
-    if (lead) leadId = lead.id;
 
     // No trade-UI input exists for the address field; set it through the
     // supported contact update endpoint, then assert everything together.
@@ -202,10 +219,21 @@ describe("trade customers", () => {
   });
 
   it("unregistered customer is offered the app invite instead of chat", async () => {
-    // The lead created with the customer has no linked app account.
+    // The save-customer flow creates no lead; create one via API (the
+    // web-form/QR path in production) so the invite-vs-chat state renders.
+    const lead = (await apiPost(ctx, "/quote-requests", {
+      contact_id: contactId,
+      source: "manual",
+      raw_text: LEAD_MESSAGE,
+      urgency: "this_week",
+    })) as ApiQuoteRequestRow;
+    leadId = lead.id;
     const api = (await apiGet(ctx, `/quote-requests/${leadId}`)) as ApiQuoteRequestRow;
     expect(api.customer_id).toBeNull();
 
+    // The lead was created behind the app's back; relaunch so the quotes
+    // list refetches rather than serving its stale React Query cache.
+    await relaunchApp();
     await tapId("tab-quotes");
     await waitForText("Quotes");
     await scrollUntilId(`lead-card-${leadId}`);
