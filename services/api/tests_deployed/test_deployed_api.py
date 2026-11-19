@@ -30,7 +30,7 @@ def test_ready_probe_reports_dependency_checks(api: httpx.Client) -> None:
     body = resp.json()
     assert body["status"] in ("ready", "degraded", "not_ready")
     if resp.status_code == 200:
-        assert set(body["checks"]) == {"postgres", "qdrant"}
+        assert set(body["checks"]) == {"postgres", "storage", "qdrant", "redis"}
 
 
 @requires_base_url
