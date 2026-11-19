@@ -50,8 +50,8 @@ import {
 const GITHUB_REPO = process.env.MTP_GITHUB_REPO ?? "shand-j/mytradeportal";
 
 const QDRANT_URL = "http://${{qdrant.RAILWAY_PRIVATE_DOMAIN}}:6333";
-// MinIO is private-network-only. The private DNS name carries no implied
-// port, and MinIO serves the S3 API on 9000 — the port is mandatory here or
+// RustFS is private-network-only. The private DNS name carries no implied
+// port, and its S3-compatible API serves on 9000 — the port is mandatory here or
 // boto3 dials 80 and uploads 503.
 const MINIO_ENDPOINT = "${{minio.RAILWAY_PRIVATE_DOMAIN}}:9000";
 // OCERP / BoQ engine is parked for the mobile-pivot MVP.
@@ -89,23 +89,17 @@ export default defineRailway(() => {
   });
 
   const minio = service("minio", {
-    // MinIO stopped publishing free images to Docker Hub in late 2025. Use
-    // the Quay.io mirror instead. The volume is mounted at /mnt/data to stay
-    // clear of the image's VOLUME /data directive, and the start command must
-    // invoke the `minio` binary explicitly — Railway replaces the image
-    // entrypoint with this command.
-    source: image("quay.io/minio/minio:RELEASE.2025-07-23T15-54-02Z"),
-    start: 'minio server /mnt/data --console-address ":9001"',
-    healthcheck: "/minio/health/live",
+    source: image("rustfs/rustfs:latest"),
+    start: "/mnt/data",
+    healthcheck: "/health",
     volumeMounts: { "/mnt/data": minioData },
     regions: { [TARGET_REGION]: 1 },
     env: {
-      // MinIO root credentials are required. Set them as environment-level
-      // variables in Railway, but IaC must reference them with preserve() so
-      // they are not deleted on apply/teardown.
+      // Keep existing MINIO_* keys for compatibility: RustFS maps these to
+      // RUSTFS_* equivalents at startup.
       MINIO_ROOT_USER: preserve(),
       MINIO_ROOT_PASSWORD: preserve(),
-      // MinIO API listens on 9000; Railway uses $PORT to target healthchecks.
+      // S3-compatible API listens on 9000; Railway uses $PORT for healthchecks.
       PORT: "9000",
     },
   });
@@ -158,10 +152,10 @@ export default defineRailway(() => {
       QDRANT_COLLECTION_NAME: "cost_items",
       QDRANT_KNOWLEDGE_COLLECTION_NAME: "quoting_knowledge",
       // OCERP_URL,
-      // MinIO is private-network-only (no public domain — avoids egress fees
+      // RustFS is private-network-only (no public domain — avoids egress fees
       // and public exposure). All file traffic from devices is proxied through
-      // the API (POST /files/upload, GET /files/download), which reaches MinIO
-      // over the private network. Never hand MinIO URLs to clients.
+      // the API (POST /files/upload, GET /files/download), which reaches object
+      // storage over the private network. Never hand storage URLs to clients.
       MINIO_ENDPOINT,
       MINIO_USE_SSL: "false",
       MINIO_BUCKET: "mtp-uploads",
