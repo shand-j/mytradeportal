@@ -12,7 +12,7 @@ from app.config import settings
 from app.database import engine
 from app.qdrant import get_qdrant_client
 from app.redis_client import get_redis
-from app.routers.files import s3_client
+from app.routers.files import _ensure_bucket, s3_client
 
 router = APIRouter(tags=["Health"])
 
@@ -71,6 +71,10 @@ async def _storage_ok() -> bool:
 
     def _round_trip() -> bool:
         client = s3_client()
+        # Mirror the upload path: store_upload self-heals a missing bucket,
+        # so the probe must too — otherwise every fresh environment (new
+        # staging fork, PR env) flaps not_ready until the first real upload.
+        _ensure_bucket(client)
         key = f"{_PROBE_KEY_PREFIX}readiness-{uuid.uuid4()}"
         payload = uuid.uuid4().bytes
         client.put_object(Bucket=settings.minio_bucket, Key=key, Body=payload)

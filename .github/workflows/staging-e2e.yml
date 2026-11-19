@@ -30,6 +30,10 @@ env:
 jobs:
   staging-verify:
     runs-on: ubuntu-latest
+    # GitHub environment holding the staging-scoped RAILWAY_TOKEN; Railway
+    # tokens are environment-bound, so this job must not pick up the
+    # production token from the repo-level secret.
+    environment: MyTradePortal / staging
     permissions:
       contents: read
     steps:
@@ -136,6 +140,7 @@ jobs:
     # environment's webhook secrets, so it runs only here — pr-verify stays
     # read-only and skips every deployed_write test.
     runs-on: ubuntu-latest
+    environment: MyTradePortal / staging
     permissions:
       contents: read
     steps:

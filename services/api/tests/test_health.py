@@ -103,5 +103,32 @@ async def test_storage_probe_round_trip(monkeypatch: pytest.MonkeyPatch) -> None
             written.pop(kwargs["Key"], None)
 
     monkeypatch.setattr(health, "s3_client", lambda: FakeS3())
+    monkeypatch.setattr(health, "_ensure_bucket", lambda client: None)
     assert await health._storage_ok() is False
     assert written == {}  # probe object is always cleaned up
+
+
+@pytest.mark.asyncio
+async def test_storage_probe_ensures_bucket(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The probe mirrors the upload path and self-heals a missing bucket."""
+    ensured: list[str] = []
+
+    class FakeS3:
+        def put_object(self, **kwargs: Any) -> None:
+            pass
+
+        def get_object(self, **kwargs: Any) -> dict[str, Any]:
+            raise AssertionError("unused in this test")
+
+        def delete_object(self, **kwargs: Any) -> None:
+            pass
+
+    def _ensure(client: Any) -> None:
+        ensured.append("called")
+
+    monkeypatch.setattr(health, "s3_client", lambda: FakeS3())
+    monkeypatch.setattr(health, "_ensure_bucket", _ensure)
+    # get_object raises, so the probe reports failure — but only after the
+    # bucket-ensure ran first.
+    assert await health._storage_ok() is False
+    assert ensured == ["called"]

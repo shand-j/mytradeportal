@@ -190,7 +190,7 @@ jobs:
     needs: [python, mobile, schema-sync]
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     runs-on: ubuntu-latest
-    environment: MyTradePortal/Production
+    environment: MyTradePortal / production
     steps:
       - uses: actions/checkout@v4
 

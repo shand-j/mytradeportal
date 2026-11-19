@@ -19,7 +19,7 @@ on:
 jobs:
   drift:
     runs-on: ubuntu-latest
-    environment: MyTradePortal/Production
+    environment: MyTradePortal / production
     steps:
       - uses: actions/checkout@v4
 
