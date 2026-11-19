@@ -26,6 +26,12 @@ RAILWAY_GRAPHQL_URL = "https://backboard.railway.com/graphql/v2"
 CACHE_TTL_SECONDS = 60.0
 _REQUEST_TIMEOUT = httpx.Timeout(5.0, connect=2.0)
 
+# Failure alerting: with a 60s cache TTL, 5 consecutive failures means the
+# flags have been silently stuck on defaults (unreleased features off) for
+# ~5 minutes — historically a stale RAILWAY_TOKEN. Alert once per outage
+# streak; the flag resets when a fetch succeeds again.
+_FAILURE_ALERT_THRESHOLD = 5
+
 # Flags the platform knows about, with their defaults. Anything missing from
 # the Railway Signals registry resolves to the default — fail closed for
 # unreleased features.
@@ -46,6 +52,8 @@ query FeatureFlags($owner: String!) {
 
 _cache: dict[str, bool] | None = None
 _cache_expires_at: float = 0.0
+_consecutive_failures: int = 0
+_failure_alert_sent: bool = False
 
 
 def _to_bool(value: Any) -> bool | None:
@@ -87,9 +95,11 @@ async def fetch_registry_flags() -> dict[str, bool]:
     """Fetch raw bool flags from Railway Signals, cached for 60 seconds.
 
     Returns ``{}`` when Railway is not configured (local dev) or the call
-    fails — callers apply defaults on top.
+    fails — callers apply defaults on top. Consecutive fetch failures are
+    counted and, past ``_FAILURE_ALERT_THRESHOLD``, fire one ops alert per
+    outage streak (reset on the next successful fetch).
     """
-    global _cache, _cache_expires_at
+    global _cache, _cache_expires_at, _consecutive_failures, _failure_alert_sent
 
     now = time.monotonic()
     if _cache is not None and now < _cache_expires_at:
@@ -112,8 +122,22 @@ async def fetch_registry_flags() -> dict[str, bool]:
             flags = _parse_signals(response.json())
     except Exception:
         logger.warning("Failed to fetch feature flags from Railway Signals", exc_info=True)
+        _consecutive_failures += 1
+        if _consecutive_failures >= _FAILURE_ALERT_THRESHOLD and not _failure_alert_sent:
+            _failure_alert_sent = True
+            from app.alerting import send_alert
+
+            await send_alert(
+                "Feature flags fetch failing",
+                f"Railway Signals fetches have failed {_consecutive_failures} times "
+                "in a row; all known flags are stuck on their defaults. Check the "
+                "RAILWAY_TOKEN / RAILWAY_PROJECT_ID variables on the api service — "
+                "a stale project token is the usual cause.",
+            )
         return {}
 
+    _consecutive_failures = 0
+    _failure_alert_sent = False
     _cache = flags
     _cache_expires_at = now + CACHE_TTL_SECONDS
     return flags
@@ -126,7 +150,9 @@ async def get_feature_flags() -> dict[str, bool]:
 
 
 def reset_cache() -> None:
-    """Clear the in-process cache (used by tests)."""
-    global _cache, _cache_expires_at
+    """Clear the in-process cache and failure streak (used by tests)."""
+    global _cache, _cache_expires_at, _consecutive_failures, _failure_alert_sent
     _cache = None
     _cache_expires_at = 0.0
+    _consecutive_failures = 0
+    _failure_alert_sent = False

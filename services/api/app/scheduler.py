@@ -108,6 +108,10 @@ logger = structlog.get_logger("api.scheduler")
 # never collide with other advisory-lock users in this database).
 _LOCK_NAMESPACE = 727
 
+# Consecutive reminder-tick failures before an ops alert fires (once per
+# outage streak; resets on the next successful tick).
+_TICK_FAILURE_ALERT_THRESHOLD = 3
+
 
 def _bool_setting(settings: dict[str, Any], key: str, default: bool) -> bool:
     value = settings.get(key)
@@ -653,9 +657,16 @@ async def reminder_loop(stop: asyncio.Event) -> None:
 
     The first sweep runs one full interval after startup so a fresh deploy
     never immediately emails customers. The task never raises — sweep
-    failures are logged and the loop continues.
+    failures are logged and the loop continues. The ``reminder_tick_complete``
+    log line doubles as the scheduler heartbeat; consecutive tick failures
+    past ``_TICK_FAILURE_ALERT_THRESHOLD`` fire one ops alert per outage
+    streak (reset on the next successful tick).
     """
+    from app.alerting import send_alert
+
     logger.info("reminder_scheduler_started", tick_seconds=REMINDER_TICK_SECONDS)
+    consecutive_failures = 0
+    failure_alert_sent = False
     while not stop.is_set():
         try:
             await asyncio.wait_for(stop.wait(), timeout=REMINDER_TICK_SECONDS)
@@ -665,12 +676,25 @@ async def reminder_loop(stop: asyncio.Event) -> None:
         try:
             summary = await run_reminder_tick()
             logger.info("reminder_tick_complete", **summary)
+            consecutive_failures = 0
+            failure_alert_sent = False
         except Exception as exc:
+            consecutive_failures += 1
             logger.error(
                 "reminder_tick_failed",
                 error_type=type(exc).__name__,
                 error=str(exc)[:300],
+                consecutive_failures=consecutive_failures,
             )
+            if consecutive_failures >= _TICK_FAILURE_ALERT_THRESHOLD and not failure_alert_sent:
+                failure_alert_sent = True
+                await send_alert(
+                    "Reminder scheduler tick failing",
+                    f"The reminder/trial-expiry sweep has failed "
+                    f"{consecutive_failures} times in a row "
+                    f"(latest: {type(exc).__name__}: {str(exc)[:200]}). "
+                    "Quote/invoice reminders and trial expiry are not running.",
+                )
     logger.info("reminder_scheduler_stopped")
 
 

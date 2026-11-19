@@ -154,3 +154,47 @@ async def test_feature_flags_caches_registry(
     assert calls == 1
     assert first.json()["voice_ai_insights"] is True
     assert second.json()["voice_ai_insights"] is True
+
+
+@pytest.mark.asyncio
+async def test_feature_flags_alert_once_per_failure_streak(
+    _railway_configured: None,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Consecutive fetch failures past the threshold fire one ops alert;
+    a successful fetch resets the streak so the next outage alerts again."""
+    from app import alerting
+
+    alerts: list[tuple[str, str]] = []
+
+    async def _record_alert(subject: str, text: str) -> dict[str, bool]:
+        alerts.append((subject, text))
+        return {"slack": True}
+
+    monkeypatch.setattr(alerting, "send_alert", _record_alert)
+
+    async def _boom_post(self: httpx.AsyncClient, url: str, **kwargs: Any) -> None:
+        raise httpx.ConnectError("railway unreachable")
+
+    monkeypatch.setattr(httpx.AsyncClient, "post", _boom_post)
+
+    for _ in range(feature_flags._FAILURE_ALERT_THRESHOLD + 2):
+        assert await feature_flags.fetch_registry_flags() == {}
+
+    assert len(alerts) == 1
+    assert "Feature flags fetch failing" in alerts[0][0]
+
+    async def _ok_post(self: httpx.AsyncClient, url: str, **kwargs: Any) -> _FakeResponse:
+        return _FakeResponse(_graphql_payload({}))
+
+    monkeypatch.setattr(httpx.AsyncClient, "post", _ok_post)
+    assert await feature_flags.fetch_registry_flags() == {}
+
+    # Drop the (fresh) cache so the next failures really hit the wire; the
+    # success above already reset the streak, so this keeps the semantics.
+    feature_flags.reset_cache()
+    monkeypatch.setattr(httpx.AsyncClient, "post", _boom_post)
+    for _ in range(feature_flags._FAILURE_ALERT_THRESHOLD):
+        await feature_flags.fetch_registry_flags()
+
+    assert len(alerts) == 2
