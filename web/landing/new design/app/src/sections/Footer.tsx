@@ -30,7 +30,7 @@ export default function Footer() {
           </p>
         </div>
         <div className="mt-[var(--space-xl)] flex flex-wrap items-baseline justify-between gap-[var(--space-sm)] border-t border-[var(--rule-on-dark)] pt-[var(--space-lg)] text-[12px] text-[var(--paper-on-dark-muted)]">
-          <span>© {new Date().getFullYear()} MyTradePortal Ltd · Leeds, United Kingdom</span>
+          <span>© {new Date().getFullYear()} MyTradePortal Ltd · Manchester, United Kingdom</span>
           <span className="font-mono uppercase tracking-[0.18em]">iOS · Beta for electricians · Other trades to follow</span>
         </div>
       </div>

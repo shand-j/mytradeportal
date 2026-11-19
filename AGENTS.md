@@ -61,11 +61,31 @@ endpoint (Kimi/Moonshot via `LLM_API_BASE`). Recent additions:
 (derived from the per-line flag and `quote.extra_data["rag"]`).
 - `POST /quotes/{id}/refine` accepts electrician instructions and regenerates the
 AI-drafted line items, preserving any manually added/edited lines. Rate limited
-like `/generate`.
+like `/generate`. Refine runs on a dedicated cheap/fast route (`LLM_REFINE_MODEL`,
+default `gpt-4o-mini`) because the flagship (Kimi k2.6 at 60-120s/call) races the
+120s server-side refine budget (`asyncio.timeout`, retryable 503 on expiry); the
+customer-facing triage chat similarly uses `LLM_FOLLOWUP_MODEL` (default
+`gpt-4o-mini`) with a 30s/1-retry budget. Both resolve via
+`app/rag/generation.py::_resolve_fast_route`: a bare OpenAI-style id uses
+`OPENAI_API_KEY` with any non-OpenAI base suppressed, a `provider/model` id uses
+the configured LLM provider, and empty inherits `LLM_MODEL` (flagship opt-in).
 - `services/api/evals/` is a golden-set eval harness: 15 representative UK
 domestic jobs scored on kind coverage, keyword hit-rate, guide price band, and
-line-count sanity. Offline mode replays canned fixtures (no API keys); `--live`
-calls the real LLM. Run it from `services/api` with `python -m evals.run_evals`.
+line-count sanity. It is line-style aware: `--line-style job_summary` scores
+the plain-English task-line style instead (kinds coverage becomes a style
+conformance check, count bounds 1-8, grounding skipped) using its own canned
+fixtures (`fixtures/canned_responses_job_summary.json`). Offline mode replays
+canned fixtures (no API keys); `--live` calls the real LLM. Run it from
+`services/api` with `python -m evals.run_evals`.
+- Tenants can pick the AI quote line style via the `quote_line_style` tenant
+setting (`itemised` default, or `job_summary` — one plain-English line per
+task, e.g. "Install a double socket in the bedroom", priced as a whole-task
+total; set from the mobile Follow-ups settings screen).
+- Quote confidence is a mechanical rubric in `app/rag/validation.py`
+(`_mechanical_confidence`): weighted deterministic checks over the validated
+draft (line validity, request coverage, price plausibility, catalogue
+grounding, estimated-hours consistency, intake completeness). The per-check
+breakdown is stored on the quote at `extra_data["rag"]["confidence_checks"]`.
 - Quotes carry `estimated_hours` (working hours): AI generation asks the LLM
 for a quote-level estimate and falls back to summing time-billed line items
 (hour/day units); manual quotes can set it via `POST/PATCH /quotes`.
@@ -83,7 +103,12 @@ sequence fits around existing appointments and scheduled jobs.
 the FastAPI lifespan (`REMINDER_SCHEDULER_ENABLED` / `REMINDER_TICK_SECONDS` env
 vars; first sweep one tick after startup). It emails quote reminders (default 3,
 then stop) and invoice reminders (recur until paid) via `app/email.py`, records
-each send in the `reminders` table, and notifies staff in-app. Per-tenant
+each send in the `reminders` table, and notifies staff in-app. Each tick also
+sweeps lapsed trials: `app/trial.py::expire_lapsed_trials` flips `trialing`
+subscription rows past `trial_ends_at` to `trial_expired` so the stored status
+matches what `is_subscription_active` enforces (the same UPDATE runs at deploy
+time in `scripts/init_db.py::run_data_migrations` — idempotent data fixes for
+existing rows belong there). Per-tenant
 cadence lives in the tenant `settings` JSONB (`quote_reminders_enabled`,
 `quote_reminder_max`, `quote_reminder_interval_days`,
 `invoice_reminders_enabled`, `invoice_reminder_interval_days`) and is edited
@@ -275,7 +300,7 @@ mytradeportal/
 │   ├── generate-prod-replica-env.sh
 │   ├── green-deploy-check.sh
 │   ├── init_api.py           # API preDeploy bootstrap wrapper
-│   ├── init_db.py            # API schema + RLS init (single source of truth)
+│   ├── init_db.py            # API schema + RLS + data migrations (single source of truth)
 │   ├── prod-replica-up.sh
 │   └── wait-for-local-prod.sh
 │
@@ -566,6 +591,29 @@ from default runs; the `evals` marker is offline-safe and runs by default.
 Running bare `pytest` from the repo root still trips over `conftest.py` paths
 for the deleted `services/ocerp`.
 
+### Agentic QA skills
+
+Project skills under `.agents/skills/mtp-qa-*` support interactive, agentic
+testing against the running stack (converted from the generic suite in
+`skills/testing-sdk/`):
+
+- **`mtp-qa-browser`** — drive Chromium via `npx -y @playwright/cli` against
+  `http://demo.localhost:3000` / `:8000`, with login (cookie injection),
+  Mailpit magic-link, and visual-review recipes.
+- **`mtp-qa-verified-run`** — execute scenarios with mandatory per-step
+  evidence: no assertion is `passed` without a quoted line from a snapshot
+  read in the same turn; unverifiable steps are recorded `unverified`.
+- **`mtp-qa-bug-hunt`** — charter-driven adversarial exploratory testing
+  (dead links, state manipulation, boundary/invalid input, styling review,
+  console/network errors), findings filed under `reports/bugs/`.
+- **`mtp-qa-test-healer`** — classify a failing test as BROKEN TEST vs
+  GENUINE BUG only after manually verifying the live app; never weaken a
+  test to match broken behaviour.
+
+Run artifacts go to `reports/qa/<runId>/` and bug reports to `reports/bugs/`
+(`reports/` is gitignored). The guiding rule for all four: a green result
+without quoted, on-disk evidence is not a result.
+
 ### Security tests
 
 Security tests are marked with `pytest.mark.security` and are **not** run by
@@ -632,6 +680,9 @@ Key variables (see `.env.example` for the full template):
 - `MINIO_ENDPOINT`, `MINIO_USE_SSL`, `MINIO_ACCESS_KEY`, `MINIO_SECRET_KEY`, `MINIO_BUCKET`
 - `AUTH_SECRET_KEY`, `AUTH_COOKIE_SECURE`
 - `OPENAI_API_KEY`, `LLM_MODEL`, `LLM_API_BASE`, `LLM_API_KEY`, `LLM_TEMPERATURE`
+- `LLM_FOLLOWUP_MODEL`, `LLM_FOLLOWUP_TIMEOUT_SECONDS`, `LLM_FOLLOWUP_MAX_RETRIES`,
+`LLM_REFINE_MODEL` — cheap/fast routes for the triage chat and quote refine
+(default `gpt-4o-mini`; empty inherits the flagship `LLM_MODEL`)
 - `EMBEDDING_MODEL`, `EMBEDDING_API_BASE`, `EMBEDDING_API_KEY`
 - `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`
 - `VITE_API_BASE_URL` — web app backend URL

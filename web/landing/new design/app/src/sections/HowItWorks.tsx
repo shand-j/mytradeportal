@@ -22,7 +22,7 @@ export default function HowItWorks() {
       <div className="mx-auto max-w-[1400px] px-5 py-[var(--space-3xl)] md:px-10 md:py-[var(--space-4xl)]">
         <div className="mb-[var(--space-3xl)] grid gap-[var(--space-lg)] md:grid-cols-12">
           <h2 className="reveal font-display text-[clamp(2rem,4.4vw,4rem)] leading-[0.98] font-extrabold tracking-[-0.02em] text-[var(--ink)] md:col-span-7">
-            Up and running in 2 minutes.
+            Up and running in 5 minutes.
           </h2>
           <p className="reveal max-w-[38ch] self-end text-[15.5px] leading-[1.75] text-[var(--muted)] md:col-span-4 md:col-start-9" style={{ ['--i' as string]: 1 }}>
             No coding. No developer accounts. No waiting on us — create account,

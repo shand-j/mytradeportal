@@ -17,10 +17,10 @@ const QUOTES = [
 ]
 
 const STATS: Array<[string, string]> = [
-  ['48 hrs', 'from signup to live app'],
+  ['5 mins', 'from signup to live app'],
   ['24/7', 'AI answering enquiries'],
   ['5.0 ★', 'average customer rating'],
-  ['2 min', 'for a customer to install'],
+  ['5 mins', 'for a customer to install'],
 ]
 
 export default function Testimonials() {
