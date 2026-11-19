@@ -230,22 +230,39 @@ jobs:
         # --confirm-destructive is required because the IaC corrects region
         # drift for native DB plugins and re-attaches existing Docker volumes.
         # These are expected, pre-go-live changes.
+        # This step fails loudly on ANY error — including an invalid token.
+        # A silently skipped apply is how IaC drift previously went unnoticed
+        # for weeks (the old warning-tolerance block was removed 2026-11-19);
+        # if this fails with Invalid RAILWAY_TOKEN, rotate the
+        # RAILWAY_TOKEN secret (Railway account token) in this environment.
+        run: railway config apply --yes --confirm-destructive
+
+      - name: Wait for the api deployment to go live
+        # The Railway GitHub integration rebuilds on push; this blocks until
+        # the fresh deployment reaches SUCCESS so the readiness gate below
+        # never asserts against the previous deployment.
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+          RAILWAY_PROJECT_ID: ${{ vars.RAILWAY_PROJECT_ID }}
+          # Freshness anchor: the pushed commit's timestamp — robust even when
+          # the Railway build finishes before the quality gates let this job
+          # start (the deployment is always created after the commit exists).
+          DEPLOY_SINCE: ${{ github.event.head_commit.timestamp }}
+        run: python3 scripts/ci/wait_for_deploy.py production api 1200
+
+      - name: Post-deploy readiness gate
+        # /ready probes postgres, storage (real S3 round-trip), qdrant, and
+        # redis. Failing red here is what stops a broken-dependency deploy
+        # (e.g. object storage misconfigured) from looking green.
         run: |
-          # Code deploys don't depend on this step — the Railway GitHub
-          # integration rebuilds services on every push (verified on
-          # 2026-09-16). What the CLI must accept here is the CI project
-          # token, and v5.28+ rejects it with Invalid RAILWAY_TOKEN, so a
-          # token rejection degrades to a loud warning instead of a red
-          # deploy job; any other failure still fails.
-          set +e
-          OUTPUT=$(railway config apply --yes --confirm-destructive 2>&1)
-          CODE=$?
-          set -e
-          if [ "$CODE" -ne 0 ]; then
-            if echo "$OUTPUT" | grep -q "Invalid RAILWAY_TOKEN"; then
-              echo "::warning::railway config apply skipped: the CI RAILWAY_TOKEN is rejected by the Railway CLI (v5.28+ rejects newer project tokens). IaC drift was NOT corrected — run 'railway config apply' locally with a logged-in session after any IaC change. Code deploys are unaffected."
+          for i in $(seq 1 30); do
+            CODE=$(curl -sS -o /tmp/ready.json -w "%{http_code}" \
+              https://api.mytradeportal.co.uk/ready || true)
+            echo "attempt $i: /ready -> HTTP $CODE $(cat /tmp/ready.json 2>/dev/null)"
+            if [ "$CODE" = "200" ]; then
               exit 0
             fi
-            echo "$OUTPUT"
-            exit "$CODE"
-          fi
+            sleep 10
+          done
+          echo "::error::api did not pass /ready within 5 minutes of deploy"
+          exit 1
