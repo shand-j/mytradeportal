@@ -156,10 +156,10 @@ async def test_generate_quote_creates_draft_quote(client: AsyncClient, db: Async
     assert quote["line_items"][0]["ai_generated"] is True
     # AI metadata derived from extra_data["rag"] is exposed on QuoteRead.
     assert quote["ai_generated"] is True
-    # Mechanical rubric: line_validity 1.0×0.30 + request_coverage 0.33×0.25
-    # (1/5 request terms) + price_plausibility 1.0×0.15 + catalogue_grounding
-    # 1.0×0.15 + estimated_hours 0.0×0.10 (none returned) + intake_completeness
-    # 0.10×0.05 (description-only request) = 0.6875 → 0.69.
+    # Mechanical rubric: line_validity 1.0x0.30 + request_coverage 0.33x0.25
+    # (1/5 request terms) + price_plausibility 1.0x0.15 + catalogue_grounding
+    # 1.0x0.15 + estimated_hours 0.0x0.10 (none returned) + intake_completeness
+    # 0.10x0.05 (description-only request) = 0.6875 → 0.69.
     assert quote["ai_confidence"] == 0.69
     assert quote["retrieval_status"] == "grounded"
     assert quote["ai_warnings"] == []
