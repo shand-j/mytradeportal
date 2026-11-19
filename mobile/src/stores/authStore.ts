@@ -71,6 +71,12 @@ const mapApiUser = (apiUser: ApiUser): User => ({
   role: asTradeRole(apiUser.role),
 });
 
+// Session restoration can be triggered more than once while the root layout
+// remounts (notably after iOS deep-link/navigation transitions). Keep only one
+// in-flight round trip and make stale 401/403 tokens clear without trapping the
+// app in a restore/auth redirect loop.
+let restoreInFlight: Promise<boolean> | null = null;
+
 export const useAuthStore = create<AuthState>((set) => ({
   role: "guest",
   user: null,
@@ -210,64 +216,86 @@ export const useAuthStore = create<AuthState>((set) => ({
     }
   },
 
-  restoreSession: async () => {
+  restoreSession: () => {
+    if (restoreInFlight) return restoreInFlight;
+
     set({ loading: true });
-    try {
-      // Skip the round-trip (and a noisy 401) when no token is stored.
-      const token = await tokenStorage.getToken();
-      if (!token) {
-        set({ loading: false });
-        return false;
-      }
-      const apiUser = await fetchMe();
+    restoreInFlight = (async () => {
       try {
-        const tenant = await fetchCurrentTenant();
-        useBusinessStore.getState().setBusiness(tenant);
-      } catch {
-        // Session restored but tenant branding could not be loaded.
-      }
-      const onboardingComplete = await fetchOnboardingComplete();
-      set({
-        user: mapApiUser(apiUser),
-        role: "trade",
-        onboardingComplete,
-        isRegistering: false,
-        loading: false,
-      });
-      return true;
-    } catch (err) {
-      // /auth/me rejects customer (homeowner) tokens — restore those via the
-      // customer portal instead of dropping the session.
-      if (err instanceof ApiError && err.status === 401) {
+        const token = await tokenStorage.getToken();
+        if (!token) {
+          set({ loading: false });
+          return false;
+        }
+
         try {
-          const customer = await fetchCustomerMe();
-          set({
-            user: {
-              id: customer.id,
-              email: customer.email,
-              fullName: customer.fullName,
-              role: "owner",
-            },
-            role: "customer",
-            onboardingComplete: true,
-            isRegistering: false,
-            loading: false,
-          });
+          const apiUser = await fetchMe();
           try {
-            // Restore the tenant branding so customer flows that submit
-            // against a business slug (quote wizard) keep working.
             const tenant = await fetchCurrentTenant();
             useBusinessStore.getState().setBusiness(tenant);
           } catch {
-            // Branding restore failed; non-fatal for the session itself.
+            // Session restored but tenant branding could not be loaded.
           }
+          const onboardingComplete = await fetchOnboardingComplete();
+          set({
+            user: mapApiUser(apiUser),
+            role: "trade",
+            onboardingComplete,
+            isRegistering: false,
+            loading: false,
+          });
           return true;
-        } catch {
-          // fall through to signed-out state
+        } catch (err) {
+          // /auth/me rejects customer (homeowner) tokens — restore those via
+          // the customer portal instead of dropping the session.
+          if (err instanceof ApiError && err.status === 401) {
+            try {
+              const customer = await fetchCustomerMe();
+              set({
+                user: {
+                  id: customer.id,
+                  email: customer.email,
+                  fullName: customer.fullName,
+                  role: "owner",
+                },
+                role: "customer",
+                onboardingComplete: true,
+                isRegistering: false,
+                loading: false,
+              });
+              try {
+                const tenant = await fetchCurrentTenant();
+                useBusinessStore.getState().setBusiness(tenant);
+              } catch {
+                // Branding restore failed; non-fatal for the session itself.
+              }
+              return true;
+            } catch (customerErr) {
+              if (
+                customerErr instanceof ApiError &&
+                (customerErr.status === 401 || customerErr.status === 403)
+              ) {
+                await logoutToken();
+              }
+            }
+          } else if (
+            err instanceof ApiError &&
+            (err.status === 401 || err.status === 403)
+          ) {
+            await logoutToken();
+          }
         }
+      } catch {
+        // SecureStore/network failures are transient; leave any stored token
+        // intact so the next app start or remount can retry restoration.
       }
       set({ loading: false });
       return false;
-    }
+    })();
+
+    void restoreInFlight.finally(() => {
+      restoreInFlight = null;
+    });
+    return restoreInFlight;
   },
 }));
