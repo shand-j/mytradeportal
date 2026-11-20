@@ -40,17 +40,17 @@ Workflow: [`.github/workflows/pr-verify.yml`](../.github/workflows/pr-verify.yml
 `scripts/ci/pr_env_url.sh <pr-number>` resolves URLs in this order:
 
 1. Explicit overrides: `RAILWAY_PR_API_URL` / `RAILWAY_PR_LANDING_URL`.
-2. Railway CLI discovery:
-   - `railway environment list --ephemeral --json` — finds the ephemeral
-     environment Railway auto-created for this PR. Railway names them
-     `<project>-pr-<number>` and tags them with `meta.prNumber`; the script
-     matches on `meta.prNumber` first and falls back to a name pattern
-     (`pr-<number>`, `pr-<number>-<branch>`);
-   - `railway domain list --service api|landing --environment <env> --json` —
-     takes the first active service-type domain (custom domains are ignored).
+2. Railway GraphQL discovery (the CLI rejects the CI token):
+   - list project environments and find the ephemeral PR environment
+     (match `meta.prNumber` first, then `<project>-pr-<number>` name pattern);
+   - list `api`/`landing` service domains in that environment and take the
+     first active Railway-generated (`.up.railway.app`) domain.
 
-   Requires the Railway CLI authenticated via `RAILWAY_TOKEN` (CI) or an
-   interactive login (local). Local sanity check against the linked project:
+   Requires `RAILWAY_TOKEN` with visibility into **all** project environments.
+   For CI, use a Railway account/workspace API token with read access to the
+   project. Tokens that only expose `production` cannot discover ephemeral
+   PR environments; the script now fails fast with an authorization diagnostic
+   instead of retrying for 15 minutes. Local sanity check:
 
    ```bash
    ./scripts/ci/pr_env_url.sh 123
@@ -178,7 +178,7 @@ so staging would send REAL email until re-routed. Rebuild:
 
 | Secret | Purpose |
 |---|---|
-| `RAILWAY_TOKEN` | Project-scoped Railway token used by the CLI for environment/domain discovery (same token the existing `deploy-production` job uses). |
+| `RAILWAY_TOKEN` | Railway account/workspace API token with read access to all project environments (used by GraphQL environment/domain discovery). |
 | `GITHUB_TOKEN` | Built-in; needs `pull-requests: write` for the result comment (granted in the workflow). |
 
 ## What the smoke suites do (and deliberately don't)
