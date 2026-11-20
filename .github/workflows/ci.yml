@@ -1,5 +1,8 @@
 name: CI
 
+permissions:
+  contents: read
+
 # Mobile-beta scope. Runs the Python + mobile TypeScript quality gates on every
 # PR/push, then deploys the api / admin / data-pipeline services (plus native
 # databases, qdrant, minio) via Railway IaC on push to main.
