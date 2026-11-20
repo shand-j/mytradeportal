@@ -188,7 +188,7 @@ Manual on the build:
 5. Refine a quote (fast, no timeout), review screen UX with keyboard open; run the VAT save-then-send cases
 6. Logo upload in branding settings; verify on a public quote page
 7. Invoice lifecycle to sent. If Stripe gates pass, customer pays a small live amount via `/pay`, PAID state settles automatically, then a full refund reconciles. Otherwise record the release as bank-transfer-only and verify manual mark-paid.
-8. Stripe Connect setup from Settings → Payments on a physical device (#45), including return to the app and "accepting cards" only after live status sync
+8. Stripe Connect setup from Settings → Payments on a physical device (#45): with live Stripe keys, open hosted Express onboarding and complete KYC, then return to the app and verify live status sync shows "accepting cards" with the payout-schedule explainer visible and confirm default-on card payments plus per-invoice card toggles
 9. GPS nav link on a job card opens maps
 10. Calendar All/Me + guardrail rejection toast; subscribe through branded webcal/HTTPS in Apple Calendar and verify initial events, updates, cancellation, revocation, and tenant isolation
 11. Complete the remaining reset/convert/photo checks in #102 and the isolated restore drill before the go/no-go review
