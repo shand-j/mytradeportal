@@ -20,7 +20,9 @@ setup token on staging / PR environments, and skips without the token.
 from __future__ import annotations
 
 import json
+import os
 import re
+import time
 import uuid
 from datetime import datetime
 from typing import TYPE_CHECKING, Any
@@ -29,7 +31,6 @@ import pytest
 
 from . import webhook_signing as sign
 from .conftest import (
-    PADDLE_PRICE_ID_PRO,
     PADDLE_WEBHOOK_SECRET,
     RESEND_WEBHOOK_SECRET,
     STRIPE_WEBHOOK_SECRET,
@@ -53,6 +54,11 @@ pytestmark = [
 ]
 
 requires_mailpit = pytest.mark.skipif(not mailpit_configured(), reason="Mailpit is not configured")
+
+
+def _mask_ci_secret(value: str) -> None:
+    if value and os.environ.get("GITHUB_ACTIONS") == "true":
+        print(f"::add-mask::{value}")
 
 
 def _staff(
@@ -80,9 +86,36 @@ def _create_contact(api: httpx.Client, tenant: SeededTenant, email: str) -> dict
     return body
 
 
+def _set_vat_registered(
+    api: httpx.Client, tenant: SeededTenant, *, registered: bool
+) -> None:
+    resp = _staff(
+        api,
+        tenant,
+        "PATCH",
+        "/onboarding/step/tax",
+        json={"step": "tax", "value": {"vat_registered": registered}},
+    )
+    assert resp.status_code == 200, resp.text
+
+
+def _login_with_retry(api: httpx.Client, payload: dict[str, str]) -> httpx.Response:
+    """Retry the real 5/minute login limiter with bounded backoff."""
+    for attempt in range(6):
+        resp = api.post("/customer/login", json=payload)
+        if resp.status_code != 429:
+            return resp
+        if attempt == 5:
+            return resp
+        retry_after = int(resp.headers.get("Retry-After", "12"))
+        time.sleep(min(max(retry_after, 1), 12))
+    return resp
+
+
 def _create_quote(
     api: httpx.Client, tenant: SeededTenant, contact_id: str, title: str
 ) -> dict[str, Any]:
+    _set_vat_registered(api, tenant, registered=True)
     resp = _staff(
         api,
         tenant,
@@ -135,6 +168,71 @@ class TestTenantBootstrap:
 
 
 # ---------------------------------------------------------------------------
+# VAT registration + per-document VAT limits
+# ---------------------------------------------------------------------------
+
+
+class TestDeployedVAT:
+    def test_registered_standard_zero_and_rejected_increase(
+        self, api: httpx.Client, make_tenant: Any
+    ) -> None:
+        tenant: SeededTenant = make_tenant("mtp-vat")
+        contact = _create_contact(api, tenant, f"vat-{uuid.uuid4().hex[:8]}@example.com")
+
+        _set_vat_registered(api, tenant, registered=True)
+        standard = _staff(
+        api,
+        tenant,
+        "POST",
+        "/quotes",
+        json={
+            "contact_id": contact["id"],
+            "title": "VAT registered 20%",
+            "vat_rate": "0.20",
+            "line_items": [
+                {"description": "Labour", "quantity": 1, "unit_price": "100.00"}
+            ],
+        },
+        )
+        assert standard.status_code in (200, 201), standard.text
+        assert standard.json()["vat_rate"] == "0.20"
+
+        zero = _staff(
+        api,
+        tenant,
+        "POST",
+        "/quotes",
+        json={
+            "contact_id": contact["id"],
+            "title": "VAT zero-rated",
+            "vat_rate": "0",
+            "line_items": [
+                {"description": "Labour", "quantity": 1, "unit_price": "100.00"}
+            ],
+        },
+        )
+        assert zero.status_code in (200, 201), zero.text
+        assert zero.json()["vat_rate"] == "0"
+
+        rejected = _staff(
+        api,
+        tenant,
+        "POST",
+        "/quotes",
+        json={
+            "contact_id": contact["id"],
+            "title": "VAT increase rejected",
+            "vat_rate": "0.25",
+            "line_items": [
+                {"description": "Labour", "quantity": 1, "unit_price": "100.00"}
+            ],
+        },
+        )
+        assert rejected.status_code == 400
+        assert "registered VAT rate" in rejected.json()["detail"]
+
+
+# ---------------------------------------------------------------------------
 # Paddle subscription webhooks -> paywall
 # ---------------------------------------------------------------------------
 
@@ -161,7 +259,7 @@ class TestPaddleWebhooks:
         )
         assert resp.status_code == 401
 
-    def test_cancel_blocks_access_and_middleware_then_reactivate(
+    def test_disabled_cancel_is_delayed_without_lockout_or_provider_request(
         self, api: httpx.Client, make_tenant: Any
     ) -> None:
         tenant: SeededTenant = make_tenant("mtp-paddle")
@@ -173,29 +271,10 @@ class TestPaddleWebhooks:
             ),
         )
         assert cancel.status_code == 200, cancel.text
-        assert _tenant_status(api, tenant)["access"] == "payment_required"
-        # The paywall middleware blocks staff surfaces but leaves the status
-        # endpoint (and other exempt paths) reachable so the app can render
-        # the paywall itself.
-        assert _staff(api, tenant, "GET", "/quotes").status_code == 402
-        assert _staff(api, tenant, "GET", "/invoices").status_code == 402
-
-        activate = _post_paddle(
-            api,
-            sign.paddle_subscription_event(
-                event_type="subscription.activated",
-                tenant_id=tenant.id,
-                status="active",
-                price_id=PADDLE_PRICE_ID_PRO or None,
-            ),
-        )
-        assert activate.status_code == 200, activate.text
+        assert cancel.json() == {"status": "delayed"}
         assert _tenant_status(api, tenant)["access"] == "active"
         assert _staff(api, tenant, "GET", "/quotes").status_code == 200
-        if PADDLE_PRICE_ID_PRO:
-            sub = _staff(api, tenant, "GET", "/billing/subscription")
-            assert sub.status_code == 200, sub.text
-            assert sub.json()["plan_key"] == "pro"
+        assert _staff(api, tenant, "GET", "/invoices").status_code == 200
 
     def test_duplicate_event_id_replays_as_duplicate(
         self, api: httpx.Client, make_tenant: Any
@@ -208,7 +287,7 @@ class TestPaddleWebhooks:
             event_id=f"evt_dup_{uuid.uuid4().hex[:12]}",
         )
         first = _post_paddle(api, payload)
-        assert first.status_code == 200 and first.json() == {"status": "ok"}
+        assert first.status_code == 200 and first.json() == {"status": "delayed"}
         second = _post_paddle(api, payload)
         assert second.status_code == 200 and second.json() == {"status": "duplicate"}
 
@@ -458,12 +537,14 @@ class TestCustomerMagicLinks:
     def test_magic_request_exchange_and_claim(self, api: httpx.Client, make_tenant: Any) -> None:
         tenant: SeededTenant = make_tenant("mtp-magic")
         customer_email = f"magic-{uuid.uuid4().hex[:8]}@example.com"
+        initial_password = "initial-pass-123"
+        _mask_ci_secret(initial_password)
         register = api.post(
             "/customer/register",
             json={
                 "slug": tenant.slug,
                 "email": customer_email,
-                "password": "initial-pass-123",
+                "password": initial_password,
                 "full_name": "WS Magic Customer",
             },
         )
@@ -485,23 +566,29 @@ class TestCustomerMagicLinks:
         match = re.search(r"[?&]token=([A-Za-z0-9_\-]+)", mail.html + mail.text)
         assert match, "no magic token in the emailed link"
         token = match.group(1)
+        _mask_ci_secret(token)
 
         exchange = api.post("/customer/auth/magic", json={"token": token})
         assert exchange.status_code == 200, exchange.text
         assert exchange.json()["customer"]["email"] == customer_email
         assert exchange.json()["access_token"]
+        _mask_ci_secret(exchange.json()["access_token"])
 
         # Claiming with the same token sets a new password (single-use).
         new_password = "claimed-pass-456"
+        _mask_ci_secret(new_password)
         claim = api.post("/customer/auth/claim", json={"token": token, "password": new_password})
         assert claim.status_code == 200, claim.text
         assert claim.json()["access_token"]
+        _mask_ci_secret(claim.json()["access_token"])
 
-        login = api.post(
-            "/customer/login",
-            json={"slug": tenant.slug, "email": customer_email, "password": new_password},
+        login = _login_with_retry(
+            api,
+            {"slug": tenant.slug, "email": customer_email, "password": new_password},
         )
-        assert login.status_code == 200, login.text
+        assert login.status_code == 200, (
+            f"customer login failed after bounded retry: HTTP {login.status_code}"
+        )
 
         reuse = api.post("/customer/auth/magic", json={"token": token})
         assert reuse.status_code == 401

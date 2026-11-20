@@ -238,7 +238,13 @@ jobs:
           python3 scripts/ci/env_secrets.py staging api \
             --prefix TEST_ \
             STRIPE_WEBHOOK_SECRET PADDLE_WEBHOOK_SECRET RESEND_WEBHOOK_SECRET \
-            PADDLE_PRICE_ID_PRO_MONTH >> "$GITHUB_ENV"
+            PADDLE_PRICE_ID_PRO_MONTH | while IFS= read -r line; do
+              if [[ "$line" == ::add-mask::* ]]; then
+                printf '%s\n' "$line"
+              else
+                printf '%s\n' "$line" >> "$GITHUB_ENV"
+              fi
+            done
 
       # Same stale-deploy race as staging-verify: the write suite mutates
       # state, so asserting against the previous image would be worse than

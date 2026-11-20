@@ -163,6 +163,8 @@ def main() -> None:
                 file=sys.stderr,
             )
             continue
+        if os.environ.get("GITHUB_ACTIONS") == "true":
+            print(f"::add-mask::{value}")
         print(f"{prefix}{key}={value}")
 
 
