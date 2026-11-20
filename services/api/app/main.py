@@ -2,6 +2,7 @@
 
 import asyncio
 import logging
+import re
 from contextlib import asynccontextmanager
 from typing import TYPE_CHECKING
 
@@ -12,7 +13,12 @@ from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
 from sqlalchemy import text
 
-from app.config import REMINDER_SCHEDULER_ENABLED, ROLLUP_SCHEDULER_ENABLED, settings
+from app.config import (
+    PORTAL_BASE_DOMAIN,
+    REMINDER_SCHEDULER_ENABLED,
+    ROLLUP_SCHEDULER_ENABLED,
+    settings,
+)
 from app.database import engine
 from app.limiter import limiter
 from app.logging import configure_logging
@@ -146,15 +152,26 @@ app.add_middleware(SlowAPIMiddleware)
 # Railway preview pattern via a strict regex so preview smoke can authenticate
 # without depending on Railway variable re-templating.
 _RAILWAY_PREVIEW_ORIGIN_REGEX = r"^https://web-mytradeportal-pr-\d+\.up\.railway\.app$"
-# Customer portals live on per-tenant subdomains of the portal base domain.
-_PORTAL_ORIGIN_REGEX = r"https://.*\.mytradeportal\.co\.uk"
+# The staging landing uses a deterministic Railway-generated service domain.
+_STAGING_LANDING_ORIGIN_REGEX = r"^https://landing-staging-[a-z0-9-]+\.up\.railway\.app$"
+# Customer portals live on valid single-level tenant subdomains. Escape the
+# configured base domain and exclude apex/lookalike hosts.
+_PORTAL_LABEL_REGEX = r"[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?"
+_PORTAL_ORIGIN_REGEX = rf"^https://{_PORTAL_LABEL_REGEX}\.{re.escape(PORTAL_BASE_DOMAIN)}$"
 _configured_regex = settings.allowed_origin_regex or None
 if _configured_regex:
     _allow_origin_regex: str | None = (
-        f"({_configured_regex})|({_RAILWAY_PREVIEW_ORIGIN_REGEX})|({_PORTAL_ORIGIN_REGEX})"
+        f"({_configured_regex})|({_RAILWAY_PREVIEW_ORIGIN_REGEX})"
+        f"|({_PORTAL_ORIGIN_REGEX})"
     )
 else:
-    _allow_origin_regex = f"({_RAILWAY_PREVIEW_ORIGIN_REGEX})|({_PORTAL_ORIGIN_REGEX})"
+    _allow_origin_regex = (
+        f"({_RAILWAY_PREVIEW_ORIGIN_REGEX})|({_PORTAL_ORIGIN_REGEX})"
+    )
+if settings.environment != "production":
+    _allow_origin_regex = (
+        f"{_allow_origin_regex}|({_STAGING_LANDING_ORIGIN_REGEX})"
+    )
 
 app.add_middleware(
     CORSMiddleware,

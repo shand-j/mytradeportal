@@ -61,7 +61,7 @@ Feature: Messages and notifications
     When a quote-ready, message or reminder event fires
     Then a push arrives with sound and badge, and tapping it deep-links to the
       notified entity (backlog N1, N2)
-    # Requires the APNs key on EAS — device checklist item 1.
+    # APNs key uploaded on EAS (2026-09-12, key 6M5HA7Q78W); on-device deep-link delivery re-verified 2026-09-15 — device checklist item 1.
     # API-side plumbing covered by services/api/tests/test_push.py (8 tests).
 
   @automated-e2e

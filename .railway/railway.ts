@@ -142,7 +142,10 @@ export default defineRailway(() => {
       watchPatterns: ["services/api/**", "packages/shared/py/**", "scripts/**", "pyproject.toml"],
     },
     healthcheck: "/health",
-    preDeployCommand: "python scripts/init_api.py",
+    // Staging sets SEED_DEMO_ESTATE=true in configure_staging.py.  The seed is
+    // idempotent and the script refuses production, so every staging redeploy
+    // restores the fixture estate without changing production behavior.
+    preDeployCommand: "python scripts/init_api.py && if [ \"${SEED_DEMO_ESTATE:-false}\" = \"true\" ]; then python scripts/seed_demo_estate.py; fi",
     regions: { [TARGET_REGION]: 1 },
     env: {
       ENVIRONMENT: "production",

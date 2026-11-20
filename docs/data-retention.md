@@ -14,10 +14,13 @@ lock-in" export); the offboard response does not include an export.
 
 One transaction performs, in order:
 
-1. **Provider detachment (best-effort).** The Paddle SaaS subscription is
-   cancelled with `effective_from=immediately`
+1. **Provider detachment (best-effort).** When Paddle billing is enabled, the
+   Paddle SaaS subscription is cancelled with `effective_from=immediately`
    (`app/paddle_client.py::cancel_subscription`) and the local subscription
-   row is marked `canceled`. The Stripe Connect Express account is deleted
+   row is marked `canceled`. While the beta `paddle_billing` flag is disabled,
+   no Paddle call is made; local access revocation still completes, and any
+   legacy live provider subscription requires separately recorded provider
+   cleanup. The Stripe Connect Express account is deleted
    via the Stripe API (`app/stripe_client.py::delete_connected_account`) and
    the local `stripe_accounts` row is removed regardless, so an offboarded
    tenant can never take another card payment through the platform. Provider
@@ -79,6 +82,15 @@ re-anonymised by re-running the offboard transaction before the database is
 used for anything other than disaster recovery. Deleted/anonymised personal
 data is therefore unrecoverable from platform backups after the rotation
 window.
+
+Backup existence is not recovery evidence. Before beta, perform the isolated
+restore drill required by [beta-readiness.md](beta-readiness.md), targeting
+RPO ≤24 hours and RTO ≤60 minutes. Cover PostgreSQL, RustFS object storage,
+and Qdrant recovery/rebuild; verify `/ready`, RLS/tenant isolation,
+representative financial journeys, and media. Restore only into an isolated,
+access-controlled environment, never over production. Record actual timings,
+restore-point age, failures, and sanitized evidence, then tear down the restored
+estate after sign-off.
 
 ## Data subject requests (homeowners)
 

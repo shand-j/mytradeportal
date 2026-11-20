@@ -42,11 +42,14 @@ class SecurityConfig:
     @classmethod
     def validate(cls) -> None:
         """Fail fast if required production values are missing."""
-        if cls.environment == "production":
+        if cls.environment in {"production", "staging"}:
             _require("SECURITY_API_BASE_URL")
             _require("SECURITY_TENANT_SLUG")
             _require("SECURITY_ADMIN_EMAIL")
             _require("SECURITY_ADMIN_PASSWORD")
+            _require("SECURITY_SECONDARY_TENANT_SLUG")
+            _require("SECURITY_SECONDARY_ADMIN_EMAIL")
+            _require("SECURITY_SECONDARY_ADMIN_PASSWORD")
 
 
 # Convenience module-level instance

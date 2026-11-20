@@ -1,5 +1,12 @@
 # Payments Money Model — My Trade Portal
 
+> **Current beta state:** SaaS subscription billing through Paddle is disabled
+> behind the server-controlled `paddle_billing` feature flag. The beta is free;
+> no Paddle checkout, plan-change, portal, or price-preview flow is available.
+> Stripe Connect for customer→tradesperson payments is independent and remains
+> available only after its live release gates pass. Bank transfer is the explicit
+> fallback. See [beta-readiness.md](beta-readiness.md).
+
 This document describes, in factual terms, how money moves through My Trade
 Portal. It is written for legal review and for incorporation into the platform
 Terms & Conditions, tradesperson terms, and customer-facing payment pages. The
@@ -15,7 +22,7 @@ regulated providers. The flows never mix.
 | Flow | Provider | Who is paid | Provider's role |
 |---|---|---|---|
 | Customer → tradesperson (payment for trade work: quotes, jobs, invoices) | **Stripe Connect** | The tradesperson, into their own Stripe Express connected account | Stripe processes the payment and settles funds to the tradesperson |
-| Tradesperson → My Trade Portal (SaaS subscription) | **Paddle** | My Trade Portal | Paddle is merchant of record for the subscription |
+| Tradesperson → My Trade Portal (SaaS subscription, post-beta only) | **Paddle** | My Trade Portal | Paddle would be merchant of record if subscription billing is enabled; it is disabled for the free beta |
 
 A customer payment for trade work must never touch the platform's Paddle
 balance, and subscription billing never touches Stripe Connect.
@@ -108,12 +115,17 @@ balance, and subscription billing never touches Stripe Connect.
   platform. Any B2B surcharging is off by default and would require legal
   review before being enabled.
 
-## 3. Tradesperson → platform subscription (Paddle)
+## 3. Tradesperson → platform subscription (Paddle, post-beta)
 
-- The platform's SaaS subscription is billed by **Paddle as merchant of
-  record**. Paddle is the seller of the subscription for VAT and consumer-law
-  purposes; Paddle's checkout, invoicing, and dunning apply.
-- Subscription billing is entirely separate from customer payments: no
+- **Paddle subscription billing is disabled for the free beta.** The server
+  flag suppresses checkout, plan changes, customer-portal sessions, price
+  previews, and Paddle-initiated side effects. Existing local subscription
+  rows are retained, but their statuses do not lock beta tenants out.
+- If subscription billing is enabled after a separate review, the platform's
+  SaaS subscription would be billed by **Paddle as merchant of record**. Paddle
+  would be the seller for VAT and consumer-law purposes; Paddle's checkout,
+  invoicing, and dunning would apply. Enabling is not part of beta go-live.
+- Subscription billing remains entirely separate from customer payments: no
   customer card details, payouts, refunds, or disputes for trade work ever
   involve Paddle.
 
@@ -138,8 +150,9 @@ balance, and subscription billing never touches Stripe Connect.
   stored, processed, or transmitted by platform servers.
 - **Data protection:** payment metadata (payer name, amount, invoice
   reference) is processed under the platform privacy notice and retention
-  schedule; Stripe and Paddle act as independent controllers/processors for
-  their respective flows under their own terms.
+  schedule. Stripe acts under its own terms for trade payments; Paddle's role
+  applies only if subscription billing is enabled after beta.
 - **Webhooks:** payment state (succeeded, refunded, disputed, payout paid) is
-  ingested via idempotent, signature-verified webhook handlers so invoice
-  status reflects the money flow accurately.
+  ingested via signature-verified webhook handlers. Beta acceptance requires
+  failure-injection evidence that transient failures remain retryable and
+  completed duplicates cannot repeat side effects (#30).

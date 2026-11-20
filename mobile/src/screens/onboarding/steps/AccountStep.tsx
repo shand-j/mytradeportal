@@ -5,6 +5,8 @@ import { Button } from "../../../components/ui/Button";
 import { FormField } from "../../../components/ui/FormField";
 import { Text } from "../../../components/ui/Text";
 import { checkEmailAvailability } from "../../../api/onboarding";
+import { openInAppBrowser } from "../../../lib/inAppBrowser";
+import { config } from "../../../lib/config";
 
 type AccountStepProps = {
   data?: Record<string, unknown>;
@@ -197,6 +199,18 @@ export function AccountStep({ data, onNext, emailTaken = false }: AccountStepPro
             I accept the Terms of Service and Privacy Notice.
           </Text>
         </Pressable>
+        <View className="flex-row gap-3">
+          <Pressable onPress={() => void openInAppBrowser(config.termsUrl)}>
+            <Text variant="caption" color="secondary" style={{ textDecorationLine: "underline" }}>
+              Terms of Service
+            </Text>
+          </Pressable>
+          <Pressable onPress={() => void openInAppBrowser(config.privacyUrl)}>
+            <Text variant="caption" color="secondary" style={{ textDecorationLine: "underline" }}>
+              Privacy Notice
+            </Text>
+          </Pressable>
+        </View>
 
         <Button
           title="Continue"

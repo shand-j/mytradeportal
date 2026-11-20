@@ -10,6 +10,37 @@ as the source of truth for the *current* layout.
 
 ---
 
+## Current beta authority and cloud Copilot delivery
+
+- `docs/beta-readiness.md` owns current beta scope and go/no-go decisions. The
+  GitHub **Beta** project and master issue #12 own execution state;
+  `docs/beta-test-plan.md` owns verification procedures. Do not use an older
+  PRD, feature file, or runbook to override the current release decision.
+- The current decision is **no-go** for a broad/paid beta. Only a small, free,
+  concierge-led cohort can be authorised after the documented gates pass.
+  Paddle billing, paid subscriptions, certificates, real offline mode,
+  deposits, accounting integrations, BoQ, and operational-alert delivery are
+  outside the current beta scope.
+- Use GitHub issues as self-contained Copilot assignments: context, exact
+  implementation surface, acceptance tests, live/manual residue, and `Depends
+  on` / `Blocks` references. Assign new implementation issues to **Copilot**,
+  add them to the Beta project, and create native issue dependencies plus
+  parent/sub-issue links. Reuse existing issues rather than duplicating them.
+- Copilot works in cloud PRs in a swarm only when issues are independent and
+  touch non-overlapping surfaces. Do not assign competing changes to the same
+  files concurrently. Live providers, physical devices, restore drills,
+  real-card payments, and legal approval remain human gates.
+- Review every Copilot PR locally before merge: inspect issue fit and diff,
+  check required tests/evidence, check out the branch for verification, and
+  push necessary fixes to that branch. Merge only with acceptance criteria met
+  and required checks green; never auto-merge with red/missing checks. Rebase
+  and retest dependent PRs after prerequisites merge.
+- Never place secrets, customer PII, real card data, or production credentials
+  in issues, plans, committed reports, or CI output. A missing credential,
+  unexecuted test, or code inspection is not a live-verification pass.
+- Do not add operational-alert work to beta tickets. Existing product
+  notifications and webhook retry correctness are not operational-alert scope.
+
 ## Project overview
 
 **My Trade Portal** is a field-service management product for UK electricians and
@@ -45,11 +76,12 @@ settings, logging, tenancy helpers), installed as an editable package via
 - **`security/`** — security testing harness (OWASP, multi-tenancy, SOC2 evidence).
 It targets the FastAPI API, so it is most useful when run against a live deployed
 backend.
-- **`docs/`** — active documentation: the Beta PRD (`prd-beta.md`), the October
-beta test plan (`beta-test-plan.md` — the current verification map), the go-live
-runbook, testing accounts/seeded estate, payments money model, data retention,
-CI hard rules, the SOC2 controls catalogue, the RN stack report, and alert
-runbooks in `docs/runbooks/`. Legacy docs remain in `docs/archived/`.
+- **`docs/`** — active documentation: beta scope/go-no-go authority
+  (`beta-readiness.md`), the beta verification map (`beta-test-plan.md`), the
+  go-live runbook, testing accounts/seeded estate, payments money model, data
+  retention, CI hard rules, the SOC2 controls catalogue, the RN stack report,
+  and runbooks in `docs/runbooks/`. The Beta PRD is historical where it
+  conflicts with current release scope. Legacy docs remain in `docs/archived/`.
 
 ### AI quote pipeline
 
@@ -204,8 +236,9 @@ mytradeportal.co.uk via dedicated knobs: `PUBLIC_DOCS_BASE_URL` (quote/
 invoice token pages and the Stripe bounce page), `PASSWORD_RESET_BASE_URL`
 (`/reset-password`, `/accept-invite`), portal magic links on
 `{slug}.PORTAL_BASE_DOMAIN`, and `CALENDAR_FEED_BASE_URL` (webcal/.ics feed
-links — empty falls back to the request origin; brand it when the API custom
-domain lands, issue #181).
+links — production uses `https://api.mytradeportal.co.uk`; empty falls back to
+the request origin). Apple Calendar subscription still requires physical-device
+verification under issues #36/#181.
 
 ### Tenant branding logo and offboarding (issues #232/#244)
 
@@ -217,12 +250,13 @@ URL (built on `PUBLIC_API_BASE_URL` when set) so portal/landing pages render
 it as a plain `<img>` src.
 
 Tenant offboarding is self-service for the tenant admin:
-`POST /tenants/me/offboard` with a `confirm_slug` body cancels the Paddle
-subscription and deletes the Stripe connected account (best-effort — provider
-outages never block), deactivates all staff/customer accounts, revokes
-magic-link/invite/document/reset tokens, deactivates the tenant, and
-anonymises PII in place while retaining financial records per
-`docs/data-retention.md`.
+`POST /tenants/me/offboard` with a `confirm_slug` body deletes the Stripe
+connected account, deactivates all staff/customer accounts, revokes
+magic-link/invite/document/reset tokens, deactivates the tenant, and anonymises
+PII in place while retaining financial records per `docs/data-retention.md`.
+Paddle cancellation is conditional on the `paddle_billing` feature flag: while
+billing is disabled for beta, no Paddle call is made and any legacy live
+subscription requires separately recorded provider cleanup.
 
 ### Reminder scheduler and tenant scheduling settings
 
@@ -843,8 +877,10 @@ Key variables (see `.env.example` for the full template):
 - `EMBEDDING_MODEL`, `EMBEDDING_API_BASE`, `EMBEDDING_API_KEY`
 - `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `STRIPE_CONNECT_CLIENT_ID`,
   `STRIPE_PUBLISHABLE_KEY` — tradesperson receivables (Connect Express)
-- `PADDLE_API_KEY`, `PADDLE_WEBHOOK_SECRET`, `PADDLE_CLIENT_TOKEN`, `PADDLE_SANDBOX`,
-  `PADDLE_PRICE_ID_*` — SaaS billing (merchant of record)
+- `paddle_billing` Railway Signal — server-controlled SaaS billing flag;
+  default/off for the free beta. `PADDLE_API_KEY`, `PADDLE_WEBHOOK_SECRET`,
+  `PADDLE_CLIENT_TOKEN`, `PADDLE_SANDBOX`, `PADDLE_PRICE_ID_*` are retained for
+  a separately reviewed post-beta enablement, not required for beta access
 - `TELNYX_API_KEY`, `TELNYX_FROM_NUMBER`, `TELNYX_MESSAGING_PROFILE_ID`,
   `TELNYX_PUBLIC_KEY` — SMS appointment reminders + inbound webhook
 - `RESEND_API_KEY`, `RESEND_FROM_EMAIL`, `RESEND_NO_REPLY_EMAIL`,
@@ -890,8 +926,10 @@ followed by `pnpm install` usually resolves it.
 - `security/README.md` — security test suite documentation.
 - `docs/user-journeys.md` — implemented user journeys per persona, mapped to
   screens and API endpoints, with evidence status.
+- `docs/beta-readiness.md` — current beta scope, evidence rules, release gates,
+  and go/no-go authority.
 - `docs/prd-beta.md` — Beta scope PRD (historical spec; see the status banner).
-- `docs/beta-test-plan.md` — current verification map for the October beta cohort.
+- `docs/beta-test-plan.md` — current verification map for the free concierge beta.
 - `docs/go-live-runbook.md` — deploy order, production env wiring, rollback.
 - `docs/testing-accounts.md` — seeded demo estate, logins, manual test flows.
 - `docs/payments-model.md` — how money moves (Stripe Connect + Paddle).

@@ -14,6 +14,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 pytestmark = pytest.mark.asyncio
 
 
+def _disable_paddle_billing(monkeypatch: pytest.MonkeyPatch) -> None:
+    async def _disabled() -> bool:
+        return False
+
+    monkeypatch.setattr("app.feature_flags.paddle_billing_enabled", _disabled)
+    monkeypatch.setattr("app.routers.billing.paddle_billing_enabled", _disabled)
+
+
 @pytest.fixture
 def paddle_customer(monkeypatch: pytest.MonkeyPatch) -> AsyncMock:
     """Stub Paddle customer binding; returns the mock for call assertions."""
@@ -368,6 +376,85 @@ async def test_checkout_page_forces_one_page_variant(
     assert 'Paddle.Checkout.open({ transactionId: txn, settings: { variant: "one-page" } })' in html
 
 
+async def test_checkout_page_disabled_when_paddle_billing_flag_off(
+    client: AsyncClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _disable_paddle_billing(monkeypatch)
+    monkeypatch.setattr("app.routers.billing.settings.paddle_client_token", "test_client_token")
+
+    response = await client.get("/billing/checkout-page")
+
+    assert response.status_code == 503
+    assert response.json()["detail"] == "paddle_billing_disabled"
+
+
+async def test_checkout_disabled_when_paddle_billing_flag_off(
+    admin_client: AsyncClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _disable_paddle_billing(monkeypatch)
+    create_txn = AsyncMock()
+    monkeypatch.setattr("app.routers.billing.create_subscription_transaction", create_txn)
+
+    response = await admin_client.post("/billing/checkout", json={"plan_key": "pro"})
+
+    assert response.status_code == 503
+    assert response.json()["detail"] == "paddle_billing_disabled"
+    create_txn.assert_not_awaited()
+
+
+async def test_plan_change_disabled_when_paddle_billing_flag_off(
+    admin_client: AsyncClient,
+    db: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _disable_paddle_billing(monkeypatch)
+    tenant_id = UUID(admin_client.headers["X-Tenant-ID"])
+    db.add(
+        Subscription(
+            tenant_id=tenant_id,
+            plan_key="pro",
+            status="active",
+            paddle_subscription_id="sub_live_1",
+        )
+    )
+    await db.commit()
+    update = AsyncMock()
+    monkeypatch.setattr("app.routers.billing.update_subscription", update)
+
+    response = await admin_client.post("/billing/plan-change", json={"plan_key": "team"})
+
+    assert response.status_code == 503
+    assert response.json()["detail"] == "paddle_billing_disabled"
+    update.assert_not_awaited()
+
+
+async def test_portal_session_disabled_when_paddle_billing_flag_off(
+    admin_client: AsyncClient,
+    db: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _disable_paddle_billing(monkeypatch)
+    tenant_id = UUID(admin_client.headers["X-Tenant-ID"])
+    db.add(
+        Subscription(
+            tenant_id=tenant_id,
+            plan_key="pro",
+            status="active",
+            paddle_customer_id="ctm_live_1",
+        )
+    )
+    await db.commit()
+    create_portal = AsyncMock()
+    monkeypatch.setattr("app.routers.billing.create_customer_portal_session", create_portal)
+
+    response = await admin_client.post("/billing/portal-session")
+
+    assert response.status_code == 503
+    assert response.json()["detail"] == "paddle_billing_disabled"
+    create_portal.assert_not_awaited()
+
+
 async def test_get_subscription_returns_state_when_present(
     admin_client: AsyncClient, db: AsyncSession
 ) -> None:
@@ -452,6 +539,18 @@ async def test_paywall_blocks_gated_endpoints_on_incomplete_subscription(
 
 async def test_paywall_allows_tenant_without_subscription_row(admin_client: AsyncClient) -> None:
     """Beta semantics: no subscription row (legacy/seed tenants) = allowed."""
+    response = await admin_client.get("/quotes")
+    assert response.status_code == 200
+
+
+async def test_paywall_allows_incomplete_subscription_when_paddle_billing_off(
+    admin_client: AsyncClient, db: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _disable_paddle_billing(monkeypatch)
+    tenant_id = admin_client.headers["X-Tenant-ID"]
+    db.add(Subscription(tenant_id=tenant_id, plan_key="pro", status="incomplete"))
+    await db.commit()
+
     response = await admin_client.get("/quotes")
     assert response.status_code == 200
 
