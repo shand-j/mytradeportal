@@ -112,14 +112,27 @@ async def _v2_request(
     }
     if idempotency_key:
         headers["Idempotency-Key"] = idempotency_key
-    async with httpx.AsyncClient(timeout=30) as client:
-        response = await client.request(
-            method,
-            f"{STRIPE_V2_BASE_URL}{path}",
-            json=json_body,
-            params=params,
-            headers=headers,
-        )
+    try:
+        async with httpx.AsyncClient(timeout=30) as client:
+            response = await client.request(
+                method,
+                f"{STRIPE_V2_BASE_URL}{path}",
+                json=json_body,
+                params=params,
+                headers=headers,
+            )
+    except httpx.TimeoutException as exc:
+        raise StripeV2Error(
+            503,
+            "stripe_request_timeout",
+            "Stripe did not respond before the request timeout.",
+        ) from exc
+    except httpx.RequestError as exc:
+        raise StripeV2Error(
+            503,
+            "stripe_request_failed",
+            "Stripe could not be reached.",
+        ) from exc
     if response.status_code >= 400:
         error: dict[str, Any] = {}
         with contextlib.suppress(ValueError):
