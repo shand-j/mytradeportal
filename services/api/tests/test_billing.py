@@ -1,5 +1,6 @@
 """Tests for the tenant-subscription billing endpoints."""
 
+from datetime import datetime
 from typing import Any
 from unittest.mock import AsyncMock, patch
 from uuid import UUID
@@ -846,6 +847,90 @@ async def test_portal_session_bubbles_paddle_failure_as_502(
     fake = AsyncMock(side_effect=RuntimeError("paddle 500"))
     with patch("app.routers.billing.create_customer_portal_session", new=fake):
         response = await admin_client.post("/billing/portal-session")
+    assert response.status_code == 502
+
+
+# --- Cancel at period end -----------------------------------------------------
+
+
+async def test_cancel_at_period_end_schedules_and_mirrors(
+    admin_client: AsyncClient,
+    db: AsyncSession,
+) -> None:
+    from uuid import UUID
+
+    tenant_id = UUID(admin_client.headers["X-Tenant-ID"])
+    db.add(
+        Subscription(
+            tenant_id=tenant_id,
+            plan_key="pro",
+            status="active",
+            paddle_subscription_id="sub_cancel_1",
+            paddle_customer_id="ctm_test_1",
+        )
+    )
+    await db.commit()
+
+    scheduled = _paddle_subscription_entity(
+        subscription_id="sub_cancel_1",
+        tenant_id=str(tenant_id),
+        price_id="pri_pro_month",
+    )
+    scheduled["scheduled_change"] = {
+        "action": "cancel",
+        "effective_at": "2026-10-01T00:00:00Z",
+    }
+
+    async def fake_upsert(event_type: str, event_data: dict[str, Any]) -> None:
+        row = await db.scalar(select(Subscription).where(Subscription.tenant_id == tenant_id))
+        assert row is not None
+        row.status = event_data["status"]
+        row.scheduled_change_action = "cancel"
+        row.scheduled_change_at = datetime(2026, 10, 1)
+        await db.commit()
+
+    fake = AsyncMock(return_value=scheduled)
+    with (
+        patch("app.routers.billing.schedule_subscription_cancellation", new=fake),
+        patch("app.routers.billing._upsert_subscription", new=fake_upsert),
+    ):
+        response = await admin_client.post("/billing/cancel-at-period-end")
+
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["scheduled_change_action"] == "cancel"
+    assert body["scheduled_change_at"].startswith("2026-10-01")
+    fake.assert_awaited_once_with("sub_cancel_1")
+
+
+async def test_cancel_at_period_end_404_without_subscription(
+    admin_client: AsyncClient,
+) -> None:
+    response = await admin_client.post("/billing/cancel")
+    assert response.status_code == 404
+
+
+async def test_cancel_at_period_end_bubbles_paddle_failure(
+    admin_client: AsyncClient,
+    db: AsyncSession,
+) -> None:
+    from uuid import UUID
+
+    tenant_id = UUID(admin_client.headers["X-Tenant-ID"])
+    db.add(
+        Subscription(
+            tenant_id=tenant_id,
+            plan_key="pro",
+            status="active",
+            paddle_subscription_id="sub_cancel_2",
+        )
+    )
+    await db.commit()
+
+    fake = AsyncMock(side_effect=RuntimeError("paddle 500"))
+    with patch("app.routers.billing.schedule_subscription_cancellation", new=fake):
+        response = await admin_client.post("/billing/cancel")
+
     assert response.status_code == 502
 
 

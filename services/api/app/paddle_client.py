@@ -234,6 +234,19 @@ async def cancel_subscription(subscription_id: str) -> None:
         _raise_for_status(response, "cancel_subscription")
 
 
+async def schedule_subscription_cancellation(subscription_id: str) -> dict[str, Any]:
+    """Schedule Paddle cancellation at the end of the current billing period."""
+    if not settings.paddle_api_key:
+        raise RuntimeError("Paddle API key is not configured")
+    async with httpx.AsyncClient(base_url=_paddle_base_url(), headers=_headers()) as client:
+        response = await client.post(
+            f"/subscriptions/{subscription_id}/cancel",
+            json={"effective_from": "next_billing_period"},
+        )
+        _raise_for_status(response, "schedule_subscription_cancellation")
+        return response.json()["data"]  # type: ignore[no-any-return]
+
+
 async def create_customer_address(
     customer_id: str,
     country_code: str = "GB",
