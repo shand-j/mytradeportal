@@ -355,7 +355,9 @@ async def test_offboard_skips_paddle_cancel_when_billing_flag_off(
 
     monkeypatch.setattr("app.routers.tenants.paddle_billing_enabled", _disabled)
     cancel_subscription = AsyncMock()
-    monkeypatch.setattr("app.routers.tenants.paddle_client.cancel_subscription", cancel_subscription)
+    monkeypatch.setattr(
+        "app.routers.tenants.paddle_client.cancel_subscription", cancel_subscription
+    )
 
     subscription = await db.scalar(select(Subscription).where(Subscription.tenant_id == tenant_id))
     assert subscription is not None

@@ -93,7 +93,7 @@ def validate_api_reads(
         payload = json.loads(body)
         results[name] = {"count": len(payload) if isinstance(payload, list) else None}
 
-    for name, path in (
+    for name, optional_path in (
         ("quote_detail", f"/quotes/{quote_id}" if quote_id else None),
         ("job_detail", f"/jobs/{job_id}" if job_id else None),
         ("invoice_detail", f"/invoices/{invoice_id}" if invoice_id else None),
@@ -102,8 +102,8 @@ def validate_api_reads(
             f"/files/download?{urllib.parse.urlencode({'key': file_key})}" if file_key else None,
         ),
     ):
-        if path:
-            status, body, _ = _http(f"{api_base.rstrip('/')}{path}", headers=headers)
+        if optional_path:
+            status, body, _ = _http(f"{api_base.rstrip('/')}{optional_path}", headers=headers)
             _require_ok(name, status, body)
             results[name] = {
                 "bytes": len(body),
