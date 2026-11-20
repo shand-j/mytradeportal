@@ -175,6 +175,16 @@ so staging would send REAL email until re-routed. Rebuild:
    `DEPLOY_SINCE` empty ("now"), so an already-live deployment reads stale
    and `wait_for_deploy.py` times out despite a healthy service.
 
+### Owner-only webhook secret rotation residue
+
+Provider-side staging webhook destinations require the post-rotation
+Paddle and Resend signing secrets to be recorded by the owner in the
+respective provider dashboards. The API and CI retrieve the corresponding
+secrets at runtime for signature verification; never copy or publish actual
+secret values in issues, reports, workflow logs, or committed files. Confirm
+Paddle and Resend staging endpoints after rotation, then rerun
+`staging-e2e.yml` to verify the deployed write suite.
+
 ## Required GitHub secrets
 
 | Secret | Purpose |

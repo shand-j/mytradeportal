@@ -58,6 +58,11 @@ def wait_for_email(
     with _client() as client:
         while True:
             resp = client.get("/api/v1/messages")
+            if resp.status_code == 404:
+                raise RuntimeError(
+                    "Mailpit /api/v1/messages returned 404; verify the persistent "
+                    "staging Mailpit HTTPS/UI domain and authentication configuration"
+                )
             resp.raise_for_status()
             messages = resp.json().get("messages", [])
             match = next(

@@ -16,6 +16,7 @@ Hard rules (see docs/ci-pr-environments.md):
 from __future__ import annotations
 
 import os
+import time
 import uuid
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
@@ -102,17 +103,37 @@ def make_tenant(api: httpx.Client) -> Iterator[Callable[[str], SeededTenant]]:
         )
         assert resp.status_code == 201, resp.text
         body = resp.json()
-        token_resp = api.post(
-            "/auth/token", json={"email": admin_email, "password": admin_password}
+        token_resp = None
+        for attempt in range(6):
+            token_resp = api.post(
+                "/auth/token", json={"email": admin_email, "password": admin_password}
+            )
+            if token_resp.status_code != 429:
+                break
+            try:
+                retry_after = int(token_resp.headers.get("Retry-After", "12"))
+            except (TypeError, ValueError):
+                retry_after = 12
+            if attempt == 5:
+                break
+            time.sleep(min(max(retry_after, 1), 12))
+        assert token_resp is not None and token_resp.status_code == 200, (
+            f"staff login failed after bounded retry: HTTP {token_resp.status_code}"
+            if token_resp is not None
+            else "staff login did not return a response"
         )
-        assert token_resp.status_code == 200, token_resp.text
+        access_token = token_resp.json()["access_token"]
+        if os.environ.get("GITHUB_ACTIONS") == "true":
+            for secret in (admin_password, access_token):
+                # codeql[py/clear-text-logging-sensitive-data] GitHub mask command; value is redacted in logs.
+                print(f"::add-mask::{secret}")
         return SeededTenant(
             id=body["id"],
             slug=slug,
             code=body.get("code") or "",
             admin_email=admin_email,
             admin_password=admin_password,
-            token=token_resp.json()["access_token"],
+            token=access_token,
         )
 
     yield _make
