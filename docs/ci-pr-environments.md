@@ -78,8 +78,9 @@ How it works:
   falls back to SMTP otherwise, so routing an environment to Mailpit is:
   delete `RESEND_API_KEY`, set `SMTP_HOST`/`SMTP_PORT`/`SMTP_USE_TLS=false`/
   `SMTP_USERNAME`/`SMTP_PASSWORD`/`SMTP_FROM_EMAIL`/`SMTP_FROM_NAME` to the
-  Mailpit endpoint. Applied by hand once to staging; `pr-verify.yml` applies
-  it automatically to every PR environment right after URL resolution.
+  Mailpit endpoint. `staging-e2e.yml` reapplies it after staging IaC
+  configuration, and `pr-verify.yml` applies it automatically to every PR
+  environment right after URL resolution.
 - Mailpit exposes a public **HTTPS domain** (basic-auth protected; UI + REST
   API for assertions) and a public **SMTP TCP endpoint** (auth-enabled;
   `MP_SMTP_AUTH_ALLOW_INSECURE=true` because the TCP proxy is plaintext —

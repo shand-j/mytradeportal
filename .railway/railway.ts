@@ -6,9 +6,9 @@
  *   railway config plan    # preview the diff against the linked environment
  *   railway config apply   # apply after confirmation
  *
- * Layout (9 resources) — mobile-only beta stack:
+ * Layout — mobile-only beta stack:
  *   postgres + redis      — native Railway database plugins
- *   qdrant, minio         — Docker-image services with mounted volumes
+ *   qdrant, minio, mailpit — Docker-image services with mounted volumes
  *   api, admin, data-pipeline — built from this GitHub repo
  *   landing               — Vite marketing site (www.mytradeportal.co.uk),
  *                             built from this GitHub repo via Railpack
@@ -76,6 +76,7 @@ export default defineRailway(() => {
   // ---------------------------------------------------------------------
   const qdrantStorage = volume("qdrant-storage", { sizeMB: 5000, region: TARGET_REGION });
   const minioData = volume("minio-data", { sizeMB: 5000, region: TARGET_REGION });
+  const mailpitData = volume("mailpit-data", { sizeMB: 1000, region: TARGET_REGION });
 
   const qdrant = service("qdrant", {
     source: image("qdrant/qdrant:v1.11.5"),
@@ -105,6 +106,22 @@ export default defineRailway(() => {
       RUSTFS_VOLUMES: "/mnt/data",
       // S3-compatible API listens on 9000; Railway uses $PORT for healthchecks.
       PORT: "9000",
+    },
+  });
+
+  // Shared staging test mailbox. It has no public domains or TCP proxies in
+  // IaC, so those transport endpoints remain an explicit dashboard provision.
+  // The public service is never used to send production email.
+  const mailpit = service("mailpit", {
+    source: image("axllent/mailpit:v1.18"),
+    volumeMounts: { "/data": mailpitData },
+    regions: { [TARGET_REGION]: 1 },
+    env: {
+      MP_DATABASE: "/data/mailpit.db",
+      MP_UI_AUTH: preserve(),
+      MP_SMTP_AUTH: preserve(),
+      MP_SMTP_AUTH_ALLOW_INSECURE: "true",
+      PORT: "8025",
     },
   });
 

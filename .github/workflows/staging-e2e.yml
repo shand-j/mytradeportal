@@ -107,6 +107,14 @@ jobs:
           RAILWAY_ENVIRONMENT_NAME: staging
         run: python3 scripts/ci/configure_staging.py
 
+      - name: Route staging email to Mailpit
+        env:
+          MAILPIT_SMTP: ${{ secrets.MAILPIT_SMTP }}
+          MAILPIT_BASIC_AUTH: ${{ secrets.MAILPIT_BASIC_AUTH }}
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN_STAGING }}
+          RAILWAY_PROJECT_ID: ${{ vars.RAILWAY_PROJECT_ID }}
+        run: python3 scripts/ci/route_env_email.py "$RAILWAY_ENVIRONMENT_ID"
+
       # The push triggers a staging rebuild; assert against the new image,
       # never the previous deployment (a stale race failed this suite on
       # 2026-09-16 with errors only explainable by old code).
@@ -226,6 +234,14 @@ jobs:
         env:
           RAILWAY_ENVIRONMENT_NAME: staging
         run: python3 scripts/ci/configure_staging.py
+
+      - name: Route staging email to Mailpit
+        env:
+          MAILPIT_SMTP: ${{ secrets.MAILPIT_SMTP }}
+          MAILPIT_BASIC_AUTH: ${{ secrets.MAILPIT_BASIC_AUTH }}
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN_STAGING }}
+          RAILWAY_PROJECT_ID: ${{ vars.RAILWAY_PROJECT_ID }}
+        run: python3 scripts/ci/route_env_email.py "$RAILWAY_ENVIRONMENT_ID"
 
       - name: Resolve webhook secrets from the staging api
         env:
