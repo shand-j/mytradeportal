@@ -143,6 +143,12 @@ export function PortalShell({
             >
               My Trade Portal
             </a>
+            {' · '}
+            <Link to="/terms" className="underline underline-offset-2">Terms</Link>
+            {' · '}
+            <Link to="/privacy" className="underline underline-offset-2">Privacy</Link>
+            {' · '}
+            <Link to="/fair-use" className="underline underline-offset-2">Fair use</Link>
           </p>
         </div>
       </footer>

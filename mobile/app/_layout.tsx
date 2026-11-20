@@ -5,7 +5,6 @@ import { StatusBar } from "expo-status-bar";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { AuthProvider } from "../src/contexts/AuthContext";
 import { ThemeProvider } from "../src/theme/ThemeProvider";
-import { OfflineBanner } from "../src/components/OfflineBanner";
 import { queryClient } from "../src/lib/queryClient";
 import "../global.css";
 
@@ -19,7 +18,6 @@ export default function RootLayout() {
               <Stack screenOptions={{ headerShown: false }}>
                 <Stack.Screen name="index" />
               </Stack>
-              <OfflineBanner />
             </View>
             <StatusBar style="auto" />
           </AuthProvider>

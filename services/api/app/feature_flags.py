@@ -39,6 +39,7 @@ KNOWN_FLAGS: dict[str, bool] = {
     "voice_ai_insights": False,
     "demand_forecasting": False,
     "external_integrations": False,
+    "paddle_billing": False,
 }
 
 _SIGNALS_QUERY = """
@@ -147,6 +148,17 @@ async def get_feature_flags() -> dict[str, bool]:
     """Return the flag registry with defaults applied for every known flag."""
     registry = await fetch_registry_flags()
     return {**KNOWN_FLAGS, **registry}
+
+
+async def is_flag_enabled(flag_name: str) -> bool:
+    """Return ``True`` when the named feature flag is enabled."""
+    flags = await get_feature_flags()
+    return bool(flags.get(flag_name, KNOWN_FLAGS.get(flag_name, False)))
+
+
+async def paddle_billing_enabled() -> bool:
+    """Gate all Paddle billing entry points behind ``paddle_billing``."""
+    return await is_flag_enabled("paddle_billing")
 
 
 def reset_cache() -> None:
