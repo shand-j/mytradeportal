@@ -76,55 +76,64 @@ def _plan_key_for_price_id(price_id: str | None) -> str | None:
     return _price_id_plan_map().get(price_id)
 
 
-async def _record_payment(invoice_id: str, event_data: dict[str, Any]) -> None:
+async def _record_payment_in_session(
+    session: AsyncSession, invoice_id: str, event_data: dict[str, Any]
+) -> None:
     """Persist a Paddle payment against the matching invoice."""
+    result = await session.execute(select(Invoice).where(Invoice.id == invoice_id))
+    invoice = result.scalar_one_or_none()
+    if invoice is None:
+        return
+
+    total = event_data.get("details", {}).get("totals", {}).get("total", "0")
+    currency = event_data.get("currency_code", settings.paddle_default_currency_code)
+    transaction_id = event_data.get("id")
+    checkout_id = event_data.get("checkout", {}).get("id")
+
+    payment = Payment(
+        tenant_id=invoice.tenant_id,
+        invoice_id=invoice.id,
+        amount=Decimal(total) / 100 if isinstance(total, (int, str)) else Decimal("0.00"),
+        currency_code=currency,
+        status="completed",
+        provider_transaction_id=transaction_id,
+        provider_checkout_id=checkout_id,
+        provider_payload=event_data,
+        paid_at=datetime.utcnow(),
+    )
+    invoice.status = "paid"
+    invoice.paid_at = datetime.utcnow()
+    invoice.paddle_transaction_id = transaction_id
+    session.add(payment)
+    session.add(invoice)
+    # Close the AI funnel when the paid invoice traces back to an
+    # AI-drafted quote (fail-open; committed with this session).
+    if invoice.quote_id is not None:
+        source_quote = await session.get(Quote, invoice.quote_id)
+        if source_quote is not None:
+            await record_quote_outcome(
+                session,
+                outcome="invoice_paid",
+                tenant_id=invoice.tenant_id,
+                quote=source_quote,
+                extra_payload={
+                    "invoice_id": str(invoice.id),
+                    "actor": "paddle_webhook",
+                    "provider_transaction_id": transaction_id,
+                },
+            )
+
+
+async def _record_payment(invoice_id: str, event_data: dict[str, Any]) -> None:
+    """Compatibility wrapper for tests/utilities that call this helper directly."""
     async with AsyncSession(engine) as session:
-        result = await session.execute(select(Invoice).where(Invoice.id == invoice_id))
-        invoice = result.scalar_one_or_none()
-        if invoice is None:
-            return
-
-        total = event_data.get("details", {}).get("totals", {}).get("total", "0")
-        currency = event_data.get("currency_code", settings.paddle_default_currency_code)
-        transaction_id = event_data.get("id")
-        checkout_id = event_data.get("checkout", {}).get("id")
-
-        payment = Payment(
-            tenant_id=invoice.tenant_id,
-            invoice_id=invoice.id,
-            amount=Decimal(total) / 100 if isinstance(total, (int, str)) else Decimal("0.00"),
-            currency_code=currency,
-            status="completed",
-            provider_transaction_id=transaction_id,
-            provider_checkout_id=checkout_id,
-            provider_payload=event_data,
-            paid_at=datetime.utcnow(),
-        )
-        invoice.status = "paid"
-        invoice.paid_at = datetime.utcnow()
-        invoice.paddle_transaction_id = transaction_id
-        session.add(payment)
-        session.add(invoice)
-        # Close the AI funnel when the paid invoice traces back to an
-        # AI-drafted quote (fail-open; committed with this session).
-        if invoice.quote_id is not None:
-            source_quote = await session.get(Quote, invoice.quote_id)
-            if source_quote is not None:
-                await record_quote_outcome(
-                    session,
-                    outcome="invoice_paid",
-                    tenant_id=invoice.tenant_id,
-                    quote=source_quote,
-                    extra_payload={
-                        "invoice_id": str(invoice.id),
-                        "actor": "paddle_webhook",
-                        "provider_transaction_id": transaction_id,
-                    },
-                )
+        await _record_payment_in_session(session, invoice_id, event_data)
         await session.commit()
 
 
-async def _upsert_subscription(event_type: str, event_data: dict[str, Any]) -> None:
+async def _upsert_subscription_in_session(
+    session: AsyncSession, event_type: str, event_data: dict[str, Any]
+) -> None:
     """Mirror a Paddle subscription onto our ``subscriptions`` row.
 
     Keyed on ``custom_data.tenant_id`` (set at checkout) so the initial
@@ -136,88 +145,74 @@ async def _upsert_subscription(event_type: str, event_data: dict[str, Any]) -> N
     tenant_id_raw = custom_data.get("tenant_id")
     paddle_subscription_id = event_data.get("id")
 
-    async with AsyncSession(engine) as session:
-        sub: Subscription | None = None
-        if tenant_id_raw:
-            try:
-                tenant_uuid = UUID(tenant_id_raw)
-            except ValueError:
-                tenant_uuid = None
-            if tenant_uuid is not None:
-                sub = await session.scalar(
-                    select(Subscription).where(Subscription.tenant_id == tenant_uuid)
-                )
-        if sub is None and paddle_subscription_id:
-            sub = await session.scalar(
-                select(Subscription).where(
-                    Subscription.paddle_subscription_id == paddle_subscription_id
-                )
-            )
-        if sub is None:
-            logger.warning(
-                "paddle_subscription_orphan",
-                event_type=event_type,
-                paddle_subscription_id=paddle_subscription_id,
-                tenant_id=tenant_id_raw,
-            )
-            return
-
-        first_item = _first_item(event_data)
-        price = first_item.get("price") or {}
-        current_billing_period = event_data.get("current_billing_period") or {}
-        scheduled_change = event_data.get("scheduled_change") or {}
-
-        sub.paddle_subscription_id = paddle_subscription_id or sub.paddle_subscription_id
-        sub.paddle_customer_id = event_data.get("customer_id") or sub.paddle_customer_id
-        sub.paddle_price_id = price.get("id") or sub.paddle_price_id
-        sub.paddle_product_id = price.get("product_id") or sub.paddle_product_id
-        # The price id is the source of truth for the plan: re-derive on every
-        # event so plan changes (upgrades/downgrades, annual switches) and
-        # checkout-time drift self-heal. Unknown price ids keep the stored key.
-        derived_plan_key = _plan_key_for_price_id(sub.paddle_price_id)
-        if derived_plan_key:
-            sub.plan_key = derived_plan_key
-        sub.status = event_data.get("status") or sub.status
-        trial_dates = first_item.get("trial_dates") or {}
-        if trial_dates.get("ends_at"):
-            sub.trial_ends_at = _parse_dt(trial_dates.get("ends_at"))
-        if current_billing_period.get("starts_at"):
-            sub.current_period_start = _parse_dt(current_billing_period.get("starts_at"))
-        if current_billing_period.get("ends_at"):
-            sub.current_period_end = _parse_dt(current_billing_period.get("ends_at"))
-        sub.scheduled_change_action = scheduled_change.get("action")
-        sub.scheduled_change_at = _parse_dt(scheduled_change.get("effective_at"))
-        if event_type == "subscription.canceled":
-            sub.canceled_at = _parse_dt(event_data.get("canceled_at")) or datetime.utcnow()
-        sub.provider_payload = event_data
-        session.add(sub)
-        # Snapshot log fields before commit: commit() expires the ORM object
-        # and post-commit attribute access would trigger a lazy refresh
-        # outside a greenlet (MissingGreenlet).
-        log_tenant_id = str(sub.tenant_id)
-        log_status = sub.status
-        log_plan_key = sub.plan_key
-        await session.commit()
-
-        logger.info(
-            "paddle_subscription_synced",
-            event_type=event_type,
-            tenant_id=log_tenant_id,
-            status=log_status,
-            plan_key=log_plan_key,
-        )
-
-
-async def _mark_event_seen(event_id: str, event_type: str) -> bool:
-    """Insert into the dedup ledger. Returns False if already seen."""
-    async with AsyncSession(engine) as session:
-        session.add(ProcessedWebhook(event_id=event_id, event_type=event_type))
+    sub: Subscription | None = None
+    if tenant_id_raw:
         try:
-            await session.commit()
-        except IntegrityError:
-            await session.rollback()
-            return False
-    return True
+            tenant_uuid = UUID(tenant_id_raw)
+        except ValueError:
+            tenant_uuid = None
+        if tenant_uuid is not None:
+            sub = await session.scalar(
+                select(Subscription).where(Subscription.tenant_id == tenant_uuid)
+            )
+    if sub is None and paddle_subscription_id:
+        sub = await session.scalar(
+            select(Subscription).where(
+                Subscription.paddle_subscription_id == paddle_subscription_id
+            )
+        )
+    if sub is None:
+        logger.warning(
+            "paddle_subscription_orphan",
+            event_type=event_type,
+            paddle_subscription_id=paddle_subscription_id,
+            tenant_id=tenant_id_raw,
+        )
+        return
+
+    first_item = _first_item(event_data)
+    price = first_item.get("price") or {}
+    current_billing_period = event_data.get("current_billing_period") or {}
+    scheduled_change = event_data.get("scheduled_change") or {}
+
+    sub.paddle_subscription_id = paddle_subscription_id or sub.paddle_subscription_id
+    sub.paddle_customer_id = event_data.get("customer_id") or sub.paddle_customer_id
+    sub.paddle_price_id = price.get("id") or sub.paddle_price_id
+    sub.paddle_product_id = price.get("product_id") or sub.paddle_product_id
+    # The price id is the source of truth for the plan: re-derive on every
+    # event so plan changes (upgrades/downgrades, annual switches) and
+    # checkout-time drift self-heal. Unknown price ids keep the stored key.
+    derived_plan_key = _plan_key_for_price_id(sub.paddle_price_id)
+    if derived_plan_key:
+        sub.plan_key = derived_plan_key
+    sub.status = event_data.get("status") or sub.status
+    trial_dates = first_item.get("trial_dates") or {}
+    if trial_dates.get("ends_at"):
+        sub.trial_ends_at = _parse_dt(trial_dates.get("ends_at"))
+    if current_billing_period.get("starts_at"):
+        sub.current_period_start = _parse_dt(current_billing_period.get("starts_at"))
+    if current_billing_period.get("ends_at"):
+        sub.current_period_end = _parse_dt(current_billing_period.get("ends_at"))
+    sub.scheduled_change_action = scheduled_change.get("action")
+    sub.scheduled_change_at = _parse_dt(scheduled_change.get("effective_at"))
+    if event_type == "subscription.canceled":
+        sub.canceled_at = _parse_dt(event_data.get("canceled_at")) or datetime.utcnow()
+    sub.provider_payload = event_data
+    session.add(sub)
+    logger.info(
+        "paddle_subscription_synced",
+        event_type=event_type,
+        tenant_id=str(sub.tenant_id),
+        status=sub.status,
+        plan_key=sub.plan_key,
+    )
+
+
+async def _upsert_subscription(event_type: str, event_data: dict[str, Any]) -> None:
+    """Compatibility wrapper for tests/utilities that call this helper directly."""
+    async with AsyncSession(engine) as session:
+        await _upsert_subscription_in_session(session, event_type, event_data)
+        await session.commit()
 
 
 _SUBSCRIPTION_EVENTS = frozenset(
@@ -254,30 +249,39 @@ async def paddle_webhook(
     raw_data = event.get("data")
     event_data: dict[str, Any] = raw_data if isinstance(raw_data, dict) else {}
 
-    if event_id and not await _mark_event_seen(event_id, event_type):
-        return {"status": "duplicate"}
+    async with AsyncSession(engine) as session:
+        if event_id:
+            session.add(ProcessedWebhook(event_id=event_id, event_type=event_type))
+            try:
+                await session.flush()
+            except IntegrityError:
+                await session.rollback()
+                return {"status": "duplicate"}
 
-    if not await paddle_billing_enabled():
-        logger.info("paddle_webhook_delayed", event_type=event_type, event_id=event_id or None)
-        return {"status": "delayed"}
+        if not await paddle_billing_enabled():
+            logger.info("paddle_webhook_delayed", event_type=event_type, event_id=event_id or None)
+            await session.commit()
+            return {"status": "delayed"}
 
-    if event_type in _SUBSCRIPTION_EVENTS:
-        await _upsert_subscription(event_type, event_data)
-        if event_type == "subscription.past_due":
-            # Paddle is now dunning this subscription: open the customer-comms
-            # episode (idempotent — replays and extra failed retries never
-            # double-email).
-            await maybe_start_dunning(event_data.get("id"))
+        if event_type in _SUBSCRIPTION_EVENTS:
+            await _upsert_subscription_in_session(session, event_type, event_data)
+        elif event_type in {"transaction.completed", "transaction.paid"}:
+            custom_data = event_data.get("custom_data") or {}
+            invoice_id = custom_data.get("invoice_id")
+            if invoice_id:
+                await _record_payment_in_session(session, invoice_id, event_data)
+        # ``transaction.billed`` renewal events need no handler under flat pricing:
+        # AI is unmetered, so there is no overage ledger to maintain.
+        await session.commit()
+
+    if event_type == "subscription.past_due":
+        # Paddle is now dunning this subscription: open the customer-comms
+        # episode (idempotent — replays and extra failed retries never
+        # double-email).
+        await maybe_start_dunning(event_data.get("id"))
     elif event_type == "transaction.payment_failed":
         # Each failed Paddle retry fires this for the subscription's renewal
         # transaction. The episode guard keeps it to one email per episode.
         await maybe_start_dunning(event_data.get("subscription_id"))
-    elif event_type in {"transaction.completed", "transaction.paid"}:
-        custom_data = event_data.get("custom_data") or {}
-        invoice_id = custom_data.get("invoice_id")
-        if invoice_id:
-            await _record_payment(invoice_id, event_data)
-    # ``transaction.billed`` renewal events need no handler under flat pricing:
-    # AI is unmetered, so there is no overage ledger to maintain.
 
     return {"status": "ok"}
