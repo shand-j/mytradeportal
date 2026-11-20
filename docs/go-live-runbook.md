@@ -123,7 +123,7 @@ doc's caveat).
 
 | Item | Impact | Effort |
 |---|---|---|
-| Certificates have no backend persistence — drafts are local-only and lost on unmount; `CertificatesScreen` list is empty; no observations entry UI; max-Zs entered manually | EICR feature is on-site drafting/validation only | 4–8 h (needs certificates API) |
+| Certificates are excluded from beta UI; no certificate backend or persistence exists | No unsupported certificate issuance/persistence claim | Future scope (needs certificates API) |
 | Voice features deferred (post-beta) | none — no UI leads to them | scoped separately |
 | OCERP/BoQ parked (501) | none — UI removed | product decision |
 | `web/app` mock layer (`src/lib/mock`, `dataStore`) is dead code | bundle weight only | 1–2 h |

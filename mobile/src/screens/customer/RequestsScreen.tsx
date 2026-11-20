@@ -973,10 +973,10 @@ export function RequestsScreen({ navigation }: RequestsScreenProps) {
         {!isConnected && !isLoading && (
           <View className="gap-2 rounded-2xl border border-slate-200 bg-white p-4">
             <Text variant="body" weight="semibold">
-              You're offline
+              Connection unavailable
             </Text>
             <Text variant="caption" color="secondary">
-              We'll refresh your quotes automatically when you're back.
+              Live quote information is unavailable until the connection returns.
             </Text>
           </View>
         )}
