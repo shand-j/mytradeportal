@@ -181,7 +181,9 @@ async def _handle_dispute_created(event_data: dict[str, Any]) -> None:
         "Stripe dispute opened",
         (
             f"Dispute on payment {intent_id}: £{int(amount) / 100:.2f} "
-            f"(reason: {reason}). Review in the Stripe dashboard."
+            f"(reason: {reason}). Destination-charge disputes debit the platform "
+            "balance first; recoverable amounts need connected-account transfer "
+            "recovery. Review in the Stripe dashboard."
         ),
     )
     logger.warning("stripe_dispute_created", payment_intent_id=intent_id, reason=reason)

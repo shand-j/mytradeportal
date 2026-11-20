@@ -43,6 +43,11 @@ Feature: Portal invoices and card payment
     # docs/evidence/wave-a/00c-terminal-payment-settled.webm, 05-invoice-paid.webm.
 
   @automated-integration
+  Scenario: Dispute webhook raises the destination-charge liability alert
+    When Stripe delivers charge.dispute.created for a settled payment
+    Then staff alert text states the platform is debited first and transfer recovery is required
+
+  @automated-integration
   Scenario: Payment-received email carries the review prompt
     When the payment settles
     Then the customer receives the payment-received email with a review CTA

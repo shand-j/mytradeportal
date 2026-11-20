@@ -738,10 +738,22 @@ async def refund_invoice(
         )
     try:
         refund = await stripe_client.create_refund(invoice.stripe_payment_intent_id)
+    except stripe_client.RefundTransferRecoveryError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="refund_recovery_unavailable",
+        ) from exc
     except stripe_client.PaymentsNotConfiguredError as exc:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="payments_not_configured",
+        ) from exc
+    except Exception as exc:
+        if not stripe_client.is_stripe_error(exc):
+            raise
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="payments_unavailable",
         ) from exc
     invoice.status = "refunded"
     await db.flush()

@@ -24,8 +24,10 @@ flow ourselves. Options evaluated: Stripe Connect Express vs Connect Standard.
   clunkier for non-technical tradies and would suppress connection rates
   against the ≥60% beta target.
 - **No platform take-rate at beta.** We charge the subscription only;
-  processing fees are Stripe's, passed through transparently. A take-rate is a
-  post-PMF decision.
+  we do not set an application fee or commission. With destination charges,
+  Stripe processing/dispute fees are debited from the platform balance, and
+  refund/dispute principal is recovered from the connected account via transfer
+  reversal where applicable. A take-rate is a post-PMF decision.
 - **Stripe-hosted fields / Payment Element only** — no PAN data ever touches
   our servers.
 - **UK consumer-card surcharging is disabled** (B2C surcharges are banned in
@@ -40,8 +42,9 @@ flow ourselves. Options evaluated: Stripe Connect Express vs Connect Standard.
 - Payments settings page (Express onboarding, status, payout explainer) and the
   pay page (Stripe Payment Element, Apple Pay/Google Pay) are P0 beta blockers
   (Delivery Plan item 0.11).
-- Webhooks (`payment_intent.succeeded`, `charge.refunded`, `charge.disputed`,
-  `payout.paid`) are idempotent and alert on failure; `invoice_paid` closes the
+- Webhooks (`payment_intent.succeeded`, `charge.refunded`,
+  `charge.dispute.created`, `payout.paid`) are idempotent and alert on failure;
+  `invoice_paid` closes the
   quote→cash loop in analytics.
 - Payments are on every tier — not a Pro gate.
 - A future take-rate or provider change requires a new ADR superseding this one.

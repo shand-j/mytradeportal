@@ -92,7 +92,7 @@ device).
 | 8 | Quote accept / decline (customer) | acceptance tests, date preferences, draft-job creation, notification content | Magic-link journey in a real browser/email client |
 | 9 | Job scheduling & rescheduling | availability math, guardrails (overlap/cap/lockdown), suggestion endpoint | RN date/time wheel (automation-blind — no AX exposure) |
 | 10 | Job start / close / invoice | lifecycle tests, guardrail lockdown, invoice prefill | Device walkthrough of the happy path |
-| 11 | Invoice payment (customer) | pay endpoint contract, PaymentIntent mint, webhook settle, paid-state gating | Card entry in Stripe elements (sandbox 4242), real-card go-live gate |
+| 11 | Invoice payment (customer) | pay endpoint contract, PaymentIntent mint, webhook settle, paid-state gating, out-of-order refund-vs-paid protection | Card entry in Stripe elements (sandbox 4242), real-card go-live gate |
 | 12 | Quote & invoice follow-ups | reminder scheduler (cadence, caps, per-contact overrides), branded templates | Deliverability/spam watch on real mailboxes |
 | 13 | Job reminders — customer (SMS/email) | reminder windows, fair-use degrade, STOP opt-out, failure alerts | Live SMS to a real handset (needs Telnyx keys) |
 | 14 | Job reminders — electrician | staff SMS + push, dedupe | Background push delivery on device (APNs) |
@@ -109,7 +109,7 @@ device).
 
 | Item | Why |
 |---|---|
-| Real-card payment (go-live gate, #32) | Requires live Stripe keys + a real card + refund; test-mode 4242 covers everything automatable |
+| Real-card payment (go-live gate, #32) | Requires live Stripe keys + a real card + refund/dispute drill. Verify destination-charge liability behaviour (platform fee/dispute debit + connected-account recovery path) in sandbox before live. Test-mode 4242 covers everything else automatable. |
 | Background push on device | APNs delivery cannot be simulated; code now surfaces failures via receipt logs |
 | RN date/time wheel reschedule | The wheel renders no XCUITest tree — automation cannot drive it; needs RN-side AX work |
 | Customer CodeInput | No accessibility exposure in the current build; test via UI |

@@ -241,3 +241,58 @@ async def test_v2_request_raises_structured_error_on_failure(
 def test_is_stripe_error_classifies_v2_errors() -> None:
     assert stripe_client.is_stripe_error(stripe_client.StripeV2Error(400, "code", "message"))
     assert not stripe_client.is_stripe_error(RuntimeError("boom"))
+
+
+@pytest.mark.asyncio
+async def test_create_refund_requests_reverse_transfer(monkeypatch: pytest.MonkeyPatch) -> None:
+    calls: dict[str, Any] = {}
+
+    class _Refund:
+        @staticmethod
+        def create(**kwargs: Any) -> dict[str, Any]:
+            calls.update(kwargs)
+            return {"id": "re_test_1", "status": "succeeded"}
+
+    class _Stripe:
+        StripeError = Exception
+        Refund = _Refund
+
+    async def _to_thread(func: Any, *args: Any, **kwargs: Any) -> Any:
+        return func(*args, **kwargs)
+
+    monkeypatch.setattr("app.stripe_client._stripe", lambda: _Stripe)
+    monkeypatch.setattr("app.stripe_client.asyncio.to_thread", _to_thread)
+
+    result = await stripe_client.create_refund("pi_test_1")
+
+    assert result == {"id": "re_test_1", "status": "succeeded"}
+    assert calls == {"payment_intent": "pi_test_1", "reverse_transfer": True}
+
+
+@pytest.mark.asyncio
+async def test_create_refund_maps_insufficient_balance_to_recovery_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class _StripeError(Exception):
+        def __init__(self, *, code: str) -> None:
+            super().__init__(code)
+            self.code = code
+
+    class _Refund:
+        @staticmethod
+        def create(**kwargs: Any) -> dict[str, Any]:
+            del kwargs
+            raise _StripeError(code="balance_insufficient")
+
+    class _Stripe:
+        StripeError = _StripeError
+        Refund = _Refund
+
+    async def _to_thread(func: Any, *args: Any, **kwargs: Any) -> Any:
+        return func(*args, **kwargs)
+
+    monkeypatch.setattr("app.stripe_client._stripe", lambda: _Stripe)
+    monkeypatch.setattr("app.stripe_client.asyncio.to_thread", _to_thread)
+
+    with pytest.raises(stripe_client.RefundTransferRecoveryError):
+        await stripe_client.create_refund("pi_test_2")
