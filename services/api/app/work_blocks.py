@@ -14,9 +14,10 @@ historical behaviour: 08:00-18:00, every day of the week.
 
 from collections.abc import Iterable
 from dataclasses import dataclass
-from datetime import date, time, timedelta
+from datetime import UTC, date, datetime, time, timedelta
 from decimal import Decimal
 from typing import Any
+from zoneinfo import ZoneInfo
 
 # Labour billing units. Hour units count 1:1 toward the estimate; day units
 # count as a full working day each.
@@ -27,6 +28,8 @@ DAY_UNITS = frozenset({"d", "day", "days"})
 _MAX_LLM_ESTIMATE_HOURS = 1000.0
 # Hard cap on how many days one job may span — guards against runaway input.
 _MAX_BLOCK_DAYS = 60
+# Tenant working-hour settings are wall-clock times in the UK market timezone.
+_BUSINESS_TIMEZONE = ZoneInfo("Europe/London")
 
 
 def working_hours(settings: dict[str, Any] | None) -> tuple[time, time, set[int]]:
@@ -147,3 +150,9 @@ def resolve_estimated_hours(
     if computed > 0:
         return Decimal(str(round(computed, 2)))
     return None
+
+
+def wall_clock_to_utc_naive(day: date, clock_time: time) -> datetime:
+    """Convert a UK wall-clock date+time into a naive UTC datetime."""
+    local = datetime.combine(day, clock_time, tzinfo=_BUSINESS_TIMEZONE)
+    return local.astimezone(UTC).replace(tzinfo=None)

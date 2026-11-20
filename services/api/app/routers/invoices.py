@@ -238,6 +238,18 @@ async def create_invoice(
     if contact is None or contact.tenant_id != tenant.id:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid contact")
 
+    if "vat_rate" in data.model_fields_set and not vat_rate_within_tenant_limit(
+        tenant, data.vat_rate
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=(
+                f"vat_rate {data.vat_rate} is above the tenant's registered VAT rate "
+                f"({tenant_vat_rate(tenant)}); per-invoice VAT overrides may only "
+                "lower or remove VAT (e.g. 0 for zero-rated jobs)"
+            ),
+        )
+
     job: Job | None = None
     if data.job_id:
         job = await db.get(Job, data.job_id)
@@ -738,10 +750,22 @@ async def refund_invoice(
         )
     try:
         refund = await stripe_client.create_refund(invoice.stripe_payment_intent_id)
+    except stripe_client.RefundTransferRecoveryError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="refund_recovery_unavailable",
+        ) from exc
     except stripe_client.PaymentsNotConfiguredError as exc:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="payments_not_configured",
+        ) from exc
+    except Exception as exc:
+        if not stripe_client.is_stripe_error(exc):
+            raise
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="payments_unavailable",
         ) from exc
     invoice.status = "refunded"
     await db.flush()

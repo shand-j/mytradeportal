@@ -236,7 +236,17 @@ jobs:
         # for weeks (the old warning-tolerance block was removed 2026-11-19);
         # if this fails with Invalid RAILWAY_TOKEN, rotate the
         # RAILWAY_TOKEN secret (Railway account token) in this environment.
-        run: railway config apply --yes --confirm-destructive
+        run: |
+          OUTPUT=$(railway config apply --yes --confirm-destructive 2>&1) || {
+            echo "$OUTPUT"
+            echo "::error::Railway configuration apply failed"
+            exit 1
+          }
+          echo "$OUTPUT"
+          if echo "$OUTPUT" | grep -Eqi 'Invalid RAILWAY_TOKEN|Not Authorized|Unauthorized'; then
+            echo "::error::Railway rejected the CI token; infrastructure was not applied"
+            exit 1
+          fi
 
       - name: Wait for the api deployment to go live
         # The Railway GitHub integration rebuilds on push; this blocks until

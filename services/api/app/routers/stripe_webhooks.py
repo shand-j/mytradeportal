@@ -150,6 +150,22 @@ async def _handle_charge_refunded(event_data: dict[str, Any]) -> None:
     intent_id = event_data.get("payment_intent")
     if not intent_id:
         return
+    amount_pence = event_data.get("amount") or event_data.get("amount_captured") or 0
+    refunded_pence = event_data.get("amount_refunded")
+    if refunded_pence is None:
+        refunds = event_data.get("refunds")
+        refund_rows = refunds.get("data", []) if isinstance(refunds, dict) else []
+        refunded_pence = sum(
+            int(refund.get("amount") or 0) for refund in refund_rows if isinstance(refund, dict)
+        )
+    if not int(amount_pence or 0) or int(refunded_pence or 0) < int(amount_pence or 0):
+        logger.info(
+            "stripe_partial_refund_ignored",
+            payment_intent_id=str(intent_id),
+            amount_pence=int(amount_pence or 0),
+            refunded_pence=int(refunded_pence or 0),
+        )
+        return
     async with AsyncSession(engine) as session:
         # No tenant context on webhook requests: bypass RLS (transaction-local)
         # to locate the invoice by its payment intent, then scope the session.

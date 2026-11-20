@@ -32,7 +32,47 @@ env:
   DEPLOY_SINCE: ${{ github.event.head_commit.timestamp }}
 
 jobs:
+  apply-staging-iac:
+    runs-on: ubuntu-latest
+    environment: MyTradePortal / staging
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+          cache-dependency-path: .railway/package-lock.json
+
+      - name: Install Railway CLI
+        run: npm install -g @railway/cli
+
+      - name: Install IaC runner dependencies
+        working-directory: .railway
+        run: npm ci
+
+      - name: Apply Railway staging configuration
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+          RAILWAY_ENVIRONMENT: staging
+          RAILWAY_IAC_TS_BIN: .railway/node_modules/.bin/railway-iac-ts
+        run: |
+          OUTPUT=$(railway config apply --yes --confirm-destructive 2>&1) || {
+            echo "$OUTPUT"
+            echo "::error::Railway staging configuration apply failed"
+            exit 1
+          }
+          echo "$OUTPUT"
+          if echo "$OUTPUT" | grep -Eqi 'Invalid RAILWAY_TOKEN|Not Authorized|Unauthorized'; then
+            echo "::error::Railway rejected the staging CI token; infrastructure was not applied"
+            exit 1
+          fi
+
   staging-verify:
+    needs: apply-staging-iac
     runs-on: ubuntu-latest
     # GitHub environment holding the staging-scoped RAILWAY_TOKEN; Railway
     # tokens are environment-bound, so this job must not pick up the
@@ -61,6 +101,11 @@ jobs:
       - name: Resolve staging environment URLs
         id: staging-env
         run: scripts/ci/env_url.sh staging | tee -a "$GITHUB_OUTPUT"
+
+      - name: Apply staging cost and scheduler mirrors
+        env:
+          RAILWAY_ENVIRONMENT_NAME: staging
+        run: python3 scripts/ci/configure_staging.py
 
       # The push triggers a staging rebuild; assert against the new image,
       # never the previous deployment (a stale race failed this suite on
@@ -144,6 +189,7 @@ jobs:
           retention-days: 7
 
   deployed-write-suite:
+    needs: apply-staging-iac
     # Stateful API coverage against throwaway tenants on staging: paywall
     # transitions, Stripe Connect + forged card-payment/refund webhooks,
     # Paddle subscription sync, trial extension, Resend bounce alerts,
@@ -175,6 +221,11 @@ jobs:
           RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
           RAILWAY_PROJECT_ID: ${{ vars.RAILWAY_PROJECT_ID }}
         run: scripts/ci/env_url.sh staging | tee -a "$GITHUB_OUTPUT"
+
+      - name: Apply staging cost and scheduler mirrors
+        env:
+          RAILWAY_ENVIRONMENT_NAME: staging
+        run: python3 scripts/ci/configure_staging.py
 
       - name: Resolve webhook secrets from the staging api
         env:

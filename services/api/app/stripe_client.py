@@ -55,6 +55,14 @@ class PaymentsNotConfiguredError(RuntimeError):
         self.detail = detail
 
 
+class RefundTransferRecoveryError(RuntimeError):
+    """Raised when Stripe can't reverse the destination transfer on refund."""
+
+    def __init__(self, detail: str = "refund_recovery_unavailable") -> None:
+        super().__init__(detail)
+        self.detail = detail
+
+
 class StripeV2Error(RuntimeError):
     """An Accounts v2 call failed (non-2xx response from Stripe)."""
 
@@ -107,19 +115,32 @@ async def _v2_request(
     if not config.STRIPE_SECRET_KEY:
         raise PaymentsNotConfiguredError()
     headers = {
-        "Authorization": f"Bearer {config.STRIPE_SECRET_KEY}",
+        "Authorization": "Bearer " + config.STRIPE_SECRET_KEY,
         "Stripe-Version": STRIPE_V2_API_VERSION,
     }
     if idempotency_key:
         headers["Idempotency-Key"] = idempotency_key
-    async with httpx.AsyncClient(timeout=30) as client:
-        response = await client.request(
-            method,
-            f"{STRIPE_V2_BASE_URL}{path}",
-            json=json_body,
-            params=params,
-            headers=headers,
-        )
+    try:
+        async with httpx.AsyncClient(timeout=30) as client:
+            response = await client.request(
+                method,
+                f"{STRIPE_V2_BASE_URL}{path}",
+                json=json_body,
+                params=params,
+                headers=headers,
+            )
+    except httpx.TimeoutException as exc:
+        raise StripeV2Error(
+            503,
+            "stripe_request_timeout",
+            "Stripe did not respond before the request timeout.",
+        ) from exc
+    except httpx.RequestError as exc:
+        raise StripeV2Error(
+            503,
+            "stripe_request_failed",
+            "Stripe could not be reached.",
+        ) from exc
     if response.status_code >= 400:
         error: dict[str, Any] = {}
         with contextlib.suppress(ValueError):
@@ -360,12 +381,26 @@ async def retrieve_payment_intent(payment_intent_id: str) -> dict[str, Any]:
 
 
 async def create_refund(payment_intent_id: str) -> dict[str, Any]:
-    """Refund a PaymentIntent in full. Returns ``{"id", "status"}``."""
+    """Refund a PaymentIntent in full and recover funds from the connected account.
+
+    Destination charges debit the platform for refunds, so refunds must request
+    ``reverse_transfer=True`` to recover the amount from the connected account.
+    """
     stripe = _stripe()
-    refund = await asyncio.to_thread(
-        stripe.Refund.create,
-        payment_intent=payment_intent_id,
-    )
+    try:
+        refund = await asyncio.to_thread(
+            stripe.Refund.create,
+            payment_intent=payment_intent_id,
+            reverse_transfer=True,
+        )
+    except Exception as exc:
+        code = str(getattr(exc, "code", "") or "")
+        if isinstance(exc, stripe.StripeError) and code in {
+            "balance_insufficient",
+            "insufficient_funds",
+        }:
+            raise RefundTransferRecoveryError() from exc
+        raise
     return {"id": refund["id"], "status": refund.get("status")}
 
 

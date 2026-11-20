@@ -57,7 +57,8 @@ Feature: Invoicing and card payments
   Scenario: Refund a paid invoice in full
     Given an invoice settled by card
     When the tradesperson issues a full refund via POST /invoices/{id}/refund
-    Then the invoice becomes refunded, an audit row and staff notification are written
+    Then the refund request includes destination transfer recovery (reverse_transfer)
+    And the invoice becomes refunded, an audit row and staff notification are written
     And the replayed charge.refunded webhook is an idempotent no-op
     # docs/evidence/wave-a/00d-terminal-refund.webm, 06-invoice-refunded.webm.
 

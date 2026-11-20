@@ -110,8 +110,12 @@ def charge_refunded_event(
     intent_id: str,
     charge_id: str = "ch_wh_1",
     amount_pence: int = 60000,
+    amount_refunded_pence: int | None = None,
 ) -> dict[str, Any]:
     """Full ``charge.refunded`` with the nested refunds list."""
+    if amount_refunded_pence is None:
+        amount_refunded_pence = amount_pence
+    refunded = amount_refunded_pence >= amount_pence
     return _envelope(
         event_id,
         "charge.refunded",
@@ -120,11 +124,11 @@ def charge_refunded_event(
             "object": "charge",
             "amount": amount_pence,
             "amount_captured": amount_pence,
-            "amount_refunded": amount_pence,
+            "amount_refunded": amount_refunded_pence,
             "currency": "gbp",
             "livemode": False,
             "paid": True,
-            "refunded": True,
+            "refunded": refunded,
             "status": "succeeded",
             "payment_intent": intent_id,
             "payment_method_details": {
@@ -138,7 +142,7 @@ def charge_refunded_event(
                     {
                         "id": "re_wh_1",
                         "object": "refund",
-                        "amount": amount_pence,
+                        "amount": amount_refunded_pence,
                         "currency": "gbp",
                         "status": "succeeded",
                         "payment_intent": intent_id,
@@ -665,6 +669,27 @@ async def test_charge_refunded_marks_invoice_refunded(monkeypatch: pytest.Monkey
         assert response.status_code == 200
         invoice = await _get_invoice(ids["invoice_id"])
         assert invoice.status == "refunded"
+    finally:
+        await _cleanup(ids, [event_id])
+
+
+async def test_partial_charge_refunded_keeps_invoice_paid(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    ids = await _seed_invoice(paid=True, intent_id="pi_wh_partial_refund")
+    event_id = f"evt_{uuid4().hex}"
+    event = charge_refunded_event(
+        event_id,
+        intent_id="pi_wh_partial_refund",
+        amount_pence=60000,
+        amount_refunded_pence=30000,
+    )
+    _patch_construct(monkeypatch, event)
+    try:
+        response = await _post_event(event)
+        assert response.status_code == 200
+        invoice = await _get_invoice(ids["invoice_id"])
+        assert invoice.status == "paid"
     finally:
         await _cleanup(ids, [event_id])
 

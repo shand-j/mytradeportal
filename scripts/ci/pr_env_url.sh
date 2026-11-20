@@ -24,8 +24,10 @@
 #   api_url=<https://...>
 #   landing_url=<https://...>
 #
-# Exit codes: 0 = resolved, 2 = usage error, 3 = no PR env found yet,
-#             4 = PR env found but a service has no public domain.
+# Exit codes: 0 = resolved, 2 = usage error, 3 = retryable not-ready state
+#                 (for example no PR env found yet),
+#             4 = PR env found but a service has no public domain,
+#             5 = authorization/visibility issue (non-retryable).
 
 set -euo pipefail
 
@@ -66,7 +68,7 @@ if not project_id:
     )
     sys.exit(3)
 
-API = "https://backboard.railway.com/graphql/v2"
+API = os.environ.get("RAILWAY_API_URL", "https://backboard.railway.com/graphql/v2")
 
 
 # Account/workspace tokens authenticate as Bearer; project tokens must use
@@ -147,6 +149,22 @@ def is_pr_env(node: dict) -> bool:
 
 envs = [n for n in nodes if n.get("isEphemeral") and is_pr_env(n)]
 if not envs:
+    # CI tokens that can only see the default production environment cannot
+    # discover Railway's ephemeral PR environments. That is an auth/scope
+    # problem, not a provisioning delay, so fail fast with an actionable hint.
+    only_production_visible = (
+        len(nodes) == 1 and (nodes[0].get("name") or "").lower() == "production"
+    )
+    if only_production_visible:
+        print(
+            "authorization failure discovering PR environments: token can only "
+            "see 'production'. Configure GitHub secret RAILWAY_TOKEN as a "
+            "Railway account/workspace API token with read access to all "
+            "project environments; project-scoped tokens that expose only "
+            "production are insufficient for PR verification.",
+            file=sys.stderr,
+        )
+        sys.exit(5)
     available = ", ".join(n.get("name", "?") for n in nodes) or "(none)"
     print(
         f"no ephemeral PR environment found for PR #{pr_number}; "

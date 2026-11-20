@@ -40,17 +40,17 @@ Workflow: [`.github/workflows/pr-verify.yml`](../.github/workflows/pr-verify.yml
 `scripts/ci/pr_env_url.sh <pr-number>` resolves URLs in this order:
 
 1. Explicit overrides: `RAILWAY_PR_API_URL` / `RAILWAY_PR_LANDING_URL`.
-2. Railway CLI discovery:
-   - `railway environment list --ephemeral --json` — finds the ephemeral
-     environment Railway auto-created for this PR. Railway names them
-     `<project>-pr-<number>` and tags them with `meta.prNumber`; the script
-     matches on `meta.prNumber` first and falls back to a name pattern
-     (`pr-<number>`, `pr-<number>-<branch>`);
-   - `railway domain list --service api|landing --environment <env> --json` —
-     takes the first active service-type domain (custom domains are ignored).
+2. Railway GraphQL discovery (the CLI rejects the CI token):
+   - list project environments and find the ephemeral PR environment
+     (match `meta.prNumber` first, then `<project>-pr-<number>` name pattern);
+   - list `api`/`landing` service domains in that environment and take the
+     first active Railway-generated (`.up.railway.app`) domain.
 
-   Requires the Railway CLI authenticated via `RAILWAY_TOKEN` (CI) or an
-   interactive login (local). Local sanity check against the linked project:
+   Requires `RAILWAY_TOKEN` with visibility into **all** project environments.
+   For CI, use a Railway account/workspace API token with read access to the
+   project. Tokens that only expose `production` cannot discover ephemeral
+   PR environments; the script now fails fast with an authorization diagnostic
+   instead of retrying for 15 minutes. Local sanity check:
 
    ```bash
    ./scripts/ci/pr_env_url.sh 123
@@ -97,6 +97,60 @@ How it works:
 
 Production is untouched and continues to send via Resend.
 
+## Staging mirror and P0 reproducibility
+
+The persistent `staging` Railway environment mirrors production's service
+topology and runs the in-process reminder and AI-rollup schedulers. Pushes to
+`main` run `.github/workflows/staging-e2e.yml`, which applies these staging-only
+guards before waiting for a fresh API deployment:
+
+- reminder scheduler enabled with a 5-minute tick;
+- rollup scheduler enabled with a 60-second tick;
+- Paddle hosted/checkout mode forced to sandbox;
+- the Kimi/LLM routes pinned to the cheapest configured model with 10 AI calls
+  per hour, a 100-call monthly staging threshold, one retry, and a 60-second timeout;
+- SMS reminders disabled to avoid test spend;
+- the demo estate re-seeded by the API pre-deploy command.
+
+Configure locally or rerun after recreating the staging environment:
+
+```bash
+RAILWAY_TOKEN=... RAILWAY_PROJECT_ID=... \
+  python3 scripts/ci/configure_staging.py
+```
+
+The configuration script is idempotent and leaves credentials untouched.
+`PADDLE_*`, `LLM_*` credentials and webhook secrets remain environment secrets;
+never copy production API keys into staging.
+
+### Weekly 9-item UAT protocol
+
+Run against the staging API/landing URLs resolved with
+`scripts/ci/env_url.sh staging`:
+
+1. Tradie generates, edits, and sends an AI quote; confirm the keep-rate event.
+2. Customer opens the demo QR/portal URL, submits an intake with a photo, verifies, and sees status.
+3. Tradie sees the intake brief and responds.
+4. Customer opens a magic-link notification, views the quote, and accepts it.
+5. Tradie sends an invoice; customer pays in Paddle/Stripe sandbox; invoice is marked paid,
+   staff is notified, `invoice_paid` is emitted, and refund succeeds.
+6. Confirm the ≥3 sent-AI-quotes trial extension on the demo org.
+7. Confirm yesterday's org AI cost in the staff ops view and trigger one alert test.
+8. Confirm a Sole Trader cannot access a Pro feature and no usage meter is customer-visible.
+9. Spot-check any changed Tradify capability against `Tradify-Parity-Checklist.md`.
+
+### P0 reproduction protocol
+
+For every P0:
+
+1. Reproduce it only in staging (never use production customer data).
+2. Record the staging deployment commit, API/landing URLs, tenant slug, account used,
+   request/response payload with secrets redacted, and exact UTC time.
+3. Add or extend the smallest staging/mobile/API regression test that fails before the fix.
+4. Fix the bug, push, and rerun both staging jobs in
+   `.github/workflows/staging-e2e.yml`.
+5. State in the P0 report: **which test catches this and how it was reproduced on staging**.
+
 ### Rebuilding Mailpit after a staging-environment recreate (2026-11-19)
 
 When the staging environment is deleted/recreated, the fork from production
@@ -124,7 +178,7 @@ so staging would send REAL email until re-routed. Rebuild:
 
 | Secret | Purpose |
 |---|---|
-| `RAILWAY_TOKEN` | Project-scoped Railway token used by the CLI for environment/domain discovery (same token the existing `deploy-production` job uses). |
+| `RAILWAY_TOKEN` | Railway account/workspace API token with read access to all project environments (used by GraphQL environment/domain discovery). |
 | `GITHUB_TOKEN` | Built-in; needs `pull-requests: write` for the result comment (granted in the workflow). |
 
 ## What the smoke suites do (and deliberately don't)

@@ -131,6 +131,11 @@ class SubscriptionPaywallMiddleware(BaseHTTPMiddleware):
         ):
             return await call_next(request)
 
+        from app.feature_flags import paddle_billing_enabled
+
+        if not await paddle_billing_enabled():
+            return await call_next(request)
+
         from app.dependencies import _extract_token
         from app.security import decode_access_token
 

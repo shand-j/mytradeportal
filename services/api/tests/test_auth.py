@@ -764,3 +764,27 @@ async def test_tenant_status_beta_comped_setting_overrides_lapsed_subscription(
     assert data["subscription_status"] == "canceled"
     assert data["access"] == "active"
     assert data["beta_comped"] is True
+
+
+async def test_tenant_status_allows_lapsed_subscription_when_paddle_billing_off(
+    client: AsyncClient,
+    db: AsyncSession,
+    admin_credentials: dict[str, Any],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app.models import Subscription
+
+    async def _disabled() -> bool:
+        return False
+
+    monkeypatch.setattr("app.feature_flags.paddle_billing_enabled", _disabled)
+
+    tenant_id = UUID(admin_credentials["tenant_id"])
+    await set_tenant_in_session(db, tenant_id)
+    db.add(Subscription(tenant_id=tenant_id, plan_key="starter", status="canceled"))
+    await db.commit()
+
+    data = await _login_and_get_tenant_status(client, admin_credentials)
+    assert data["subscription_status"] == "canceled"
+    assert data["access"] == "active"
+    assert data["beta_comped"] is False

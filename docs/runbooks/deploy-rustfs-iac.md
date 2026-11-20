@@ -4,10 +4,12 @@
 After PR #318 merged (commit 781b3d6), the `.railway/railway.ts` IaC definition was updated to use `rustfs/rustfs:latest` instead of `minio/minio:latest` for object storage. The API service redeployed successfully, but the `minio` service image was not updated because the CI `railway config apply` step fails silently due to a token issue.
 
 ## Action
-Deploy the IaC changes manually using the Railway CLI. This requires:
+Production deploys now apply the IaC from CI and staging applies it before the
+staging verification suites. The steps below are the one-off recovery procedure
+for either environment if its CI token is rejected. This requires:
 - Railway CLI v5.28+
 - Authentication token with Railway project access
-- Local machine (the CI environment has a known token rejection issue)
+- Local machine for browser-auth recovery when a CI token is rejected
 
 ### Step 1: Verify prerequisites
 ```bash
@@ -48,7 +50,7 @@ railway list
 Before applying, preview what will change:
 ```bash
 cd .railway
-railway config plan
+RAILWAY_ENVIRONMENT=production railway config plan
 ```
 
 Expected diff:
@@ -60,10 +62,12 @@ Expected diff:
 ### Step 5: Apply the IaC changes
 ```bash
 cd .railway
-railway config apply --confirm-destructive
+RAILWAY_ENVIRONMENT=production railway config apply --confirm-destructive
 # Review the preview
 # Type 'yes' to confirm
 ```
+
+Repeat the plan/apply commands with `RAILWAY_ENVIRONMENT=staging` for staging.
 
 Expected output:
 ```

@@ -49,41 +49,43 @@ fixture is ever added (e.g. under `services/api/tests/fixtures/`), extend the
 job to restore it and run `init_db.py` against the restored dump before
 declaring this fully covered.
 
-## 3. Railway IaC deployment requires manual intervention
+## 3. Railway IaC deployment must fail closed
 
-The `deploy-production` job in `ci.yml` runs `railway config apply` to sync
-infrastructure changes (e.g. service image updates, volume mounts, environment
-variables) defined in `.railway/railway.ts`. **This step fails silently when
-the CI project token is rejected** by Railway CLI v5.28+.
+The `deploy-production` job in `ci.yml` and the `apply-staging-iac` job in
+`staging-e2e.yml` run `railway config apply` to sync infrastructure changes
+(e.g. service image updates, volume mounts, environment variables) defined in
+`.railway/railway.ts`. Both jobs treat a CLI error or an explicit Railway token
+rejection as a hard failure.
 
 **What this means:**
 - ✅ Code deploys work: Railway's GitHub integration rebuilds services on every
   push to main (verified on 2026-09-16).
-- ❌ Infrastructure changes do NOT apply automatically:
+- ✅ Infrastructure changes apply to production on `main` pushes and to staging
+  before the staging smoke suites:
   - Service image swaps (MinIO → RustFS, etc.)
   - Volume/environment config updates
   - Region corrections
 
 **When you change `.railway/railway.ts`:**
 1. The PR/commit is safe — it only updates the configuration file
-2. After merge to main, **manually run** (locally with Railway CLI):
+2. CI applies it to production and staging after merge to main
+3. If the deploy job reports a rejected token, restore CI by rotating the
+   environment's `RAILWAY_TOKEN` to a CLI-compatible account token. As a
+   one-off recovery, run locally with a browser-authenticated session:
    ```bash
    cd .railway
    railway login
    railway link  # if needed
    railway config apply --confirm-destructive
    ```
-3. See `docs/runbooks/deploy-rustfs-iac.md` for a detailed walkthrough
+4. See `docs/runbooks/deploy-rustfs-iac.md` for deployment and verification
+   details
 
 **Why this limitation exists:**
-Railway CLI v5.28+ rejects project-scoped tokens (required for CI) but accepts
-browser-authenticated sessions. A fix would require either:
-- Upgrading the Railway IaC framework to use a new token format
-- Switching to the Railway GraphQL API (not currently used in CI)
-- Using a human-scoped token (not secure for CI)
-
-This limitation is documented in the CI workflow as a yellow warning (not a
-failure) so code deploys are never blocked.
+Railway CLI v5.28+ rejects some older project-scoped token formats but accepts
+compatible account tokens and browser-authenticated sessions. Token rejection
+must never be tolerated: a green code deployment with stale infrastructure can
+leave an environment running an obsolete service image.
 
 ## 4. Feature flags for unfinished user-visible work
 
