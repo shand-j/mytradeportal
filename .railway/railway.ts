@@ -6,12 +6,13 @@
  *   railway config plan    # preview the diff against the linked environment
  *   railway config apply   # apply after confirmation
  *
- * Layout (9 resources) — mobile-only beta stack:
+ * Layout (9 resources + staging Mailpit) — mobile-only beta stack:
  *   postgres + redis      — native Railway database plugins
  *   qdrant, minio         — Docker-image services with mounted volumes
  *   api, admin, data-pipeline — built from this GitHub repo
  *   landing               — Vite marketing site (www.mytradeportal.co.uk),
  *                             built from this GitHub repo via Railpack
+ *   mailpit               — staging-only test email capture; never production
  *
  * Not deployed for the mobile beta (parked as commented blocks):
  *   ocerp — BoQ engine, superseded by the LLM quote pipeline
@@ -63,6 +64,7 @@ const ADMIN_PUBLIC_URL = "https://${{admin.RAILWAY_PUBLIC_DOMAIN}}";
 const LANDING_PUBLIC_URL = "https://landing-production-e043.up.railway.app";
 
 const TARGET_REGION = "europe-west4-drams3a"; // EU West Metal (Amsterdam) — closest Railway region to the UK market.
+const IS_STAGING = process.env.RAILWAY_ENVIRONMENT === "staging";
 
 export default defineRailway(() => {
   // ---------------------------------------------------------------------
@@ -105,6 +107,18 @@ export default defineRailway(() => {
       RUSTFS_VOLUMES: "/mnt/data",
       // S3-compatible API listens on 9000; Railway uses $PORT for healthchecks.
       PORT: "9000",
+    },
+  });
+
+  // Shared staging Mailpit captures all test email without relaying it. Keep it
+  // out of production and preserve credentials across IaC applies.
+  const mailpit = service("mailpit", {
+    source: image("axllent/mailpit:latest"),
+    regions: { [TARGET_REGION]: 1 },
+    env: {
+      MP_UI_AUTH: preserve(),
+      MP_SMTP_AUTH: preserve(),
+      MP_SMTP_AUTH_ALLOW_INSECURE: "true",
     },
   });
 
@@ -349,7 +363,7 @@ export default defineRailway(() => {
       // (web/landing pricing-tiers.ts).
       VITE_PADDLE_PRICE_SOLE_TRADER_MONTH: preserve(),
       VITE_PADDLE_PRICE_SOLE_TRADER_YEAR: preserve(),
-      VITE_PADDLE_PRICE_PRO_MONTH: preserve(),
+      // PRO_MONTH is declared with the legacy vars above and is shared by W2-B.
       VITE_PADDLE_PRICE_PRO_YEAR: preserve(),
       VITE_PADDLE_PRICE_TEAM_MONTH: preserve(),
       VITE_PADDLE_PRICE_TEAM_YEAR: preserve(),
@@ -453,6 +467,18 @@ export default defineRailway(() => {
   });
 
   return project("mytradeportal", {
-    resources: [db, cache, qdrant, minio, api, admin, dataPipeline, landing, qdrantStorage, minioData],
+    resources: [
+      db,
+      cache,
+      qdrant,
+      minio,
+      api,
+      admin,
+      dataPipeline,
+      landing,
+      qdrantStorage,
+      minioData,
+      ...(IS_STAGING ? [mailpit] : []),
+    ],
   });
 });
