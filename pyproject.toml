@@ -81,6 +81,7 @@ where = ["packages/shared/py"]
 [tool.ruff]
 target-version = "py311"
 line-length = 100
+extend-exclude = [".agents/skills"]
 
 [tool.ruff.lint]
 select = [
@@ -145,7 +146,7 @@ disallow_any_generics = false
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["services", "packages", "security"]
-addopts = "-m 'not security and not deployed and not deployed_write' --cov=services --cov=packages --cov-report=term-missing"
+addopts = "-m 'not security and not deployed and not deployed_write' --ignore=services/engineering_orchestrator --cov=services --cov=packages --cov-report=term-missing"
 markers = [
     "evals: Offline golden-set eval harness tests for the AI quote pipeline",
     "security: Security tests that require live target credentials and are not run by default",

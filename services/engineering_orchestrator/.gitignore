@@ -1,0 +1,12 @@
+.env
+__pycache__/
+lib/
+.DS_Store
+.crewai/
+.venv/
+.mypy_cache/
+.pytest_cache/
+.coverage
+engineering-orchestrator.db
+engineering_flow.html
+tests/.crewai-test-storage/

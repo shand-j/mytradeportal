@@ -6,7 +6,7 @@
  *   railway config plan    # preview the diff against the linked environment
  *   railway config apply   # apply after confirmation
  *
- * Layout (9 resources) — mobile-only beta stack:
+ * Layout (11 resources) — mobile-only beta stack plus engineering automation:
  *   postgres + redis      — native Railway database plugins
  *   qdrant, minio         — Docker-image services with mounted volumes
  *   api, admin, data-pipeline — built from this GitHub repo
@@ -19,8 +19,8 @@
  *
  * Things this file CANNOT do (Railway IaC beta limitations):
  *   - Generate public service domains. After the first apply, generate domains
- *     in the dashboard for: api, admin. (MinIO is deliberately private-only;
- *     devices never talk to it — file traffic is proxied through the API.)
+ *     in the dashboard for: api, admin, engineering-orchestrator. (MinIO is deliberately
+ *     private-only; devices never talk to it — file traffic is proxied through the API.)
  *     Until then the `*_RAILWAY_PUBLIC_DOMAIN` references below stay empty.
  *   - Register custom domains (dashboard only, then `railway config pull`).
  *     Production has `api.mytradeportal.co.uk` attached to `api` (2026-10-09)
@@ -449,7 +449,65 @@ export default defineRailway(() => {
     },
   });
 
+  const engineeringOrchestrator = service("engineering-orchestrator", {
+    source: github(GITHUB_REPO),
+    build: {
+      builder: "DOCKERFILE",
+      dockerfilePath: "services/engineering_orchestrator/Dockerfile",
+      watchPatterns: ["services/engineering_orchestrator/**"],
+    },
+    healthcheck: "/health",
+    regions: { [TARGET_REGION]: 1 },
+    env: {
+      PORT: "8010",
+      ENGINEERING_DATABASE_URL: db.env.DATABASE_URL,
+      ENGINEERING_MODE: preserve(),
+      ENGINEERING_REPOSITORY: GITHUB_REPO,
+      ENGINEERING_API_AUTH_TOKEN: preserve(),
+      ENGINEERING_GITHUB_TOKEN: preserve(),
+      ENGINEERING_SANDBOX_GITHUB_TOKEN: preserve(),
+      ENGINEERING_GITHUB_APP_ID: preserve(),
+      ENGINEERING_GITHUB_APP_INSTALLATION_ID: preserve(),
+      ENGINEERING_GITHUB_APP_PRIVATE_KEY: preserve(),
+      ENGINEERING_GITHUB_WEBHOOK_SECRET: preserve(),
+      ENGINEERING_ALERT_WEBHOOK_SECRET: preserve(),
+      ENGINEERING_TESTFLIGHT_WEBHOOK_SECRET: preserve(),
+      ENGINEERING_RAILWAY_PROJECT: preserve(),
+      ENGINEERING_RAILWAY_ENVIRONMENT: "staging",
+      ENGINEERING_SANDBOX_CHECKPOINT: "mtp-engineering-base",
+      ENGINEERING_SANDBOX_PRIVATE_NETWORK: "false",
+      ENGINEERING_KIMI_MODEL: "kimi-code/kimi-for-coding",
+      ENGINEERING_KIMI_MODEL_API_KEY: preserve(),
+      ENGINEERING_KIMI_MODEL_BASE_URL: preserve(),
+      ENGINEERING_MODEL: "openai/gpt-4.1-mini",
+      OPENAI_API_KEY: preserve(),
+      ENGINEERING_HOTFIX_ENABLED: preserve(),
+      ENGINEERING_HOTFIX_ALLOWED_SERVICES: preserve(),
+      ENGINEERING_HOTFIX_ALLOWED_PATH_PREFIXES: preserve(),
+      ENGINEERING_HOTFIX_STAGING_HEALTH_URL: preserve(),
+      ENGINEERING_HOTFIX_PRODUCTION_HEALTH_URL: preserve(),
+      ENGINEERING_TESTFLIGHT_ENABLED: preserve(),
+      ENGINEERING_APPSTORE_APP_ID: preserve(),
+      ENGINEERING_APPSTORE_KEY_ID: preserve(),
+      ENGINEERING_APPSTORE_ISSUER_ID: preserve(),
+      ENGINEERING_APPSTORE_PRIVATE_KEY: preserve(),
+      RAILWAY_TOKEN: preserve(),
+    },
+  });
+
   return project("mytradeportal", {
-    resources: [db, cache, qdrant, minio, api, admin, dataPipeline, landing, qdrantStorage, minioData],
+    resources: [
+      db,
+      cache,
+      qdrant,
+      minio,
+      api,
+      admin,
+      dataPipeline,
+      landing,
+      engineeringOrchestrator,
+      qdrantStorage,
+      minioData,
+    ],
   });
 });

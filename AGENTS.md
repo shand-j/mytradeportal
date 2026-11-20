@@ -22,6 +22,10 @@ trade businesses. The current working tree contains:
 - **`services/admin/`** — the Django admin back-office.
 - **`services/data-pipeline/`** — the Apify/Screwfix cost-item scraper that feeds
   the Qdrant catalogue used by the quote pipeline.
+- **`services/engineering_orchestrator/`** — the policy-gated autonomous
+  engineering service: signed GitHub/TestFlight/alert ingestion, durable runs,
+  CrewAI Flow routing, Railway sandboxed Kimi Code workers, PR creation, and an
+  opt-in guarded incident hotfix workflow. Dry-run by default.
 - **`mobile/`** — the active React Native + Expo iOS app. It serves both the
 tradesperson and homeowner/customer flows against the real FastAPI backend
 (connected mode only — the old in-app demo/mock-data mode has been removed),
@@ -458,7 +462,8 @@ mytradeportal/
 │   │   ├── tests/            # pytest integration tests
 │   │   └── Dockerfile
 │   ├── admin/                # Django admin back-office
-│   └── data-pipeline/        # Apify/Screwfix cost-item scraper
+│   ├── data-pipeline/        # Apify/Screwfix cost-item scraper
+│   └── engineering_orchestrator/ # CrewAI + Kimi + Railway engineering automation
 │
 ├── supabase/                 # Supabase CLI local config
 │   └── config.toml
@@ -632,6 +637,19 @@ cd services/api && python -m evals.run_evals [--live] [--threshold 70]
 
 pytest security/tests -v                  # subset that does not need services/api
 ```
+
+### Engineering orchestrator (`services/engineering_orchestrator/`)
+
+```bash
+cd services/engineering_orchestrator
+crewai install
+uv run pytest
+uv run uvicorn engineering_orchestrator.api:create_app --factory --reload --port 8010
+```
+
+The service is dry-run by default. Live sandboxes and autonomous hotfixes require
+explicit credentials and allow-lists; see its README and AGENTS.md. Keep its uv
+environment isolated from the root application because their Qdrant requirements differ.
 
 ### Local infrastructure
 
@@ -857,6 +875,9 @@ Key variables (see `.env.example` for the full template):
 - `EXPO_PUBLIC_API_BASE_URL` — mobile backend URL (required; there is no offline demo mode)
 - `EXPO_PUBLIC_BUSINESS_SLUG` — white-label target business
 - `EXPO_PUBLIC_SETUP_TOKEN` — tenant bootstrap token
+- `ENGINEERING_*` — engineering orchestrator mode, database, signed webhooks,
+  GitHub App, Railway sandbox/Kimi, App Store Connect, and opt-in hotfix policy
+  (see `services/engineering_orchestrator/.env.example`)
 
 ---
 

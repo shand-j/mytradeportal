@@ -214,8 +214,34 @@ services:
       qdrant:
         condition: service_healthy
 
+  engineering-orchestrator:
+    build:
+      context: .
+      dockerfile: services/engineering_orchestrator/Dockerfile
+    container_name: mtp_engineering_orchestrator
+    environment:
+      ENGINEERING_DATABASE_URL: postgresql://mtp:mtp@postgres:5432/mtp
+      ENGINEERING_MODE: ${ENGINEERING_MODE:-dry_run}
+      ENGINEERING_REPOSITORY: ${ENGINEERING_REPOSITORY:-shand-j/mytradeportal}
+      ENGINEERING_API_AUTH_TOKEN: ${ENGINEERING_API_AUTH_TOKEN:-}
+      ENGINEERING_GITHUB_TOKEN: ${ENGINEERING_GITHUB_TOKEN:-}
+      ENGINEERING_SANDBOX_GITHUB_TOKEN: ${ENGINEERING_SANDBOX_GITHUB_TOKEN:-}
+      ENGINEERING_GITHUB_WEBHOOK_SECRET: ${ENGINEERING_GITHUB_WEBHOOK_SECRET:-}
+      ENGINEERING_ALERT_WEBHOOK_SECRET: ${ENGINEERING_ALERT_WEBHOOK_SECRET:-}
+      ENGINEERING_TESTFLIGHT_WEBHOOK_SECRET: ${ENGINEERING_TESTFLIGHT_WEBHOOK_SECRET:-}
+      ENGINEERING_RAILWAY_PROJECT: ${ENGINEERING_RAILWAY_PROJECT:-}
+      ENGINEERING_RAILWAY_ENVIRONMENT: ${ENGINEERING_RAILWAY_ENVIRONMENT:-staging}
+      ENGINEERING_SANDBOX_CHECKPOINT: ${ENGINEERING_SANDBOX_CHECKPOINT:-mtp-engineering-base}
+      ENGINEERING_KIMI_MODEL_API_KEY: ${ENGINEERING_KIMI_MODEL_API_KEY:-}
+      RAILWAY_TOKEN: ${RAILWAY_TOKEN:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+    ports:
+      - "8010:8010"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
   # ---------------------------------------------------------------------------
-  # Observability stack (opt-in). Start with:
   #   docker compose --profile observability up -d
   # Plain `docker compose up` does not start these services.
   # ---------------------------------------------------------------------------
