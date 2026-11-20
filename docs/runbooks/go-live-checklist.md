@@ -66,15 +66,20 @@ Run once with a low-value real invoice:
 
 Trace-link verification (example SQL):
 
-```sql
-SELECT feature, outcome, trace_id, quote_id, metadata
+~~~sql
+SELECT
+  feature,
+  raw_payload->>'outcome' AS outcome,
+  trace_id,
+  quote_id,
+  raw_payload AS payload
 FROM ai_call_events
-WHERE feature = 'outcome' AND outcome = 'invoice_paid'
+WHERE feature = 'outcome' AND raw_payload->>'outcome' = 'invoice_paid'
 ORDER BY created_at DESC
 LIMIT 5;
-```
+~~~
 
-Expected: latest row has non-null `trace_id` and metadata containing `invoice_id`.
+Expected: latest row has non-null `trace_id` and `payload` containing `invoice_id`.
 
 ## 5) Evidence to attach to issue #44
 
