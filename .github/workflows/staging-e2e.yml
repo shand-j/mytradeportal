@@ -43,6 +43,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Anchor deployment freshness window on dispatch
+        # On workflow_dispatch head_commit.timestamp is empty, which would
+        # make wait_for_deploy.py ignore the already-live deployment and time
+        # out. Fall back to the checked-out HEAD commit's timestamp instead.
+        if: env.DEPLOY_SINCE == ''
+        run: echo "DEPLOY_SINCE=$(git log -1 --format=%cI)" >> "$GITHUB_ENV"
+
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
@@ -149,6 +156,10 @@ jobs:
       contents: read
     steps:
       - uses: actions/checkout@v4
+
+      - name: Anchor deployment freshness window on dispatch
+        if: env.DEPLOY_SINCE == ''
+        run: echo "DEPLOY_SINCE=$(git log -1 --format=%cI)" >> "$GITHUB_ENV"
 
       - name: Set up Python
         uses: actions/setup-python@v5
