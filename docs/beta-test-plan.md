@@ -137,3 +137,65 @@ Manual on the build:
 6. Stripe Connect setup from Settings → Payments (in-app browser, returns to app, "accepting cards")
 7. GPS nav link on a job card opens maps
 8. Calendar All/Me + guardrail rejection toast on a conflicting assignment
+
+---
+
+## 5. P0 live Telnyx SMS verification gate (issue #325)
+
+This gate is **human-run on the release environment** (staging or production)
+and closes the remaining manual residue for jobs/reminders (#13/#14). Keep all
+evidence sanitized: no phone numbers, message IDs, API keys, webhook signatures,
+or secrets in docs/issues/slack.
+
+### 5.1 Preparation checklist (must be true before execution)
+
+- [ ] `TELNYX_API_KEY` configured
+- [ ] At least one sender route configured:
+  - [ ] `TELNYX_FROM_NUMBER` **or**
+  - [ ] `TELNYX_MESSAGING_PROFILE_ID`
+- [ ] `TELNYX_PUBLIC_KEY` configured (webhook signature verification enabled)
+- [ ] `POST /webhooks/telnyx` reachable from Telnyx and returning 2xx for signed events
+- [ ] Test recipient numbers are UK E.164 format (`+44...`) and belong to internal testers only
+- [ ] Tenant business name is a valid sender ID (where sender-ID route is used)
+- [ ] Reminder body still fits one segment (no multi-part message split)
+- [ ] Release environment and build identifier recorded (env, git SHA/build number, test date)
+
+### 5.2 Safe test setup (no customer spam, no waiting for real 24h windows)
+
+1. Use a dedicated internal test tenant and two internal handsets:
+   - customer reminder recipient
+   - assigned electrician recipient
+2. Create one test job + appointment only for those contacts.
+3. Use a controlled reminder window equivalent to the 24h/2h behavior
+   (temporary schedule offsets in test data/timestamps) so reminders trigger
+   within the session.
+4. Keep alerting config unchanged (this gate validates current behavior; it does
+   **not** add or tune operational alert rules).
+
+### 5.3 Execution matrix (pass/fail with dated evidence)
+
+| Case | Expected result | Evidence to capture (sanitized) |
+|---|---|---|
+| Customer reminder SMS delivery | Customer handset receives reminder text | Screenshot of handset notification/message + timestamp |
+| Staff reminder SMS delivery | Assigned electrician handset receives reminder text | Screenshot + timestamp |
+| Delivery receipt webhook | `message.finalized` receipt processed and persisted | App/API log excerpt with status + reminder row status transition |
+| 24h/2h (or controlled equivalent) windows | Both reminder windows fire once, no duplicate spam | Timeline with two send times + dedupe confirmation |
+| Permanent failure fallback | Failed SMS triggers staff alert + contact degrades to email/push fallback | Failure log excerpt + follow-up channel evidence |
+| STOP opt-out | Reply `STOP` blocks later SMS sends for that contact | Inbound webhook evidence + subsequent skipped SMS evidence |
+| START/UNSTOP opt-in restore | Reply `START` or `UNSTOP` re-enables SMS delivery | Inbound webhook evidence + successful subsequent SMS |
+| SMS unavailable config fallback | With SMS route unavailable/unset, reminder flow still notifies via configured email/push | Config snapshot (sanitized) + email/push evidence |
+
+### 5.4 Evidence and defect handling
+
+For each case above, record:
+
+- Date/time (UTC), environment, build/release ID
+- Tester initials/role
+- PASS/FAIL
+- Sanitized proof location (screenshot path, log snippet, ticket link)
+
+If any case fails:
+
+1. File a beta-blocker issue linked to parent `#12` and blocker `#105`.
+2. Mark the case as FAIL with issue link.
+3. Re-run only the failed case(s) after fix and append retest evidence with new date.
