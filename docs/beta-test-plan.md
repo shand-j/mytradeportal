@@ -134,6 +134,6 @@ Manual on the build:
 3. Refine a quote (fast, no timeout), review screen UX with keyboard open
 4. Logo upload in branding settings; verify on a public quote page
 5. Invoice lifecycle to sent; customer pays via `/pay` link (sandbox card); confirming state has no pay CTA; PAID within ~15s
-6. Stripe Connect setup from Settings → Payments (in-app browser, returns to app, "accepting cards")
+6. Stripe Connect setup from Settings → Payments (physical device): open hosted Express onboarding, complete KYC with Stripe test data, return to app with "accepting cards" status + payout-schedule explainer visible, then verify default-on card payments and per-invoice card toggle behavior
 7. GPS nav link on a job card opens maps
 8. Calendar All/Me + guardrail rejection toast on a conflicting assignment
