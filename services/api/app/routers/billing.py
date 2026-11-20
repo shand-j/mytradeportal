@@ -25,6 +25,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.config import settings
 from app.database import get_db
 from app.dependencies import CurrentUserDep, TenantDep, seats_in_use
+from app.feature_flags import paddle_billing_enabled
 from app.models import Subscription, Tenant
 from app.paddle_client import (
     await_transaction_subscription_id,
@@ -51,6 +52,13 @@ from app.schemas import (
 router = APIRouter(prefix="/billing", tags=["Billing"])
 DbDep = Annotated[AsyncSession, Depends(get_db)]
 logger = structlog.get_logger("api.billing")
+
+
+def _paddle_disabled_error() -> HTTPException:
+    return HTTPException(
+        status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+        detail="paddle_billing_disabled",
+    )
 
 
 _CHECKOUT_PAGE = """<!doctype html>
@@ -146,6 +154,8 @@ async def checkout_page() -> HTMLResponse:
     when creating the checkout. Public by design — the only secret in the
     URL is the transaction id the caller just received.
     """
+    if not await paddle_billing_enabled():
+        raise _paddle_disabled_error()
     if not settings.paddle_client_token:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -337,6 +347,8 @@ async def create_checkout(
     returned URL is a subscription-linked payment-method-update checkout
     (see :func:`_cardless_trial_checkout`).
     """
+    if not await paddle_billing_enabled():
+        raise _paddle_disabled_error()
     price_id = _price_id_for_plan(data.plan_key, data.interval)
     if current_user is None:
         raise HTTPException(
@@ -431,6 +443,8 @@ async def change_plan(
     stay consistent with the paywall gate. If the prorated charge fails
     Paddle keeps the old plan (``prevent_change``) and this surfaces as 502.
     """
+    if not await paddle_billing_enabled():
+        raise _paddle_disabled_error()
     if current_user is None:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -530,6 +544,8 @@ async def create_portal_session(
     can manage their payment method, download Paddle invoices, or cancel.
     Only the short-lived overview URL crosses the wire.
     """
+    if not await paddle_billing_enabled():
+        raise _paddle_disabled_error()
     if current_user is None:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
