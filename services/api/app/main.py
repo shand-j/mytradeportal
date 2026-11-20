@@ -153,15 +153,11 @@ app.add_middleware(SlowAPIMiddleware)
 # without depending on Railway variable re-templating.
 _RAILWAY_PREVIEW_ORIGIN_REGEX = r"^https://web-mytradeportal-pr-\d+\.up\.railway\.app$"
 # The staging landing uses a deterministic Railway-generated service domain.
-_STAGING_LANDING_ORIGIN_REGEX = (
-    r"^https://landing-staging-[a-z0-9-]+\.up\.railway\.app$"
-)
+_STAGING_LANDING_ORIGIN_REGEX = r"^https://landing-staging-[a-z0-9-]+\.up\.railway\.app$"
 # Customer portals live on valid single-level tenant subdomains. Escape the
 # configured base domain and exclude apex/lookalike hosts.
 _PORTAL_LABEL_REGEX = r"[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?"
-_PORTAL_ORIGIN_REGEX = (
-    rf"^https://{_PORTAL_LABEL_REGEX}\.{re.escape(PORTAL_BASE_DOMAIN)}$"
-)
+_PORTAL_ORIGIN_REGEX = rf"^https://{_PORTAL_LABEL_REGEX}\.{re.escape(PORTAL_BASE_DOMAIN)}$"
 _configured_regex = settings.allowed_origin_regex or None
 if _configured_regex:
     _allow_origin_regex: str | None = (
