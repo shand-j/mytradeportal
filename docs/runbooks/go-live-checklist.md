@@ -1,9 +1,13 @@
 # Go-live checklist — Stripe payments (issue #44)
 
-Use this checklist to close the last P-wave go-live gate:
+Use this checklist after webhook safety #30 and fee/refund/dispute liability #355
+are resolved:
 - production `STRIPE_*` config in Railway
 - mobile OTA publish for the payment-keyed frontend
 - sandbox → live smoke evidence
+
+Never attach raw environment exports, secret values, tokens, card data, or
+customer PII to the issue.
 
 ## 1) Set production Stripe env in Railway (`api` service)
 
@@ -30,9 +34,10 @@ Set `VITE_STRIPE_PUBLISHABLE_KEY=pk_live_...` for the landing app build/deploy.
 
 ### Mobile OTA
 
-From `/home/runner/work/mytradeportal/mytradeportal/mobile`:
+From the repository root:
 
 ```bash
+cd mobile
 npx eas-cli update --branch production --message "chore: stripe live publishable key rollout"
 ```
 
@@ -73,7 +78,8 @@ Expected: latest row has non-null `trace_id` and metadata containing `invoice_id
 
 ## 5) Evidence to attach to issue #44
 
-- Railway screenshot or export showing production `STRIPE_*` values are present
+- Redacted Railway evidence showing only that the required `STRIPE_*` variable
+  names are present; never include values or exports
 - EAS OTA publish link/group ID
 - Sandbox run link (staging-e2e workflow)
 - Live smoke proof:
