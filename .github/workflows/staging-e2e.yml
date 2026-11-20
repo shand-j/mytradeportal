@@ -17,7 +17,7 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+  RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN_STAGING }}
   RAILWAY_PROJECT_ID: ${{ vars.RAILWAY_PROJECT_ID }}
   # The persistent staging environment id. Pinning it lets the CI scripts
   # skip the project(id) query that environment-scoped Railway tokens
@@ -56,7 +56,7 @@ jobs:
 
       - name: Apply Railway staging configuration
         env:
-          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN_STAGING }}
           RAILWAY_ENVIRONMENT: staging
           RAILWAY_IAC_TS_BIN: .railway/node_modules/.bin/railway-iac-ts
         run: |
@@ -218,7 +218,7 @@ jobs:
       - name: Resolve staging environment URLs
         id: staging-env
         env:
-          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN_STAGING }}
           RAILWAY_PROJECT_ID: ${{ vars.RAILWAY_PROJECT_ID }}
         run: scripts/ci/env_url.sh staging | tee -a "$GITHUB_OUTPUT"
 
@@ -229,7 +229,7 @@ jobs:
 
       - name: Resolve webhook secrets from the staging api
         env:
-          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN_STAGING }}
           RAILWAY_PROJECT_ID: ${{ vars.RAILWAY_PROJECT_ID }}
         run: |
           # Test-side secrets needed to forge webhook signatures the api will
