@@ -18,6 +18,8 @@ from __future__ import annotations
 import os
 import subprocess
 import sys
+import time
+from contextlib import contextmanager
 from decimal import Decimal
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -28,6 +30,8 @@ from sqlalchemy.exc import OperationalError
 from sqlalchemy.schema import CreateColumn
 
 if TYPE_CHECKING:
+    from collections.abc import Iterator
+
     from sqlalchemy.engine import Connection
     from sqlalchemy.sql.schema import Column, MetaData
 
@@ -59,6 +63,52 @@ METABASE_DATABASE = os.environ.get("METABASE_DB_NAME", "metabase")
 METABASE_ROLE_PASSWORD = os.environ.get("METABASE_DB_PASSWORD", "mtp_metabase")
 
 DATABASE_URL = os.environ["DATABASE_URL"]
+SCHEMA_ADVISORY_LOCK_ID = 727272
+INIT_DB_LOCK_TIMEOUT = os.environ.get("INIT_DB_LOCK_TIMEOUT", "15s")
+INIT_DB_STATEMENT_TIMEOUT = os.environ.get("INIT_DB_STATEMENT_TIMEOUT", "120s")
+INIT_DB_ADVISORY_LOCK_TIMEOUT_SECONDS = float(
+    os.environ.get("INIT_DB_ADVISORY_LOCK_TIMEOUT_SECONDS", "45")
+)
+
+
+def _set_predeploy_timeouts(conn: Connection) -> None:
+    """Bound lock waits/DDL runtime so blocked deploys fail fast."""
+    conn.exec_driver_sql(f"SET LOCAL lock_timeout = '{INIT_DB_LOCK_TIMEOUT}'")
+    conn.exec_driver_sql(f"SET LOCAL statement_timeout = '{INIT_DB_STATEMENT_TIMEOUT}'")
+
+
+@contextmanager
+def _schema_lock(conn: Connection) -> Iterator[None]:
+    """Take a transaction-scoped schema lock with a bounded wait.
+
+    The surrounding transaction releases the lock on both commit and rollback,
+    including when PostgreSQL has aborted the transaction after a DDL error.
+    """
+    print(
+        "[init_db] Waiting for schema advisory lock "
+        f"{SCHEMA_ADVISORY_LOCK_ID} (timeout={INIT_DB_ADVISORY_LOCK_TIMEOUT_SECONDS}s)"
+    )
+    started = time.monotonic()
+    while True:
+        acquired = bool(
+            conn.execute(
+                text("SELECT pg_try_advisory_xact_lock(:lock_id)"),
+                {"lock_id": SCHEMA_ADVISORY_LOCK_ID},
+            ).scalar_one()
+        )
+        if acquired:
+            waited = time.monotonic() - started
+            print(f"[init_db] Acquired schema advisory lock after {waited:.1f}s")
+            break
+        if time.monotonic() - started >= INIT_DB_ADVISORY_LOCK_TIMEOUT_SECONDS:
+            raise TimeoutError(
+                "[init_db] Timed out waiting for schema advisory lock 727272. "
+                "Check pg_stat_activity/pg_locks for stale preDeploy sessions "
+                "and cancel only the stuck non-production blockers."
+            )
+        time.sleep(0.5)
+
+    yield
 
 
 def _create_app_role(conn: Connection) -> None:
@@ -68,14 +118,20 @@ def _create_app_role(conn: Connection) -> None:
         {"role": APP_ROLE},
     ).first()
     if existing is None:
-        conn.exec_driver_sql(
-            f"CREATE ROLE {APP_ROLE} WITH LOGIN PASSWORD '{APP_ROLE_PASSWORD}' "
-            f"NOSUPERUSER NOBYPASSRLS NOCREATEDB NOCREATEROLE"
+        conn.execute(
+            text(
+                f"CREATE ROLE {APP_ROLE} WITH LOGIN PASSWORD :password "
+                f"NOSUPERUSER NOBYPASSRLS NOCREATEDB NOCREATEROLE"
+            ),
+            {"password": APP_ROLE_PASSWORD},
         )
     else:
         # Keep the role password in sync with the env var in case it was
         # rotated after the role was first created.
-        conn.exec_driver_sql(f"ALTER ROLE {APP_ROLE} WITH PASSWORD '{APP_ROLE_PASSWORD}'")
+        conn.execute(
+            text(f"ALTER ROLE {APP_ROLE} WITH PASSWORD :password"),
+            {"password": APP_ROLE_PASSWORD},
+        )
     conn.exec_driver_sql(f"GRANT USAGE ON SCHEMA public TO {APP_ROLE}")
     conn.exec_driver_sql(
         f"GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO {APP_ROLE}"
@@ -109,16 +165,22 @@ def _create_metabase_role(conn: Connection) -> None:
         {"role": METABASE_ROLE},
     ).first()
     if existing is None:
-        conn.exec_driver_sql(
-            f"CREATE ROLE {METABASE_ROLE} WITH LOGIN PASSWORD '{METABASE_ROLE_PASSWORD}' "
-            f"NOSUPERUSER BYPASSRLS NOCREATEDB NOCREATEROLE"
+        conn.execute(
+            text(
+                f"CREATE ROLE {METABASE_ROLE} WITH LOGIN PASSWORD :password "
+                f"NOSUPERUSER BYPASSRLS NOCREATEDB NOCREATEROLE"
+            ),
+            {"password": METABASE_ROLE_PASSWORD},
         )
     else:
         # Keep the password and BYPASSRLS flag in sync in case either changed
         # after the role was first created.
-        conn.exec_driver_sql(
-            f"ALTER ROLE {METABASE_ROLE} WITH LOGIN PASSWORD '{METABASE_ROLE_PASSWORD}' "
-            f"NOSUPERUSER BYPASSRLS NOCREATEDB NOCREATEROLE"
+        conn.execute(
+            text(
+                f"ALTER ROLE {METABASE_ROLE} WITH LOGIN PASSWORD :password "
+                f"NOSUPERUSER BYPASSRLS NOCREATEDB NOCREATEROLE"
+            ),
+            {"password": METABASE_ROLE_PASSWORD},
         )
     conn.exec_driver_sql(f"GRANT USAGE ON SCHEMA public TO {METABASE_ROLE}")
     conn.exec_driver_sql(f"GRANT SELECT ON ALL TABLES IN SCHEMA public TO {METABASE_ROLE}")
@@ -288,39 +350,45 @@ def _create_metabase_database(engine) -> None:
 def init_api_schema() -> None:
     """Create the API schema from the current SQLAlchemy models."""
     print("[init_db] Creating SQLAlchemy tables from models")
-    engine = create_engine(DATABASE_URL.replace("+asyncpg", ""))
-    with engine.begin() as conn:
-        # The BI role must exist before its database is created with it as owner.
-        _create_metabase_role(conn)
-    _create_metabase_database(engine)
+    engine = create_engine(DATABASE_URL.replace("+asyncpg", ""), hide_parameters=True)
     # Concurrent boots (blue/green deploys, api + admin preDeploy racing) all
-    # run this DDL; serialize on a session-level advisory lock and retry once
-    # on the transient deadlock the lock can't prevent (observed on the
+    # run this DDL; serialize on a transaction-scoped advisory lock and retry
+    # once on the transient deadlock the lock can't prevent (observed on the
     # staging deploy of 2026-09-16, killing the whole deployment).
     for attempt in (1, 2):
         try:
-            with engine.begin() as conn:
-                conn.exec_driver_sql("SELECT pg_advisory_lock(727272)")
-                try:
-                    Base.metadata.create_all(conn)
-                    # ``create_all`` never issues ``ALTER TABLE`` for new columns on
-                    # existing tables, so bring the live schema forward for any columns
-                    # added to the models since the last deploy.
-                    sync_missing_columns(conn, Base.metadata)
-                    _create_app_role(conn)
-                    _create_metabase_role(conn)
-                    apply_tenant_rls_sync(conn)
-                    # Data fixes for existing rows (idempotent, run on every deploy).
-                    run_data_migrations(conn)
-                finally:
-                    # Advisory locks are session-scoped, NOT transactional: a
-                    # later rollback would not release them, and a pooled
-                    # connection carrying the lock would serialize (or wedge)
-                    # every other init.
-                    conn.exec_driver_sql("SELECT pg_advisory_unlock(727272)")
+            with engine.begin() as conn, _schema_lock(conn):
+                _set_predeploy_timeouts(conn)
+                print("[init_db] Stage: schema create/reconcile")
+                Base.metadata.create_all(conn)
+                # ``create_all`` never issues ``ALTER TABLE`` for new columns on
+                # existing tables, so bring the live schema forward for any columns
+                # added to the models since the last deploy.
+                sync_missing_columns(conn, Base.metadata)
+                print("[init_db] Stage: role grants")
+                _create_app_role(conn)
+                _create_metabase_role(conn)
+                print("[init_db] Stage: RLS policy sync")
+                apply_tenant_rls_sync(conn)
+                print("[init_db] Stage: data migrations")
+                # Data fixes for existing rows (idempotent, run on every deploy).
+                run_data_migrations(conn)
+            _create_metabase_database(engine)
+            print("[init_db] Stage: metabase database ensured")
             break
+        except TimeoutError:
+            raise
         except OperationalError as exc:
-            if attempt == 1 and "deadlock detected" in str(exc):
+            error_text = str(exc).lower()
+            if "lock timeout" in error_text or "statement timeout" in error_text:
+                raise RuntimeError(
+                    "[init_db] PreDeploy schema step timed out waiting on a database lock "
+                    f"(lock_timeout={INIT_DB_LOCK_TIMEOUT}, "
+                    f"statement_timeout={INIT_DB_STATEMENT_TIMEOUT}). "
+                    "Inspect pg_stat_activity/pg_blocking_pids in staging and cancel "
+                    "only stale non-production blockers before redeploying."
+                ) from exc
+            if attempt == 1 and "deadlock detected" in error_text:
                 print("[init_db] Deadlock during schema init (transient); retrying once")
                 continue
             raise

@@ -98,6 +98,37 @@ link → submit a request as a customer → confirm the AI triage question arriv
 in chat → answer it → log in as the electrician → generate the AI quote →
 refine it → send. That is the full "WOW" path end to end.
 
+### Staging deploy queue recovery (non-production only)
+
+Use this when Railway shows API/landing deploys stuck in `QUEUED` ("Waiting for
+deployment slot") and staging preDeploy appears hung in `scripts/init_db.py`.
+
+1. **Find blocking sessions (read-only SQL):**
+   ```sql
+   SELECT pid, usename, state, wait_event_type, wait_event,
+          now() - xact_start AS xact_age, now() - query_start AS query_age
+   FROM pg_stat_activity
+   WHERE datname = current_database()
+   ORDER BY xact_start NULLS LAST;
+   ```
+   Treat `state = 'idle in transaction'` with very old `xact_age` as potentially
+   stale; active deploy work typically has recent `xact_start` and a changing
+   wait pattern. Do not print raw query text: role DDL can contain credentials.
+2. **Confirm who blocks whom:**
+   ```sql
+   SELECT blocked.pid AS blocked_pid,
+          pg_blocking_pids(blocked.pid) AS blocking_pids,
+          blocked.wait_event, now() - blocked.xact_start AS xact_age
+   FROM pg_stat_activity blocked
+   WHERE blocked.wait_event_type = 'Lock';
+   ```
+3. **With owner approval, clear only confirmed stale non-production sessions**
+   using `SELECT pg_terminate_backend(<pid>);` for sessions idle in transaction,
+   or restart the affected **staging** Railway service. `pg_cancel_backend` only
+   cancels an active query and does not close an idle transaction. Do not
+   terminate active work or run production mutations from this runbook.
+4. Redeploy staging, then re-run preview smoke (`/health`, API smoke, landing smoke).
+
 ## 4. Logs (operational alerts are post-beta)
 
 Logs are one JSON object per line on stdout — point the New Relic log
