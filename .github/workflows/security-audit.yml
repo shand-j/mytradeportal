@@ -23,7 +23,7 @@ concurrency:
 jobs:
   security-audit:
     runs-on: ubuntu-latest
-    environment: MyTradePortal/Production
+    environment: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'staging' && 'MyTradePortal / staging' || 'MyTradePortal / production' }}
     env:
       # Scheduled runs carry no inputs; they always target production.
       SECURITY_ENVIRONMENT: ${{ github.event.inputs.environment || 'production' }}
@@ -53,19 +53,75 @@ jobs:
         run: |
           python - <<'PY'
           import os
-          required = ["SECURITY_API_BASE_URL", "SECURITY_TENANT_SLUG", "SECURITY_ADMIN_EMAIL", "SECURITY_ADMIN_PASSWORD"]
+          required = [
+              "SECURITY_API_BASE_URL",
+              "SECURITY_TENANT_SLUG",
+              "SECURITY_ADMIN_EMAIL",
+              "SECURITY_ADMIN_PASSWORD",
+              "SECURITY_SECONDARY_TENANT_SLUG",
+              "SECURITY_SECONDARY_ADMIN_EMAIL",
+              "SECURITY_SECONDARY_ADMIN_PASSWORD",
+          ]
           missing = [k for k in required if not os.environ.get(k)]
           if missing:
               print("Missing required secrets for the security audit:")
               for k in missing:
                   print(f"  - {k}")
-              print("Create a dedicated test tenant in the Django admin UI and set these secrets before running.")
+              print("Provision dedicated primary and secondary test tenants and set both sets of secrets.")
               raise SystemExit(1)
           print("Security test configuration OK")
           PY
 
       - name: Run security tests
-        run: pytest -m security -v
+        run: pytest -m security -v --junitxml=security-results.xml
 
       - name: Run SOC2 evidence tests
-        run: pytest -m security security/tests/test_soc2.py -v
+        if: always()
+        run: pytest -m security security/tests/test_soc2.py -v --junitxml=soc2-results.xml
+
+      - name: Write sanitized run summary
+        if: always()
+        run: |
+          mkdir -p security-artifacts
+          python - <<'PY'
+          import os
+          from pathlib import Path
+
+          summary = [
+              "MyTradePortal security audit",
+              f"Environment: {os.environ.get('SECURITY_ENVIRONMENT', 'unknown')}",
+              f"Target SHA: {os.environ.get('GITHUB_SHA', 'unknown')}",
+              f"Run: {os.environ.get('GITHUB_SERVER_URL', '')}/{os.environ.get('GITHUB_REPOSITORY', '')}/actions/runs/{os.environ.get('GITHUB_RUN_ID', '')}",
+              f"Result: {os.environ.get('JOB_STATUS', 'see workflow status')}",
+          ]
+          Path("security-artifacts/run-summary.txt").write_text("\n".join(summary) + "\n")
+
+          for name in ("security-results.xml", "soc2-results.xml"):
+              source = Path(name)
+              if not source.exists():
+                  continue
+              target = source.read_text(errors="replace")
+              for secret_name in (
+                  "SECURITY_TENANT_SLUG",
+                  "SECURITY_ADMIN_EMAIL",
+                  "SECURITY_ADMIN_PASSWORD",
+                  "SECURITY_SECONDARY_TENANT_SLUG",
+                  "SECURITY_SECONDARY_ADMIN_EMAIL",
+                  "SECURITY_SECONDARY_ADMIN_PASSWORD",
+                  "SECURITY_API_BASE_URL",
+                  "SECURITY_WEB_BASE_URL",
+                  "SECURITY_ADMIN_BASE_URL",
+              ):
+                  secret = os.environ.get(secret_name)
+                  if secret:
+                      target = target.replace(secret, "[REDACTED]")
+              Path("security-artifacts", name).write_text(target)
+          PY
+
+      - name: Upload sanitized security evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: security-audit-${{ env.SECURITY_ENVIRONMENT }}-${{ github.sha }}
+          path: security-artifacts/
+          if-no-files-found: error
