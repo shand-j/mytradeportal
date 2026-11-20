@@ -24,6 +24,7 @@ from app.ai_telemetry import record_quote_outcome
 from app.config import settings
 from app.database import engine
 from app.dunning import maybe_start_dunning
+from app.feature_flags import paddle_billing_enabled
 from app.models import Invoice, Payment, ProcessedWebhook, Quote, Subscription
 from app.paddle_client import parse_webhook_event, verify_webhook_signature
 from app.plans import PLAN_CATALOG, resolve_plan_key
@@ -255,6 +256,10 @@ async def paddle_webhook(
 
     if event_id and not await _mark_event_seen(event_id, event_type):
         return {"status": "duplicate"}
+
+    if not await paddle_billing_enabled():
+        logger.info("paddle_webhook_delayed", event_type=event_type, event_id=event_id or None)
+        return {"status": "delayed"}
 
     if event_type in _SUBSCRIPTION_EVENTS:
         await _upsert_subscription(event_type, event_data)

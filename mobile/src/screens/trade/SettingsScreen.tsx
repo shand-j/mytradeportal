@@ -14,6 +14,7 @@ import { config } from "../../lib/config";
 import { openInAppBrowser } from "../../lib/inAppBrowser";
 import { PortalQrSheet } from "../../components/trade/PortalQrSheet";
 import { SubscriptionCard } from "../../components/trade/SubscriptionCard";
+import { useFeatureFlags } from "../../api/featureFlags";
 
 /**
  * Read-only subscription status (App Store Guideline 3.1.1): plans are bought
@@ -22,6 +23,8 @@ import { SubscriptionCard } from "../../components/trade/SubscriptionCard";
  */
 function SubscriptionSection() {
   const { data, isLoading } = useSubscription();
+  const { data: featureFlags } = useFeatureFlags();
+  const paddleBillingEnabled = featureFlags?.paddleBilling === true;
 
   if (isLoading) {
     return null;
@@ -34,10 +37,14 @@ function SubscriptionSection() {
           Subscription
         </Text>
         <Text variant="caption" color="secondary">
-          You don't have an active plan yet. Start a 14-day free trial to unlock everything.
+          {paddleBillingEnabled
+            ? "You don't have an active plan yet. Start a 14-day free trial to unlock everything."
+            : "Your account is in the free beta cohort, so all features stay unlocked."}
         </Text>
         <Text variant="caption" color="secondary">
-          Subscribe at mytradeportal.co.uk — your plan shows up here automatically.
+          {paddleBillingEnabled
+            ? "Subscribe at mytradeportal.co.uk — your plan shows up here automatically."
+            : "No subscription setup is required during beta."}
         </Text>
       </View>
     );

@@ -15,6 +15,7 @@ from app import paddle_client, stripe_client
 from app.audit import Actions, write_audit_log
 from app.database import get_db
 from app.dependencies import ActiveUserDep, RequireAdminDep, TenantDep
+from app.feature_flags import paddle_billing_enabled
 from app.limiter import limiter
 from app.models import (
     Communication,
@@ -654,8 +655,9 @@ async def offboard_current_tenant(
 
     # --- Provider detachment (best-effort, before rows are scrubbed) ---
     paddle_cancelled = False
+    billing_enabled = await paddle_billing_enabled()
     subscription = await db.scalar(select(Subscription).where(Subscription.tenant_id == tenant.id))
-    if subscription is not None:
+    if subscription is not None and billing_enabled:
         if subscription.paddle_subscription_id and subscription.status not in ("canceled",):
             try:
                 await paddle_client.cancel_subscription(subscription.paddle_subscription_id)
