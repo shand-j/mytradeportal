@@ -158,7 +158,8 @@ if not envs:
     if only_production_visible:
         print(
             "authorization failure discovering PR environments: token can only "
-            "see 'production'. Configure GitHub secret RAILWAY_TOKEN as a "
+            "see 'production'. Configure GitHub secret RAILWAY_TOKEN_PR_VERIFY "
+            "(or RAILWAY_TOKEN fallback) as a "
             "Railway account/workspace API token with read access to all "
             "project environments; project-scoped tokens that expose only "
             "production are insufficient for PR verification.",
