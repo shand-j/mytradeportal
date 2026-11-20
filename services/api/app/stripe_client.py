@@ -364,6 +364,10 @@ async def create_payment_intent(
         transfer_data={"destination": connected_account_id},
         automatic_payment_methods={"enabled": True},
         metadata={"invoice_id": invoice_id, "tenant_id": tenant_id},
+        # Stripe retries and double-submit retries must resolve to one PaymentIntent.
+        # The key is invoice-scoped; amount changes create a new intent after reuse
+        # fails in the public payment helper.
+        idempotency_key=f"mtp-invoice-{invoice_id}",
     )
     return {"id": intent["id"], "client_secret": intent["client_secret"]}
 
