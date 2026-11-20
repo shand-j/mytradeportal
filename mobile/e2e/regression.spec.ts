@@ -595,19 +595,17 @@ test.describe.serial("G — Fresh business signup", () => {
     await tap(page, "onboarding-card-payments-no");
     await tap(page, "onboarding-card-payments-continue");
 
-    // The plan step is read-only (App Store 3.1.1 — subscriptions are sold on
-    // the web): plan cards with pricing render, the website mention is plain
-    // text, and continuing finishes onboarding with no checkout call.
+    // The plan step remains read-only: plan cards render with future pricing,
+    // while free-beta copy replaces subscription setup and no checkout occurs.
     await waitText(page, "Choose your plan", 60000);
     await page.locator('[data-testid="plan-sole_trader"]').waitFor({ state: "visible", timeout: 30000 });
     await page.locator('[data-testid="plan-pro"]').waitFor({ state: "visible", timeout: 30000 });
     await page.locator('[data-testid="plan-team"]').waitFor({ state: "visible", timeout: 30000 });
-    await waitText(page, "Subscribe at mytradeportal.co.uk", 30000);
+    await waitText(page, "All plans are unlocked during free beta", 30000);
     expect(await bodyText(page)).not.toMatch(/internal server error|\b500\b|payment setup failed/i);
     await tap(page, "plan-continue");
-    // Onboarding completes; without a subscription the tenant lands on the
-    // dashboard and the paywall intercepts on the first gated call.
-    await page.waitForURL(/dashboard|paywall/, { timeout: 60000 });
+    // Free-beta access must not depend on a subscription row or paywall.
+    await page.waitForURL(/dashboard/, { timeout: 60000 });
   });
 });
 

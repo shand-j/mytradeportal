@@ -264,10 +264,11 @@ async def tenant_status(current_user: ActiveUserDep, db: DbDep) -> dict[str, Any
     Beta-friendly semantics (mirrors the middleware):
     - No subscription row → legacy beta tenant, comped: access "active".
     - ``beta_comped`` in tenant settings → explicitly comped: "active".
-    - Row present → live states (trialing within trial, active, past_due
-      dunning grace) pass; incomplete/paused/canceled/expired-trial get
-      ``access="payment_required"`` and the app shows the paywall.
+    - With ``paddle_billing`` disabled, every subscription state keeps active
+      beta access. With it enabled, live states (trialing within trial, active,
+      past_due dunning grace) pass; other states get ``payment_required``.
     """
+    from app.feature_flags import paddle_billing_enabled
     from app.models import Subscription
     from app.routers.billing import is_subscription_active
 
@@ -279,7 +280,12 @@ async def tenant_status(current_user: ActiveUserDep, db: DbDep) -> dict[str, Any
 
     settings_comped = bool(tenant.settings.get("beta_comped")) if tenant else False
     beta_comped = settings_comped or subscription is None
-    access = "active" if beta_comped or is_subscription_active(subscription) else "payment_required"
+    billing_enabled = await paddle_billing_enabled()
+    access = (
+        "active"
+        if (not billing_enabled) or beta_comped or is_subscription_active(subscription)
+        else "payment_required"
+    )
 
     return {
         "tenant_id": str(current_user.tenant_id),

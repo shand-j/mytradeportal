@@ -365,13 +365,12 @@ QE evidence matrix (`/tmp/mtp-qe/matrix.md`, RC6 cycle) where noted.
 
 Deliberately absent or stubbed — do not document as working journeys:
 
-- **Certificates (EICR)** — mobile UI shell only: `certificates.tsx`,
-  `certificate/[id].tsx`, `CertificateScreen`/`CircuitFormScreen` render a
-  hardcoded "No certificates yet" empty state. There is **no certificates
-  router/model in the API**.
+- **Certificates (EICR)** — certificate routes and UI actions are excluded
+  from beta. There is **no certificates router/model in the API**.
 - **Deposits** — no code anywhere (no model, endpoint, or UI).
-- **Offline mode** — connected mode only by design. `OfflineBanner` +
-  `offlineStore` are a visual stub; nothing reads the sync queue.
+- **Offline mode** — connected mode only by design. Offline saving and
+  background synchronization are not beta features; the app does not claim
+  that work is persisted or synced locally.
 - **Xero / QuickBooks integrations** — no code. Onboarding's
   `PaymentsIntegrationsStep` is presentational.
 - **BoQ engine (ocerp)** — service deleted; the parked 501 client shim
@@ -408,9 +407,6 @@ Every route and endpoint named above was checked against the code on
    `/{job_id}/media`, `/{job_id}/start`, `/{job_id}/complete`.
 10. `services/api/app/routers/telnyx_webhooks.py` + `app/sms.py` — STOP
     opt-out handling and Telnyx send path.
-11. Certificates stub: `mobile/src/screens/trade/CertificatesScreen.tsx`
-    hardcodes the empty state; no `certificate` matches in
-    `services/api/app/routers/`.
-12. Onboarding step order: `OnboardingStepperScreen.tsx` `STEPS` array
+11. Onboarding step order: `OnboardingStepperScreen.tsx` `STEPS` array
     (welcome → account → identity → address → tax → compliance → services →
     branding → review, then bank_details → card_payments → plan).

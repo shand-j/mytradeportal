@@ -12,7 +12,7 @@ type WelcomeStepProps = {
 const VALUE_PROPS = [
   "Get leads from QR codes, WhatsApp, and your website.",
   "AI drafts quotes; you review and send in seconds.",
-  "Certificates, invoices, and accounts in one place.",
+  "Invoices and customer accounts in one place.",
 ];
 
 const LAUNCH_PREVIEW_STEPS = [

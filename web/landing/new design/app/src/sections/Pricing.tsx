@@ -4,6 +4,7 @@ import { Link } from 'react-router'
 import { usePaddlePrices } from '@/hooks/usePaddlePrices'
 import { PricingTiers } from '@/constants/pricing-tiers'
 import { TESTFLIGHT_URL } from '@/lib/site'
+import { useFeatureFlags } from '@/lib/feature-flags'
 
 /**
  * Pricing — flat per business, seat-capped tiers (1 / 5 / 15 users), AI
@@ -14,13 +15,15 @@ import { TESTFLIGHT_URL } from '@/lib/site'
  * free; shown prices are the launch prices.
  */
 export default function Pricing() {
+  const { paddleBilling } = useFeatureFlags()
   const [frequency, setFrequency] = useState<'month' | 'year'>('month')
   const [paddle, setPaddle] = useState<Paddle | undefined>()
   // Live Paddle preview stays off until the catalog is rebuilt with the flat
   // per-business prices — the sandbox still returns the old hybrid prices.
   // Set VITE_PADDLE_LIVE_PRICING=true once the new catalog exists.
   const livePricing = import.meta.env.VITE_PADDLE_LIVE_PRICING === 'true'
-  const paddleConfigured = livePricing && Boolean(import.meta.env.VITE_PADDLE_CLIENT_TOKEN)
+  const paddleConfigured =
+    paddleBilling && livePricing && Boolean(import.meta.env.VITE_PADDLE_CLIENT_TOKEN)
 
   const { prices, loading } = usePaddlePrices(
     paddleConfigured ? paddle : undefined,
@@ -158,12 +161,23 @@ export default function Pricing() {
                   ))}
                 </ul>
                 <div className="mt-[var(--space-xl)] flex flex-col items-stretch gap-[var(--space-sm)]">
-                  <Link
-                    to={`/subscribe?plan=${tier.id}&interval=${frequency}`}
-                    className={`chip justify-center ${tier.featured ? 'chip--accent' : 'chip--fill'}`}
-                  >
-                    Subscribe{frequency === 'year' ? ' yearly' : ''} — {shown}
-                  </Link>
+                  {paddleBilling ? (
+                    <Link
+                      to={`/subscribe?plan=${tier.id}&interval=${frequency}`}
+                      className={`chip justify-center ${tier.featured ? 'chip--accent' : 'chip--fill'}`}
+                    >
+                      Subscribe{frequency === 'year' ? ' yearly' : ''} — {shown}
+                    </Link>
+                  ) : (
+                    <a
+                      href={TESTFLIGHT_URL}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className={`chip justify-center ${tier.featured ? 'chip--accent' : 'chip--fill'}`}
+                    >
+                      Join free beta
+                    </a>
+                  )}
                   <a
                     href={TESTFLIGHT_URL}
                     target="_blank"

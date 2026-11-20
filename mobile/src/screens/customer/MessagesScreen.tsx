@@ -1,5 +1,13 @@
-import { useEffect, useMemo, useRef, useState } from "react";
-import { KeyboardAvoidingView, Platform, Pressable, ScrollView, TextInput, View } from "react-native";
+import { useEffect, useRef, useState, useSyncExternalStore } from "react";
+import {
+  KeyboardAvoidingView,
+  Linking,
+  Platform,
+  Pressable,
+  ScrollView,
+  TextInput,
+  View,
+} from "react-native";
 import { Button } from "../../components/ui/Button";
 import { Header } from "../../components/ui/Header";
 import { Icon } from "../../components/ui/Icon";
@@ -22,6 +30,40 @@ const clock = () => new Date().toLocaleTimeString([], { hour: "2-digit", minute:
  * remounts within the same app session.
  */
 const followupTriggeredFor = new Set<string>();
+type FollowupState = { phase: "idle" | "pending" | "error"; error: string | null };
+const idleFollowupState: FollowupState = { phase: "idle", error: null };
+const followupStates = new Map<string, FollowupState>();
+const followupListeners = new Map<string, Set<() => void>>();
+
+function getFollowupState(quoteRequestId?: string): FollowupState {
+  return (quoteRequestId && followupStates.get(quoteRequestId)) || idleFollowupState;
+}
+
+function setFollowupState(quoteRequestId: string, state: FollowupState) {
+  if (state.phase === "idle") {
+    followupStates.delete(quoteRequestId);
+  } else {
+    followupStates.set(quoteRequestId, state);
+  }
+  followupListeners.get(quoteRequestId)?.forEach((listener) => listener());
+}
+
+function useFollowupState(quoteRequestId?: string): FollowupState {
+  return useSyncExternalStore(
+    (listener) => {
+      if (!quoteRequestId) return () => {};
+      const listeners = followupListeners.get(quoteRequestId) ?? new Set();
+      listeners.add(listener);
+      followupListeners.set(quoteRequestId, listeners);
+      return () => {
+        listeners.delete(listener);
+        if (listeners.size === 0) followupListeners.delete(quoteRequestId);
+      };
+    },
+    () => getFollowupState(quoteRequestId),
+    () => idleFollowupState
+  );
+}
 
 function toDisplayMessages(
   messages: ChatMessage[],
@@ -78,20 +120,23 @@ export function ChatThread({
 
   const [text, setText] = useState(initialComposerText ?? "");
   const scrollRef = useRef<ScrollView>(null);
+  const composerRef = useRef<TextInput>(null);
   const followupTriggered = useRef(false);
-  // Local typing state, cleared in a finally so it cannot stick when the
-  // follow-up errors or the mutation observer is remounted mid-flight.
-  const [typing, setTyping] = useState(false);
+  const followupState = useFollowupState(quoteRequestId);
+  const typing = followupState.phase === "pending";
+  const followupError = followupState.error;
 
   const runFollowup = async () => {
-    setTyping(true);
+    if (!quoteRequestId || getFollowupState(quoteRequestId).phase === "pending") return;
+    setFollowupState(quoteRequestId, { phase: "pending", error: null });
     try {
       await generateAiFollowup();
+      setFollowupState(quoteRequestId, idleFollowupState);
     } catch {
-      // Ignore failures: the user can still reply and the electrician sees the
-      // original request.
-    } finally {
-      setTyping(false);
+      setFollowupState(quoteRequestId, {
+        phase: "error",
+        error: "The AI assistant couldn't reply. Your request and messages are still saved.",
+      });
     }
   };
 
@@ -116,6 +161,7 @@ export function ChatThread({
   }, [senderRole, isConnected, quoteRequestId, realMessages]);
 
   const handleSend = async (override?: unknown) => {
+    if (quoteRequestId && getFollowupState(quoteRequestId).phase === "pending") return;
     // onSubmitEditing/onPress pass an event, quick-reply chips pass a string.
     const trimmed = (typeof override === "string" ? override : text).trim();
     if (!trimmed) return;
@@ -205,7 +251,11 @@ export function ChatThread({
           </Text>
         )}
 
-        {!isLoading && !threadError && displayMessages.length === 0 && !typing && (
+        {!isLoading &&
+          !threadError &&
+          !followupError &&
+          displayMessages.length === 0 &&
+          !typing && (
           <View className="rounded-2xl bg-slate-100 p-4">
             <Text variant="caption" color="secondary" align="center">
               {unreachableCustomer
@@ -256,6 +306,57 @@ export function ChatThread({
             </View>
           </View>
         )}
+
+        {!!followupError && (
+          <View
+            testID="chat-followup-error"
+            accessible
+            accessibilityRole="alert"
+            accessibilityLiveRegion="assertive"
+            className="gap-3 rounded-2xl border border-amber-200 bg-amber-50 p-4"
+          >
+            <View className="gap-1">
+              <Text variant="body" weight="semibold">
+                We couldn't get an AI reply
+              </Text>
+              <Text variant="caption" color="secondary">
+                {followupError} Try again, send a message directly, or contact {businessName}.
+              </Text>
+            </View>
+            <View className="gap-2">
+              <Button
+                testID="chat-followup-retry"
+                title="Try again"
+                size="sm"
+                onPress={() => void runFollowup()}
+                disabled={typing}
+                accessibilityLabel="Try the AI follow-up again"
+              />
+              <Button
+                testID="chat-followup-message"
+                title="Send a message instead"
+                size="sm"
+                variant="outline"
+                onPress={() => composerRef.current?.focus()}
+                accessibilityLabel="Write a direct message to the electrician"
+              />
+              {business?.contactPhone && (
+                <Button
+                  testID="chat-followup-call"
+                  title={`Call ${businessName}`}
+                  size="sm"
+                  variant="outline"
+                  onPress={() =>
+                    void Linking.openURL(
+                      `tel:${business.contactPhone?.replace(/\s+/g, "") ?? ""}`
+                    ).catch(() => {})
+                  }
+                  accessibilityLabel={`Call ${businessName}`}
+                />
+              )}
+            </View>
+          </View>
+        )}
       </ScrollView>
 
       {quickReplies.length > 0 && (
@@ -264,7 +365,7 @@ export function ChatThread({
             <Pressable
               key={option}
               testID={`chat-quick-reply-${index}`}
-              disabled={isSending || !isConnected}
+              disabled={isSending || typing || !isConnected}
               onPress={() => void handleSend(option)}
             >
               <View className="rounded-full border border-accent-200 bg-accent-50 px-3 py-1.5">
@@ -284,6 +385,7 @@ export function ChatThread({
       ) : (
         <View className="flex-row items-center gap-2 border-t border-slate-200 bg-white pt-3">
           <TextInput
+            ref={composerRef}
             testID="chat-composer"
             className="h-12 flex-1 rounded-xl border border-slate-200 bg-slate-50 px-4 text-base text-slate-900"
             value={text}
@@ -301,7 +403,7 @@ export function ChatThread({
             title="Send"
             size="sm"
             onPress={handleSend}
-            disabled={!text.trim() || isSending || isLoading || !isConnected}
+            disabled={!text.trim() || isSending || typing || isLoading || !isConnected}
           />
         </View>
       )}
