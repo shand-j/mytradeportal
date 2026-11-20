@@ -142,10 +142,12 @@ One current TestFlight build has passing evidence for:
 
 Legal/compliance has approved the Terms of Service, Privacy Notice (#69),
 Beta/Founding Member terms (#70), Fair Use (#83), payment/refund/dispute and
-retention/AI/analytics disclosures. Approved documents are publicly reachable
-and linked from marketing, onboarding, portal, payment/document, and relevant
-mobile surfaces. Copy matches free-beta, Paddle-disabled, Stripe/bank-transfer
-behaviour. Engineering prose is not legal approval.
+retention/AI/analytics disclosures. The founding-member terms are approved:
+20% off launch prices, locked for 12 months from launch, with 30 days' notice
+before beta ends. Approved documents are publicly reachable and linked from
+marketing, onboarding, portal, payment/document, and relevant mobile surfaces.
+Copy matches free-beta, Paddle-disabled, Stripe/bank-transfer behaviour.
+Engineering prose is not legal approval.
 
 ### G9 — Current release health
 

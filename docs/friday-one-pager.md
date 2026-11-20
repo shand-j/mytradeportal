@@ -26,7 +26,7 @@ Week ending: YYYY-MM-DD
 3. **Quality** — keep-rate 74% (▲ from 71%); worst drafts were boiler swaps with vague access notes — prompt pass queued. [from Metabase — fill Friday]
 4. **Adoption** — 12 signups → 9 first AI drafts → 6 sent quotes; 2 trial conversions. [from Metabase — fill Friday]
 5. **Shipped this week** — customers can now pay invoices by card online; fair-use policy page is live; nightly cost rollups power the new dashboards.
-6. **Decisions needed / made** — decided: Stripe Connect Express for payments (ADR-003). Needed: founder sign-off on founding-member terms before cohort wave 1.
+6. **Decisions needed / made** — decided: Stripe Connect Express for payments (ADR-003); approved: founding-member terms are 20% off launch prices for a 12-month lock, with 30 days' notice before beta ends.
 
 > This page doubles as the weekly stakeholder update — lightly edited, it goes
 > out as-is. Numbers above are placeholders; fill from the three named Metabase
