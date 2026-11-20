@@ -1,11 +1,11 @@
 import runpy
 from pathlib import Path
-
+from typing import Any
 
 ROOT = Path(__file__).resolve().parents[3]
 
 
-def _load_staging_config() -> dict[str, object]:
+def _load_staging_config() -> dict[str, Any]:
     namespace = runpy.run_path(str(ROOT / "scripts" / "ci" / "configure_staging.py"))
     return {
         "api": namespace["STAGING_API_VARIABLES"],
@@ -13,7 +13,7 @@ def _load_staging_config() -> dict[str, object]:
     }
 
 
-def test_staging_mirror_uses_sandbox_and_safe_llm_caps():
+def test_staging_mirror_uses_sandbox_and_safe_llm_caps() -> None:
     config = _load_staging_config()
     api = config["api"]
 
@@ -24,7 +24,7 @@ def test_staging_mirror_uses_sandbox_and_safe_llm_caps():
     assert api["AI_BURST_LIMIT_PER_HOUR"] == "10"
 
 
-def test_staging_mirror_enables_worker_and_rollup_schedules():
+def test_staging_mirror_enables_worker_and_rollup_schedules() -> None:
     api = _load_staging_config()["api"]
 
     assert api["REMINDER_SCHEDULER_ENABLED"] == "true"
@@ -34,7 +34,7 @@ def test_staging_mirror_enables_worker_and_rollup_schedules():
     assert api["SEED_DEMO_ESTATE"] == "true"
 
 
-def test_staging_landing_forces_paddle_sandbox():
+def test_staging_landing_forces_paddle_sandbox() -> None:
     landing = _load_staging_config()["landing"]
 
     assert landing["VITE_PADDLE_ENV"] == "sandbox"
