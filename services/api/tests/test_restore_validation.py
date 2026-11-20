@@ -10,7 +10,7 @@ if str(ROOT) not in sys.path:
 from scripts import validate_restore  # noqa: E402
 
 
-def test_require_ok_rejects_http_error():
+def test_require_ok_rejects_http_error() -> None:
     try:
         validate_restore._require_ok("check", 503, b'{"status":"not_ready"}')
     except RuntimeError as exc:
@@ -19,7 +19,7 @@ def test_require_ok_rejects_http_error():
         raise AssertionError("HTTP 503 should fail validation")
 
 
-def test_validate_ready_accepts_ready_payload():
+def test_validate_ready_accepts_ready_payload() -> None:
     payload = json.dumps(
         {
             "status": "ready",
@@ -31,7 +31,7 @@ def test_validate_ready_accepts_ready_payload():
     assert result["status"] == "ready"
 
 
-def test_validate_ready_rejects_not_ready_payload():
+def test_validate_ready_rejects_not_ready_payload() -> None:
     payload = json.dumps(
         {
             "status": "not_ready",
