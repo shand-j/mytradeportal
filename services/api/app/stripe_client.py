@@ -107,7 +107,7 @@ async def _v2_request(
     if not config.STRIPE_SECRET_KEY:
         raise PaymentsNotConfiguredError()
     headers = {
-        "Authorization": f"Bearer {config.STRIPE_SECRET_KEY}",
+        "Authorization": "Bearer " + config.STRIPE_SECRET_KEY,
         "Stripe-Version": STRIPE_V2_API_VERSION,
     }
     if idempotency_key:
