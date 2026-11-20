@@ -2,6 +2,7 @@ import { View } from "react-native";
 import { Text } from "../ui/Text";
 import { planDisplayName, type SubscriptionRead } from "../../api/billing";
 import { parseServerDate } from "../../lib/datetime";
+import { useFeatureFlags } from "../../api/featureFlags";
 
 const STATUS_LABELS: Record<string, string> = {
   incomplete: "Setup incomplete",
@@ -20,6 +21,8 @@ const STATUS_LABELS: Record<string, string> = {
  * Shared by Settings and the /(trade)/billing route.
  */
 export function SubscriptionCard({ subscription }: { subscription: SubscriptionRead }) {
+  const { data: featureFlags } = useFeatureFlags();
+  const paddleBillingEnabled = featureFlags?.paddleBilling === true;
   // A "trialing" row past its trialEndsAt is effectively expired (the server
   // sweep flips it to trial_expired, but a stale row should never badge as an
   // active free trial).
@@ -77,7 +80,9 @@ export function SubscriptionCard({ subscription }: { subscription: SubscriptionR
         </Text>
       )}
       <Text variant="caption" color="secondary">
-        Manage your subscription at mytradeportal.co.uk
+        {paddleBillingEnabled
+          ? "Manage your subscription at mytradeportal.co.uk"
+          : "Free beta access is currently enabled for your account."}
       </Text>
     </View>
   );

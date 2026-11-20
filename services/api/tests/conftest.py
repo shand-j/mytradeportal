@@ -213,6 +213,26 @@ def _disable_rate_limiter_in_tests() -> "Iterator[None]":
         limiter.enabled = previous
 
 
+@pytest.fixture(autouse=True)
+def _enable_paddle_billing_flag_for_existing_tests(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Preserve historical test expectations unless a test opts out.
+
+    The Paddle billing flag now defaults off in production. Most existing API
+    tests were written against billing-enabled behaviour, so they pin the flag
+    on by default and off-state tests override locally.
+    """
+
+    async def _enabled() -> bool:
+        return True
+
+    monkeypatch.setattr("app.feature_flags.paddle_billing_enabled", _enabled)
+    monkeypatch.setattr("app.routers.billing.paddle_billing_enabled", _enabled)
+    monkeypatch.setattr("app.routers.tenants.paddle_billing_enabled", _enabled)
+    monkeypatch.setattr("app.routers.webhooks.paddle_billing_enabled", _enabled)
+
+
 @pytest_asyncio.fixture(loop_scope="function")
 async def admin_client(client: AsyncClient, db: AsyncSession) -> AsyncClient:
     """Yield an authenticated client for a freshly created admin user and tenant."""
