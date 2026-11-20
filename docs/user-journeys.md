@@ -407,9 +407,6 @@ Every route and endpoint named above was checked against the code on
    `/{job_id}/media`, `/{job_id}/start`, `/{job_id}/complete`.
 10. `services/api/app/routers/telnyx_webhooks.py` + `app/sms.py` — STOP
     opt-out handling and Telnyx send path.
-11. Certificates stub: `mobile/src/screens/trade/CertificatesScreen.tsx`
-    hardcodes the empty state; no `certificate` matches in
-    `services/api/app/routers/`.
-12. Onboarding step order: `OnboardingStepperScreen.tsx` `STEPS` array
+11. Onboarding step order: `OnboardingStepperScreen.tsx` `STEPS` array
     (welcome → account → identity → address → tax → compliance → services →
     branding → review, then bank_details → card_payments → plan).
