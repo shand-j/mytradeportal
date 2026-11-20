@@ -1,15 +1,20 @@
 import runpy
 from pathlib import Path
-from typing import Any
+from typing import TypedDict, cast
 
 ROOT = Path(__file__).resolve().parents[3]
 
 
-def _load_staging_config() -> dict[str, Any]:
+class StagingConfig(TypedDict):
+    api: dict[str, str]
+    landing: dict[str, str]
+
+
+def _load_staging_config() -> StagingConfig:
     namespace = runpy.run_path(str(ROOT / "scripts" / "ci" / "configure_staging.py"))
     return {
-        "api": namespace["STAGING_API_VARIABLES"],
-        "landing": namespace["STAGING_LANDING_VARIABLES"],
+        "api": cast(dict[str, str], namespace["STAGING_API_VARIABLES"]),
+        "landing": cast(dict[str, str], namespace["STAGING_LANDING_VARIABLES"]),
     }
 
 
