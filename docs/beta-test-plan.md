@@ -154,13 +154,8 @@ explicitly on, existing billing tests must retain their prior behaviour.
 
 | Item | Why |
 |---|---|
-<<<<<<< HEAD
 | Real-card payment (go-live gate, #32) | Requires live Stripe keys + a real card + refund/dispute drill. Verify destination-charge liability behaviour (platform fee/dispute debit + connected-account recovery path) in sandbox before live. Test-mode 4242 covers everything else automatable. |
-| Background push on device | APNs delivery cannot be simulated; code now surfaces failures via receipt logs |
-=======
-| Real-card payment (go-live gate, #32) | Requires live Stripe keys + a real card + refund; test-mode 4242 covers everything automatable |
 | Background/terminated push on device (#92) | APNs delivery cannot be simulated; tap routing and exactly-once navigation need the installed app |
->>>>>>> origin/main
 | RN date/time wheel reschedule | The wheel renders no XCUITest tree — automation cannot drive it; needs RN-side AX work |
 | Customer CodeInput | No accessibility exposure in the current build; test via UI |
 | `mtp://` deep links | Cold/warm scheme routing needs a real install, not a simulator-driven web build |
