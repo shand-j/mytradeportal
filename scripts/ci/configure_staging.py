@@ -82,7 +82,7 @@ def main() -> None:
             )
             headers = {"Content-Type": "application/json", "User-Agent": "curl/8.0"}
             if scheme == "bearer":
-                headers["Authorization"] = "******"
+                headers["Authorization"] = f"Bearer {token}"
             else:
                 headers["project-access-token"] = token
             req = urllib.request.Request(
