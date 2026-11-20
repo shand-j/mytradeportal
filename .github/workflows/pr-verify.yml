@@ -141,13 +141,17 @@ jobs:
         run: |
           mkdir -p audit-evidence
           set +e
+          # JSON is evidence only: pnpm 10.13.1 can return 1 for its JSON
+          # report even when every high finding is explicitly ignored. The
+          # normal audit command remains the authoritative high/critical gate.
           pnpm audit --audit-level=high --json > audit-evidence/pnpm-audit.json
-          audit_status=$?
-          python -m json.tool audit-evidence/pnpm-audit.json > audit-evidence/pnpm-audit.txt || \
-            cp audit-evidence/pnpm-audit.json audit-evidence/pnpm-audit.txt
+          json_status=$?
+          set -o pipefail
+          pnpm audit --audit-level=high 2>&1 | tee audit-evidence/pnpm-audit.txt
+          human_status=${PIPESTATUS[0]}
           printf '{"ecosystem":"node","json_exit_code":%d,"text_exit_code":%d}\n' \
-            "$audit_status" "$audit_status" > audit-evidence/pnpm-audit-status.json
-          exit "$audit_status"
+            "$json_status" "$human_status" > audit-evidence/pnpm-audit-status.json
+          exit "$human_status"
 
       - name: Archive dependency audit evidence
         if: always() && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.fork == false)
@@ -156,7 +160,7 @@ jobs:
           name: dependency-audit-${{ github.sha }}
           path: audit-evidence/
           if-no-files-found: error
-          retention-days: 365
+          retention-days: 90
 
   pr-env-verify:
     # Discover the PR's Railway environment, wait for the api deploy to become
