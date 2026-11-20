@@ -125,6 +125,7 @@ def make_tenant(api: httpx.Client) -> Iterator[Callable[[str], SeededTenant]]:
         access_token = token_resp.json()["access_token"]
         if os.environ.get("GITHUB_ACTIONS") == "true":
             for secret in (admin_password, access_token):
+                # codeql[py/clear-text-logging-sensitive-data] GitHub mask command; value is redacted in logs.
                 print(f"::add-mask::{secret}")
         return SeededTenant(
             id=body["id"],

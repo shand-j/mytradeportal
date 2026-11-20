@@ -58,6 +58,7 @@ requires_mailpit = pytest.mark.skipif(not mailpit_configured(), reason="Mailpit 
 
 def _mask_ci_secret(value: str) -> None:
     if value and os.environ.get("GITHUB_ACTIONS") == "true":
+        # codeql[py/clear-text-logging-sensitive-data] GitHub mask command; value is redacted in logs.
         print(f"::add-mask::{value}")
 
 
