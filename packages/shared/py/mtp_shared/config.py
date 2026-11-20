@@ -378,7 +378,9 @@ class Settings(BaseSettings):
         # CORS must not be wide open in production.
         if "*" in self.allowed_origins:
             violations.append("allowed_origins (wildcard)")
-        if self.allowed_origin_regex and "*" in self.allowed_origin_regex:
+        if self.allowed_origin_regex and any(
+            token in self.allowed_origin_regex for token in ("*", ".+")
+        ):
             violations.append("allowed_origin_regex (wildcard)")
 
         if violations:
