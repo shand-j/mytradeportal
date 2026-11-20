@@ -72,6 +72,27 @@ ACTOR_SYSTEM = "system"
 
 _GBP_QUANTUM = Decimal("0.0001")
 
+# In-process count of telemetry rows that could not be written. This is an
+# operational signal, not a second durable event store: the nightly rollup /
+# ops alerting can surface it while individual failures remain fail-open.
+_dropped_event_count = 0
+
+
+def get_dropped_event_count() -> int:
+    """Return the number of telemetry writes dropped by this process."""
+    return _dropped_event_count
+
+
+def reset_dropped_event_count() -> None:
+    """Reset the process counter (primarily for tests and process restarts)."""
+    global _dropped_event_count
+    _dropped_event_count = 0
+
+
+def _count_dropped_event() -> None:
+    global _dropped_event_count
+    _dropped_event_count += 1
+
 
 @dataclass
 class AiCallContext:
@@ -352,6 +373,7 @@ async def record_ai_event(
             _emit_langfuse(event, prompt_text)
         return event.id
     except Exception as exc:  # fail-open, mirrors write_audit_log discipline
+        _count_dropped_event()
         logger.warning(
             "ai_telemetry.write_failed",
             feature=feature,
@@ -499,11 +521,13 @@ __all__ = [
     "STATUS_TIMEOUT",
     "AiCallContext",
     "AiCallTracker",
+    "get_dropped_event_count",
     "get_last_event_id",
     "get_or_create_trace_id",
     "new_trace_id",
     "next_attempt_no",
     "record_ai_event",
     "record_quote_outcome",
+    "reset_dropped_event_count",
     "set_last_event_id",
 ]
