@@ -260,7 +260,9 @@ test("booking-email claim link sets a password, is one-shot, flips preference", 
   // Password set → app-style login works; comms preference flipped to app.
   const login = await loginCustomer(tenant, { email, password });
   expect(login.status).toBe(200);
-  const contacts = await staffApi<Array<Record<string, any>>>(tenant, "/contacts");
+  const contacts = await staffApi<
+    Array<{ email?: string; preferred_contact_method: string }>
+  >(tenant, "/contacts");
   const contact = contacts.find((c) => c.email?.toLowerCase() === email.toLowerCase());
   expect(contact!.preferred_contact_method).toBe("app");
 });

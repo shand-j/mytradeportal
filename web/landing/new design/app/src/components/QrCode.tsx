@@ -8,17 +8,12 @@ export default function QrCode({ size = 84, className = '' }: { size?: number; c
   const inFinder = (x: number, y: number) =>
     (x < 7 && y < 7) || (x >= n - 7 && y < 7) || (x < 7 && y >= n - 7)
 
-  let seed = 42
-  const rand = () => {
-    seed = (seed * 16807) % 2147483647
-    return seed / 2147483647
-  }
-
   const cells: React.ReactNode[] = []
   for (let y = 0; y < n; y++) {
     for (let x = 0; x < n; x++) {
       if (inFinder(x, y)) continue
-      if (rand() > 0.52) {
+      const index = y * n + x + 1
+      if (((index * 16807) % 2147483647) / 2147483647 > 0.52) {
         cells.push(
           <rect
             key={`${x}-${y}`}

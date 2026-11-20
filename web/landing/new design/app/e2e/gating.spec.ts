@@ -67,11 +67,16 @@ test.beforeAll(async () => {
 test("passwordless customer: staff see unreachable on the lead", async () => {
   // Server-side gating signal (5ac841a): auto-provisioned passwordless
   // customers are not chat-reachable — staff must call/email instead.
-  const leads = await staffApi<Array<Record<string, any>>>(tenant, "/quote-requests");
+  const leads = await staffApi<
+    Array<{
+      customer?: { email: string; has_account: boolean };
+      customer_reachable: boolean;
+    }>
+  >(tenant, "/quote-requests");
   const lead = leads.find((l) => l.customer?.email === customerEmail);
   expect(lead, "lead with customer").toBeTruthy();
   expect(lead!.customer_reachable).toBe(false);
-  expect(lead!.customer.has_account).toBe(true); // account exists, just passwordless
+  expect(lead!.customer!.has_account).toBe(true); // account exists, just passwordless
 });
 
 test("portal quote detail surfaces phone/email contact channels", async ({ page }) => {

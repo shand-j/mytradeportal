@@ -56,13 +56,13 @@ test.beforeAll(async () => {
 });
 
 test("scheduling the accepted quote emails booking confirmation with claim CTA", async () => {
-  const quotes = await staffApi<Array<Record<string, any>>>(tenant, "/quotes");
+  const quotes = await staffApi<Array<{ id: string; title: string }>>(tenant, "/quotes");
   const quote = quotes.find((q) => q.title === "Booking flow quote")!;
 
   const start = new Date(Date.now() + 6 * 86_400_000);
   start.setUTCHours(9, 0, 0, 0);
   const end = new Date(start.getTime() + 2 * 3_600_000);
-  await convertQuoteToJob(tenant, quote.id as string, start.toISOString(), end.toISOString());
+  await convertQuoteToJob(tenant, quote.id, start.toISOString(), end.toISOString());
 
   const mail = await waitForEmail(customerEmail, { subjectIncludes: "Booking confirmed" });
   // Tenant-branded, Reply-To the tradesperson; visit details in the body
