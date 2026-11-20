@@ -4,6 +4,8 @@ import { Icon } from "../../../components/ui/Icon";
 import { Text } from "../../../components/ui/Text";
 import { useBusiness } from "../../../theme/ThemeProvider";
 import { StepPropsWithBusiness } from "./types";
+import { openInAppBrowser } from "../../../lib/inAppBrowser";
+import { config } from "../../../lib/config";
 
 function Checkbox({
   label,
@@ -73,6 +75,18 @@ export function ConsentsStep({
         checked={consents.termsPrivacy}
         onToggle={() => update("termsPrivacy", !consents.termsPrivacy)}
       />
+      <View style={styles.documentLinks}>
+        <Pressable onPress={() => void openInAppBrowser(config.termsUrl)}>
+          <Text variant="caption" color="secondary" style={styles.documentLink}>
+            Terms of Service
+          </Text>
+        </Pressable>
+        <Pressable onPress={() => void openInAppBrowser(config.privacyUrl)}>
+          <Text variant="caption" color="secondary" style={styles.documentLink}>
+            Privacy Notice
+          </Text>
+        </Pressable>
+      </View>
 
       <Checkbox
         testID="quote-consent-contact"
@@ -142,6 +156,14 @@ const styles = StyleSheet.create({
   },
   checkboxLabel: {
     flex: 1,
+  },
+  documentLinks: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 12,
+  },
+  documentLink: {
+    textDecorationLine: "underline",
   },
   errorBanner: {
     flexDirection: "row",

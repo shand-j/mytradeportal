@@ -63,6 +63,10 @@ export function PayShell({
           <Link to="/" className="font-semibold text-[var(--ink)] underline underline-offset-2">
             My Trade Portal
           </Link>
+          {' · '}
+          <Link to="/terms" className="underline underline-offset-2">Terms</Link>
+          {' · '}
+          <Link to="/privacy" className="underline underline-offset-2">Privacy</Link>
         </p>
       </footer>
     </section>
