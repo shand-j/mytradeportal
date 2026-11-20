@@ -110,7 +110,10 @@ def make_tenant(api: httpx.Client) -> Iterator[Callable[[str], SeededTenant]]:
             )
             if token_resp.status_code != 429:
                 break
-            retry_after = int(token_resp.headers.get("Retry-After", "12"))
+            try:
+                retry_after = int(token_resp.headers.get("Retry-After", "12"))
+            except (TypeError, ValueError):
+                retry_after = 12
             if attempt == 5:
                 break
             time.sleep(min(max(retry_after, 1), 12))

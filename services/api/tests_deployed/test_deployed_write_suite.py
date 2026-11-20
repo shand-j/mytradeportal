@@ -107,7 +107,10 @@ def _login_with_retry(api: httpx.Client, payload: dict[str, str]) -> httpx.Respo
             return resp
         if attempt == 5:
             return resp
-        retry_after = int(resp.headers.get("Retry-After", "12"))
+        try:
+            retry_after = int(resp.headers.get("Retry-After", "12"))
+        except (TypeError, ValueError):
+            retry_after = 12
         time.sleep(min(max(retry_after, 1), 12))
     return resp
 
