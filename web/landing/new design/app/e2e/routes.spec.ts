@@ -1,5 +1,23 @@
 import { expect, test } from '@playwright/test'
 
+test('beta pricing surface excludes unavailable features and billing claims', async ({ page }) => {
+  await page.goto('/')
+
+  const pricing = page.locator('#pricing')
+  await expect(pricing).toBeVisible()
+  await expect(pricing).toContainText(/free while we're in beta/i)
+  await expect(pricing).toContainText(/future launch/i)
+  await expect(pricing).toContainText(/no card or paid subscription/i)
+
+  await expect(pricing).not.toContainText(/Certificates/i)
+  await expect(pricing).not.toContainText(/Deposits|partial payments/i)
+  await expect(pricing).not.toContainText(/Offline mode|offline operation/i)
+  await expect(pricing).not.toContainText(/14 days free|30 days|free trial/i)
+  await expect(pricing).not.toContainText(/Paddle/i)
+  await expect(pricing).not.toContainText(/Subscribe/i)
+  await expect(pricing).toContainText(/Join free beta/i)
+})
+
 test('unknown marketing routes show an accessible branded not-found page', async ({ page }) => {
   await page.goto('/this-page-does-not-exist')
 

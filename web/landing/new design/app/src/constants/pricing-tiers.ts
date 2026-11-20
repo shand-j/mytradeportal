@@ -7,17 +7,16 @@ export interface Tier {
   highlight: string
   features: string[]
   featured: boolean
-  /** Static launch prices used when Paddle isn't configured or preview fails. */
+  /** Future launch prices used only as indicative, non-purchasable pricing. */
   fallbackPrice: { month: string; year: string }
-  /** Monthly/yearly Paddle price IDs — empty string when not configured. */
+  /** Reserved for a future Paddle catalog; currently not presented as purchasable beta pricing. */
   priceId: { month: string; year: string }
 }
 
 /**
- * Launch pricing: flat per business with seat-capped tiers (Sole Trader 1
- * user, Pro up to 5, Team up to 15 — mirrors GET /billing/plans), AI
- * unmetered on every plan (subject to the fair-use policy at /fair-use).
- * Provisional until the beta evidence review.
+ * Future launch planning: flat per business with seat-capped tiers (Sole Trader
+ * 1 user, Pro up to 5, Team up to 15). This surface is free during beta and
+ * these prices do not create a checkout or trial.
  */
 export const PricingTiers: Tier[] = [
   {
@@ -53,9 +52,6 @@ export const PricingTiers: Tier[] = [
       'Up to 5 users',
       'Photo & drawing analysis',
       'Customer-facing AI chat assistant',
-      'Certificates',
-      'Deposits & optional quote lines',
-      'Offline mode',
       'Priority AI models',
     ],
     featured: true,
