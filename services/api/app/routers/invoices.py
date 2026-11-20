@@ -234,7 +234,16 @@ def _lines_match_quote(quote: Quote, items: list[Any]) -> bool:
     return True
 
 
-@router.post("", status_code=status.HTTP_201_CREATED)
+@router.post(
+    "",
+    status_code=status.HTTP_201_CREATED,
+    responses={
+        status.HTTP_200_OK: {
+            "description": "Existing invoice for quote-linked job replay",
+            "model": InvoiceRead,
+        }
+    },
+)
 async def create_invoice(
     data: InvoiceCreate,
     tenant: TenantDep,
