@@ -156,9 +156,7 @@ async def _handle_charge_refunded(event_data: dict[str, Any]) -> None:
         refunds = event_data.get("refunds")
         refund_rows = refunds.get("data", []) if isinstance(refunds, dict) else []
         refunded_pence = sum(
-            int(refund.get("amount") or 0)
-            for refund in refund_rows
-            if isinstance(refund, dict)
+            int(refund.get("amount") or 0) for refund in refund_rows if isinstance(refund, dict)
         )
     if not int(amount_pence or 0) or int(refunded_pence or 0) < int(amount_pence or 0):
         logger.info(
