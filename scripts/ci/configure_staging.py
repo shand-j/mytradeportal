@@ -75,12 +75,14 @@ def main() -> None:
     def gql(query: str, variables: dict | None = None) -> dict:
         nonlocal auth_scheme
         for attempt in range(2):
-            scheme = auth_scheme if attempt == 0 else (
-                "project-token" if auth_scheme == "bearer" else "bearer"
+            scheme = (
+                auth_scheme
+                if attempt == 0
+                else ("project-token" if auth_scheme == "bearer" else "bearer")
             )
             headers = {"Content-Type": "application/json", "User-Agent": "curl/8.0"}
             if scheme == "bearer":
-                headers["Authorization"] = f"******"
+                headers["Authorization"] = "******"
             else:
                 headers["project-access-token"] = token
             req = urllib.request.Request(
@@ -116,9 +118,7 @@ def main() -> None:
             {"id": project_id},
         )
         nodes = [
-            edge["node"]
-            for edge in data["project"]["environments"]["edges"]
-            if edge.get("node")
+            edge["node"] for edge in data["project"]["environments"]["edges"] if edge.get("node")
         ]
         env = next((node for node in nodes if node.get("name") == env_name), None)
         if env is None:
@@ -148,11 +148,7 @@ def main() -> None:
         ("landing", STAGING_LANDING_VARIABLES),
     ):
         instance = next(
-            (
-                item
-                for item in instances
-                if item.get("serviceName") == service_name
-            ),
+            (item for item in instances if item.get("serviceName") == service_name),
             None,
         )
         if instance is None or not instance.get("serviceId"):
