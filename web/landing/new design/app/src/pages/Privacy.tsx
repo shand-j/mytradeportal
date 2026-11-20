@@ -17,12 +17,67 @@ export default function Privacy() {
       <h1 className="mt-[var(--space-xs)] font-display text-[clamp(1.6rem,3.5vw,2.5rem)] font-extrabold uppercase leading-tight tracking-[0.02em]">
         Privacy notice
       </h1>
-      <p className="mt-[var(--space-md)] border-2 border-[var(--rule)] p-4 text-[14.5px] leading-[1.75] text-[var(--muted)]">
-        The approved Privacy Notice is pending publication. This page is
-        reserved for the final, legally approved wording and must not be used
-        as a substitute for notice text supplied and approved by
-        Legal/compliance.
-      </p>
+      <div className="mt-[var(--space-md)] space-y-[var(--space-md)] text-[14.5px] leading-[1.75]">
+        <p>
+          This notice explains how My Trade Portal collects and uses personal
+          information in the iOS app, back-office, customer portal and public
+          quote and invoice pages.
+        </p>
+
+        <div>
+          <h2 className="font-display text-lg font-extrabold uppercase">Data we process</h2>
+          <p className="mt-2 text-[var(--muted)]">
+            We process account and business details, customer and property details,
+            quote and job descriptions, photos, messages, invoice records and
+            payment metadata. Payment metadata may include the payer name,
+            amount and invoice reference.
+          </p>
+        </div>
+
+        <div>
+          <h2 className="font-display text-lg font-extrabold uppercase">AI-assisted quotes</h2>
+          <p className="mt-2 text-[var(--muted)]">
+            Job descriptions and relevant photos may be sent to the configured
+            OpenAI-compatible AI provider, currently Kimi/Moonshot, to draft
+            guide-priced quotes and provide optional follow-up triage. Vision
+            captions and quote text may contain personal or site information.
+            Electricians review AI drafts and remain responsible for accuracy.
+          </p>
+        </div>
+
+        <div>
+          <h2 className="font-display text-lg font-extrabold uppercase">Analytics and payments</h2>
+          <p className="mt-2 text-[var(--muted)]">
+            We use product analytics to measure product reliability and feature
+            use. Card payments are handled by Stripe Connect: Stripe-hosted
+            payment fields receive card data, and platform servers never store
+            or receive card numbers or security codes. Paddle subscription
+            billing is disabled during beta.
+          </p>
+        </div>
+
+        <div>
+          <h2 className="font-display text-lg font-extrabold uppercase">Retention and access controls</h2>
+          <p className="mt-2 text-[var(--muted)]">
+            Records are retained only for their stated purpose and applicable
+            legal period. UK financial records are retained for 6 years;
+            draft, declined or expired quotes are retained for 24 months.
+            Offboarding immediately revokes access, deactivates accounts and
+            anonymises personal data. Tenant isolation, role-based access and
+            encrypted storage and transport are used to restrict access.
+          </p>
+        </div>
+
+        <div>
+          <h2 className="font-display text-lg font-extrabold uppercase">Your choices</h2>
+          <p className="mt-2 text-[var(--muted)]">
+            Subject to legal and accounting record requirements, you may request
+            access to or correction of your information or ask the trade business
+            that controls the record to erase it. Tenants can export their data
+            and complete account offboarding from the back-office.
+          </p>
+        </div>
+      </div>
       <p className="mt-[var(--space-lg)] text-[13.5px] text-[var(--muted)]">
         <Link to="/terms" className="link-arrow">Terms of Service</Link>
         {' · '}

@@ -18,8 +18,8 @@ The system scope covers:
 Customer→tradesperson payments run on Stripe Connect (destination charges to
 the tradesperson's Express account; the platform never holds funds — see
 `docs/decisions/ADR-003-stripe-connect-express.md`). Platform subscription
-billing is handled by Paddle as merchant of record. AI features call a
-third-party LLM (Kimi/Moonshot via LiteLLM, OpenAI-compatible API).
+billing is handled by Paddle as merchant of record. AI features call
+Kimi/Moonshot through LiteLLM.
 
 ## Control Environment
 

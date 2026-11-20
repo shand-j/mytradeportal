@@ -1,7 +1,8 @@
 # Founding-Member Terms — Beta Cohort
 
-> **DRAFT — pending founder approval.** Not yet sent to beta users. Once
-> approved it becomes part of the beta comms pack (Delivery Plan item 0.10).
+> **DRAFT — pending founder approval.** Not yet sent to beta users and not
+> operational until approved in writing. Once approved, it becomes part of
+> the beta comms pack (Delivery Plan item 0.10) and is sent uniformly.
 
 Proposed terms for the ~10 beta users who are helping us build My Trade Portal
 before launch.
