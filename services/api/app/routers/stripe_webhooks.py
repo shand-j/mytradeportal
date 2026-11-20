@@ -35,19 +35,30 @@ router = APIRouter(prefix="/webhooks", tags=["Webhooks"])
 logger = structlog.get_logger("api.stripe_webhooks")
 
 
-async def _mark_event_seen(event_id: str, event_type: str) -> bool:
-    """Insert into the dedup ledger. Returns False if already seen."""
-    async with AsyncSession(engine) as session:
-        session.add(ProcessedWebhook(provider="stripe", event_id=event_id, event_type=event_type))
-        try:
-            await session.commit()
-        except IntegrityError:
-            await session.rollback()
-            return False
+async def _mark_event_seen(
+    session: AsyncSession, event_id: str, event_type: str
+) -> bool:
+    """Insert into the dedup ledger inside the handler transaction.
+
+    The ledger row is committed with the handler mutations, not separately.
+    This prevents a failed handler from consuming the event and suppressing
+    Stripe retries.
+    """
+    existing = await session.scalar(
+        select(ProcessedWebhook).where(
+            ProcessedWebhook.provider == "stripe",
+            ProcessedWebhook.event_id == event_id,
+        )
+    )
+    if existing is not None:
+        return False
+    session.add(ProcessedWebhook(provider="stripe", event_id=event_id, event_type=event_type))
     return True
 
 
-async def _handle_payment_intent_succeeded(event_data: dict[str, Any]) -> None:
+async def _handle_payment_intent_succeeded(
+    session: AsyncSession, event_data: dict[str, Any]
+) -> None:
     """Mark the linked invoice paid (idempotently) and notify the tradie."""
     metadata = event_data.get("metadata") or {}
     invoice_id = metadata.get("invoice_id")
@@ -61,91 +72,86 @@ async def _handle_payment_intent_succeeded(event_data: dict[str, Any]) -> None:
         logger.warning("stripe_intent_bad_invoice_id", invoice_id=invoice_id)
         return
 
-    async with AsyncSession(engine) as session:
-        # Webhook requests carry no tenant context; the metadata tenant scopes
-        # the session once known, but the initial lookup must bypass RLS
-        # (trusted server-side context, transaction-local) or FORCE RLS hides
-        # every row.
-        await bypass_rls_for_transaction(session)
-        if tenant_id_raw:
-            try:
-                await set_tenant_in_session(session, UUID(str(tenant_id_raw)))
-            except ValueError:
-                logger.warning("stripe_intent_bad_tenant", tenant_id=tenant_id_raw)
-        invoice = await session.scalar(select(Invoice).where(Invoice.id == invoice_uuid))
-        if invoice is None:
-            logger.warning("stripe_intent_orphan", invoice_id=invoice_id)
-            return
+    # Webhook requests carry no tenant context; the metadata tenant scopes
+    # the session once known, but the initial lookup must bypass RLS
+    # (trusted server-side context, transaction-local) or FORCE RLS hides
+    # every row.
+    await bypass_rls_for_transaction(session)
+    if tenant_id_raw:
+        try:
+            await set_tenant_in_session(session, UUID(str(tenant_id_raw)))
+        except ValueError:
+            logger.warning("stripe_intent_bad_tenant", tenant_id=tenant_id_raw)
+    invoice = await session.scalar(select(Invoice).where(Invoice.id == invoice_uuid))
+    if invoice is None:
+        logger.warning("stripe_intent_orphan", invoice_id=invoice_id)
+        return
 
-        if invoice.status == "paid":
-            # Replay (or a staff mark-paid raced us): nothing to re-apply.
-            logger.info("stripe_invoice_already_paid", invoice_id=str(invoice.id))
-            return
-        if invoice.status == "refunded":
-            # Out-of-order delivery: the refund already won; a late succeeded
-            # event must never resurrect the invoice to paid.
-            logger.info("stripe_invoice_already_refunded", invoice_id=str(invoice.id))
-            return
+    if invoice.status == "paid":
+        # Replay (or a staff mark-paid raced us): nothing to re-apply.
+        logger.info("stripe_invoice_already_paid", invoice_id=str(invoice.id))
+        return
+    if invoice.status == "refunded":
+        # Out-of-order delivery: the refund already won; a late succeeded
+        # event must never resurrect the invoice to paid.
+        logger.info("stripe_invoice_already_refunded", invoice_id=str(invoice.id))
+        return
 
-        intent_id = str(event_data.get("id") or "")
-        amount_pence = event_data.get("amount_received") or event_data.get("amount") or 0
-        invoice.status = "paid"
-        invoice.paid_at = datetime.utcnow()
-        invoice.paid_via = "stripe"
-        invoice.stripe_payment_intent_id = invoice.stripe_payment_intent_id or intent_id
-        session.add(invoice)
-        session.add(
-            Payment(
+    intent_id = str(event_data.get("id") or "")
+    amount_pence = event_data.get("amount_received") or event_data.get("amount") or 0
+    invoice.status = "paid"
+    invoice.paid_at = datetime.utcnow()
+    invoice.paid_via = "stripe"
+    invoice.stripe_payment_intent_id = invoice.stripe_payment_intent_id or intent_id
+    session.add(invoice)
+    session.add(
+        Payment(
+            tenant_id=invoice.tenant_id,
+            invoice_id=invoice.id,
+            amount=Decimal(int(amount_pence)) / 100,
+            currency_code=str(event_data.get("currency") or "gbp").upper(),
+            status="completed",
+            provider="stripe",
+            provider_transaction_id=intent_id,
+            provider_payload=event_data,
+            paid_at=datetime.utcnow(),
+        )
+    )
+    await notify_staff(
+        session,
+        invoice.tenant_id,
+        kind="invoice_paid",
+        title="Invoice paid",
+        body=(
+            f"Invoice {invoice.invoice_number} for £{invoice.total} "
+            "has been paid online by card."
+        ),
+        link=f"/invoices/{invoice.id}",
+    )
+    # Close the AI funnel when the paid invoice traces back to an
+    # AI-drafted quote (no-op for manual quotes — they carry no trace id).
+    if invoice.quote_id is not None:
+        source_quote = await session.get(Quote, invoice.quote_id)
+        if source_quote is not None:
+            await record_quote_outcome(
+                session,
+                outcome="invoice_paid",
                 tenant_id=invoice.tenant_id,
-                invoice_id=invoice.id,
-                amount=Decimal(int(amount_pence)) / 100,
-                currency_code=str(event_data.get("currency") or "gbp").upper(),
-                status="completed",
-                provider="stripe",
-                provider_transaction_id=intent_id,
-                provider_payload=event_data,
-                paid_at=datetime.utcnow(),
+                quote=source_quote,
+                extra_payload={
+                    "invoice_id": str(invoice.id),
+                    "actor": "stripe_webhook",
+                    "provider_transaction_id": intent_id,
+                },
             )
-        )
-        await notify_staff(
-            session,
-            invoice.tenant_id,
-            kind="invoice_paid",
-            title="Invoice paid",
-            body=(
-                f"Invoice {invoice.invoice_number} for £{invoice.total} "
-                "has been paid online by card."
-            ),
-            link=f"/invoices/{invoice.id}",
-        )
-        # Close the AI funnel when the paid invoice traces back to an
-        # AI-drafted quote (no-op for manual quotes — they carry no trace id).
-        if invoice.quote_id is not None:
-            source_quote = await session.get(Quote, invoice.quote_id)
-            if source_quote is not None:
-                await record_quote_outcome(
-                    session,
-                    outcome="invoice_paid",
-                    tenant_id=invoice.tenant_id,
-                    quote=source_quote,
-                    extra_payload={
-                        "invoice_id": str(invoice.id),
-                        "actor": "stripe_webhook",
-                        "provider_transaction_id": intent_id,
-                    },
-                )
-        # Snapshot before commit: commit() expires the ORM object and lazy
-        # refresh outside a greenlet raises MissingGreenlet.
-        log_invoice_id = str(invoice.id)
-        # Confirm the payment to the customer (thank-you + review prompt).
-        # Best-effort: runs pre-commit while the session's RLS context is
-        # live, and never raises — the webhook 200 must not depend on it.
-        await send_payment_received_email(session, invoice, card_payment=True)
-        await session.commit()
-        logger.info("stripe_invoice_paid", invoice_id=log_invoice_id)
+    log_invoice_id = str(invoice.id)
+    await send_payment_received_email(session, invoice, card_payment=True)
+    logger.info("stripe_invoice_paid", invoice_id=log_invoice_id)
 
 
-async def _handle_charge_refunded(event_data: dict[str, Any]) -> None:
+async def _handle_charge_refunded(
+    session: AsyncSession, event_data: dict[str, Any]
+) -> None:
     """Mark the invoice refunded when Stripe confirms the refund."""
     intent_id = event_data.get("payment_intent")
     if not intent_id:
@@ -166,26 +172,21 @@ async def _handle_charge_refunded(event_data: dict[str, Any]) -> None:
             refunded_pence=int(refunded_pence or 0),
         )
         return
-    async with AsyncSession(engine) as session:
-        # No tenant context on webhook requests: bypass RLS (transaction-local)
-        # to locate the invoice by its payment intent, then scope the session.
-        await bypass_rls_for_transaction(session)
-        invoice = await session.scalar(
-            select(Invoice).where(Invoice.stripe_payment_intent_id == str(intent_id))
-        )
-        if invoice is None:
-            logger.warning("stripe_refund_orphan", payment_intent_id=intent_id)
-            return
-        await set_tenant_in_session(session, invoice.tenant_id)
-        if invoice.status == "refunded":
-            return
-        invoice.status = "refunded"
-        session.add(invoice)
-        # Snapshot before commit: commit() expires the ORM object and lazy
-        # refresh outside a greenlet raises MissingGreenlet.
-        log_invoice_id = str(invoice.id)
-        await session.commit()
-        logger.info("stripe_invoice_refunded", invoice_id=log_invoice_id)
+    # No tenant context on webhook requests: bypass RLS (transaction-local)
+    # to locate the invoice by its payment intent, then scope the session.
+    await bypass_rls_for_transaction(session)
+    invoice = await session.scalar(
+        select(Invoice).where(Invoice.stripe_payment_intent_id == str(intent_id))
+    )
+    if invoice is None:
+        logger.warning("stripe_refund_orphan", payment_intent_id=intent_id)
+        return
+    await set_tenant_in_session(session, invoice.tenant_id)
+    if invoice.status == "refunded":
+        return
+    invoice.status = "refunded"
+    session.add(invoice)
+    logger.info("stripe_invoice_refunded", invoice_id=str(invoice.id))
 
 
 async def _handle_dispute_created(event_data: dict[str, Any]) -> None:
@@ -203,28 +204,28 @@ async def _handle_dispute_created(event_data: dict[str, Any]) -> None:
     logger.warning("stripe_dispute_created", payment_intent_id=intent_id, reason=reason)
 
 
-async def _handle_account_updated(event_data: dict[str, Any]) -> None:
+async def _handle_account_updated(
+    session: AsyncSession, event_data: dict[str, Any]
+) -> None:
     """Mirror Stripe's capability flags onto our StripeAccount row."""
     account_id = event_data.get("id")
     if not account_id:
         return
-    async with AsyncSession(engine) as session:
-        # No tenant context on webhook requests: bypass RLS (transaction-local)
-        # to locate the connected account, then scope the session.
-        await bypass_rls_for_transaction(session)
-        account = await session.scalar(
-            select(StripeAccount).where(StripeAccount.stripe_account_id == str(account_id))
-        )
-        if account is None:
-            logger.warning("stripe_account_orphan", stripe_account_id=account_id)
-            return
-        await set_tenant_in_session(session, account.tenant_id)
-        account.details_submitted = bool(event_data.get("details_submitted", False))
-        account.charges_enabled = bool(event_data.get("charges_enabled", False))
-        account.payouts_enabled = bool(event_data.get("payouts_enabled", False))
-        account.onboarding_complete = account.charges_enabled and account.payouts_enabled
-        session.add(account)
-        await session.commit()
+    # No tenant context on webhook requests: bypass RLS (transaction-local)
+    # to locate the connected account, then scope the session.
+    await bypass_rls_for_transaction(session)
+    account = await session.scalar(
+        select(StripeAccount).where(StripeAccount.stripe_account_id == str(account_id))
+    )
+    if account is None:
+        logger.warning("stripe_account_orphan", stripe_account_id=account_id)
+        return
+    await set_tenant_in_session(session, account.tenant_id)
+    account.details_submitted = bool(event_data.get("details_submitted", False))
+    account.charges_enabled = bool(event_data.get("charges_enabled", False))
+    account.payouts_enabled = bool(event_data.get("payouts_enabled", False))
+    account.onboarding_complete = account.charges_enabled and account.payouts_enabled
+    session.add(account)
 
 
 @router.post("/stripe")
@@ -253,19 +254,44 @@ async def stripe_webhook(
     raw_data = (event.get("data") or {}).get("object")
     event_data: dict[str, Any] = raw_data if isinstance(raw_data, dict) else {}
 
-    if event_id and not await _mark_event_seen(event_id, event_type):
-        return {"status": "duplicate"}
+    async with AsyncSession(engine) as session:
+        if event_id and not await _mark_event_seen(session, event_id, event_type):
+            return {"status": "duplicate"}
 
-    if event_type == "payment_intent.succeeded":
-        await _handle_payment_intent_succeeded(event_data)
-    elif event_type == "charge.refunded":
-        await _handle_charge_refunded(event_data)
-    elif event_type == "charge.dispute.created":
-        await _handle_dispute_created(event_data)
-    elif event_type == "account.updated":
-        await _handle_account_updated(event_data)
-    elif event_type == "payout.paid":
-        # Informational: funds landed in the tradie's bank. Nothing to mirror.
-        logger.info("stripe_payout_paid", payout_id=event_data.get("id"))
+        try:
+            if event_type == "payment_intent.succeeded":
+                await _handle_payment_intent_succeeded(session, event_data)
+            elif event_type == "charge.refunded":
+                await _handle_charge_refunded(session, event_data)
+            elif event_type == "charge.dispute.created":
+                await _handle_dispute_created(event_data)
+            elif event_type == "account.updated":
+                await _handle_account_updated(session, event_data)
+            elif event_type == "payout.paid":
+                # Informational: funds landed in the tradie's bank. Nothing to mirror.
+                logger.info("stripe_payout_paid", payout_id=event_data.get("id"))
 
-    return {"status": "ok"}
+            await session.commit()
+            return {"status": "ok"}
+        except IntegrityError:
+            await session.rollback()
+            return {"status": "duplicate"}
+        except Exception as exc:
+            await session.rollback()
+            logger.exception(
+                "stripe_webhook_handler_failed",
+                event_id=event_id,
+                event_type=event_type,
+            )
+            await send_alert(
+                "Stripe webhook handler failed",
+                (
+                    f"Event {event_id or 'unknown'} ({event_type or 'unknown type'}) "
+                    f"could not be applied and has been left for Stripe retry. "
+                    f"Error: {type(exc).__name__}: {exc}"
+                ),
+            )
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="stripe_webhook_handler_failed",
+            ) from exc

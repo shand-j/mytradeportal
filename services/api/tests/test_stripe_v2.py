@@ -320,6 +320,41 @@ def test_is_stripe_error_classifies_v2_errors() -> None:
 
 
 @pytest.mark.asyncio
+async def test_create_payment_intent_has_no_surcharge_and_is_idempotent(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: dict[str, Any] = {}
+
+    class _PaymentIntent:
+        @staticmethod
+        def create(**kwargs: Any) -> dict[str, Any]:
+            calls.update(kwargs)
+            return {"id": "pi_test_1", "client_secret": "pi_secret_1"}
+
+    class _Stripe:
+        PaymentIntent = _PaymentIntent
+
+    async def _to_thread(func: Any, *args: Any, **kwargs: Any) -> Any:
+        return func(*args, **kwargs)
+
+    monkeypatch.setattr("app.stripe_client._stripe", lambda: _Stripe)
+    monkeypatch.setattr("app.stripe_client.asyncio.to_thread", _to_thread)
+
+    result = await stripe_client.create_payment_intent(
+        amount_pence=60000,
+        currency="gbp",
+        connected_account_id="acct_test_1",
+        invoice_id="inv_test_1",
+        tenant_id="tenant_test_1",
+    )
+
+    assert result["id"] == "pi_test_1"
+    assert calls["idempotency_key"] == "mtp-invoice-inv_test_1"
+    assert calls["transfer_data"] == {"destination": "acct_test_1"}
+    assert "application_fee_amount" not in calls
+
+
+@pytest.mark.asyncio
 async def test_create_refund_requests_reverse_transfer(monkeypatch: pytest.MonkeyPatch) -> None:
     calls: dict[str, Any] = {}
 
