@@ -144,6 +144,10 @@ test.describe.serial("Customer AI follow-up recovery", () => {
     };
     let aiReplyAvailable = false;
     let followupRequests = 0;
+    let releaseRetry = () => {};
+    const retryResponseGate = new Promise<void>((resolve) => {
+      releaseRetry = resolve;
+    });
 
     await page.route(
       "**/communications?quote_request_id=*",
@@ -176,6 +180,7 @@ test.describe.serial("Customer AI follow-up recovery", () => {
           return;
         }
         aiReplyAvailable = true;
+        await retryResponseGate;
         await route.fulfill({
           status: 200,
           contentType: "application/json",
@@ -199,12 +204,16 @@ test.describe.serial("Customer AI follow-up recovery", () => {
     await expect(page.getByText("No messages yet", { exact: false })).toHaveCount(0);
     expect(followupRequests).toBe(1);
 
+    await fill(page, "chat-composer", "I can send this when the assistant is ready.");
+    await expect(page.getByTestId("chat-send")).toBeEnabled();
     await page
       .getByTestId("chat-followup-retry")
       .evaluate((button: HTMLElement) => {
         button.click();
         button.click();
       });
+    await expect(page.getByTestId("chat-send")).toHaveAttribute("aria-disabled", "true");
+    releaseRetry();
 
     await expect(page.getByText(aiMessage.body, { exact: true })).toBeVisible();
     await expect(error).toBeHidden();

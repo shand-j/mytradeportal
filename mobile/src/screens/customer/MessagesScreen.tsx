@@ -132,6 +132,7 @@ export function ChatThread({
   }, [senderRole, isConnected, quoteRequestId, realMessages]);
 
   const handleSend = async (override?: unknown) => {
+    if (followupInFlight.current) return;
     // onSubmitEditing/onPress pass an event, quick-reply chips pass a string.
     const trimmed = (typeof override === "string" ? override : text).trim();
     if (!trimmed) return;
@@ -335,7 +336,7 @@ export function ChatThread({
             <Pressable
               key={option}
               testID={`chat-quick-reply-${index}`}
-              disabled={isSending || !isConnected}
+              disabled={isSending || typing || !isConnected}
               onPress={() => void handleSend(option)}
             >
               <View className="rounded-full border border-accent-200 bg-accent-50 px-3 py-1.5">
@@ -373,7 +374,7 @@ export function ChatThread({
             title="Send"
             size="sm"
             onPress={handleSend}
-            disabled={!text.trim() || isSending || isLoading || !isConnected}
+            disabled={!text.trim() || isSending || typing || isLoading || !isConnected}
           />
         </View>
       )}
