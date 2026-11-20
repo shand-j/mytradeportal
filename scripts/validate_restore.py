@@ -214,6 +214,18 @@ def validate_postgres(
                     text(f'SELECT COUNT(*) FROM "{table_name}"')
                 ).scalar_one()
                 visible[table_name] = int(visible_rows)
+                foreign_rows = connection.execute(
+                    text(
+                        f'SELECT COUNT(*) FROM "{table_name}" '
+                        "WHERE tenant_id::text <> "
+                        "current_setting('app.current_tenant', true)"
+                    )
+                ).scalar_one()
+                if int(foreign_rows) != 0:
+                    raise RuntimeError(
+                        f"tenant isolation failed for {tenant_id} in {table_name}: "
+                        f"{foreign_rows} foreign rows visible"
+                    )
             isolation[tenant_id] = visible
     engine.dispose()
     return {
