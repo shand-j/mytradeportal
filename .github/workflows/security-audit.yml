@@ -81,6 +81,8 @@ jobs:
 
       - name: Write sanitized run summary
         if: always()
+        env:
+          JOB_STATUS: ${{ job.status }}
         run: |
           mkdir -p security-artifacts
           python - <<'PY'
