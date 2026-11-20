@@ -255,13 +255,13 @@ def test_schema_lock_times_out_with_actionable_error(monkeypatch: pytest.MonkeyP
     try:
         with engine.connect() as locker:
             locker.exec_driver_sql(f"SELECT pg_advisory_lock({init_db.SCHEMA_ADVISORY_LOCK_ID})")
-            with engine.connect() as contender:
-                with pytest.raises(TimeoutError, match="Timed out waiting for schema advisory lock"):
-                    with init_db._schema_lock(contender):
-                        pass
-            locker.exec_driver_sql(
-                f"SELECT pg_advisory_unlock({init_db.SCHEMA_ADVISORY_LOCK_ID})"
-            )
+            with (
+                engine.connect() as contender,
+                pytest.raises(TimeoutError, match="Timed out waiting for schema advisory lock"),
+                init_db._schema_lock(contender),
+            ):
+                pass
+            locker.exec_driver_sql(f"SELECT pg_advisory_unlock({init_db.SCHEMA_ADVISORY_LOCK_ID})")
     finally:
         engine.dispose()
 
@@ -274,9 +274,8 @@ def test_schema_lock_is_released_after_failure() -> None:
     engine = _sync_engine()
     try:
         with engine.connect() as conn:
-            with pytest.raises(RuntimeError, match="boom"):
-                with init_db._schema_lock(conn):
-                    raise RuntimeError("boom")
+            with pytest.raises(RuntimeError, match="boom"), init_db._schema_lock(conn):
+                raise RuntimeError("boom")
             still_held = conn.execute(
                 text("SELECT pg_advisory_unlock(:lock_id)"),
                 {"lock_id": init_db.SCHEMA_ADVISORY_LOCK_ID},

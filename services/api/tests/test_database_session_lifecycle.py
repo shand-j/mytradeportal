@@ -3,9 +3,13 @@
 from __future__ import annotations
 
 import asyncio
+from typing import TYPE_CHECKING
 
 import pytest
 from app import database
+
+if TYPE_CHECKING:
+    from types import TracebackType
 
 
 class _FakeSession:
@@ -37,7 +41,12 @@ class _SessionFactory:
     async def __aenter__(self) -> _FakeSession:
         return self._session
 
-    async def __aexit__(self, exc_type, exc, tb) -> None:
+    async def __aexit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc: BaseException | None,
+        tb: TracebackType | None,
+    ) -> None:
         return None
 
 

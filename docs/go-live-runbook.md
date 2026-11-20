@@ -105,26 +105,28 @@ deployment slot") and staging preDeploy appears hung in `scripts/init_db.py`.
 
 1. **Find blocking sessions (read-only SQL):**
    ```sql
-   SELECT pid, usename, state, wait_event_type, wait_event, now() - xact_start AS xact_age, query
+   SELECT pid, usename, state, wait_event_type, wait_event,
+          now() - xact_start AS xact_age, now() - query_start AS query_age
    FROM pg_stat_activity
    WHERE datname = current_database()
    ORDER BY xact_start NULLS LAST;
    ```
-   Treat `state = 'idle in transaction'` with very old `xact_age` and an old
-   `query` as stale; active deploy work typically has recent `xact_start` and a
-   changing wait/query pattern.
+   Treat `state = 'idle in transaction'` with very old `xact_age` as potentially
+   stale; active deploy work typically has recent `xact_start` and a changing
+   wait pattern. Do not print raw query text: role DDL can contain credentials.
 2. **Confirm who blocks whom:**
    ```sql
    SELECT blocked.pid AS blocked_pid,
           pg_blocking_pids(blocked.pid) AS blocking_pids,
-          blocked.query AS blocked_query
+          blocked.wait_event, now() - blocked.xact_start AS xact_age
    FROM pg_stat_activity blocked
    WHERE blocked.wait_event_type = 'Lock';
    ```
-3. **With owner approval, clear only stale non-production blockers** using
-   `SELECT pg_cancel_backend(<pid>);` for stuck staging sessions, or restart the
-   affected **staging** Railway service. Do **not** terminate active work or run
-   production mutations from this runbook.
+3. **With owner approval, clear only confirmed stale non-production sessions**
+   using `SELECT pg_terminate_backend(<pid>);` for sessions idle in transaction,
+   or restart the affected **staging** Railway service. `pg_cancel_backend` only
+   cancels an active query and does not close an idle transaction. Do not
+   terminate active work or run production mutations from this runbook.
 4. Redeploy staging, then re-run preview smoke (`/health`, API smoke, landing smoke).
 
 ## 4. Logs (operational alerts are post-beta)
