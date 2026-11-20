@@ -152,6 +152,7 @@ async def test_full_stripe_payment_lifecycle(
         await session.commit()
 
     quote_id: UUID | None = None
+    source_trace_id: str | None = None
     try:
         login = await http.post(
             "/auth/login",
@@ -218,12 +219,13 @@ async def test_full_stripe_payment_lifecycle(
 
         async with AsyncSession(engine) as session:
             await set_tenant_in_session(session, tenant_id)
+            source_trace_id = f"trace-{uuid4().hex[:12]}"
             quote = Quote(
                 tenant_id=tenant_id,
                 contact_id=UUID(contact.json()["id"]),
                 title="Rewire",
                 status="accepted",
-                ai_metadata={"trace_id": f"trace-{uuid4().hex[:12]}"},
+                ai_metadata={"trace_id": source_trace_id},
             )
             session.add(quote)
             await session.flush()
@@ -291,12 +293,15 @@ async def test_full_stripe_payment_lifecycle(
             assert payment.amount == Decimal("600.00")
             assert payment.provider_transaction_id == "pi_lc_1"
 
-            outcomes = await session.scalar(
-                select(func.count())
-                .select_from(AiCallEvent)
-                .where(AiCallEvent.quote_id == quote_id, AiCallEvent.feature == "outcome")
+            outcome = await session.scalar(
+                select(AiCallEvent).where(
+                    AiCallEvent.quote_id == quote_id,
+                    AiCallEvent.feature == "outcome",
+                )
             )
-            assert int(outcomes or 0) == 1
+            assert outcome is not None
+            assert outcome.raw_payload.get("outcome") == "invoice_paid"
+            assert outcome.trace_id == source_trace_id
 
             notifications = await session.scalar(
                 select(func.count())

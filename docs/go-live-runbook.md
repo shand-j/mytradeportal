@@ -3,6 +3,8 @@
 Audience: whoever drives the deployment on go-live morning. Every step is
 copy-pasteable. Local prerequisites: Docker Desktop, pnpm, the repo `.venv`.
 
+For the Stripe payments launch gate (issue #44), run the dedicated checklist:
+`docs/runbooks/go-live-checklist.md`.
 Current scope and release authority are in [beta-readiness.md](beta-readiness.md).
 The present decision is **no-go** until its gates pass. This runbook does not
 authorise a release or replace live/device evidence.
