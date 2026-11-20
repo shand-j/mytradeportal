@@ -97,6 +97,60 @@ How it works:
 
 Production is untouched and continues to send via Resend.
 
+## Staging mirror and P0 reproducibility
+
+The persistent `staging` Railway environment mirrors production's service
+topology and runs the in-process reminder and AI-rollup schedulers. Pushes to
+`main` run `.github/workflows/staging-e2e.yml`, which applies these staging-only
+guards before waiting for a fresh API deployment:
+
+- reminder scheduler enabled with a 5-minute tick;
+- rollup scheduler enabled with a 60-second tick;
+- Paddle hosted/checkout mode forced to sandbox;
+- the Kimi/LLM routes pinned to the cheapest configured model with 10 AI calls
+  per hour, a 100-call monthly staging threshold, one retry, and a 60-second timeout;
+- SMS reminders disabled to avoid test spend;
+- the demo estate re-seeded by the API pre-deploy command.
+
+Configure locally or rerun after recreating the staging environment:
+
+```bash
+RAILWAY_TOKEN=... RAILWAY_PROJECT_ID=... \
+  python3 scripts/ci/configure_staging.py
+```
+
+The configuration script is idempotent and leaves credentials untouched.
+`PADDLE_*`, `LLM_*` credentials and webhook secrets remain environment secrets;
+never copy production API keys into staging.
+
+### Weekly 9-item UAT protocol
+
+Run against the staging API/landing URLs resolved with
+`scripts/ci/env_url.sh staging`:
+
+1. Tradie generates, edits, and sends an AI quote; confirm the keep-rate event.
+2. Customer opens the demo QR/portal URL, submits an intake with a photo, verifies, and sees status.
+3. Tradie sees the intake brief and responds.
+4. Customer opens a magic-link notification, views the quote, and accepts it.
+5. Tradie sends an invoice; customer pays in Paddle/Stripe sandbox; invoice is marked paid,
+   staff is notified, `invoice_paid` is emitted, and refund succeeds.
+6. Confirm the ≥3 sent-AI-quotes trial extension on the demo org.
+7. Confirm yesterday's org AI cost in the staff ops view and trigger one alert test.
+8. Confirm a Sole Trader cannot access a Pro feature and no usage meter is customer-visible.
+9. Spot-check any changed Tradify capability against `Tradify-Parity-Checklist.md`.
+
+### P0 reproduction protocol
+
+For every P0:
+
+1. Reproduce it only in staging (never use production customer data).
+2. Record the staging deployment commit, API/landing URLs, tenant slug, account used,
+   request/response payload with secrets redacted, and exact UTC time.
+3. Add or extend the smallest staging/mobile/API regression test that fails before the fix.
+4. Fix the bug, push, and rerun both staging jobs in
+   `.github/workflows/staging-e2e.yml`.
+5. State in the P0 report: **which test catches this and how it was reproduced on staging**.
+
 ### Rebuilding Mailpit after a staging-environment recreate (2026-11-19)
 
 When the staging environment is deleted/recreated, the fork from production
