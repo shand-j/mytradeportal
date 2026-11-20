@@ -478,20 +478,11 @@ export function uniqueEmail(prefix: string): string {
 }
 
 /* ------------------------------------------------------------------ */
-/* Browser CORS + tenant-header workaround (staging env bugs — see PR) */
+/* Tenant-header workaround for the non-subdomain staging origin. */
 /* ------------------------------------------------------------------ */
 
 /**
- * Staging deployment bug (env, not product code): the staging API's CORS
- * allowlist (`ALLOWED_ORIGINS` / origin regex in services/api/app/main.py)
- * permits `*.mytradeportal.co.uk` and `web-mytradeportal-pr-*.up.railway.app`
- * but NOT the staging landing origin (`landing-staging-*.up.railway.app`), so
- * the staging portal bundle cannot call the staging API from a browser at
- * all. Until the allowlist is fixed, tests replay API responses with the
- * `Access-Control-Allow-Origin` header added — every other byte of the
- * request/response goes to the real services untouched.
- *
- * Second shim: tenant-scoped routes that resolve the tenant from the Host
+ * Tenant-scoped routes that resolve the tenant from the Host
  * subdomain (e.g. GET/POST /communications, used by the portal discuss
  * thread) 401 when the page runs on the non-subdomain staging origin —
  * there is no `{slug}.mytradeportal.co.uk` host to infer from. On a real
@@ -515,11 +506,7 @@ export const portalTest = test.extend<{ page: import("@playwright/test").Page }>
           forwarded["x-tenant-id"] = currentTenantId;
         }
         const response = await route.fetch({ headers: forwarded });
-        const headers = { ...response.headers() };
-        const origin = requestHeaders["origin"];
-        if (origin) headers["access-control-allow-origin"] = origin;
-        headers["access-control-allow-credentials"] = "true";
-        await route.fulfill({ response, headers });
+        await route.fulfill({ response });
       });
     }
     await use(page);
