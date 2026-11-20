@@ -10,7 +10,7 @@ import logging
 import secrets
 from datetime import UTC, datetime
 from typing import Annotated
-from urllib.parse import urlparse
+from urllib.parse import urlparse, urlunparse
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.responses import PlainTextResponse
@@ -52,6 +52,29 @@ def _looks_like_admin_host(base_url: str) -> bool:
     return host.split(".", 1)[0].startswith("admin")
 
 
+def _is_local_host(host: str) -> bool:
+    host = (host or "").lower()
+    return host in {"localhost", "127.0.0.1", "::1", "test"} or host.endswith(".localhost")
+
+
+def _secure_base_url(base_url: str) -> str:
+    """Force https for non-local hosts so iOS accepts subscription feeds."""
+    parsed = urlparse(base_url)
+    if parsed.scheme == "http" and not _is_local_host(parsed.hostname or ""):
+        logger.warning("Calendar feed base URL %r is insecure http; upgrading to https", base_url)
+        return urlunparse(parsed._replace(scheme="https"))
+    return base_url
+
+
+def _request_origin_base_url(request: Request) -> str:
+    """Best-effort API origin, honoring reverse-proxy forwarding headers."""
+    scheme = (request.headers.get("x-forwarded-proto") or "").split(",", 1)[0].strip()
+    host = (request.headers.get("x-forwarded-host") or "").split(",", 1)[0].strip()
+    if scheme and host:
+        return f"{scheme}://{host}"
+    return str(request.base_url).rstrip("/")
+
+
 def _feed_base_url(request: Request) -> str:
     """Base URL for feed links: override → request origin → ``app_public_url``.
 
@@ -61,9 +84,10 @@ def _feed_base_url(request: Request) -> str:
     exist and returns HTML — iOS rejects that as a validation failure — so it
     is only a last resort.
     """
-    base = (
-        CALENDAR_FEED_BASE_URL or str(request.base_url).rstrip("/") or settings.app_public_url
-    ).rstrip("/")
+    base = (CALENDAR_FEED_BASE_URL or _request_origin_base_url(request) or settings.app_public_url).rstrip(
+        "/"
+    )
+    base = _secure_base_url(base)
     if _looks_like_admin_host(base):
         logger.warning(
             "Calendar feed base URL %r resolves to the admin domain; "
