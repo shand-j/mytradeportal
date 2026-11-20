@@ -178,7 +178,7 @@ or secrets in docs/issues/slack.
 |---|---|---|
 | Customer reminder SMS delivery | Customer handset receives reminder text | Screenshot of handset notification/message + timestamp |
 | Staff reminder SMS delivery | Assigned electrician handset receives reminder text | Screenshot + timestamp |
-| Delivery receipt webhook | `message.finalized` receipt processed and persisted | App/API log excerpt with status + reminder row status transition |
+| Delivery receipt webhook | `message.finalized` receipt processed and persisted | Sanitized log excerpt (redact phone numbers + Telnyx message/event IDs; keep event_type + delivery_status + reminder delivery_status transition) |
 | 24h/2h (or controlled equivalent) windows | Both reminder windows fire once, no duplicate spam | Timeline with two send times + dedupe confirmation |
 | Permanent failure fallback | Failed SMS triggers staff alert + contact degrades to email/push fallback | Failure log excerpt + follow-up channel evidence |
 | STOP opt-out | Reply `STOP` blocks later SMS sends for that contact | Inbound webhook evidence + subsequent skipped SMS evidence |
