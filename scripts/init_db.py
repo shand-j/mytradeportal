@@ -79,17 +79,20 @@ def _set_predeploy_timeouts(conn: Connection) -> None:
 
 @contextmanager
 def _schema_lock(conn: Connection) -> Iterator[None]:
-    """Take the schema advisory lock with a bounded wait and always release."""
+    """Take a transaction-scoped schema lock with a bounded wait.
+
+    The surrounding transaction releases the lock on both commit and rollback,
+    including when PostgreSQL has aborted the transaction after a DDL error.
+    """
     print(
         "[init_db] Waiting for schema advisory lock "
         f"{SCHEMA_ADVISORY_LOCK_ID} (timeout={INIT_DB_ADVISORY_LOCK_TIMEOUT_SECONDS}s)"
     )
-    acquired = False
     started = time.monotonic()
     while True:
         acquired = bool(
             conn.execute(
-                text("SELECT pg_try_advisory_lock(:lock_id)"),
+                text("SELECT pg_try_advisory_xact_lock(:lock_id)"),
                 {"lock_id": SCHEMA_ADVISORY_LOCK_ID},
             ).scalar_one()
         )
@@ -105,23 +108,7 @@ def _schema_lock(conn: Connection) -> Iterator[None]:
             )
         time.sleep(0.5)
 
-    try:
-        yield
-    finally:
-        if acquired:
-            unlocked = bool(
-                conn.execute(
-                    text("SELECT pg_advisory_unlock(:lock_id)"),
-                    {"lock_id": SCHEMA_ADVISORY_LOCK_ID},
-                ).scalar_one()
-            )
-            if unlocked:
-                print(f"[init_db] Released schema advisory lock {SCHEMA_ADVISORY_LOCK_ID}")
-            else:
-                print(
-                    "[init_db] WARNING: advisory unlock returned false "
-                    f"for lock {SCHEMA_ADVISORY_LOCK_ID}"
-                )
+    yield
 
 
 def _create_app_role(conn: Connection) -> None:
@@ -365,8 +352,8 @@ def init_api_schema() -> None:
     print("[init_db] Creating SQLAlchemy tables from models")
     engine = create_engine(DATABASE_URL.replace("+asyncpg", ""), hide_parameters=True)
     # Concurrent boots (blue/green deploys, api + admin preDeploy racing) all
-    # run this DDL; serialize on a session-level advisory lock and retry once
-    # on the transient deadlock the lock can't prevent (observed on the
+    # run this DDL; serialize on a transaction-scoped advisory lock and retry
+    # once on the transient deadlock the lock can't prevent (observed on the
     # staging deploy of 2026-09-16, killing the whole deployment).
     for attempt in (1, 2):
         try:

@@ -22,7 +22,7 @@ import pytest
 from app.config import settings
 from sqlalchemy import Column, MetaData, String, Table, create_engine, inspect, text
 from sqlalchemy.dialects.postgresql import JSONB
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy.exc import IntegrityError, ProgrammingError
 
 if TYPE_CHECKING:
     from types import ModuleType
@@ -268,19 +268,48 @@ def test_schema_lock_times_out_with_actionable_error(monkeypatch: pytest.MonkeyP
 
 @pytest.mark.usefixtures("test_database_url")
 def test_schema_lock_is_released_after_failure() -> None:
-    """Acquired advisory locks are released even when schema work raises."""
+    """Rollback releases the transaction-scoped lock after schema work raises."""
     init_db = _load_init_db_module()
 
     engine = _sync_engine()
     try:
+        with (
+            engine.begin() as conn,
+            pytest.raises(RuntimeError, match="boom"),
+            init_db._schema_lock(conn),
+        ):
+            raise RuntimeError("boom")
         with engine.connect() as conn:
-            with pytest.raises(RuntimeError, match="boom"), init_db._schema_lock(conn):
-                raise RuntimeError("boom")
-            still_held = conn.execute(
-                text("SELECT pg_advisory_unlock(:lock_id)"),
-                {"lock_id": init_db.SCHEMA_ADVISORY_LOCK_ID},
+            locks_held = conn.execute(
+                text(
+                    "SELECT count(*) FROM pg_locks WHERE pid = pg_backend_pid() AND locktype = 'advisory'"
+                )
             ).scalar_one()
-            assert still_held is False
+            assert locks_held == 0
+    finally:
+        engine.dispose()
+
+
+@pytest.mark.usefixtures("test_database_url")
+def test_schema_lock_is_released_after_database_error() -> None:
+    """A PostgreSQL error cannot strand the lock on a pooled connection."""
+    init_db = _load_init_db_module()
+
+    engine = _sync_engine()
+    try:
+        with (
+            engine.begin() as conn,
+            pytest.raises(ProgrammingError),
+            init_db._schema_lock(conn),
+        ):
+            conn.exec_driver_sql("SELECT * FROM _recon_table_that_does_not_exist")
+        with engine.connect() as conn:
+            locks_held = conn.execute(
+                text(
+                    "SELECT count(*) FROM pg_locks WHERE pid = pg_backend_pid() AND locktype = 'advisory'"
+                )
+            ).scalar_one()
+            assert locks_held == 0
     finally:
         engine.dispose()
 
