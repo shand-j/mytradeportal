@@ -144,7 +144,7 @@ class SubscriptionPaywallMiddleware(BaseHTTPMiddleware):
             return await call_next(request)
 
         from app.database import get_db, get_db_session
-        from app.models import Subscription
+        from app.models import Subscription, Tenant
         from app.routers.billing import is_subscription_active
 
         try:
@@ -168,8 +168,21 @@ class SubscriptionPaywallMiddleware(BaseHTTPMiddleware):
                 )
                 return cast("Subscription | None", result)
 
+        async def _is_beta_comped() -> bool:
+            # Honour dependency_overrides for embedded/test hosts just like the
+            # subscription read below.
+            override = request.app.dependency_overrides.get(get_db)
+            if override is not None:
+                async with asynccontextmanager(override)() as db:
+                    tenant = await db.get(Tenant, tenant_id)
+                    return bool(tenant and tenant.settings.get("beta_comped"))
+            async with get_db_session() as db:
+                tenant = await db.get(Tenant, tenant_id)
+                return bool(tenant and tenant.settings.get("beta_comped"))
+
         subscription = await _read_subscription()
-        if subscription is not None and not is_subscription_active(subscription):
+        beta_comped = subscription is None or await _is_beta_comped()
+        if not beta_comped and not is_subscription_active(subscription):
             logger.info(
                 "paywall_blocked",
                 method=request.method,

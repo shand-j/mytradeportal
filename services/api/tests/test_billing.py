@@ -450,6 +450,24 @@ async def test_paywall_blocks_gated_endpoints_on_incomplete_subscription(
     assert (await admin_client.get("/quotes")).status_code == 200
 
 
+async def test_beta_comped_canceled_subscription_does_not_block_gated_endpoints(
+    admin_client: AsyncClient, db: AsyncSession
+) -> None:
+    """A beta-comped tenant with a canceled/abandoned subscription row stays
+    usable and must never receive a paywall 402."""
+    from app.models import Tenant
+
+    tenant_id = admin_client.headers["X-Tenant-ID"]
+    db.add(Subscription(tenant_id=tenant_id, plan_key="pro", status="canceled"))
+    tenant = await db.get(Tenant, UUID(str(tenant_id)))
+    assert tenant is not None
+    tenant.settings = {**tenant.settings, "beta_comped": True}
+    await db.commit()
+
+    response = await admin_client.get("/quotes")
+    assert response.status_code == 200
+
+
 async def test_paywall_allows_tenant_without_subscription_row(admin_client: AsyncClient) -> None:
     """Beta semantics: no subscription row (legacy/seed tenants) = allowed."""
     response = await admin_client.get("/quotes")

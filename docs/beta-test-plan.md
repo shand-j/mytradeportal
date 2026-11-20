@@ -82,9 +82,9 @@ device).
 
 | # | Journey | Automated | Manual residue |
 |---|---|---|---|
-| 1 | Electrician onboarding (account → business → bank details → card gate → plan) | e2e signup spec walks the full wizard; email-availability API tests; duplicate-email jump-back; linear single-pass | First-run UX on device; Stripe Connect in-app browser round-trip per tenant |
+| 1 | Electrician onboarding (account → business → bank details → plan) | e2e signup spec walks the free-beta wizard; email-availability API tests; duplicate-email jump-back; linear single-pass | First-run UX on device; no Paddle checkout or canceled/expired paywall bounce |
 | 2 | Electrician payment setup (Stripe Connect) | account v2 payload prefill (incl. portal URL as website), bounce-URL substitution, status auto-sync | Hosted onboarding completion in Stripe's UI; sandbox verification of prefill fields |
-| 3 | Subscription checkout (Paddle) | transaction creation, cardless-trial branch, hosted page v2 init | Tap-through on device (sandbox card); reopen-after-abandon monitoring (known Paddle caveat) |
+| 3 | Subscription checkout (Paddle) | **Removed from beta scope**; beta onboarding remains free; inactive/beta-comped subscriptions must not bounce the app | **Not executed** — no Paddle checkout or device card tap-through is required |
 | 4 | App config / branding | colour settings round-trip, logo upload + public serve tests | Picker UX on device; logo rendering across portal/pay/quote pages |
 | 5 | Sharing code / invites | invite API, seats, tokens, email send, accept flow | End-to-end invite on device (needs `TESTFLIGHT_URL` set) |
 | 6 | Quote request (public intake) | public endpoint tests, entry_channel persistence, block enforcement, triage | Live form on the landing site |
@@ -129,7 +129,7 @@ Automated before the build: CI green on main (python, mobile, quality-gates,
 schema-sync, pr-env-verify on the release PR).
 
 Manual on the build:
-1. Onboarding: fresh tenant → bank details → card gate (skip and complete) → plan → dashboard (single pass, no bounce)
+1. Onboarding: fresh tenant → bank details → plan → dashboard (single pass, no Paddle checkout or bounce)
 2. Push: background the app during AI quote generation → notification arrives → tap → opens quote, zero repeat banners
 3. Refine a quote (fast, no timeout), review screen UX with keyboard open
 4. Logo upload in branding settings; verify on a public quote page
@@ -137,3 +137,17 @@ Manual on the build:
 6. Stripe Connect setup from Settings → Payments (in-app browser, returns to app, "accepting cards")
 7. GPS nav link on a job card opens maps
 8. Calendar All/Me + guardrail rejection toast on a conflicting assignment
+
+### 4.1 Remaining P0 device evidence
+
+Physical-device rows are evidence, not assumptions. Record device/iOS/build,
+environment, date, and a sanitized artifact (screen recording or screenshot)
+before changing a row from **UNVERIFIED** to **PASS**.
+
+| Item | Current evidence status | Required device proof |
+|---|---|---|
+| Push notification delivery | PASS — founder-confirmed on-device delivery (`#92` closed) | Retain the existing linked artifact; coordinate with `#92` rather than duplicating it |
+| Free-beta onboarding/access | UNVERIFIED on a current build | Fresh tenant reaches dashboard and remains usable with no Paddle checkout, canceled row, or expired-trial bounce |
+| Password-reset email round-trip | UNVERIFIED on a current production build | Request email, open the reset link, set a new password, confirm old/new login behavior |
+| Convert-to ActionSheet + job-from-quote | UNVERIFIED on a current build — earlier 2026-10-23 evidence exists in `docs/journey-proof/mobile/b5-convert-to-job/` | Reverify ActionSheet options, prefilled job form, creation, and quote/job linkage on the current build |
+| Photo upload | UNVERIFIED | Pick/upload a photo on device; verify storage-key recovery and the job/quote attachment; run storage-outage/recovery retest if 503 recurs |
