@@ -7,9 +7,9 @@
 //    thread is the customer's own async channel and stays available — the
 //    gating applies to the tradesperson's composer, which is the app-side
 //    ContactCustomerCard (mobile suite covers that half).
-//  * The subscription paywall gates STAFF API surfaces (402) but never the
-//    customer portal: public config, intake, and customer auth stay live for
-//    lapsed tenants (middleware.py exempts /businesses + /customer).
+//  * During free beta, delayed Paddle subscription events gate neither STAFF
+//    API surfaces nor the customer portal: public config, intake, customer auth,
+//    and staff work all stay live for inactive subscription rows.
 //
 // See docs/e2e-coverage-gaps.md rows G25/G8.
 
@@ -99,7 +99,7 @@ test("portal quote detail surfaces phone/email contact channels", async ({ page 
 
   // Sign the portal in by seeding the stored session, as /auth/magic does.
   await page.addInitScript(
-    ([slug, token, customer]: [string, string, unknown]) => {
+    ([slug, token, customer]) => {
       window.localStorage.setItem(
         `mtp_portal_${slug}`,
         JSON.stringify({
@@ -128,20 +128,19 @@ test("portal quote detail surfaces phone/email contact channels", async ({ page 
   await expect(emailChip).toHaveAttribute("href", new RegExp(`^mailto:${email}`));
 });
 
-test("paywall gates staff surfaces but the customer portal stays live", async () => {
+test("inactive Paddle state cannot gate staff or customer surfaces in free beta", async () => {
   test.skip(!PADDLE_WEBHOOK_SECRET, "TEST_PADDLE_WEBHOOK_SECRET not set");
 
   // Baseline: no subscription row → beta semantics allow staff access.
   const before = await staffApiRaw(tenant, "/quotes");
   expect(before.status).toBe(200);
 
-  // Lapse the subscription (forged signed Paddle webhook, same as the
-  // deployed write suite's G8 drive).
+  // Valid delayed Paddle events are acknowledged but cannot mutate beta access.
   const canceled = await forgePaddleSubscription(tenant, "subscription.canceled", "canceled");
   expect(canceled.status).toBe(200);
 
-  const gated = await staffApiRaw(tenant, "/quotes");
-  expect(gated.status).toBe(402);
+  const staffWhileCanceled = await staffApiRaw(tenant, "/quotes");
+  expect(staffWhileCanceled.status).toBe(200);
 
   // Customer-facing surfaces stay live (middleware exempts /businesses +
   // /customer — the portal keeps working for a lapsed tenant's customers).
@@ -160,7 +159,7 @@ test("paywall gates staff surfaces but the customer portal stays live", async ()
   const quotes = await customerApi<Array<unknown>>(session, "/customer/quotes");
   expect(Array.isArray(quotes)).toBe(true);
 
-  // Reactivate — staff access restored.
+  // Reactivation is also delayed while disabled and does not change access.
   const activated = await forgePaddleSubscription(tenant, "subscription.activated", "active");
   expect(activated.status).toBe(200);
   const after = await staffApiRaw(tenant, "/quotes");

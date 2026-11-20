@@ -105,6 +105,7 @@ async def test_feature_flags_maps_registry_bools(
     assert body["voice_ai_insights"] is True
     assert body["demand_forecasting"] is False
     assert body["external_integrations"] is False
+    assert body["paddle_billing"] is False
     # Unknown registry flags pass through so the UI can adopt them additively.
     assert body["some_future_flag"] is True
 
@@ -131,6 +132,23 @@ async def test_feature_flags_default_off_when_railway_unreachable(
     assert response.status_code == 200, response.text
     body = response.json()
     assert all(value is False for value in body.values())
+
+
+@pytest.mark.asyncio
+async def test_feature_flags_reads_paddle_billing_flag(
+    _railway_configured: None,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def _fake_post(self: httpx.AsyncClient, url: str, **kwargs: Any) -> _FakeResponse:
+        return _FakeResponse(_graphql_payload({"paddle_billing": True}))
+
+    monkeypatch.setattr(httpx.AsyncClient, "post", _fake_post)
+
+    response = await _get_flags()
+
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["paddle_billing"] is True
 
 
 @pytest.mark.asyncio
