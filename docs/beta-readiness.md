@@ -1,6 +1,6 @@
 # Beta readiness and release decision
 
-Last reviewed: **2026-11-20**. Review baseline: `04ac614` on `main`.
+Last reviewed: **2026-11-20 (full rebaseline)**. Review baseline: `485841e` on `main` (after #365).
 
 This is the current source of truth for beta scope and go/no-go decisions. The
 [GitHub Beta project](https://github.com/users/shand-j/projects/4) and master
@@ -16,10 +16,15 @@ authorised only after every applicable gate below has current evidence. Until
 then, all release blockers remain open even if their implementation code has a
 green PR.
 
-The baseline had green main CI ([run
-44712067008](https://github.com/shand-j/mytradeportal/actions/runs/44712067008)),
-but this is not release evidence for later commits. The weekly security audit
-was failing before pytest because required credentials were missing; that is a
+The current baseline has green main CI ([run
+44830578492](https://github.com/shand-j/mytradeportal/actions/runs/44830578492))
+and successful production/staging deployments (`9c800527` / `e15d9fcd`), with
+`/health` and `/ready` passing in both environments. Current-SHA staging E2E
+([run 44830578607](https://github.com/shand-j/mytradeportal/actions/runs/44830578607))
+failed on Mailpit after the staging IaC apply removed the manually provisioned
+service. The root fix is in #391; until it lands and the suite is rerun, staging
+E2E is not a pass. The weekly security audit still fails
+before pytest because required credentials are missing; that is a
 harness/configuration failure, not an OWASP or tenancy pass and not by itself a
 confirmed product vulnerability.
 
@@ -154,6 +159,72 @@ startup/auth refresh #313, storage #315, IaC #319, staging #78, scheduling #296,
 and other issues labelled `beta-blocker` are closed or carry an explicit scope
 exception in the final review. No blocker is omitted because it was discovered
 before this reset.
+
+## 2026-11-20 rebaseline scorecard
+
+`PASS` means the gate has current evidence; `IN PROGRESS` means evidence is
+partial or a run is pending; `BLOCKED` means a defect or required evidence is
+missing. A green implementation PR alone never closes a live gate.
+
+| Gate | Status | Current evidence and remaining work |
+|---|---|---|
+| G1 | IN PROGRESS | This rebaseline updates the tracker. Copilot and the owner are assigned to every action. CI/reproducibility additions are #76 and #377. |
+| G2 | BLOCKED | #52 has no production OWASP/tenancy verdict and required dedicated test-tenant secrets are absent. Node audit passes (30 findings, four high ignored); Python reports 174 advisories across 20 packages, with 171 fixable records requiring severity/package triage in #53. |
+| G3 | PASS | Railway Signals has no entries, so `paddle_billing` defaults false. Production `/` and `/subscribe` show free-beta copy and make no `paddle.com` requests; delayed/cancelled events do not lock access out. #322 stays open only for the current staging-suite run URL before final sign-off. |
+| G4 | BLOCKED | #323 has runbook/validation only. No isolated production restore, RPO/RTO measurement, media/Qdrant recovery or teardown evidence exists. Fresh-volume storage provisioning remains #315. |
+| G5 | BLOCKED (card path) | #44, #45 and #32 are reopened because current configuration, device KYC and real-card evidence is absent. #355 needs owner/legal liability approval. #30 is a confirmed webhook-safety defect. Bank-transfer-only remains an alternative, not evidence for Stripe. |
+| G6 | BLOCKED | #30: Stripe, Paddle and Telnyx all write their dedupe record before handler success, so a transient failure can become a permanent `duplicate`. VAT #324 has automated regression coverage; device VAT save/send evidence belongs to G7. |
+| G7 | BLOCKED | No single current TestFlight build has the full matrix. #36, #92, #325 and #326 were reopened. #102 remains open; #181 needs Apple Calendar device proof; #313 refresh-loop is unverified and a hard fail if reproduced. |
+| G8 | BLOCKED | `/terms` and `/privacy` are placeholders, not approved documents. #327, #69, #70 and #83 require legal/compliance approval and publication/link evidence. `/fair-use` content matches current ~500/month cheap-route/no-hard-block behavior but still needs approval. |
+| G9 | IN PROGRESS | Main CI and production/staging readiness pass. Current staging E2E failed on Mailpit removed by IaC; #391 is the root fix. #313 and #315 remain open; #76 adds bounded CI jobs/stale-run handling and #377 makes landing installs/builds deterministic. New Copilot triage #369/#373/#387 requires review, not automatic acceptance as confirmed defects. #378 is post-beta only because `web/app` is parked. |
+
+### Additional confirmed findings
+
+- `services/api/app/routers/stripe_webhooks.py:256`, `webhooks.py:257`, and
+  `telnyx_webhooks.py:334` confirm the early-completion webhook defect (#30).
+- PR #333 added legal routes and links only; production snapshots show explicit
+  “approved wording is pending” placeholders (#327).
+- `.railway/.railway/railway.ts` is a stale duplicate containing deleted
+  web/OCERP resources and invalid MinIO startup configuration. Persistent
+  RustFS environments are healthy, but fresh PR volumes required manual
+  ownership repair; both belong to #315.
+- The local full suite recorded 1,311 passes plus two database-connection
+  resets, and both failed tests passed on rerun. Main CI is the authoritative
+  current-SHA green run. Web unit tests pass (163), as do landing build/type
+  checks and mobile TypeScript. The parked `web/app` build failure is tracked
+  separately in #378 and does not block concierge beta.
+- `pip-audit` is report-only and does not provide severity metadata here. Its
+  174 findings require triage, not an assumption that every item is critical or
+  that the current tree is safe (#53).
+
+### Release paths and required order
+
+**Recommended shortest path — bank-transfer-only.** Complete G1–G4, G6–G9 and
+manual bank-transfer/mark-paid verification. Keep card-payment claims disabled
+for unconnected tenants and make the restriction explicit in onboarding,
+invoice/payment surfaces and approved legal copy. This path does not require a
+real card, but it still requires webhook failure-injection (#30), restore,
+security, current-build device and legal evidence.
+
+**Card-enabled path.** Complete every bank-transfer requirement plus #355 owner/
+legal approval, #44 production configuration, #45 device onboarding, and #32
+real-card payment/refund. No real-money test should occur before those approvals
+and webhook safety are in place.
+
+Execute in this order:
+
+1. Rebaseline documentation/tracking and CI reproducibility (#76, #315, #377).
+2. Production application security and dependency triage (#52, #53), then webhook
+   failure safety (#30).
+3. Close free-beta billing evidence (#322) after the current staging suite.
+4. Execute the isolated restore drill (#323).
+5. Either approve bank-transfer-only or complete the Stripe chain
+   (#355 → #44 → #45 → #32).
+6. Complete VAT/device/webhook/push/SMS/deep-link/calendar verification (#102,
+   #36, #92, #181, #313, #325, #326).
+7. Obtain legal approval and publish/link the complete pack (#69, #70, #83,
+   #327), then run the final #105 review with exact release SHA and TestFlight
+   build.
 
 ## Final decision record
 
