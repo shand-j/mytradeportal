@@ -162,12 +162,15 @@ _configured_regex = settings.allowed_origin_regex or None
 if _configured_regex:
     _allow_origin_regex: str | None = (
         f"({_configured_regex})|({_RAILWAY_PREVIEW_ORIGIN_REGEX})"
-        f"|({_STAGING_LANDING_ORIGIN_REGEX})|({_PORTAL_ORIGIN_REGEX})"
+        f"|({_PORTAL_ORIGIN_REGEX})"
     )
 else:
     _allow_origin_regex = (
-        f"({_RAILWAY_PREVIEW_ORIGIN_REGEX})"
-        f"|({_STAGING_LANDING_ORIGIN_REGEX})|({_PORTAL_ORIGIN_REGEX})"
+        f"({_RAILWAY_PREVIEW_ORIGIN_REGEX})|({_PORTAL_ORIGIN_REGEX})"
+    )
+if settings.environment != "production":
+    _allow_origin_regex = (
+        f"{_allow_origin_regex}|({_STAGING_LANDING_ORIGIN_REGEX})"
     )
 
 app.add_middleware(
