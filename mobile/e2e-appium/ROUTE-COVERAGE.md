@@ -10,6 +10,7 @@ asserts intended behaviour blocked by a known gap; `—` out of beta scope.
 | `app/trade-login.tsx` | Electrician login (validation, invalid creds, forgot-password, reset deep link) | 01 |
 | `app/customer-login.tsx` | Customer login + register toggle | 01 |
 | `app/reset-password.tsx` | Set-new-password deep-link screen (invalid/expired token paths) | 01 |
+| `mtp://` + hosted bounce/magic-link surfaces | Physical-device deep-link matrix (cold/warm + auth-state checks, notification taps, Stripe bounce return, token-link safety) | ⚠️ Manual release-gate matrix in `docs/beta-test-plan.md` §4.1 |
 | `app/onboarding/index.tsx` | 12-step tenant wizard: every step's UI, validation gating, back-nav persistence; stops before plan payment (no real tenant) | 02 |
 | `app/paywall.tsx` | Subscription-required gate: read-only plan pricing, plain-text website mention (no in-app purchase — App Store 3.1.1) | ⚠️ 02 asserts entry point only — creating a real tenant excluded by data-safety rule |
 | `app/(trade)/dashboard.tsx` | Stats, three-dot settings, notification bell, bottom nav (all 5 tabs) | 10 |

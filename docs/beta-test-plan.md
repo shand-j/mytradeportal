@@ -137,3 +137,43 @@ Manual on the build:
 6. Stripe Connect setup from Settings → Payments (in-app browser, returns to app, "accepting cards")
 7. GPS nav link on a job card opens maps
 8. Calendar All/Me + guardrail rejection toast on a conflicting assignment
+
+### 4.1 P0 deep-link verification matrix (issue #326)
+
+Run this matrix on **one current TestFlight build** and record sanitized evidence
+for every row. This is a physical-device release gate and cannot be signed off
+from web snapshots alone.
+
+Capture once per run:
+- Device model
+- iOS version
+- App/TestFlight build number
+- Backend environment (staging/production)
+- Tester + timestamp
+
+| Case ID | Link surface | Start state | Expected result | Evidence |
+|---|---|---|---|---|
+| DL-N1 | Push tap → quote | app killed, authenticated trade user | opens `quote/[id]` once (no duplicate navigation, no second banner) | video/screenshot + notification row id |
+| DL-N2 | Push tap → job | backgrounded, authenticated trade user | opens `job/[id]` once | video/screenshot + notification row id |
+| DL-N3 | Push tap → invoice | app killed, authenticated customer user | opens customer `invoice/[id]` once | video/screenshot + notification row id |
+| DL-N4 | Push tap while logged out | app killed, no session | no auth loop; login screen shown; post-login routing is safe and single-path | video/screenshot |
+| DL-A1 | Customer magic link | Safari/Mail entry, no app session | lands on correct customer surface with correct tenant branding | screenshot (token redacted) |
+| DL-A2 | Password reset link | Safari/Mail entry, logged out | valid token: reset form; invalid/expired token: terminal error surface | screenshots (token redacted) |
+| DL-A3 | Staff invite acceptance | Safari/Mail entry, logged out | sets password, returns to app login ready for sign-in, no stranded browser | video/screenshot (email redacted) |
+| DL-S1 | Stripe onboarding bounce | in-app browser from mobile Payments | `stripe-bounce` returns to app, session intact, no browser dead-end | video/screenshot |
+| DL-S2 | Stripe dashboard bounce | in-app browser from mobile Payments | returns to app or dashboard surface cleanly, no loop | video/screenshot |
+| DL-T1 | Quote token URL | valid token, no app session | secure quote page loads correct document; app remains stable if opened from app context | screenshot (token redacted) |
+| DL-T2 | Invoice/pay token URL | valid token, no app session | secure invoice/pay page loads; no wrong-tenant content | screenshot (token redacted) |
+| DL-T3 | Expired/invalid token URL | no app session | terminal invalid/expired state, no leakage of protected data | screenshot |
+
+Hard fail conditions for any row: stranded browser, startup/auth loop,
+wrong-tenant content, duplicate navigation, or credential/token leakage.
+
+### 4.2 Cross-reference handling (no duplicate evidence)
+
+- Reuse the same captured artifacts for **#92** (notification exactly-once
+  routing) when recording `DL-N1..DL-N4`.
+- Reuse the same captured artifacts for **#45** (Stripe bounce/return) when
+  recording `DL-S1..DL-S2`.
+- In issue updates, link back to the primary artifact set instead of uploading
+  duplicate media.
