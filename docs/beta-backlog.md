@@ -9,10 +9,7 @@ Last triaged: 2026-09-12
 > on-device verification — mark Status — User as you test.
 >
 > **Blocking user actions (owner: John):**
-> 1. **APNs key** for push notifications (N1) — Apple Developer portal → Keys
->    → APNs, then `cd mobile && eas credentials -p ios --profile production`
->    and upload the `.p8`. No rebuild needed.
-> 2. **`APIFY_API_TOKEN`** on the Railway `data-pipeline` service, then restart
+> 1. **`APIFY_API_TOKEN`** on the Railway `data-pipeline` service, then restart
 >    it — the catalog reindex (N21) runs automatically on boot; the
 >    `--run-on-start` trigger stays armed until the index is confirmed, then
 >    the orchestrator reverts it.
@@ -34,7 +31,7 @@ journey broken · P2 = polish · P3 = cosmetic.
 
 | Ref | Item | Priority | Notes / root-cause hypothesis | Status — AI | Status — User |
 |---|---|---|---|---|---|
-| N1 | Push notifications never arrive on iOS (no banner/badge/sound when app closed; in-app banner only) | P0 | Reported ~5× across beta. Token plumbing exists (`mobile/src/lib/pushNotifications.ts`, `services/api/app/push.py`). Suspect Expo APNs production credentials or token/environment mismatch. Needs end-to-end trace: token registration → DB → Expo push API response. | Done (code) `6929dd4` — ticket errors now parsed (were logged as success), sound/high-priority + deep-link data, customer gets quote-ready push, dead-token cleanup; 7 tests. APNs key uploaded to EAS 2026-09-12 (6M5HA7Q78W) — pipeline complete, awaiting first on-device delivery | Working |
+| N1 | Push notifications never arrive on iOS (no banner/badge/sound when app closed; in-app banner only) | P0 | Reported ~5× across beta. Token plumbing exists (`mobile/src/lib/pushNotifications.ts`, `services/api/app/push.py`). Suspect Expo APNs production credentials or token/environment mismatch. Needs end-to-end trace: token registration → DB → Expo push API response. | Done (code) `6929dd4` — ticket errors now parsed (were logged as success), sound/high-priority + deep-link data, customer gets quote-ready push, dead-token cleanup; 7 tests. APNs key uploaded to EAS 2026-09-12 (6M5HA7Q78W); on-device delivery verified 2026-09-15 (Founder status consolidation). | Done |
 | N2 | Bell-icon notification list items don't navigate to the notified thing | P1 | Nav targets missing on notification rows; each notification type needs a deep-link route. Carried: triage-complete / quote-refreshed notifications had the same complaint. | Done `5dff3f4` — mark-all-read button + bulk endpoints (staff + customer). Your note addressed | Working - requires a mark all as read button |
 | N3 | Emails fail silently when customer has no contact information | P1 | Silent failure must become logged + surfaced; sending path should no-op with a warning, not drop. Related to N4. | Done `6929dd4` — no-contact case logs `email_skipped_no_contact_email` warning instead of dropping; tested | Working |
 | N4 | Customer emails broadly don't work (no quote-ready notifications, no reset emails received) | P0 | Resend vars are set (`RESEND_FROM_EMAIL=quotes@mytradeportal.co.uk`). Customer-facing event emails (quote ready, reset) appear unsent or unlogged. Trace `communications.py` send paths + Resend API responses; add delivery logging. Carried: "no email arrives" reported for password reset earlier. | Done `6929dd4` — send_event_email wrapper + welcome/triage-question/quote-accepted emails, Resend errors logged loudly; 14 tests. Live-delivery verify pending |  Working |
