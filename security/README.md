@@ -42,6 +42,11 @@ export SECURITY_SECONDARY_ADMIN_PASSWORD=...
 pytest -m security -v --no-cov
 ```
 
+The staging and production security environments require dedicated primary and
+secondary test tenants. The secondary credentials are required for cross-tenant
+isolation tests; the workflow fails fast rather than allowing a partial or
+skipped tenancy verdict.
+
 ## Dependency Auditing
 
 ```bash

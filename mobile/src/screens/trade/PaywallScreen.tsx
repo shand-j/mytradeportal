@@ -16,6 +16,7 @@ import { useAuth } from "../../contexts/AuthContext";
 import { useBusiness } from "../../theme/ThemeProvider";
 import { usePaywallStore } from "../../stores/paywallStore";
 import { FALLBACK_PLANS } from "../onboarding/steps/PlanPaymentStep";
+import { useFeatureFlags } from "../../api/featureFlags";
 
 /**
  * Shown when the backend answers 402 subscription_required: the tenant has no
@@ -34,6 +35,8 @@ export function PaywallScreen() {
   // "trialing" server-side.
   const { data: subscription } = useSubscription({ pollWhileInactive: true });
   const plansQuery = useBillingPlans();
+  const { data: featureFlags } = useFeatureFlags();
+  const paddleBillingEnabled = featureFlags?.paddleBilling === true;
 
   // The server returns tier keys directly for new subscriptions and legacy
   // keys for beta ones; resolvePlanKey normalises both onto the tier catalog.
@@ -54,11 +57,16 @@ export function PaywallScreen() {
       subscription.trialEndsAt != null &&
       new Date(subscription.trialEndsAt).getTime() <= Date.now());
   useEffect(() => {
+    if (!paddleBillingEnabled) {
+      setRequired(false);
+      router.replace("/(trade)/dashboard");
+      return;
+    }
     if (active) {
       setRequired(false);
       router.replace("/(trade)/dashboard");
     }
-  }, [active, router, setRequired]);
+  }, [active, paddleBillingEnabled, router, setRequired]);
 
   const signInAgain = () => {
     setBusiness(null);

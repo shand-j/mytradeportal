@@ -31,6 +31,9 @@ export SUPABASE_SERVICE_ROLE_KEY=""
 export LLM_TEMPERATURE=""
 
 echo "Starting mobile backend stack..."
+# The API health dependencies do not include object storage, and teardown stops
+# it, so start MinIO explicitly before the bucket check.
+docker compose ${COMPOSE_FILES} up -d minio
 # Force-recreate the API container so it picks up the env vars exported above.
 docker compose ${COMPOSE_FILES} up -d --force-recreate api
 
