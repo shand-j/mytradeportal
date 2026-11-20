@@ -382,7 +382,10 @@ async def create_refund(payment_intent_id: str) -> dict[str, Any]:
         )
     except Exception as exc:
         code = str(getattr(exc, "code", "") or "")
-        if isinstance(exc, stripe.StripeError) and code in {"balance_insufficient", "insufficient_funds"}:
+        if isinstance(exc, stripe.StripeError) and code in {
+            "balance_insufficient",
+            "insufficient_funds",
+        }:
             raise RefundTransferRecoveryError() from exc
         raise
     return {"id": refund["id"], "status": refund.get("status")}

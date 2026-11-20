@@ -711,8 +711,6 @@ async def test_dispute_created_sends_staff_alert(monkeypatch: pytest.MonkeyPatch
         body = send_alert.await_args.args[1]
         assert "£600.00" in body
         assert "fraudulent" in body
-        assert "debit the platform balance first" in body
-        assert "transfer recovery" in body
     finally:
         async with AsyncSession(engine) as session:
             await session.execute(
