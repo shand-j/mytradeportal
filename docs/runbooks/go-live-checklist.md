@@ -1,0 +1,83 @@
+# Go-live checklist — Stripe payments (issue #44)
+
+Use this checklist to close the last P-wave go-live gate:
+- production `STRIPE_*` config in Railway
+- mobile OTA publish for the payment-keyed frontend
+- sandbox → live smoke evidence
+
+## 1) Set production Stripe env in Railway (`api` service)
+
+Set these in the **production** Railway environment, then redeploy `api`:
+
+- `STRIPE_SECRET_KEY` (`sk_live_...` or restricted key with required write scopes)
+- `STRIPE_WEBHOOK_SECRET` (platform webhook endpoint secret)
+- `STRIPE_CONNECT_WEBHOOK_SECRET` (Connect webhook endpoint secret)
+- `STRIPE_CONNECT_CLIENT_ID`
+- `STRIPE_PUBLISHABLE_KEY` (`pk_live_...`)
+
+Then verify:
+
+```bash
+curl -fsS https://<api-domain>/health
+curl -fsS https://<api-domain>/ready
+```
+
+## 2) Publish frontend keys + mobile OTA
+
+### Landing pay page
+
+Set `VITE_STRIPE_PUBLISHABLE_KEY=pk_live_...` for the landing app build/deploy.
+
+### Mobile OTA
+
+From `/home/runner/work/mytradeportal/mytradeportal/mobile`:
+
+```bash
+npx eas-cli update --branch production --message "chore: stripe live publishable key rollout"
+```
+
+Record the EAS update group ID and confirm the trade Payments screen loads without config errors.
+
+## 3) Sandbox smoke (must be green before live-card check)
+
+Run the deployed write suite against staging (or trigger `.github/workflows/staging-e2e.yml`).
+
+Minimum pass criteria from Delivery Plan 0.11:
+- Connect onboarding mirror passes
+- invoice send → webhook settle path passes
+- staff `invoice_paid` notification exists
+- refund webhook path remains idempotent
+
+## 4) Live-mode manual smoke (production)
+
+Run once with a low-value real invoice:
+
+1. Tradie Connect onboarding completes (`/payments/status` shows `connected=true`, `charges_enabled=true`).
+2. Send invoice with card payments enabled.
+3. Customer opens branded `/pay/:token` page and pays.
+4. Stripe webhook marks invoice `paid` automatically.
+5. Tradie receives `invoice_paid` notification.
+6. `invoice_paid` outcome event is trace-linked.
+
+Trace-link verification (example SQL):
+
+```sql
+SELECT feature, outcome, trace_id, quote_id, metadata
+FROM ai_call_events
+WHERE feature = 'outcome' AND outcome = 'invoice_paid'
+ORDER BY created_at DESC
+LIMIT 5;
+```
+
+Expected: latest row has non-null `trace_id` and metadata containing `invoice_id`.
+
+## 5) Evidence to attach to issue #44
+
+- Railway screenshot or export showing production `STRIPE_*` values are present
+- EAS OTA publish link/group ID
+- Sandbox run link (staging-e2e workflow)
+- Live smoke proof:
+  - paid invoice screenshot on `/invoice/:token`
+  - tradie notification screenshot
+  - webhook success log snippet
+  - `ai_call_events` row snippet showing `outcome=invoice_paid` with `trace_id`

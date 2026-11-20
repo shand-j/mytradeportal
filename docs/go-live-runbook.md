@@ -3,6 +3,9 @@
 Audience: whoever drives the deployment on go-live morning. Every step is
 copy-pasteable. Local prerequisites: Docker Desktop, pnpm, the repo `.venv`.
 
+For the Stripe payments launch gate (issue #44), run the dedicated checklist:
+`docs/runbooks/go-live-checklist.md`.
+
 ---
 
 ## 1. What is shipping
