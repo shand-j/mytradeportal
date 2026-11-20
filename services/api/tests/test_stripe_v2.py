@@ -8,6 +8,7 @@ sandbox on 2026-09-15 (see the PR description for the sanitized transcript).
 from typing import Any
 from unittest.mock import AsyncMock
 
+import httpx
 import pytest
 from app import stripe_client
 
@@ -236,6 +237,81 @@ async def test_v2_request_raises_structured_error_on_failure(
     assert exc_info.value.status_code == 400
     assert exc_info.value.code == "accounts_v2_access_blocked"
     assert "not enabled" in exc_info.value.message
+
+
+@pytest.mark.asyncio
+async def test_v2_request_uses_bearer_secret(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Accounts v2 REST calls authenticate with the configured Stripe secret."""
+
+    class _Response:
+        status_code = 200
+        text = ""
+
+        def json(self) -> dict[str, Any]:
+            return {"id": "acct_v2_test"}
+
+    class _Client:
+        async def __aenter__(self) -> "_Client":
+            return self
+
+        async def __aexit__(self, *args: Any) -> None:
+            return None
+
+        async def request(self, *args: Any, **kwargs: Any) -> _Response:
+            assert kwargs["headers"]["Authorization"] == "Bearer " + "sk_test_secret"
+            assert kwargs["headers"]["Stripe-Version"] == stripe_client.STRIPE_V2_API_VERSION
+            return _Response()
+
+    monkeypatch.setattr("app.config.STRIPE_SECRET_KEY", "sk_test_secret")
+    monkeypatch.setattr("app.stripe_client.httpx.AsyncClient", lambda **_: _Client())
+
+    result = await stripe_client._v2_request("POST", "/core/accounts", json_body={})
+    assert result == {"id": "acct_v2_test"}
+
+
+@pytest.mark.parametrize(
+    ("transport_error", "expected_code", "expected_message"),
+    [
+        (
+            httpx.TimeoutException("timed out"),
+            "stripe_request_timeout",
+            "Stripe did not respond before the request timeout.",
+        ),
+        (
+            httpx.RequestError("connection failed"),
+            "stripe_request_failed",
+            "Stripe could not be reached.",
+        ),
+    ],
+)
+@pytest.mark.asyncio
+async def test_v2_request_maps_transport_failures(
+    monkeypatch: pytest.MonkeyPatch,
+    transport_error: httpx.RequestError,
+    expected_code: str,
+    expected_message: str,
+) -> None:
+    """Transport failures become structured 503 StripeV2Errors."""
+
+    class _Client:
+        async def __aenter__(self) -> "_Client":
+            return self
+
+        async def __aexit__(self, *args: Any) -> None:
+            return None
+
+        async def request(self, *args: Any, **kwargs: Any) -> dict[str, Any]:
+            raise transport_error
+
+    monkeypatch.setattr("app.config.STRIPE_SECRET_KEY", "sk_test_secret")
+    monkeypatch.setattr("app.stripe_client.httpx.AsyncClient", lambda **_: _Client())
+
+    with pytest.raises(stripe_client.StripeV2Error) as exc_info:
+        await stripe_client._v2_request("POST", "/core/accounts", json_body={})
+
+    assert exc_info.value.status_code == 503
+    assert exc_info.value.code == expected_code
+    assert exc_info.value.message == expected_message
 
 
 def test_is_stripe_error_classifies_v2_errors() -> None:
