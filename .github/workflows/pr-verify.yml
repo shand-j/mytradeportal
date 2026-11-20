@@ -109,8 +109,19 @@ jobs:
           pip install -e ".[dev]"
 
       - name: Audit Python dependencies (report-only)
-        continue-on-error: true
-        run: pip-audit --desc
+        shell: bash
+        run: |
+          mkdir -p audit-evidence
+          set +e
+          pip-audit --desc --format json --output audit-evidence/pip-audit.json
+          json_status=$?
+          pip-audit --desc 2>&1 | tee audit-evidence/pip-audit.txt
+          human_status=${PIPESTATUS[0]}
+          printf '{"ecosystem":"python","json_exit_code":%d,"text_exit_code":%d}\n' \
+            "$json_status" "$human_status" > audit-evidence/pip-audit-status.json
+          # pip-audit is report-only: findings are archived for SOC2 review,
+          # but ecdsa has no fixed upstream release and is explicitly deferred.
+          exit 0
 
       - name: Set up pnpm
         uses: pnpm/action-setup@v4
@@ -126,7 +137,27 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Audit Node dependencies (high/critical gate)
-        run: pnpm audit --audit-level=high
+        shell: bash
+        run: |
+          mkdir -p audit-evidence
+          set +e
+          pnpm audit --audit-level=high --json > audit-evidence/pnpm-audit.json
+          json_status=$?
+          set -o pipefail
+          pnpm audit --audit-level=high 2>&1 | tee audit-evidence/pnpm-audit.txt
+          human_status=${PIPESTATUS[0]}
+          printf '{"ecosystem":"node","json_exit_code":%d,"text_exit_code":%d}\n' \
+            "$json_status" "$human_status" > audit-evidence/pnpm-audit-status.json
+          exit "$human_status"
+
+      - name: Archive dependency audit evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dependency-audit-${{ github.sha }}
+          path: audit-evidence/
+          if-no-files-found: error
+          retention-days: 365
 
   pr-env-verify:
     # Discover the PR's Railway environment, wait for the api deploy to become
