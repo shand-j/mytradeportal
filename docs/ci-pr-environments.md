@@ -46,7 +46,8 @@ Workflow: [`.github/workflows/pr-verify.yml`](../.github/workflows/pr-verify.yml
    - list `api`/`landing` service domains in that environment and take the
      first active Railway-generated (`.up.railway.app`) domain.
 
-   Requires `RAILWAY_TOKEN` with visibility into **all** project environments.
+   Requires `RAILWAY_TOKEN_PR_VERIFY` (preferred) or `RAILWAY_TOKEN` fallback
+   with visibility into **all** project environments.
    For CI, use a Railway account/workspace API token with read access to the
    project. Tokens that only expose `production` cannot discover ephemeral
    PR environments; the script now fails fast with an authorization diagnostic
@@ -178,7 +179,8 @@ so staging would send REAL email until re-routed. Rebuild:
 
 | Secret | Purpose |
 |---|---|
-| `RAILWAY_TOKEN` | Railway account/workspace API token with read access to all project environments (used by GraphQL environment/domain discovery). |
+| `RAILWAY_TOKEN_PR_VERIFY` | Preferred Railway account/workspace API token with read access to all project environments (used by PR environment GraphQL discovery). |
+| `RAILWAY_TOKEN` | Fallback account/workspace or project token used when `RAILWAY_TOKEN_PR_VERIFY` is unset. |
 | `GITHUB_TOKEN` | Built-in; needs `pull-requests: write` for the result comment (granted in the workflow). |
 
 ## What the smoke suites do (and deliberately don't)

@@ -91,6 +91,7 @@ def test_fails_fast_when_only_production_is_visible() -> None:
 
     assert result.returncode == 5
     assert "authorization failure discovering PR environments" in result.stderr
+    assert "RAILWAY_TOKEN_PR_VERIFY" in result.stderr
     assert "read access to all project environments" in result.stderr
 
 
