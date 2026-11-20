@@ -38,7 +38,9 @@ from app.ai_telemetry import (
     ACTOR_SYSTEM,
     AiCallContext,
     AiCallTracker,
+    get_dropped_event_count,
     record_ai_event,
+    reset_dropped_event_count,
 )
 from app.config import settings
 from app.limiter import limiter
@@ -112,6 +114,18 @@ async def test_record_ai_event_flush_failure_leaves_no_partial_row(
     )
     assert ok is not None
     assert await _count_events(db, trace_id) == 1
+
+
+async def test_dropped_event_count_increments_only_on_write_failure(
+    db: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Dropped telemetry writes are counted without affecting the caller."""
+    reset_dropped_event_count()
+    baseline = get_dropped_event_count()
+    monkeypatch.setattr(db, "flush", _exploding_flush)
+    assert await record_ai_event(db, feature="quote_draft", trace_id=f"drop-{uuid4().hex}") is None
+    assert get_dropped_event_count() == baseline + 1
+    monkeypatch.undo()
 
 
 async def test_tracker_fail_open_business_result_unaffected(
