@@ -100,7 +100,7 @@ describe("02 onboarding: wizard walk-through (stops before tenant creation)", ()
     await expectStep("1 of 12: Welcome");
     await waitForTextContains("Get leads from QR codes");
     await waitForTextContains("AI drafts quotes");
-    await waitForTextContains("Certificates, invoices, and accounts");
+    await waitForTextContains("Invoices and customer accounts");
     await waitForText("A short, guided setup");
     for (const label of ["Account", "Business", "Address", "Tax", "Compliance", "Services"]) {
       await waitForText(label);

@@ -25,4 +25,7 @@ export const config = {
   businessSlug: process.env.EXPO_PUBLIC_BUSINESS_SLUG?.trim() ?? "",
   /** Help centre on the marketing site — opened in the in-app browser. */
   helpUrl: "https://www.mytradeportal.co.uk/help",
+  termsUrl: "https://www.mytradeportal.co.uk/terms",
+  privacyUrl: "https://www.mytradeportal.co.uk/privacy",
+  fairUseUrl: "https://www.mytradeportal.co.uk/fair-use",
 };
