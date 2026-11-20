@@ -109,11 +109,15 @@ async def test_feed_link_upgrades_http_origin_to_https_for_public_hosts(
     admin_client: AsyncClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setattr("app.routers.calendar.CALENDAR_FEED_BASE_URL", "")
-    response = await admin_client.get("/calendar/feed-link", headers={"host": "api.mytradeportal.co.uk"})
+    response = await admin_client.get(
+        "/calendar/feed-link", headers={"host": "api.mytradeportal.co.uk"}
+    )
     assert response.status_code == 200
     data = response.json()
     assert data["url"].startswith("https://api.mytradeportal.co.uk/calendar/feed.ics?token=")
-    assert data["webcal_url"].startswith("webcal://api.mytradeportal.co.uk/calendar/feed.ics?token=")
+    assert data["webcal_url"].startswith(
+        "webcal://api.mytradeportal.co.uk/calendar/feed.ics?token="
+    )
 
 
 async def test_feed_base_url_warns_on_admin_domain_override(

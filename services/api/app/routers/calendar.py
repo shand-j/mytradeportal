@@ -84,9 +84,9 @@ def _feed_base_url(request: Request) -> str:
     exist and returns HTML — iOS rejects that as a validation failure — so it
     is only a last resort.
     """
-    base = (CALENDAR_FEED_BASE_URL or _request_origin_base_url(request) or settings.app_public_url).rstrip(
-        "/"
-    )
+    base = (
+        CALENDAR_FEED_BASE_URL or _request_origin_base_url(request) or settings.app_public_url
+    ).rstrip("/")
     base = _secure_base_url(base)
     if _looks_like_admin_host(base):
         logger.warning(
