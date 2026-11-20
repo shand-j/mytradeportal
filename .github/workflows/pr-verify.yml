@@ -109,8 +109,19 @@ jobs:
           pip install -e ".[dev]"
 
       - name: Audit Python dependencies (report-only)
-        continue-on-error: true
-        run: pip-audit --desc
+        shell: bash
+        run: |
+          mkdir -p audit-evidence
+          set +e
+          pip-audit --desc --format json --output audit-evidence/pip-audit.json
+          audit_status=$?
+          python -m json.tool audit-evidence/pip-audit.json > audit-evidence/pip-audit.txt || \
+            cp audit-evidence/pip-audit.json audit-evidence/pip-audit.txt
+          printf '{"ecosystem":"python","json_exit_code":%d,"text_exit_code":%d}\n' \
+            "$audit_status" "$audit_status" > audit-evidence/pip-audit-status.json
+          # pip-audit is report-only: findings are archived for SOC2 review,
+          # but ecdsa has no fixed upstream release and is explicitly deferred.
+          exit 0
 
       - name: Set up pnpm
         uses: pnpm/action-setup@v4
@@ -126,7 +137,30 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Audit Node dependencies (high/critical gate)
-        run: pnpm audit --audit-level=high
+        shell: bash
+        run: |
+          mkdir -p audit-evidence
+          set +e
+          # JSON is evidence only: pnpm 10.13.1 can return 1 for its JSON
+          # report even when every high finding is explicitly ignored. The
+          # normal audit command remains the authoritative high/critical gate.
+          pnpm audit --audit-level=high --json > audit-evidence/pnpm-audit.json
+          json_status=$?
+          set -o pipefail
+          pnpm audit --audit-level=high 2>&1 | tee audit-evidence/pnpm-audit.txt
+          human_status=${PIPESTATUS[0]}
+          printf '{"ecosystem":"node","json_exit_code":%d,"text_exit_code":%d}\n' \
+            "$json_status" "$human_status" > audit-evidence/pnpm-audit-status.json
+          exit "$human_status"
+
+      - name: Archive dependency audit evidence
+        if: always() && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.fork == false)
+        uses: actions/upload-artifact@v4
+        with:
+          name: dependency-audit-${{ github.sha }}
+          path: audit-evidence/
+          if-no-files-found: error
+          retention-days: 90
 
   pr-env-verify:
     # Discover the PR's Railway environment, wait for the api deploy to become
