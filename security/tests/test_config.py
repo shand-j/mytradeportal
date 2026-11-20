@@ -7,7 +7,8 @@ pytestmark = pytest.mark.security
 
 @pytest.fixture(scope="session", autouse=True)
 def _validate_config() -> None:
-    """Unit-test validation directly instead of requiring a live target."""
+    """Override security.conftest._validate_config so this module can unit-test SecurityConfig.validate."""
+    pass
 
 
 def test_production_requires_primary_and_secondary_configuration(
