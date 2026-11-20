@@ -94,6 +94,7 @@ from app.work_blocks import (
     estimate_hours_from_lines,
     is_multi_day,
     plan_working_blocks,
+    wall_clock_to_utc_naive,
     working_hours,
 )
 
@@ -175,7 +176,7 @@ def block_appointment_span(
 ) -> tuple[datetime, datetime]:
     """The calendar span a working-day block appointment occupies."""
     work_start, _, _ = working_hours(settings)
-    start_at = datetime.combine(block.day, work_start)
+    start_at = wall_clock_to_utc_naive(block.day, work_start)
     return start_at, start_at + timedelta(hours=block.hours)
 
 

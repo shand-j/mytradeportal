@@ -6,7 +6,7 @@ the multi-day split on quote → job conversion and POST /jobs, and the
 /jobs/suggest-schedule recommendation skipping busy days.
 """
 
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from decimal import Decimal
 from typing import Any
 from unittest.mock import AsyncMock, patch
@@ -275,6 +275,46 @@ async def test_convert_to_job_splits_multi_day_across_working_days(
     assert all(a["job_id"] == job["id"] for a in appointments)
     assert "day 2 of 3" in appointments[0]["title"]
     assert "day 3 of 3" in appointments[1]["title"]
+
+
+async def test_convert_to_job_block_appointments_follow_utc_instants_in_bst(
+    admin_client: AsyncClient,
+) -> None:
+    """Day-2 block appointments are normalised from UK wall-clock to UTC."""
+    client = admin_client
+    tenant = {"id": client.headers["X-Tenant-ID"]}
+    response = await client.patch(
+        "/tenants/me",
+        headers={"X-Tenant-ID": tenant["id"]},
+        json={
+            "settings": {
+                "working_day_start": "08:00",
+                "working_day_end": "16:00",
+                "working_days": [0, 1, 2, 3, 4, 5, 6],
+            }
+        },
+    )
+    assert response.status_code == 200, response.text
+    contact = await _create_contact(client, tenant["id"], "DST Split")
+    quote = await _create_quote(client, tenant["id"], contact["id"], estimated_hours="16")
+    await _approve_quote(client, tenant["id"], quote["id"])
+
+    # Fri/Sat 2026-10-23/24 are still BST (UTC+1), so 08:00 local is 07:00 UTC.
+    start_local = datetime(2026, 10, 23, 8, 0).isoformat() + "+01:00"
+    converted = await client.post(
+        f"/quotes/{quote['id']}/convert-to-job",
+        headers={"X-Tenant-ID": tenant["id"]},
+        json={"scheduled_start": start_local},
+    )
+    assert converted.status_code == 201, converted.text
+    job = converted.json()
+    assert job["scheduled_start"] == "2026-10-23T07:00:00"
+    assert job["scheduled_end"] == "2026-10-23T15:00:00"
+
+    appointments = await _list_appointments(client, tenant["id"])
+    assert [(a["start_at"], a["end_at"]) for a in appointments] == [
+        ("2026-10-24T07:00:00", "2026-10-24T15:00:00"),
+    ]
 
 
 async def test_convert_to_job_single_day_creates_no_appointments(admin_client: AsyncClient) -> None:
