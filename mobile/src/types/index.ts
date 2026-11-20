@@ -138,33 +138,6 @@ export type Quote = {
   roundingAdjustment?: number;
 };
 
-export type CircuitTestRow = {
-  id: string;
-  circuit: string;
-  protection: string;
-  zsMeasured: number;
-  zsMax: number;
-  rcdTripMs: number;
-  ir: number;
-};
-
-export type CertObservation = {
-  id: string;
-  code: "C1" | "C2" | "C3" | "FI";
-  text: string;
-};
-
-export type Certificate = {
-  id: string;
-  customerName: string;
-  address: string;
-  postcode: string;
-  status: "draft" | "issued";
-  circuits: CircuitTestRow[];
-  observations: CertObservation[];
-  issuedAt?: string;
-};
-
 export type InvoiceStatus = "draft" | "sent" | "paid" | "overdue" | "refunded";
 
 export type Invoice = {
