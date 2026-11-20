@@ -403,6 +403,36 @@ are optional — omit them when they do not apply):
 """
 
 
+# Mechanical triage completeness guard (see generate_followup): consumer-unit /
+# fuse-board jobs must not close while the circuit count is unknown.
+_CIRCUIT_JOB_RE = re.compile(r"consumer[ _]unit|fuse\s?box|fuse\s?board|rcbo", re.IGNORECASE)
+_CIRCUIT_COUNT_RE = re.compile(r"\b\d+\s*(?:circuits?|ways|breakers|fuses)\b", re.IGNORECASE)
+_CIRCUIT_QUESTION = (
+    "How many circuits does your fuse box have? You can count the switches or "
+    "fuses on the board — a rough count is fine if you're not sure."
+)
+
+
+def _circuit_count_known(
+    job_description: str, prior_messages: list[dict[str, str]], extracted: dict[str, str]
+) -> bool:
+    """True when the circuit count is stated in the request, the conversation,
+    or the extracted facts (including a quantity captured for the board)."""
+    if _CIRCUIT_COUNT_RE.search(job_description):
+        return True
+    for prior in prior_messages:
+        if _CIRCUIT_COUNT_RE.search(prior.get("content", "")):
+            return True
+    for key, value in extracted.items():
+        if not value.strip():
+            continue
+        if "circuit" in key.lower():
+            return True
+        if key.lower() == "quantity" and re.search(r"\d", value):
+            return True
+    return False
+
+
 def _build_followup_prompt(
     job_description: str,
     prior_messages: list[dict[str, str]],
@@ -690,6 +720,30 @@ async def generate_followup(
     suggested_questions = _sanitize_string_list(
         parsed.get("suggested_questions"), max_items=3, max_length=60
     )
+
+    # Mechanical completeness guard: self-reported confidence must not close a
+    # consumer-unit / fuse-board conversation while the circuit count is still
+    # unknown. The quote engine prices RCBO work per circuit, and "how many
+    # switches are on the board" is answerable by any homeowner — so this is a
+    # required fact, not a model judgement call.
+    if (
+        not final_turn
+        and _CIRCUIT_JOB_RE.search(job_description)
+        and not _circuit_count_known(job_description, prior_messages, extracted)
+    ):
+        if complete:
+            logger.info(
+                "triage_completeness_guard",
+                reason="circuit_count_missing",
+                model_confidence=confidence,
+            )
+        complete = False
+        confidence = min(confidence, 79)
+        lowered = str(message).lower()
+        if "circuit" not in lowered and "fuse" not in lowered:
+            message = _CIRCUIT_QUESTION
+            options = []
+
     logger.info(
         "llm_followup_generated",
         model=model,
