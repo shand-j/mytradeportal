@@ -5,6 +5,7 @@ import { useAuth } from "../src/contexts/AuthContext";
 import { useBusinessStore } from "../src/stores/businessStore";
 import { usePaywallStore } from "../src/stores/paywallStore";
 import { config } from "../src/lib/config";
+import { useFeatureFlags } from "../src/api/featureFlags";
 
 export default function Index() {
   const { isAuthenticated, role, onboardingComplete, isRegistering } = useAuth();
@@ -12,6 +13,8 @@ export default function Index() {
   const router = useRouter();
   const business = useBusinessStore((state) => state.business);
   const loadBusiness = useBusinessStore((state) => state.loadBusiness);
+  const { data: featureFlags } = useFeatureFlags();
+  const paddleBillingEnabled = featureFlags?.paddleBilling === true;
 
   // White-label bootstrap: a per-tenant build targets one business slug. When
   // connected, fetch its public config once and theme the app for that tenant.
@@ -29,7 +32,7 @@ export default function Index() {
       return;
     }
     if (isAuthenticated && role !== "guest") {
-      if (role === "trade" && paywallRequired) {
+      if (role === "trade" && paddleBillingEnabled && paywallRequired) {
         router.replace("/paywall");
       } else if (role === "trade" && !onboardingComplete) {
         // Registered but never finished onboarding: resume at the right step.
@@ -40,7 +43,7 @@ export default function Index() {
         router.replace("/(customer)/requests");
       }
     }
-  }, [isAuthenticated, role, onboardingComplete, isRegistering, paywallRequired, router]);
+  }, [isAuthenticated, role, onboardingComplete, isRegistering, paywallRequired, paddleBillingEnabled, router]);
 
   return <EntryScreen />;
 }

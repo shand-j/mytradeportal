@@ -4,11 +4,14 @@ import { View } from "react-native";
 import { BottomTabBar } from "../../src/components/navigation/BottomTabBar";
 import { NotificationWatcher } from "../../src/components/notifications/NotificationWatcher";
 import { usePaywallStore } from "../../src/stores/paywallStore";
+import { useFeatureFlags } from "../../src/api/featureFlags";
 
 export default function TradeLayout() {
   const showTabBar = true;
   const router = useRouter();
   const paywallRequired = usePaywallStore((s) => s.required);
+  const { data: featureFlags } = useFeatureFlags();
+  const paddleBillingEnabled = featureFlags?.paddleBilling === true;
 
   // Global billing enforcement. index.tsx only routes to /paywall when a 402
   // lands before it unmounts; an inactive tenant's first gated call 402s after
@@ -16,10 +19,10 @@ export default function TradeLayout() {
   // the gate lives here — it stays mounted for every trade screen and sends
   // the user to /paywall the moment any API call sets the flag.
   useEffect(() => {
-    if (paywallRequired) {
+    if (paddleBillingEnabled && paywallRequired) {
       router.replace("/paywall");
     }
-  }, [paywallRequired, router]);
+  }, [paywallRequired, paddleBillingEnabled, router]);
 
   return (
     <View className="flex-1">
@@ -45,8 +48,6 @@ export default function TradeLayout() {
         <Stack.Screen name="payment-details" />
         <Stack.Screen name="follow-ups" />
         <Stack.Screen name="manual-lead" />
-        <Stack.Screen name="certificates" />
-        <Stack.Screen name="certificate/[id]" />
         <Stack.Screen name="settings" />
         <Stack.Screen name="notifications" />
       </Stack>

@@ -2,6 +2,7 @@
 
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
+from unittest.mock import AsyncMock
 from uuid import UUID, uuid4
 
 import pytest
@@ -339,6 +340,41 @@ async def test_offboard_preserves_financial_records(
     assert comm is not None
     assert comm.subject is None
     assert comm.body is None
+
+
+async def test_offboard_skips_paddle_cancel_when_billing_flag_off(
+    admin_client: AsyncClient, db: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    tenant_id = _tenant_id(admin_client)
+    tenant = await db.get(Tenant, tenant_id)
+    assert tenant is not None
+    await _seed_offboard_records(db, tenant)
+
+    async def _disabled() -> bool:
+        return False
+
+    monkeypatch.setattr("app.routers.tenants.paddle_billing_enabled", _disabled)
+    cancel_subscription = AsyncMock()
+    monkeypatch.setattr(
+        "app.routers.tenants.paddle_client.cancel_subscription", cancel_subscription
+    )
+
+    subscription = await db.scalar(select(Subscription).where(Subscription.tenant_id == tenant_id))
+    assert subscription is not None
+    subscription.status = "active"
+    subscription.paddle_subscription_id = "sub_live_1"
+    await db.commit()
+
+    response = await admin_client.post(OFFBOARD_URL, json={"confirm_slug": tenant.slug})
+    assert response.status_code == 200
+    summary = response.json()
+    assert summary["paddle_subscription_cancelled"] is False
+    cancel_subscription.assert_not_awaited()
+
+    subscription = await db.scalar(select(Subscription).where(Subscription.tenant_id == tenant_id))
+    assert subscription is not None
+    assert subscription.status == "active"
+    assert subscription.paddle_subscription_id == "sub_live_1"
 
 
 async def test_offboarded_tenant_cannot_authenticate(

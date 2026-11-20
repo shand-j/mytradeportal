@@ -1,5 +1,6 @@
 import { test } from "@playwright/test";
 import {
+  bodyText,
   createTestTenant,
   expect,
   loginAsTradeOwner,
@@ -62,6 +63,19 @@ test.describe.serial("M — Dashboard & navigation", () => {
       .locator('[data-testid="dashboard-time-saved-card"]')
       .waitFor({ state: "visible", timeout: 30000 });
     await waitText(page, "Hours saved by AI");
+  });
+
+  test("beta UI does not promise offline saving, synchronization or certificate issuance", async ({
+    page,
+  }) => {
+    await loginAsTradeOwner(page, tenant);
+    await waitText(page, "Dashboard");
+    const text = (await bodyText(page)).replace(/\s+/g, " ");
+
+    expect(text).not.toContain("saved on this device");
+    expect(text).not.toContain("All changes synced");
+    expect(text).not.toContain("Certificate issued");
+    expect(text).not.toContain("Sign & issue certificate");
   });
 
   test("N33: outstanding-quotes card navigates to quotes with the New filter active", async ({

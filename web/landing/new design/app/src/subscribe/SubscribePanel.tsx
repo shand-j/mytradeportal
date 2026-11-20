@@ -629,6 +629,10 @@ function PlansView({
               fair-use policy
             </Link>
             .
+            {' '}
+            <Link to="/terms" className="link-arrow">Terms</Link>
+            {' · '}
+            <Link to="/privacy" className="link-arrow">Privacy</Link>
           </p>
         </>
       )}

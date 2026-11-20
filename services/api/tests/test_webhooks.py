@@ -5,6 +5,7 @@ import hmac
 import json
 from decimal import Decimal
 from typing import Any
+from unittest.mock import AsyncMock
 from uuid import uuid4
 
 import pytest
@@ -145,6 +146,44 @@ async def test_paddle_webhook_dedupes_repeated_event_id(
     assert second.json()["status"] == "duplicate"
     # Handler ran exactly once.
     assert len(upsert_calls) == 1
+
+
+async def test_paddle_webhook_delays_valid_events_when_paddle_billing_off(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    secret = "whsec_delay_secret"
+    payload = {
+        "event_id": f"evt_{uuid4().hex}",
+        "event_type": "subscription.updated",
+        "data": {"id": "sub_delay_1", "status": "active"},
+    }
+    body = json.dumps(payload).encode()
+    signature = _make_signature_payload(secret, body)
+
+    async def _disabled() -> bool:
+        return False
+
+    monkeypatch.setattr("app.paddle_client.settings.paddle_webhook_secret", secret)
+    monkeypatch.setattr("app.routers.webhooks.paddle_billing_enabled", _disabled)
+    upsert = AsyncMock()
+    record_payment = AsyncMock()
+    dunning = AsyncMock()
+    monkeypatch.setattr("app.routers.webhooks._upsert_subscription", upsert)
+    monkeypatch.setattr("app.routers.webhooks._record_payment", record_payment)
+    monkeypatch.setattr("app.routers.webhooks.maybe_start_dunning", dunning)
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.post(
+            "/webhooks/paddle",
+            content=body,
+            headers={"Paddle-Signature": signature, "Content-Type": "application/json"},
+        )
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "delayed"
+    upsert.assert_not_awaited()
+    record_payment.assert_not_awaited()
+    dunning.assert_not_awaited()
 
 
 async def test_paddle_webhook_routes_subscription_created_to_upsert(
