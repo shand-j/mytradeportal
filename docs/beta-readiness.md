@@ -1,6 +1,6 @@
 # Beta readiness and release decision
 
-Last reviewed: **2026-11-20**. Review baseline: `04ac614` on `main`.
+Last reviewed: **2026-11-20**. Review baseline: `485841e34fad383d5c3c4a3bc7b31cbc299da0` on `main`.
 
 This is the current source of truth for beta scope and go/no-go decisions. The
 [GitHub Beta project](https://github.com/users/shand-j/projects/4) and master
@@ -169,3 +169,41 @@ of:
 
 A successful beta review does not authorise paid Paddle subscriptions, broad
 availability, operational-alert completion, or any excluded feature.
+
+### Rebaseline decision — 2026-11-20
+
+**Decision: NO-GO.** The evidence collected at the current main-SHA rebaseline
+does not satisfy every applicable gate. This is not an authorisation for a
+card-enabled or paid launch.
+
+- **Release baseline:** `485841e34fad383d5c3c4a3bc7b31cbc299da0`
+- **TestFlight build:** unverified — no current-build identifier or completed
+  device evidence is recorded.
+- **Scope:** no release restriction may be claimed yet. A later bank-transfer-
+  only decision requires every non-card gate to pass.
+
+| Gate | Status | Evidence / residue |
+|---|---|---|
+| G1 | UNVERIFIED | Issue #105 is the decision record, but the docs/project/master-issue alignment and blocker/dependency linkage were not reverified as complete. |
+| G2 | OPEN | #52 has no production security verdict and is reopened. #53 is reopened for dependency-advisory triage; the Node audit passed. |
+| G3 | PASS | #322 is implemented under Paddle off mode. No Railway Paddle Signals entries are configured, staging/production default off, and live `/` and `/subscribe` render free-beta copy without `paddle.com` requests. |
+| G4 | OPEN | #323 isolated restore drill is unexecuted; RPO and RTO remain unverified. |
+| G5 | OPEN | Stripe live-chain issues #115, #44, #45, and #32 remain open. Card payments are not authorised. |
+| G6 | OPEN | VAT #324 and webhook-failure injection #30 remain open or unverified; #30 also remains a confirmed cross-provider dedupe defect. |
+| G7 | OPEN | Push #92, SMS #325, deep links #326, calendar #36/#181, and device #102 lack the required current-build evidence. |
+| G8 | OPEN | Legal/compliance #327 and linked approval/publication issues #69, #70, and #83 remain open. |
+| G9 | OPEN | Main CI [44830578492](https://github.com/shand-j/mytradeportal/actions/runs/44830578492) passed at `485841e`. Staging E2E [44830578607](https://github.com/shand-j/mytradeportal/actions/runs/44830578607) failed on Mailpit drift. #391 addresses that root cause; #315, #313, #319, #296, #78 and all remaining beta blockers require resolution or explicit scope exceptions. |
+
+Additional current evidence:
+
+- [Main CI 44826651558](https://github.com/shand-j/mytradeportal/actions/runs/44826651558)
+  passed deploy/session fixes at `5309bb4`.
+- [PR #392](https://github.com/shand-j/mytradeportal/pull/392) contains the
+  full rebaseline.
+- [PR #391](https://github.com/shand-j/mytradeportal/pull/391) contains the
+  staging IaC follow-up.
+
+Unexecuted or failing checks remain unverified and must not be recorded as
+passes. The [restore drill runbook](runbooks/restore-drill.md) and
+[beta test plan](beta-test-plan.md) remain the procedures for G4 and G7–G9
+manual residue.
