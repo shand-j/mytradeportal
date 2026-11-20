@@ -5,6 +5,11 @@ from security.config import SecurityConfig
 pytestmark = pytest.mark.security
 
 
+@pytest.fixture(scope="session", autouse=True)
+def _validate_config() -> None:
+    """Unit-test validation directly instead of requiring a live target."""
+
+
 def test_production_requires_primary_and_secondary_configuration(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
