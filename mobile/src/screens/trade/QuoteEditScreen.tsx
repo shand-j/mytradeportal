@@ -173,6 +173,7 @@ export function QuoteEditScreen({
   // --- Debounced auto-save of line-item edits (real backend quotes only) ---
   const queryClient = useQueryClient();
   const [saveState, setSaveState] = useState<"idle" | "saving" | "saved" | "error">("idle");
+  const [saveErrorMessage, setSaveErrorMessage] = useState<string | null>(null);
   // Snapshot of what the backend last saw. Null until the initial seed has
   // been recorded so mount never triggers a save.
   const lastSavedRef = useRef<QuoteLineItem[] | null>(null);
@@ -202,10 +203,18 @@ export function QuoteEditScreen({
         await updateQuote(seedQuote.id, current.items, current.vatRate);
         lastSavedRef.current = current.items;
         pendingSaveRef.current = null;
+        setSaveErrorMessage(null);
         setSaveState("saved");
         queryClient.invalidateQueries({ queryKey: ["quotes"] });
         queryClient.invalidateQueries({ queryKey: ["quote", seedQuote.id] });
-      } catch {
+      } catch (err) {
+        setSaveErrorMessage(
+          err instanceof ApiError
+            ? err.detail
+            : err instanceof NetworkError
+              ? "Couldn't reach the server. Please check your connection and retry."
+              : "Couldn't save your changes."
+        );
         setSaveState("error");
       }
     });
@@ -241,29 +250,52 @@ export function QuoteEditScreen({
   /** Persist the current line items; cancels any queued auto-save of older edits. */
   const saveNow = async (): Promise<void> => {
     if (!isRealQuote) return;
-    await updateQuoteMutation.mutateAsync({
-      id: seedQuote.id,
-      lineItems: items,
-      vatRate,
-    });
-    // The manual save just persisted the current items — cancel any queued
-    // auto-save of an older snapshot so it can't overwrite this write.
-    pendingSaveRef.current = null;
-    lastSavedRef.current = items;
-    setSaveState("saved");
+    setSaveState("saving");
+    pendingSaveRef.current = { items, vatRate };
+    try {
+      await updateQuoteMutation.mutateAsync({
+        id: seedQuote.id,
+        lineItems: items,
+        vatRate,
+      });
+      // The manual save just persisted the current items — cancel any queued
+      // auto-save of an older snapshot so it can't overwrite this write.
+      pendingSaveRef.current = null;
+      lastSavedRef.current = items;
+      setSaveErrorMessage(null);
+      setSaveState("saved");
+    } catch (err) {
+      setSaveErrorMessage(
+        err instanceof ApiError
+          ? err.detail
+          : err instanceof NetworkError
+            ? "Couldn't reach the server. Please check your connection and retry."
+            : "Couldn't save your changes."
+      );
+      setSaveState("error");
+      throw err;
+    }
   };
 
   const handleSave = async () => {
-    await saveNow();
-    onClose();
+    try {
+      await saveNow();
+      onClose();
+    } catch (err) {
+      Alert.alert("Couldn't save quote", err instanceof ApiError ? err.detail : "Please try again.");
+    }
   };
 
   const doSend = async () => {
     if (!isRealQuote) return;
-    // Sending always includes the latest edits.
-    await saveNow();
-    await sendQuoteMutation.mutateAsync(seedQuote.id);
-    onClose();
+    try {
+      // Sending always includes the latest edits.
+      await saveNow();
+      await sendQuoteMutation.mutateAsync(seedQuote.id);
+      onClose();
+    } catch (err) {
+      Alert.alert("Couldn't send quote", err instanceof ApiError ? err.detail : "Please try again.");
+    }
   };
 
   const handleSend = () => {
@@ -812,7 +844,7 @@ export function QuoteEditScreen({
                 ? "Saving…"
                 : saveState === "saved"
                   ? "Saved ✓"
-                  : "Couldn't save your changes."}
+                  : saveErrorMessage ?? "Couldn't save your changes."}
             </Text>
             {saveState === "error" && (
               <Button
