@@ -238,6 +238,16 @@ async def create_invoice(
     if contact is None or contact.tenant_id != tenant.id:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid contact")
 
+    if "vat_rate" in data.model_fields_set and not vat_rate_within_tenant_limit(tenant, data.vat_rate):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=(
+                f"vat_rate {data.vat_rate} is above the tenant's registered VAT rate "
+                f"({tenant_vat_rate(tenant)}); per-invoice VAT overrides may only "
+                "lower or remove VAT (e.g. 0 for zero-rated jobs)"
+            ),
+        )
+
     job: Job | None = None
     if data.job_id:
         job = await db.get(Job, data.job_id)

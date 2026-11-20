@@ -3,16 +3,24 @@
 Audience: whoever drives the deployment on go-live morning. Every step is
 copy-pasteable. Local prerequisites: Docker Desktop, pnpm, the repo `.venv`.
 
+Current scope and release authority are in [beta-readiness.md](beta-readiness.md).
+The present decision is **no-go** until its gates pass. This runbook does not
+authorise a release or replace live/device evidence.
+
 ---
 
 ## 1. What is shipping
 
-- **Web back-office** (`web/app`) — CRM, quotes (incl. AI generate + refine),
-  jobs, invoices, calendar, reviews, AI insights, settings.
 - **Mobile iOS app** (`mobile/`) — trade + customer flows, AI quote intake,
-  AI lead-triage chat, digital EICR certificates with BS 7671 validation,
-  team invites + assignment on multi-seat plans, Stripe Connect onboarding in
-  an in-app browser.
+  AI lead-triage chat, team invites + assignment on multi-seat plans, and
+  Stripe Connect onboarding after its live gates pass.
+- **Landing site and tenant portal** (`web/landing/new design/app`) — marketing,
+  public intake, secure quote/invoice/payment pages, and customer portal.
+- **Web back-office** (`web/app`) — available code, but not a required surface
+  for the concierge beta while its Railway deployment is parked.
+- **Certificates and offline mode are excluded.** The certificate prototype has
+  no backend persistence and offline sync is not a real delivery mechanism;
+  neither may be promised to beta users.
 - **API** (`services/api`) — FastAPI, RLS-enforced multi-tenancy, structured
   JSON logs on stdout (request IDs, LLM call metrics), `/health` + `/ready`,
   the reminder scheduler (email quote/invoice chasers + Telnyx SMS appointment
@@ -57,8 +65,9 @@ forecasting. No UI path leads to any of these.
 | `TELNYX_PUBLIC_KEY` | Telnyx public key for `POST /webhooks/telnyx` (delivery receipts + STOP opt-outs; 503 until set) | api |
 | `RESEND_FROM_EMAIL` / `RESEND_NO_REPLY_EMAIL` / `RESEND_WEBHOOK_SECRET` | see `docs/resend-config.md` — branded quotes@ sender, platform no-reply sender, bounce/failure webhook | api |
 | `PUBLIC_DOCS_BASE_URL` / `PASSWORD_RESET_BASE_URL` | `https://www.mytradeportal.co.uk` — public token pages, Stripe bounce page, emailed reset/invite links | api |
-| `CALENDAR_FEED_BASE_URL` | leave empty until the branded API domain lands (issue #181) | api |
-| Paddle keys / webhook secret / `PADDLE_PRICE_ID_*` | prod Paddle dashboard | api |
+| `CALENDAR_FEED_BASE_URL` | `https://api.mytradeportal.co.uk`; verify Apple Calendar subscription on device (#36/#181) | api |
+| `paddle_billing` Railway Signal | `false` in staging and production for the free beta; no Paddle keys are needed for beta access | api |
+| Paddle keys / webhook secret / `PADDLE_PRICE_ID_*` | retained only for later re-enablement; do not initiate Paddle checkout or price previews during beta | api |
 | `VITE_API_BASE_URL` | `https://<api-domain>` (build arg) | web |
 | `EXPO_PUBLIC_API_BASE_URL` | `https://<api-domain>` (EAS build) | mobile |
 
@@ -87,7 +96,7 @@ link → submit a request as a customer → confirm the AI triage question arriv
 in chat → answer it → log in as the electrician → generate the AI quote →
 refine it → send. That is the full "WOW" path end to end.
 
-## 4. Observability (New Relic)
+## 4. Logs (operational alerts are post-beta)
 
 Logs are one JSON object per line on stdout — point the New Relic log
 forwarder at stdout, index on `request_id`, `tenant_id`, `event`.
@@ -98,8 +107,9 @@ duration_ms, line_items, catalogue_items), `llm_followup_generated`
 (confidence, complete), `llm_error`, `retrieval_completed` (status:
 grounded/no_index), `embedding_generated` (cache_hits).
 
-Suggested alerts: 5xx rate, `llm_error` count, p95 `duration_ms` on
-`http_request` where path = `/quotes/generate`.
+Configuring or verifying operational alert delivery (#62 and related work) is
+explicitly outside the current beta release gate. Do not add it to deploy
+prerequisites.
 
 ## 5. Local bring-up for manual testing (morning)
 
