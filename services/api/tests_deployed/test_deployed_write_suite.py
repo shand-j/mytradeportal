@@ -87,9 +87,7 @@ def _create_contact(api: httpx.Client, tenant: SeededTenant, email: str) -> dict
     return body
 
 
-def _set_vat_registered(
-    api: httpx.Client, tenant: SeededTenant, *, registered: bool
-) -> None:
+def _set_vat_registered(api: httpx.Client, tenant: SeededTenant, *, registered: bool) -> None:
     resp = _staff(
         api,
         tenant,
@@ -185,52 +183,46 @@ class TestDeployedVAT:
 
         _set_vat_registered(api, tenant, registered=True)
         standard = _staff(
-        api,
-        tenant,
-        "POST",
-        "/quotes",
-        json={
-            "contact_id": contact["id"],
-            "title": "VAT registered 20%",
-            "vat_rate": "0.20",
-            "line_items": [
-                {"description": "Labour", "quantity": 1, "unit_price": "100.00"}
-            ],
-        },
+            api,
+            tenant,
+            "POST",
+            "/quotes",
+            json={
+                "contact_id": contact["id"],
+                "title": "VAT registered 20%",
+                "vat_rate": "0.20",
+                "line_items": [{"description": "Labour", "quantity": 1, "unit_price": "100.00"}],
+            },
         )
         assert standard.status_code in (200, 201), standard.text
         assert standard.json()["vat_rate"] == "0.20"
 
         zero = _staff(
-        api,
-        tenant,
-        "POST",
-        "/quotes",
-        json={
-            "contact_id": contact["id"],
-            "title": "VAT zero-rated",
-            "vat_rate": "0",
-            "line_items": [
-                {"description": "Labour", "quantity": 1, "unit_price": "100.00"}
-            ],
-        },
+            api,
+            tenant,
+            "POST",
+            "/quotes",
+            json={
+                "contact_id": contact["id"],
+                "title": "VAT zero-rated",
+                "vat_rate": "0",
+                "line_items": [{"description": "Labour", "quantity": 1, "unit_price": "100.00"}],
+            },
         )
         assert zero.status_code in (200, 201), zero.text
         assert zero.json()["vat_rate"] == "0"
 
         rejected = _staff(
-        api,
-        tenant,
-        "POST",
-        "/quotes",
-        json={
-            "contact_id": contact["id"],
-            "title": "VAT increase rejected",
-            "vat_rate": "0.25",
-            "line_items": [
-                {"description": "Labour", "quantity": 1, "unit_price": "100.00"}
-            ],
-        },
+            api,
+            tenant,
+            "POST",
+            "/quotes",
+            json={
+                "contact_id": contact["id"],
+                "title": "VAT increase rejected",
+                "vat_rate": "0.25",
+                "line_items": [{"description": "Labour", "quantity": 1, "unit_price": "100.00"}],
+            },
         )
         assert rejected.status_code == 400
         assert "registered VAT rate" in rejected.json()["detail"]
