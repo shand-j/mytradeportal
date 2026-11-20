@@ -212,7 +212,7 @@ jobs:
   deploy-production:
     # Deploy the mobile-beta stack from the IaC in .railway/railway.ts.
     # Requires the RAILWAY_TOKEN (project-scoped) GitHub secret and an
-    # existing Railway project wired to this repo. Runs only after both
+    # existing Railway project wired to this repo. Runs only after all
     # quality-gate jobs pass on main.
     needs: [python, mobile, landing, schema-sync]
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
