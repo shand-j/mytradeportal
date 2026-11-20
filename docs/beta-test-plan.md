@@ -184,7 +184,7 @@ Manual on the build:
 1. Onboarding: fresh tenant → bank details → card gate (skip and complete) → free-beta plan/access → dashboard (single pass, no Paddle or paywall bounce)
 2. Push: foreground/background/terminated delivery; background AI quote completion → tap → correct quote, zero repeat navigation/banners
 3. Deep links: cold/warm and logged-in/out coverage for notifications, magic/reset/invite, Stripe return, quote and invoice targets
-4. SMS: customer + staff delivery to real handsets, delivery receipt, STOP/START, and configured fallback
+4. SMS: customer + staff delivery to real handsets, delivery receipt, STOP/START, and configured fallback (run the full matrix in section 6)
 5. Refine a quote (fast, no timeout), review screen UX with keyboard open; run the VAT save-then-send cases
 6. Logo upload in branding settings; verify on a public quote page
 7. Invoice lifecycle to sent. If Stripe gates pass, customer pays a small live amount via `/pay`, PAID state settles automatically, then a full refund reconciles. Otherwise record the release as bank-transfer-only and verify manual mark-paid.
@@ -235,3 +235,65 @@ wrong-tenant content, duplicate navigation, or credential/token leakage.
   recording `DL-S1..DL-S2`.
 - In issue updates, link back to the primary artifact set instead of uploading
   duplicate media.
+
+---
+
+## 6. P0 live Telnyx SMS verification gate (issue #325)
+
+This gate is **human-run on the release environment** (staging or production)
+and closes the remaining manual residue for jobs/reminders (#13/#14). Keep all
+evidence sanitized: no phone numbers, message IDs, API keys, webhook signatures,
+or secrets in docs/issues/slack.
+
+### 6.1 Preparation checklist (must be true before execution)
+
+- [ ] `TELNYX_API_KEY` configured
+- [ ] At least one sender route configured:
+  - [ ] `TELNYX_FROM_NUMBER` **or**
+  - [ ] `TELNYX_MESSAGING_PROFILE_ID`
+- [ ] `TELNYX_PUBLIC_KEY` configured (webhook signature verification enabled)
+- [ ] `POST /webhooks/telnyx` reachable from Telnyx and returning 2xx for signed events
+- [ ] Test recipient numbers are UK E.164 format (`+44...`) and belong to internal testers only
+- [ ] Tenant business name is a valid sender ID (where sender-ID route is used)
+- [ ] Reminder body still fits one segment (no multi-part message split)
+- [ ] Release environment and build identifier recorded (env, git SHA/build number, test date)
+
+### 6.2 Safe test setup (no customer spam, no waiting for real 24h windows)
+
+1. Use a dedicated internal test tenant and two internal handsets:
+   - customer reminder recipient
+   - assigned electrician recipient
+2. Create one test job + appointment only for those contacts.
+3. Use a controlled reminder window equivalent to the 24h/2h behavior
+   (temporary schedule offsets in test data/timestamps) so reminders trigger
+   within the session.
+4. Keep alerting config unchanged (this gate validates current behavior; it does
+   **not** add or tune operational alert rules).
+
+### 6.3 Execution matrix (pass/fail with dated evidence)
+
+| Case | Expected result | Evidence to capture (sanitized) |
+|---|---|---|
+| Customer reminder SMS delivery | Customer handset receives reminder text | Screenshot of handset notification/message + timestamp |
+| Staff reminder SMS delivery | Assigned electrician handset receives reminder text | Screenshot + timestamp |
+| Delivery receipt webhook | `message.finalized` receipt processed and persisted | Sanitized log excerpt (redact phone numbers + Telnyx message/event IDs; keep event_type + delivery_status + reminder delivery_status transition) |
+| 24h/2h (or controlled equivalent) windows | Both reminder windows fire once, no duplicate spam | Timeline with two send times + dedupe confirmation |
+| Permanent failure fallback | Failed SMS triggers staff alert + contact degrades to email/push fallback | Failure log excerpt + follow-up channel evidence |
+| STOP opt-out | Reply `STOP` blocks later SMS sends for that contact | Inbound webhook evidence + subsequent skipped SMS evidence |
+| START/UNSTOP opt-in restore | Reply `START` or `UNSTOP` re-enables SMS delivery | Inbound webhook evidence + successful subsequent SMS |
+| SMS unavailable config fallback | With SMS route unavailable/unset, reminder flow still notifies via configured email/push | Config snapshot (sanitized) + email/push evidence |
+
+### 6.4 Evidence and defect handling
+
+For each case above, record:
+
+- Date/time (UTC), environment, build/release ID
+- Tester initials/role
+- PASS/FAIL
+- Sanitized proof location (screenshot path, log snippet, ticket link)
+
+If any case fails:
+
+1. File a beta-blocker issue linked to parent `#12` and blocker `#105`.
+2. Mark the case as FAIL with issue link.
+3. Re-run only the failed case(s) after fix and append retest evidence with new date.
