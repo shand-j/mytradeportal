@@ -48,8 +48,6 @@ export default function TradeLayout() {
         <Stack.Screen name="payment-details" />
         <Stack.Screen name="follow-ups" />
         <Stack.Screen name="manual-lead" />
-        <Stack.Screen name="certificates" />
-        <Stack.Screen name="certificate/[id]" />
         <Stack.Screen name="settings" />
         <Stack.Screen name="notifications" />
       </Stack>
