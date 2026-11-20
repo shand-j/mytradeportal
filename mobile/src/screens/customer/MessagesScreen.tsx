@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import {
   KeyboardAvoidingView,
   Linking,
@@ -30,6 +30,40 @@ const clock = () => new Date().toLocaleTimeString([], { hour: "2-digit", minute:
  * remounts within the same app session.
  */
 const followupTriggeredFor = new Set<string>();
+type FollowupState = { phase: "idle" | "pending" | "error"; error: string | null };
+const idleFollowupState: FollowupState = { phase: "idle", error: null };
+const followupStates = new Map<string, FollowupState>();
+const followupListeners = new Map<string, Set<() => void>>();
+
+function getFollowupState(quoteRequestId?: string): FollowupState {
+  return (quoteRequestId && followupStates.get(quoteRequestId)) || idleFollowupState;
+}
+
+function setFollowupState(quoteRequestId: string, state: FollowupState) {
+  if (state.phase === "idle") {
+    followupStates.delete(quoteRequestId);
+  } else {
+    followupStates.set(quoteRequestId, state);
+  }
+  followupListeners.get(quoteRequestId)?.forEach((listener) => listener());
+}
+
+function useFollowupState(quoteRequestId?: string): FollowupState {
+  return useSyncExternalStore(
+    (listener) => {
+      if (!quoteRequestId) return () => {};
+      const listeners = followupListeners.get(quoteRequestId) ?? new Set();
+      listeners.add(listener);
+      followupListeners.set(quoteRequestId, listeners);
+      return () => {
+        listeners.delete(listener);
+        if (listeners.size === 0) followupListeners.delete(quoteRequestId);
+      };
+    },
+    () => getFollowupState(quoteRequestId),
+    () => idleFollowupState
+  );
+}
 
 function toDisplayMessages(
   messages: ChatMessage[],
@@ -88,26 +122,21 @@ export function ChatThread({
   const scrollRef = useRef<ScrollView>(null);
   const composerRef = useRef<TextInput>(null);
   const followupTriggered = useRef(false);
-  const followupInFlight = useRef(false);
-  // Local typing state, cleared in a finally so it cannot stick when the
-  // follow-up errors or the mutation observer is remounted mid-flight.
-  const [typing, setTyping] = useState(false);
-  const [followupError, setFollowupError] = useState<string | null>(null);
+  const followupState = useFollowupState(quoteRequestId);
+  const typing = followupState.phase === "pending";
+  const followupError = followupState.error;
 
   const runFollowup = async () => {
-    if (followupInFlight.current) return;
-    followupInFlight.current = true;
-    setFollowupError(null);
-    setTyping(true);
+    if (!quoteRequestId || getFollowupState(quoteRequestId).phase === "pending") return;
+    setFollowupState(quoteRequestId, { phase: "pending", error: null });
     try {
       await generateAiFollowup();
+      setFollowupState(quoteRequestId, idleFollowupState);
     } catch {
-      setFollowupError(
-        "The AI assistant couldn't reply. Your request and messages are still saved."
-      );
-    } finally {
-      followupInFlight.current = false;
-      setTyping(false);
+      setFollowupState(quoteRequestId, {
+        phase: "error",
+        error: "The AI assistant couldn't reply. Your request and messages are still saved.",
+      });
     }
   };
 
@@ -132,7 +161,7 @@ export function ChatThread({
   }, [senderRole, isConnected, quoteRequestId, realMessages]);
 
   const handleSend = async (override?: unknown) => {
-    if (followupInFlight.current) return;
+    if (quoteRequestId && getFollowupState(quoteRequestId).phase === "pending") return;
     // onSubmitEditing/onPress pass an event, quick-reply chips pass a string.
     const trimmed = (typeof override === "string" ? override : text).trim();
     if (!trimmed) return;
