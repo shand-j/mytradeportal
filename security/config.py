@@ -41,12 +41,15 @@ class SecurityConfig:
 
     @classmethod
     def validate(cls) -> None:
-        """Fail fast if required production values are missing."""
-        if cls.environment in {"production", "staging"}:
-            _require("SECURITY_API_BASE_URL")
-            _require("SECURITY_TENANT_SLUG")
-            _require("SECURITY_ADMIN_EMAIL")
-            _require("SECURITY_ADMIN_PASSWORD")
+        """Fail fast if required credentials for the selected environment are missing."""
+        environment = os.environ.get("SECURITY_ENVIRONMENT", "production").strip().lower()
+
+        _require("SECURITY_API_BASE_URL")
+        _require("SECURITY_TENANT_SLUG")
+        _require("SECURITY_ADMIN_EMAIL")
+        _require("SECURITY_ADMIN_PASSWORD")
+
+        if environment in {"production", "staging"}:
             _require("SECURITY_SECONDARY_TENANT_SLUG")
             _require("SECURITY_SECONDARY_ADMIN_EMAIL")
             _require("SECURITY_SECONDARY_ADMIN_PASSWORD")

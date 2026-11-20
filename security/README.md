@@ -42,6 +42,13 @@ export SECURITY_SECONDARY_ADMIN_PASSWORD=...
 pytest -m security -v --no-cov
 ```
 
+`SECURITY_ENVIRONMENT` defaults to `production`, so local runs that do not have
+secondary-tenant credentials should set it explicitly, for example:
+
+```bash
+export SECURITY_ENVIRONMENT=local
+```
+
 The staging and production security environments require dedicated primary and
 secondary test tenants. The secondary credentials are required for cross-tenant
 isolation tests; the workflow fails fast rather than allowing a partial or
