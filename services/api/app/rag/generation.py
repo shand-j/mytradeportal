@@ -728,15 +728,15 @@ async def generate_followup(
     # required fact, not a model judgement call.
     if (
         not final_turn
+        and complete
         and _CIRCUIT_JOB_RE.search(job_description)
         and not _circuit_count_known(job_description, prior_messages, extracted)
     ):
-        if complete:
-            logger.info(
-                "triage_completeness_guard",
-                reason="circuit_count_missing",
-                model_confidence=confidence,
-            )
+        logger.info(
+            "triage_completeness_guard",
+            reason="circuit_count_missing",
+            model_confidence=confidence,
+        )
         complete = False
         confidence = min(confidence, 79)
         lowered = str(message).lower()

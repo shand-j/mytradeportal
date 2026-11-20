@@ -651,7 +651,9 @@ async def test_generate_followup_returns_extracted_facts() -> None:
 
     with patch("app.rag.generation.acompletion", new=AsyncMock(return_value=mock_response)):
         generation_config.settings.openai_api_key = "sk-test"
-        result = await generate_followup("Consumer unit replacement", [])
+        # Circuit count included so the triage completeness guard stays out of
+        # this test's way (its concern is fact extraction, not the guard).
+        result = await generate_followup("Consumer unit replacement, 8 circuits", [])
 
     assert result["confidence"] == 40
     assert result["complete"] is False
@@ -698,7 +700,9 @@ async def test_generate_followup_sanitizes_options_and_suggested_questions() -> 
 
     with patch("app.rag.generation.acompletion", new=AsyncMock(return_value=mock_response)):
         generation_config.settings.openai_api_key = "sk-test"
-        result = await generate_followup("Consumer unit replacement", [])
+        # Circuit count included so the triage completeness guard stays out of
+        # this test's way (its concern is option/question sanitisation).
+        result = await generate_followup("Consumer unit replacement, 8 circuits", [])
 
     assert result["options"] == ["Under the stairs", "x" * 60, "In the garage", "Not sure"]
     assert result["suggested_questions"] == [

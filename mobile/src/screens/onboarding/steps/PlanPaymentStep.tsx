@@ -3,6 +3,7 @@ import { Button } from "../../../components/ui/Button";
 import { Icon } from "../../../components/ui/Icon";
 import { Text } from "../../../components/ui/Text";
 import { useBillingPlans, type BillingPlan, type BillingPlanKey } from "../../../api/billing";
+import { useFeatureFlags } from "../../../api/featureFlags";
 
 type Plan = {
   key: BillingPlanKey;
@@ -123,6 +124,8 @@ function toDisplayPlan(plan: BillingPlan): Plan {
  */
 export function PlanPaymentStep({ onNext }: PlanPaymentStepProps) {
   const plansQuery = useBillingPlans();
+  const { data: featureFlags } = useFeatureFlags();
+  const paddleBillingEnabled = featureFlags?.paddleBilling === true;
   const catalog = plansQuery.data ?? FALLBACK_PLANS;
   const plans = catalog.map(toDisplayPlan);
   const trialDays = catalog[0]?.trialDays ?? 14;
@@ -134,8 +137,9 @@ export function PlanPaymentStep({ onNext }: PlanPaymentStepProps) {
           Choose your plan
         </Text>
         <Text variant="body" color="secondary">
-          Every plan starts with a {trialDays}-day free trial — full features, no card needed until
-          the trial ends. Subscriptions are set up on our website, then you sign in here.
+          {paddleBillingEnabled
+            ? `Every plan starts with a ${trialDays}-day free trial — full features, no card needed until the trial ends. Subscriptions are set up on our website, then you sign in here.`
+            : "Beta is currently free for all invited businesses — no subscription setup needed right now."}
         </Text>
 
         {plans.map((p) => (
@@ -190,13 +194,15 @@ export function PlanPaymentStep({ onNext }: PlanPaymentStepProps) {
         <View className="flex-row items-center justify-center gap-1">
           <Icon name="info" size={14} color="#6B7280" />
           <Text variant="caption" color="secondary" align="center">
-            Subscribe at mytradeportal.co.uk
+            {paddleBillingEnabled
+              ? "Subscribe at mytradeportal.co.uk"
+              : "All plans are unlocked during free beta"}
           </Text>
         </View>
 
         <Button
           testID="plan-continue"
-          title="I've subscribed — continue"
+          title={paddleBillingEnabled ? "I've subscribed — continue" : "Continue"}
           onPress={() => onNext()}
         />
       </View>

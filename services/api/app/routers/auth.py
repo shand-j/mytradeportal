@@ -270,6 +270,7 @@ async def tenant_status(current_user: ActiveUserDep, db: DbDep) -> dict[str, Any
     """
     from app.models import Subscription
     from app.routers.billing import is_subscription_active
+    from app.feature_flags import paddle_billing_enabled
 
     await set_tenant_in_session(db, current_user.tenant_id)
     tenant = await db.get(Tenant, current_user.tenant_id)
@@ -279,7 +280,12 @@ async def tenant_status(current_user: ActiveUserDep, db: DbDep) -> dict[str, Any
 
     settings_comped = bool(tenant.settings.get("beta_comped")) if tenant else False
     beta_comped = settings_comped or subscription is None
-    access = "active" if beta_comped or is_subscription_active(subscription) else "payment_required"
+    billing_enabled = await paddle_billing_enabled()
+    access = (
+        "active"
+        if (not billing_enabled) or beta_comped or is_subscription_active(subscription)
+        else "payment_required"
+    )
 
     return {
         "tenant_id": str(current_user.tenant_id),
