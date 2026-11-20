@@ -47,6 +47,15 @@ def _ics_dt(value: datetime) -> str:
     return value.astimezone(UTC).strftime("%Y%m%dT%H%M%SZ")
 
 
+def _ics_status(status: str) -> str:
+    """Map appointment lifecycle values to iCalendar status values."""
+    if status.lower() == "cancelled":
+        return "STATUS:CANCELLED"
+    if status.lower() == "confirmed":
+        return "STATUS:CONFIRMED"
+    return ""
+
+
 def _looks_like_admin_host(base_url: str) -> bool:
     host = urlparse(base_url).hostname or ""
     return host.split(".", 1)[0].startswith("admin")
@@ -131,6 +140,35 @@ async def get_feed_link(
     return {"url": url, "webcal_url": _webcal_url(url)}
 
 
+async def _revoke_feed_link(tenant: Tenant, db: AsyncSession) -> dict[str, bool]:
+    await set_tenant_in_session(db, tenant.id)
+    tenant_settings = dict(tenant.settings or {})
+    tenant_settings.pop(_FEED_TOKEN_KEY, None)
+    tenant.settings = tenant_settings
+    await db.commit()
+    return {"revoked": True}
+
+
+@router.delete("/feed-link")
+async def revoke_feed_link_delete(
+    tenant: TenantDep,
+    current_user: CurrentUserDep,
+    db: DbDep,
+) -> dict[str, bool]:
+    """Revoke the tenant's current calendar subscription token."""
+    return await _revoke_feed_link(tenant, db)
+
+
+@router.post("/feed-link/revoke")
+async def revoke_feed_link(
+    tenant: TenantDep,
+    current_user: CurrentUserDep,
+    db: DbDep,
+) -> dict[str, bool]:
+    """Compatibility endpoint for clients that do not use HTTP DELETE."""
+    return await _revoke_feed_link(tenant, db)
+
+
 @router.get("/feed.ics", response_class=PlainTextResponse)
 async def calendar_feed(token: str, db: DbDep) -> PlainTextResponse:
     """The subscribable iCalendar feed of a tenant's appointments."""
@@ -144,7 +182,7 @@ async def calendar_feed(token: str, db: DbDep) -> PlainTextResponse:
         (
             await db.execute(
                 select(Appointment)
-                .where(Appointment.tenant_id == tenant.id, Appointment.status != "cancelled")
+                .where(Appointment.tenant_id == tenant.id)
                 .order_by(Appointment.start_at)
             )
         )
@@ -172,6 +210,8 @@ async def calendar_feed(token: str, db: DbDep) -> PlainTextResponse:
             f"DTEND:{_ics_dt(appt.end_at)}",
             f"SUMMARY:{_ics_escape(appt.title)}",
         ]
+        if ics_status := _ics_status(appt.status):
+            lines.append(ics_status)
         if appt.address:
             lines.append(f"LOCATION:{_ics_escape(appt.address)}")
         if appt.notes:
@@ -182,5 +222,9 @@ async def calendar_feed(token: str, db: DbDep) -> PlainTextResponse:
     return PlainTextResponse(
         "\r\n".join(lines) + "\r\n",
         media_type="text/calendar",
-        headers={"Content-Disposition": "inline; filename=calendar.ics"},
+        headers={
+            "Content-Disposition": "inline; filename=calendar.ics",
+            "Cache-Control": "no-cache, no-store, must-revalidate",
+            "Pragma": "no-cache",
+        },
     )
