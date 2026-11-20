@@ -41,8 +41,9 @@ balance, and subscription billing never touches Stripe Connect.
   Stripe balance.
 - **The platform never holds customer money.** Funds do not pass through a
   platform-owned account, and the platform takes no commission or percentage
-  of customer payments (no take-rate). Stripe's card-processing fees are
-  charged to the tradesperson and passed through transparently.
+  of customer payments (no take-rate). Because these are destination charges,
+  Stripe processing fees and dispute fees are debited from the platform
+  Stripe balance first (per Stripe Connect charge-type rules).
 - The platform is not a party to the contract for the underlying trade work;
   that contract is between the tradesperson and their customer. The platform
   provides invoicing and payment-collection tooling only.
@@ -86,11 +87,12 @@ balance, and subscription billing never touches Stripe Connect.
 ### 2.4 Refunds
 
 - Refunds of card-paid invoices are **initiated by the tradesperson** from the
-  invoice view. The platform instructs Stripe to refund the original charge;
-  the refunded amount is debited from the tradesperson's Stripe balance (or
-  recovered from their bank account by Stripe if the balance is
-  insufficient). Stripe's original processing fees are not returned on a
-  refund, per Stripe's pricing.
+  invoice view. The platform instructs Stripe to refund the original charge
+  and requests destination-transfer reversal (`reverse_transfer=true`) so the
+  refund principal is recovered from the connected account where available.
+  If Stripe cannot recover funds from the connected account balance, the API
+  keeps the invoice paid and returns an error for manual handling. Stripe's
+  original processing fees are not returned on a refund, per Stripe's pricing.
 - The platform supports full refunds of card-paid invoices. Partial refunds
   and deposits are out of scope for the current release.
 - Payments made outside Stripe (bank transfer, cash) are refunded directly
@@ -98,14 +100,14 @@ balance, and subscription billing never touches Stripe Connect.
 
 ### 2.5 Disputes (chargebacks)
 
-- A cardholder dispute is a matter between the cardholder, their bank, and the
-  tradesperson as the payee of record. The disputed amount plus Stripe's
-  dispute fee are debited from the tradesperson's Stripe balance when the
-  dispute is opened, per Stripe's terms.
-- The tradesperson is responsible for submitting dispute evidence through
-  Stripe. The platform detects disputes (`charge.dispute.created` webhook)
-  and alerts the tradesperson, but does not manage or adjudicate disputes and
-  bears no liability for their outcome.
+- For destination charges, Stripe debits the disputed amount and Stripe's
+  dispute fee from the **platform** balance first, per Stripe's terms.
+- Operationally, disputed principal is recovered from the connected account via
+  Stripe transfer-recovery flows where available, and the tradesperson is still
+  responsible for submitting dispute evidence in Stripe.
+- The platform detects disputes (`charge.dispute.created` webhook) and alerts
+  staff/tradesperson for follow-up, but does not adjudicate card-network
+  outcomes.
 
 ### 2.6 Surcharging
 

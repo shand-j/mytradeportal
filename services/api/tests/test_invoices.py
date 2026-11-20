@@ -6,6 +6,7 @@ from unittest.mock import AsyncMock
 from uuid import UUID, uuid4
 
 import pytest
+from app import stripe_client
 from app.models import AuditLog, Invoice, Notification
 from app.rls import set_tenant_in_session
 from httpx import AsyncClient
@@ -301,6 +302,27 @@ async def test_refund_503_when_stripe_unconfigured(
     response = await admin_client.post(f"/invoices/{invoice['id']}/refund")
     assert response.status_code == 503
     assert response.json()["detail"] == "payments_not_configured"
+
+    row = await db.get(Invoice, UUID(invoice["id"]))
+    assert row is not None
+    assert row.status == "paid"
+
+
+async def test_refund_409_when_transfer_recovery_unavailable(
+    admin_client: AsyncClient, db: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr("app.config.STRIPE_SECRET_KEY", "sk_test_x")
+    create_refund = AsyncMock(side_effect=stripe_client.RefundTransferRecoveryError())
+    monkeypatch.setattr("app.stripe_client.create_refund", create_refund)
+
+    tenant_id = UUID(admin_client.headers["X-Tenant-ID"])
+    invoice = await _create_scratch_invoice(admin_client)
+    await _make_stripe_paid(db, tenant_id, invoice["id"])
+
+    response = await admin_client.post(f"/invoices/{invoice['id']}/refund")
+    assert response.status_code == 409
+    assert response.json()["detail"] == "refund_recovery_unavailable"
+    create_refund.assert_awaited_once_with("pi_guard_1")
 
     row = await db.get(Invoice, UUID(invoice["id"]))
     assert row is not None

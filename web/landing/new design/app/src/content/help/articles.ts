@@ -235,7 +235,7 @@ export const articles: HelpArticle[] = [
       },
       {
         type: 'p',
-        text: 'Card payments go into your own Stripe account and pay out to your bank automatically on Stripe’s normal schedule (typically a few working days). Stripe’s card processing fees come out of the payment; we don’t take a cut of your invoices.',
+        text: 'Card payments go into your own Stripe account and pay out to your bank automatically on Stripe’s normal schedule (typically a few working days). We don’t take a cut of your invoices. Under our current Stripe destination-charge setup, Stripe processing/dispute fees are debited from the platform balance first, and refund/dispute amounts are recovered from the connected Stripe account where possible.',
       },
       {
         type: 'p',

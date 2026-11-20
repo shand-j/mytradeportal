@@ -12,7 +12,11 @@
 
 - **Provider: Stripe** for customer→tradie payments. Paddle remains our *subscription* billing (merchant of record for our SaaS fees); Stripe handles the *tradie's* receivables. The two systems never mix — a payment to a tradie must never touch our Paddle balance.
 - **Model: tradie-connected accounts** (Stripe Connect, destination charges) OR per-tradie own-Stripe-account OAuth. Decide at planning against effort/compliance — see open questions. Default recommendation: **Connect Express accounts** — tradie onboards with KYC once inside our app, we never hold funds, Stripe handles FCA-regulated money flow.
-- **No platform take-rate at beta.** We charge the subscription only; processing fees are Stripe's, passed through transparently (Tradify does the same). A take-rate is a post-PMF monetisation decision, not a beta one.
+- **No platform take-rate at beta.** We charge the subscription only; no
+  `application_fee_amount`/commission is taken. With destination charges,
+  Stripe processing/dispute fees are debited from the platform balance and
+  refund/dispute principal is recovered from connected accounts where possible.
+  A take-rate is a post-PMF monetisation decision, not a beta one.
 - **Payments are in every tier** — like Tradify. Not a Pro gate.
 
 ## 2. Requirements
@@ -33,7 +37,9 @@
 
 ### 2.3 Ops & edge cases (P0)
 
-- Webhook handling: `payment_intent.succeeded`, `charge.refunded`, `charge.disputed`, `payout.paid`; idempotent handlers; failed-webhook retry + alert.
+- Webhook handling: `payment_intent.succeeded`, `charge.refunded`,
+  `charge.dispute.created`, `payout.paid`; idempotent handlers; failed-webhook
+  retry + alert.
 - Refunds: tradie-initiated from invoice view (P0 simple full refund; partial refunds P1).
 - Failed payments surfaced to tradie with reason; customer can retry without contacting us.
 - Test coverage per Dev-Test Strategy: recorded webhook fixtures, sandbox E2E (invoice → pay → auto-marked paid), no live Stripe in CI.
