@@ -99,9 +99,7 @@ def validate_api_reads(
         ("invoice_detail", f"/invoices/{invoice_id}" if invoice_id else None),
         (
             "media",
-            f"/files/download?{urllib.parse.urlencode({'key': file_key})}"
-            if file_key
-            else None,
+            f"/files/download?{urllib.parse.urlencode({'key': file_key})}" if file_key else None,
         ),
     ):
         if path:
@@ -172,13 +170,11 @@ def validate_postgres(
         connection.execute(text("SET app.bypass_rls = 'off'"))
 
         for table_name in sorted(table_names):
-            count = connection.execute(
-                text(f'SELECT COUNT(*) FROM "{table_name}"')
-            ).scalar_one()
+            count = connection.execute(text(f'SELECT COUNT(*) FROM "{table_name}"')).scalar_one()
             counts[table_name] = int(count)
             checksum = connection.execute(
                 text(
-                    f'SELECT md5(COALESCE(string_agg(md5(row_to_json(t)::text), '
+                    f"SELECT md5(COALESCE(string_agg(md5(row_to_json(t)::text), "
                     f"'|'), '')) FROM "
                     f'(SELECT * FROM "{table_name}" LIMIT 10000) AS t'
                 )
@@ -283,9 +279,7 @@ def main() -> int:
     report: dict[str, Any] = {"ready": validate_ready(args.api_base)}
 
     if args.database_url:
-        report["postgres"] = validate_postgres(
-            args.database_url, args.tenant_a, args.tenant_b
-        )
+        report["postgres"] = validate_postgres(args.database_url, args.tenant_a, args.tenant_b)
     if args.auth_token and args.tenant_id:
         report["api_reads"] = validate_api_reads(
             args.api_base,
@@ -313,4 +307,4 @@ if __name__ == "__main__":
         raise SystemExit(main())
     except Exception as exc:
         print(f"RESTORE VALIDATION FAILED: {exc}", file=sys.stderr)
-        raise SystemExit(1)
+        raise SystemExit(1) from None

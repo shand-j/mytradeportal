@@ -7,7 +7,7 @@ ROOT = Path(__file__).resolve().parents[3]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from scripts import validate_restore
+from scripts import validate_restore  # noqa: E402
 
 
 def test_require_ok_rejects_http_error():
@@ -42,6 +42,7 @@ def test_validate_ready_rejects_not_ready_payload():
         try:
             validate_restore.validate_ready("https://isolated.example")
         except RuntimeError as exc:
-            assert "did not report ready" in str(exc)
+            assert "/ready: HTTP 503" in str(exc)
+            assert "not_ready" in str(exc)
         else:
             raise AssertionError("not_ready should fail validation")
