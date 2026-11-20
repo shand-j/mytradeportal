@@ -1,5 +1,6 @@
 """Database session and engine configuration."""
 
+import asyncio
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from typing import Any
@@ -78,12 +79,15 @@ async def get_db_session() -> AsyncIterator[AsyncSession]:
     async with AsyncSessionLocal() as session:
         try:
             yield session
-            await session.commit()
-        except Exception:
-            await session.rollback()
+        except BaseException:
+            if session.in_transaction():
+                await asyncio.shield(session.rollback())
             raise
+        else:
+            if session.in_transaction():
+                await asyncio.shield(session.commit())
         finally:
-            await session.close()
+            await asyncio.shield(session.close())
 
 
 async def get_db() -> AsyncIterator[AsyncSession]:
