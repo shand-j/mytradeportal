@@ -246,6 +246,47 @@ def test_create_metabase_role_is_read_only_bypassrls_and_idempotent() -> None:
 
 
 @pytest.mark.usefixtures("test_database_url")
+def test_schema_lock_times_out_with_actionable_error(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Competing schema lock fails fast with an actionable timeout message."""
+    init_db = _load_init_db_module()
+    monkeypatch.setattr(init_db, "INIT_DB_ADVISORY_LOCK_TIMEOUT_SECONDS", 0.2)
+
+    engine = _sync_engine()
+    try:
+        with engine.connect() as locker:
+            locker.exec_driver_sql(f"SELECT pg_advisory_lock({init_db.SCHEMA_ADVISORY_LOCK_ID})")
+            with engine.connect() as contender:
+                with pytest.raises(TimeoutError, match="Timed out waiting for schema advisory lock"):
+                    with init_db._schema_lock(contender):
+                        pass
+            locker.exec_driver_sql(
+                f"SELECT pg_advisory_unlock({init_db.SCHEMA_ADVISORY_LOCK_ID})"
+            )
+    finally:
+        engine.dispose()
+
+
+@pytest.mark.usefixtures("test_database_url")
+def test_schema_lock_is_released_after_failure() -> None:
+    """Acquired advisory locks are released even when schema work raises."""
+    init_db = _load_init_db_module()
+
+    engine = _sync_engine()
+    try:
+        with engine.connect() as conn:
+            with pytest.raises(RuntimeError, match="boom"):
+                with init_db._schema_lock(conn):
+                    raise RuntimeError("boom")
+            still_held = conn.execute(
+                text("SELECT pg_advisory_unlock(:lock_id)"),
+                {"lock_id": init_db.SCHEMA_ADVISORY_LOCK_ID},
+            ).scalar_one()
+            assert still_held is False
+    finally:
+        engine.dispose()
+
+
+@pytest.mark.usefixtures("test_database_url")
 def test_ai_rollup_org_day_table_matches_metadata() -> None:
     """The org rollup ships via ``Base.metadata.create_all`` + column reconcile.
 
