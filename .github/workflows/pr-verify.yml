@@ -114,11 +114,11 @@ jobs:
           mkdir -p audit-evidence
           set +e
           pip-audit --desc --format json --output audit-evidence/pip-audit.json
-          json_status=$?
-          pip-audit --desc 2>&1 | tee audit-evidence/pip-audit.txt
-          human_status=${PIPESTATUS[0]}
+          audit_status=$?
+          python -m json.tool audit-evidence/pip-audit.json > audit-evidence/pip-audit.txt || \
+            cp audit-evidence/pip-audit.json audit-evidence/pip-audit.txt
           printf '{"ecosystem":"python","json_exit_code":%d,"text_exit_code":%d}\n' \
-            "$json_status" "$human_status" > audit-evidence/pip-audit-status.json
+            "$audit_status" "$audit_status" > audit-evidence/pip-audit-status.json
           # pip-audit is report-only: findings are archived for SOC2 review,
           # but ecdsa has no fixed upstream release and is explicitly deferred.
           exit 0
@@ -142,16 +142,15 @@ jobs:
           mkdir -p audit-evidence
           set +e
           pnpm audit --audit-level=high --json > audit-evidence/pnpm-audit.json
-          json_status=$?
-          set -o pipefail
-          pnpm audit --audit-level=high 2>&1 | tee audit-evidence/pnpm-audit.txt
-          human_status=${PIPESTATUS[0]}
+          audit_status=$?
+          python -m json.tool audit-evidence/pnpm-audit.json > audit-evidence/pnpm-audit.txt || \
+            cp audit-evidence/pnpm-audit.json audit-evidence/pnpm-audit.txt
           printf '{"ecosystem":"node","json_exit_code":%d,"text_exit_code":%d}\n' \
-            "$json_status" "$human_status" > audit-evidence/pnpm-audit-status.json
-          exit "$human_status"
+            "$audit_status" "$audit_status" > audit-evidence/pnpm-audit-status.json
+          exit "$audit_status"
 
       - name: Archive dependency audit evidence
-        if: always()
+        if: always() && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.fork == false)
         uses: actions/upload-artifact@v4
         with:
           name: dependency-audit-${{ github.sha }}
