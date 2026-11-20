@@ -29,7 +29,9 @@ import {
 // configured (the local dev api answers 503).
 
 const HOUR_UNITS = ["h", "hr", "hrs", "hour", "hours"];
-const MATERIAL_UNITS = ["ea", "m"];
+// Catalogue units come verbatim from the retrieved cost item; Screwfix prices
+// items both "ea" and "each" (validation.py's _RECOGNISED_UNITS allows both).
+const MATERIAL_UNITS = ["ea", "each", "m"];
 const KNOWN_UNITS = [...HOUR_UNITS, ...MATERIAL_UNITS];
 
 // The exact repeat-regression shape: bulk cable must be metre-priced, not

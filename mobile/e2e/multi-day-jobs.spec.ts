@@ -169,7 +169,10 @@ test.describe.serial("R — Multi-day job planning", () => {
   });
 
   test("G27: converting caps day 1 at the daily hours and books the rest as appointments", async () => {
-    const monday = isoDay(nextMonday());
+    // The sibling suggest-schedule test parks an "E2E Calendar blocker" job on
+    // next Monday, so convert on the Monday after — converting into the
+    // blocker correctly 409s with schedule_conflict (dispatch guardrails).
+    const monday = isoDay(new Date(nextMonday().getTime() + 7 * 86_400_000));
     const start = `${monday}T09:00:00`;
     const job = (await api(tenant, `/quotes/${bigQuote.id}/convert-to-job`, {
       method: "POST",

@@ -3,7 +3,9 @@ import {
   bodyText,
   createTestTenant,
   expect,
-  loginAsTradeOwner,
+  fill,
+  gotoEntryRole,
+  tap,
   Tenant,
   waitText,
 } from "./helpers";
@@ -69,7 +71,15 @@ test.describe("Paywall — billing enforcement (DEFECT-013/014)", () => {
     await page.route("**/analytics/dashboard", json(402, { detail: "subscription_required" }));
     await page.route("**/jobs", json(402, { detail: "subscription_required" }));
 
-    await loginAsTradeOwner(page, tenant);
+    // Log in WITHOUT loginAsTradeOwner: that helper waits for the Dashboard
+    // to paint, but the 402 gate now fires first and routes to /paywall —
+    // waiting for the Dashboard would time out on the correct behaviour.
+    await gotoEntryRole(page, "trade");
+    await tap(page, "entry-trade-login");
+    await waitText(page, "Electrician login");
+    await fill(page, "login-email", tenant.adminEmail);
+    await fill(page, "login-password", tenant.adminPassword);
+    await tap(page, "login-submit");
 
     // The trade layout's global 402 gate routes to /paywall as soon as a
     // gated call is answered — the dashboard must not remain usable.
