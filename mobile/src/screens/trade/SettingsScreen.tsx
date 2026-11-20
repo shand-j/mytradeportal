@@ -136,6 +136,21 @@ export function SettingsScreen() {
       subtitle: "Step-by-step guides for every feature",
       onPress: () => void openInAppBrowser(config.helpUrl),
     },
+    {
+      title: "Terms of Service",
+      subtitle: "Platform terms",
+      onPress: () => void openInAppBrowser(config.termsUrl),
+    },
+    {
+      title: "Privacy notice",
+      subtitle: "How My Trade Portal handles data",
+      onPress: () => void openInAppBrowser(config.privacyUrl),
+    },
+    {
+      title: "Fair-use policy",
+      subtitle: "AI and platform fair-use terms",
+      onPress: () => void openInAppBrowser(config.fairUseUrl),
+    },
   ];
 
   return (

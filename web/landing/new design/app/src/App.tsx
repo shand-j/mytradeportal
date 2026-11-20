@@ -8,6 +8,8 @@ import ViewQuote from './pages/ViewQuote'
 import ViewInvoice from './pages/ViewInvoice'
 import PayInvoice from './pages/PayInvoice'
 import FairUse from './pages/FairUse'
+import Terms from './pages/Terms'
+import Privacy from './pages/Privacy'
 import StripeBounce from './pages/StripeBounce'
 import PaymentsDashboard from './pages/PaymentsDashboard'
 import BlogIndex from './pages/blog/BlogIndex'
@@ -48,6 +50,8 @@ export default function App() {
           <Route path="/invoice/:token" element={<ViewInvoice />} />
           <Route path="/pay/:token" element={<PayInvoice />} />
           <Route path="/fair-use" element={<FairUse />} />
+          <Route path="/terms" element={<Terms />} />
+          <Route path="/privacy" element={<Privacy />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </PortalProvider>
@@ -65,6 +69,8 @@ export default function App() {
       <Route path="/invoice/:token" element={<ViewInvoice />} />
       <Route path="/pay/:token" element={<PayInvoice />} />
       <Route path="/fair-use" element={<FairUse />} />
+      <Route path="/terms" element={<Terms />} />
+      <Route path="/privacy" element={<Privacy />} />
       <Route path="/payments/stripe-bounce" element={<StripeBounce />} />
       <Route path="/payments/dashboard" element={<PaymentsDashboard />} />
       <Route path="/blog" element={<BlogIndex />} />
