@@ -85,6 +85,27 @@ jobs:
       - name: Test with pytest
         run: pytest
 
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "pnpm"
+          cache-dependency-path: pnpm-lock.yaml
+
+      - name: Install Node dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Landing production build
+        working-directory: web/landing/new design/app
+        run: pnpm build
+
+      - name: Landing e2e typecheck
+        working-directory: web/landing/new design/app
+        run: pnpm typecheck:e2e
+
   dependency-audit:
     # Issue #53: dependency vulnerability audits on every PR.
     # - pip-audit is report-only: it has no severity filter and some advisories
