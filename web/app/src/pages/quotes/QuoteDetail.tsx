@@ -407,7 +407,7 @@ export function QuoteDetail() {
                           onChange={(e) => handleDraftChange(item.id, 'unitPrice', e.target.value)}
                           className="w-28 rounded-md border border-[#E7E5E4] px-2 py-1 text-right text-sm"
                         />
-                      ) : <>{formatGBP(item.unitPrice)}</>}
+                      ) : <>{formatGBP(Number(item.unitPrice))}</>}
                     </td>
                     <td className="py-2.5 text-sm font-medium text-[#1C1917] text-right">
                       {formatGBP(
