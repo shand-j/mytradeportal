@@ -96,7 +96,7 @@ export function ReviewLaunchStep({ data, onNext }: ReviewLaunchStepProps) {
           Review & launch
         </Text>
         <Text variant="body" color="secondary">
-          Check the details below, then choose your plan to go live.
+          Check the details below, then continue setting up your business.
         </Text>
 
         <LaunchGateChecklist items={buildChecklist(data)} />
@@ -144,7 +144,7 @@ export function ReviewLaunchStep({ data, onNext }: ReviewLaunchStepProps) {
           </View>
         )}
 
-        <Button testID="onboarding-choose-plan" title="Choose your plan" onPress={() => onNext()} />
+        <Button testID="onboarding-choose-plan" title="Continue" onPress={() => onNext()} />
       </View>
     </ScrollView>
   );
