@@ -169,7 +169,33 @@ async def test_update_subscription_raises_without_api_key(
     with pytest.raises(RuntimeError, match="not configured"):
         await paddle_client.update_subscription("sub_1", "pri_pro_month")
 
-    assert fake_client.requests == []
+
+async def test_schedule_subscription_cancellation_uses_next_billing_period(
+    fake_client: _FakeAsyncClient,
+) -> None:
+    fake_client.queue.append(
+        _FakeResponse(
+            200,
+            {
+                "data": {
+                    "id": "sub_1",
+                    "status": "active",
+                    "scheduled_change": {
+                        "action": "cancel",
+                        "effective_at": "2026-10-01T00:00:00Z",
+                    },
+                }
+            },
+        )
+    )
+
+    result = await paddle_client.schedule_subscription_cancellation("sub_1")
+
+    assert result["scheduled_change"]["action"] == "cancel"
+    assert fake_client.urls == ["/subscriptions/sub_1/cancel"]
+    method, payload = fake_client.requests[0]
+    assert method == "POST"
+    assert payload == {"effective_from": "next_billing_period"}
 
 
 async def test_get_price_returns_trial_configuration(fake_client: _FakeAsyncClient) -> None:

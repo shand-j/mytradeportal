@@ -50,13 +50,8 @@ export type BillingPlan = {
   annualPriceEnv: string;
   monthlyPriceGbp: number;
   annualPriceGbp: number;
-  aiAllowanceMonthly: number;
-  overageBehavior: "block" | "metered";
-  overagePricePence: number;
-  minSeats: number;
   /** Staff seats included in the tier (max active users + pending invites). */
   seats: number;
-  pooledAllowance: boolean;
   featured: boolean;
   trialDays: number;
   trialExtensionDays: number;
