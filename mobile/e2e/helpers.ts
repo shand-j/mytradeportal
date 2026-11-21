@@ -17,9 +17,16 @@ export const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve
 
 export { expect };
 
-async function loadCreateTenant(): Promise<(prefix?: string) => Promise<Tenant>> {
+async function loadCreateTenant(): Promise<
+  (prefix?: string, options?: { vatRegistered?: boolean }) => Promise<Tenant>
+> {
   // @ts-ignore: Node ESM helper loaded at runtime.
-  const mod = (await import("./create-tenant.mjs")) as { createTenant: (prefix?: string) => Promise<Tenant> };
+  const mod = (await import("./create-tenant.mjs")) as {
+    createTenant: (
+      prefix?: string,
+      options?: { vatRegistered?: boolean }
+    ) => Promise<Tenant>;
+  };
   return mod.createTenant;
 }
 
@@ -28,9 +35,12 @@ async function loadSeedHelpers(): Promise<Record<string, (...args: any[]) => any
   return (await import("./seed-e2e.mjs")) as Record<string, (...args: any[]) => any>;
 }
 
-export async function createTestTenant(prefix?: string): Promise<Tenant> {
+export async function createTestTenant(
+  prefix?: string,
+  options?: { vatRegistered?: boolean }
+): Promise<Tenant> {
   const create = await loadCreateTenant();
-  return create(prefix ?? "regression");
+  return create(prefix ?? "regression", options);
 }
 
 export function apiContext(tenant: Tenant): { token: string; tenantId: string; base: string } {

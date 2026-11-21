@@ -155,6 +155,10 @@ describe("trade quotes", () => {
 
   before(async () => {
     ctx = await loginTradeApi();
+    await apiPatch(ctx, "/onboarding/step/tax", {
+      step: "tax",
+      value: { vat_registered: true, vat_number: "GB123456789", vat_scheme: "standard" },
+    });
 
     const contact = (await apiPost(ctx, "/contacts", {
       name: CONTACT_NAME,
