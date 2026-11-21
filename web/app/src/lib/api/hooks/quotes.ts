@@ -145,6 +145,13 @@ function toBillOfQuantities(raw: Record<string, unknown>): BillOfQuantities {
 
 export function toQuote(raw: Record<string, unknown>): Quote {
   const customer = raw.customer ? toCustomer(raw.customer as Record<string, unknown>) : undefined;
+  const description = typeof raw.description === 'string' ? raw.description.trim() : '';
+  const descriptionParts = description ? description.split(/\s+-\s+/) : [];
+  const serviceType = (raw.serviceType as string)
+    ?? (descriptionParts[0] || (raw.title as string) || '');
+  const propertyAddress = (raw.propertyAddress as string)
+    ?? (descriptionParts.length > 1 ? descriptionParts.slice(1).join(' - ') : '')
+    ?? '';
   return {
     id: String(raw.id),
     reference: (raw.reference as string) ?? (raw.title as string) ?? `Q-${String(raw.id).slice(0, 8)}`,
@@ -165,8 +172,8 @@ export function toQuote(raw: Record<string, unknown>): Quote {
     aiAssumptions: Array.isArray(raw.aiAssumptions) ? raw.aiAssumptions.map(String) : [],
     aiNotes: (raw.aiNotes as string | null) ?? null,
     retrievalStatus: (raw.retrievalStatus as Quote['retrievalStatus']) ?? null,
-    serviceType: (raw.serviceType as string) ?? (raw.title as string) ?? '',
-    propertyAddress: (raw.propertyAddress as string) ?? '',
+    serviceType,
+    propertyAddress,
     customerMessage: (raw.customerMessage as string | null) ?? null,
     internalNotes: (raw.internalNotes as string | null) ?? null,
     expiresAt: (raw.expiresAt as string | null) ?? (raw.validUntil as string | null) ?? null,
