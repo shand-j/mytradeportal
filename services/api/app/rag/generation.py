@@ -69,15 +69,16 @@ def _deterministic_followup(
             "model": "staging-provider-double",
         }
 
-    has_circuit_answer = any(
-        "circuit" in str(message.get("text", "")).lower()
-        or "consumer unit" in str(message.get("text", "")).lower()
+    customer_text = " ".join(
+        str(message.get("text", ""))
         for message in prior_messages
-    )
-    if has_circuit_answer:
-        message = "How many circuits will need to be covered?"
-    else:
+        if str(message.get("role", "")).lower() != "ai"
+    ).lower()
+    has_circuit_count = bool(re.search(r"\b\d+\s+circuits?\b", customer_text))
+    if not has_circuit_count:
         message = "How many circuits are in the existing consumer unit?"
+    else:
+        message = "Thanks — where is the fuse box / consumer unit located?"
     return {
         "confidence": 60,
         "complete": False,
