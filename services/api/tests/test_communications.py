@@ -234,9 +234,7 @@ async def test_ai_followup_provider_failure_is_sanitized_and_not_persisted(
             )
         ),
     ) as followup:
-        response = await admin_client.post(
-            f"/communications/{quote_request.id}/ai-followup"
-        )
+        response = await admin_client.post(f"/communications/{quote_request.id}/ai-followup")
 
     assert response.status_code == 503
     assert response.json()["detail"]["code"] == LLM_RATE_LIMIT

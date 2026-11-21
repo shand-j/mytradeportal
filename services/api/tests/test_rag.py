@@ -1749,9 +1749,9 @@ def test_llm_provider_error_redacts_credentials_and_public_detail_is_safe() -> N
 
 
 def test_llm_provider_timeout_maps_to_stable_public_code() -> None:
-    provider_error = provider_error_from(TimeoutError(
-        "APITimeoutError: sk-live-super-secret timeout value=30"
-    ))
+    provider_error = provider_error_from(
+        TimeoutError("APITimeoutError: sk-live-super-secret timeout value=30")
+    )
 
     assert provider_error.code == LLM_TIMEOUT
     assert "APITimeoutError" not in str(provider_error)
