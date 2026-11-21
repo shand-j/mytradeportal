@@ -56,7 +56,7 @@ export function useAuth(): AuthContextValue {
 }
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const { restoreSession } = useAuthStore();
+  const restoreSession = useAuthStore((state) => state.restoreSession);
 
   useEffect(() => {
     void restoreSession();
