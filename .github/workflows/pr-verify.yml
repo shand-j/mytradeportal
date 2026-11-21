@@ -182,15 +182,15 @@ jobs:
         working-directory: web/landing/new design/app
         shell: bash
         run: |
-          mkdir -p ../../../audit-evidence
+          mkdir -p ../../../../audit-evidence
           set +e
-          npm audit --audit-level=high --json > ../../../audit-evidence/npm-landing-audit.json
+          npm audit --audit-level=high --json > ../../../../audit-evidence/npm-landing-audit.json
           json_status=$?
           set -o pipefail
-          npm audit --audit-level=high 2>&1 | tee ../../../audit-evidence/npm-landing-audit.txt
+          npm audit --audit-level=high 2>&1 | tee ../../../../audit-evidence/npm-landing-audit.txt
           human_status=${PIPESTATUS[0]}
           printf '{"ecosystem":"node-landing","json_exit_code":%d,"text_exit_code":%d}\n' \
-            "$json_status" "$human_status" > ../../../audit-evidence/npm-landing-audit-status.json
+            "$json_status" "$human_status" > ../../../../audit-evidence/npm-landing-audit-status.json
           exit "$human_status"
 
       - name: Archive dependency audit evidence
