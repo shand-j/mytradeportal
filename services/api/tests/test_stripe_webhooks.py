@@ -38,6 +38,7 @@ from app.models import (
     StripeAccount,
     Tenant,
 )
+from app.push import notify_staff
 from app.rls import bypass_rls_in_session, clear_rls_session, set_tenant_in_session
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy import delete, func, select
@@ -541,9 +542,7 @@ async def test_payment_intent_retry_after_handler_failure_reprocesses_once(
     )
     _patch_construct(monkeypatch, event)
 
-    from app.routers import stripe_webhooks
-
-    real_notify_staff = stripe_webhooks.notify_staff
+    real_notify_staff = notify_staff
     attempts = 0
 
     async def flaky_notify_staff(*args: Any, **kwargs: Any) -> None:
