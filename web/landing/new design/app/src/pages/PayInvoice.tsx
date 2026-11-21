@@ -6,10 +6,9 @@ import {
   DocumentError,
   DocumentInvalid,
   DocumentLoading,
-  formatMoney,
-  useNoIndex,
-  usePublicDocument,
 } from './ViewQuote'
+import { useNoIndex, usePublicDocument } from '../hooks/usePublicDocument'
+import { formatMoney } from '../lib/public-document'
 import ViewInvoice from './ViewInvoice'
 import { buildElementsOptions, getStripe, PUBLISHABLE_KEY } from '../portal/pay/stripe'
 import { PaymentForm } from '../portal/pay/PaymentForm'

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { Link, useParams } from 'react-router'
 import Nav from '../sections/Nav'
 import Footer from '../sections/Footer'
@@ -6,8 +6,6 @@ import { usePageMeta } from '../hooks/usePageMeta'
 import {
   acceptPublicQuote,
   declinePublicQuote,
-  fetchPublicDocument,
-  PublicDocsApiError,
   submitPublicQuotePreferences,
   type PublicDocPayload,
   type PublicQuotePreference,
@@ -15,67 +13,8 @@ import {
 import { QuotePreferencesCalendar } from '../components/QuotePreferencesCalendar'
 import { TESTFLIGHT_URL, testflightConfigured } from '@/lib/site'
 import { isPortalMode } from '../portal/host'
-
-type Status = 'loading' | 'invalid' | 'error' | 'loaded'
-
-/* Shared helpers — ViewInvoice reuses these so both documents render
-   identically apart from their status-specific calls to action. */
-
-export function useNoIndex(): void {
-  useEffect(() => {
-    let meta = document.querySelector<HTMLMetaElement>('meta[name="robots"]')
-    if (!meta) {
-      meta = document.createElement('meta')
-      meta.name = 'robots'
-      document.head.appendChild(meta)
-    }
-    meta.content = 'noindex, nofollow'
-  }, [])
-}
-
-export function usePublicDocument(kind: 'quote' | 'invoice') {
-  const { token = '' } = useParams()
-  const [status, setStatus] = useState<Status>(token ? 'loading' : 'invalid')
-  const [error, setError] = useState('')
-  const [doc, setDoc] = useState<PublicDocPayload | null>(null)
-
-  useEffect(() => {
-    if (!token) return
-    let cancelled = false
-    fetchPublicDocument(kind, token)
-      .then((payload) => {
-        if (cancelled) return
-        setDoc(payload)
-        setStatus('loaded')
-      })
-      .catch((err) => {
-        if (cancelled) return
-        if (err instanceof PublicDocsApiError && err.status === 404) {
-          setStatus('invalid')
-        } else {
-          setError(err instanceof Error ? err.message : 'Something went wrong — please try again.')
-          setStatus('error')
-        }
-      })
-    return () => {
-      cancelled = true
-    }
-  }, [kind, token])
-
-  return { status, error, doc, setDoc }
-}
-
-export function formatMoney(currency: string, value: string): string {
-  const amount = Number(value)
-  if (Number.isNaN(amount)) return value
-  return new Intl.NumberFormat('en-GB', { style: 'currency', currency }).format(amount)
-}
-
-export function formatDate(iso: string): string {
-  const date = new Date(iso)
-  if (Number.isNaN(date.getTime())) return iso
-  return date.toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })
-}
+import { useNoIndex, usePublicDocument } from '../hooks/usePublicDocument'
+import { formatDate, formatMoney } from '../lib/public-document'
 
 const STATUS_LABELS: Record<string, string> = {
   draft: 'Draft',

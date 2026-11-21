@@ -8,7 +8,8 @@ import { usePageMeta } from '../../hooks/usePageMeta'
 import { getInvoice, SessionExpiredError, type CustomerInvoice } from '../api'
 import { buildElementsOptions, getStripe, PUBLISHABLE_KEY } from '../pay/stripe'
 import { PaymentForm } from '../pay/PaymentForm'
-import { DocumentLoading, formatDate, formatMoney, StatusBadge } from '../../pages/ViewQuote'
+import { DocumentLoading, StatusBadge } from '../../pages/ViewQuote'
+import { formatDate, formatMoney } from '../../lib/public-document'
 
 function BankTransferDetails({ invoice, businessName }: { invoice: CustomerInvoice; businessName: string }) {
   const details = invoice.payment_details

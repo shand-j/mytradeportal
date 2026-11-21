@@ -14,7 +14,8 @@ import {
   SessionExpiredError,
   type CustomerQuote,
 } from '../api'
-import { DocumentLoading, formatDate, formatMoney, StatusBadge } from '../../pages/ViewQuote'
+import { DocumentLoading, StatusBadge } from '../../pages/ViewQuote'
+import { formatDate, formatMoney } from '../../lib/public-document'
 
 function StatusTimeline({ quote }: { quote: CustomerQuote }) {
   const steps: { label: string; at: string | null; done: boolean }[] = [

@@ -2,7 +2,7 @@ import { useEffect, useState, type ReactNode } from 'react'
 import { fetchPublicConfig, PortalApiError, type PortalConfig } from './api'
 import { onSessionExpired } from './session'
 import { PortalContext } from './context'
-import { useNoIndex } from '../pages/ViewQuote'
+import { useNoIndex } from '../hooks/usePublicDocument'
 import PortalNotFound from './pages/PortalNotFound'
 
 type ConfigStatus = 'loading' | 'ready' | 'not-found' | 'error'

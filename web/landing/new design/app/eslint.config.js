@@ -20,4 +20,35 @@ export default defineConfig([
       globals: globals.browser,
     },
   },
+  {
+    // Playwright's fixture callback is named `use`; it is unrelated to React.
+    // Keep TypeScript rules enabled for the E2E suite, but do not apply React
+    // component/hot-reload rules to tests or their helpers.
+    files: ['e2e/**/*.ts', 'playwright*.config.ts'],
+    rules: {
+      'react-hooks/rules-of-hooks': 'off',
+      'react-refresh/only-export-components': 'off',
+    },
+  },
+  {
+    // These names are the established shadcn component APIs (variants,
+    // helpers and hooks) intentionally co-located with their UI components.
+    files: ['src/components/ui/*.tsx'],
+    rules: {
+      'react-refresh/only-export-components': [
+        'error',
+        {
+          allowExportNames: [
+            'badgeVariants',
+            'buttonGroupVariants',
+            'buttonVariants',
+            'navigationMenuTriggerStyle',
+            'toggleVariants',
+            'useFormField',
+            'useSidebar',
+          ],
+        },
+      ],
+    },
+  },
 ])

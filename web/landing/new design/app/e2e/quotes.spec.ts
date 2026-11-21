@@ -9,7 +9,6 @@ import { expect, type Page } from "@playwright/test";
 import { mailpitConfigured, waitForEmail } from "./mailpit";
 import {
   createTenant,
-  customerApi,
   exchangeMagicToken,
   extractToken,
   seedSentQuote,
@@ -113,8 +112,8 @@ test("quote list + detail render ex-VAT totals and hide pre-review drafts (C3)",
   const { quoteId } = await seedQuoteAndSignIn("Awaiting response quote");
 
   // An unsent DRAFT quote for the same customer must never surface (C3).
-  const contacts = await staffApi<Array<Record<string, any>>>(tenant, "/contacts");
-  const contactId = contacts.find((c) => c.email === customerEmail)!.id as string;
+  const contacts = await staffApi<Array<{ id: string; email: string }>>(tenant, "/contacts");
+  const contactId = contacts.find((c) => c.email === customerEmail)!.id;
   await staffApi<{ id: string }>(tenant, "/quotes", {
     method: "POST",
     body: {
@@ -157,15 +156,20 @@ test("accept with preferred dates → staff notified in-app and by email", async
   await expect(page.getByText("Awaiting response")).toHaveCount(0);
 
   // Server-side: quote approved with the reconfirmed dates (G28 surfaces them).
-  const quotes = await staffApi<Array<Record<string, any>>>(tenant, "/quotes");
+  const quotes = await staffApi<
+    Array<{ id: string; status: string; accepted_dates?: string[]; title: string }>
+  >(tenant, "/quotes");
   const quote = quotes.find((q) => q.id === quoteId);
   expect(quote?.status).toBe("approved");
   expect(quote?.accepted_dates).toContain(date);
 
   // Staff notified in-app…
-  const notifications = await staffApi<Array<Record<string, any>>>(tenant, "/notifications");
+  const notifications = await staffApi<Array<{ type: string; body: string }>>(
+    tenant,
+    "/notifications",
+  );
   const accepted = notifications.find(
-    (n) => n.type === "quote_accepted" && (n.body as string).includes("Acceptable quote"),
+    (n) => n.type === "quote_accepted" && n.body.includes("Acceptable quote"),
   );
   expect(accepted, "quote_accepted staff notification").toBeTruthy();
   expect(accepted!.body).toContain(date);
@@ -192,7 +196,7 @@ test("decline moves the quote to declined and offers a way back", async ({ page 
     page.getByText("Declined", { exact: true }).first(),
   ).toBeVisible();
 
-  const quotes = await staffApi<Array<Record<string, any>>>(tenant, "/quotes");
+  const quotes = await staffApi<Array<{ title: string; status: string }>>(tenant, "/quotes");
   expect(quotes.find((q) => q.title === "Declinable quote")?.status).toBe("rejected");
 });
 
@@ -211,8 +215,8 @@ async function seedLinkedSentQuote(description: string): Promise<{
     email: customerEmail,
     description,
   });
-  const contacts = await staffApi<Array<Record<string, any>>>(tenant, "/contacts");
-  const contactId = contacts.find((c) => c.email === customerEmail)!.id as string;
+  const contacts = await staffApi<Array<{ id: string; email: string }>>(tenant, "/contacts");
+  const contactId = contacts.find((c) => c.email === customerEmail)!.id;
   const quote = await staffApi<{ id: string }>(tenant, "/quotes/generate", {
     method: "POST",
     body: { contact_id: contactId, description, quote_request_id: intake.id },
@@ -247,13 +251,13 @@ test("discuss reply lands in the shared staff thread", async ({ page }) => {
   await expect
     .poll(
       async () => {
-        const comms = await staffApi<Array<Record<string, any>>>(
+        const comms = await staffApi<Array<{ sender_role: string; body: string }>>(
           tenant,
           `/communications?quote_request_id=${quoteRequestId}`,
         );
         return (
           comms.find(
-            (c) => c.sender_role === "customer" && (c.body as string)?.includes("surge-protected"),
+            (c) => c.sender_role === "customer" && c.body.includes("surge-protected"),
           ) ?? null
         );
       },
