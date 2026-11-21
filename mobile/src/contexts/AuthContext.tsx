@@ -7,6 +7,7 @@ export type AuthContextValue = {
   role: AppRole;
   user: User | null;
   isAuthenticated: boolean;
+  sessionRestored: boolean;
   onboardingComplete: boolean;
   isRegistering: boolean;
   setRole: (role: AppRole) => void;
@@ -38,6 +39,7 @@ export function useAuth(): AuthContextValue {
     role: state.role,
     user: state.user,
     isAuthenticated: state.user !== null,
+    sessionRestored: state.sessionRestored,
     onboardingComplete: state.onboardingComplete,
     isRegistering: state.isRegistering,
     setRole: state.setRole,

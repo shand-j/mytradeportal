@@ -63,6 +63,34 @@ test.describe.serial("A — Trade owner login & settings", () => {
   });
 });
 
+test.describe.serial("A2 — Trade route guard after logout", () => {
+  let tenant: Tenant;
+
+  test.beforeAll(async () => {
+    tenant = await createTestTenant("trade-guard");
+  });
+
+  test("logout blocks browser Back and direct trade URLs", async ({ page }) => {
+    await loginAsTradeOwner(page, tenant);
+    await tap(page, "dashboard-more");
+    await waitText(page, "Customer code");
+    await tap(page, "settings-logout");
+    await page.locator('[data-testid="role-select"]').waitFor({ state: "visible", timeout: 30_000 });
+
+    await page.goBack();
+    await page.locator('[data-testid="role-select"]').waitFor({ state: "visible", timeout: 30_000 });
+    await expect(page.locator('[data-testid="tab-dashboard"]')).toHaveCount(0);
+
+    await page.goto("/(trade)/inbox", { waitUntil: "networkidle" });
+    await page.locator('[data-testid="role-select"]').waitFor({ state: "visible", timeout: 30_000 });
+    await expect(page.locator('[data-testid="tab-dashboard"]')).toHaveCount(0);
+
+    await page.goto("/(trade)/dashboard", { waitUntil: "networkidle" });
+    await page.locator('[data-testid="role-select"]').waitFor({ state: "visible", timeout: 30_000 });
+    await expect(page.locator('[data-testid="tab-dashboard"]')).toHaveCount(0);
+  });
+});
+
 test.describe.serial("B — Customer quote request + account creation", () => {
   const JANE_EMAIL = "jane-homeowner@e2e.example.com";
   let tenant: Tenant;
