@@ -1,5 +1,5 @@
 import { Search, Bell, Plus, RefreshCw, Phone } from 'lucide-react';
-import { Link } from 'react-router-dom';
+import { Link, useLocation } from 'react-router-dom';
 import { useState, useEffect } from 'react';
 import { useUiStore } from '@/stores/uiStore';
 import { useFeatureFlags } from '@/lib/api/hooks';
@@ -11,6 +11,7 @@ export function TopBar() {
   const notificationOpen = useUiStore(s => s.notificationOpen);
   const setNotificationOpen = useUiStore(s => s.setNotificationOpen);
   const { data: featureFlags } = useFeatureFlags();
+  const location = useLocation();
   // Voice AI is not yet implemented; the button stays hidden until the
   // `voice_ai_insights` feature flag is enabled in Railway.
   const voiceAiEnabled = featureFlags?.voiceAiInsights === true;
@@ -24,6 +25,10 @@ export function TopBar() {
     return () => window.removeEventListener('scroll', handleScroll);
   }, []);
 
+  useEffect(() => {
+    setNotificationOpen(false);
+  }, [location.pathname, setNotificationOpen]);
+
   return (
     <header
       className={`sticky top-0 z-10 h-16 flex items-center justify-between px-4 sm:px-6 bg-[#F8F7F4]/80 backdrop-blur-xl border-b border-[#E7E5E4] transition-shadow duration-200 ${
@@ -35,11 +40,20 @@ export function TopBar() {
       </div>
 
       <div className="flex items-center gap-2">
-        <button className="h-9 w-9 flex items-center justify-center rounded-lg text-[#57534E] hover:bg-[#F5F4F0] transition-colors">
+        <button
+          disabled
+          title="Search coming soon"
+          aria-label="Search (coming soon)"
+          className="h-9 w-9 flex items-center justify-center rounded-lg text-[#57534E] opacity-50 cursor-not-allowed transition-colors"
+        >
           <Search className="w-[18px] h-[18px]" />
         </button>
 
-        <button className="h-9 w-9 flex items-center justify-center rounded-lg text-[#57534E] hover:bg-[#F5F4F0] transition-colors">
+        <button
+          aria-label="Refresh page"
+          onClick={() => window.location.reload()}
+          className="h-9 w-9 flex items-center justify-center rounded-lg text-[#57534E] hover:bg-[#F5F4F0] transition-colors"
+        >
           <RefreshCw className="w-[18px] h-[18px]" />
         </button>
         {voiceAiEnabled && (
@@ -101,9 +115,13 @@ export function TopBar() {
                   ))}
                 </div>
                 <div className="px-4 py-2.5 text-center border-t border-[#F0EFEA]">
-                  <button className="text-xs text-[#D4650A] hover:underline font-medium">
+                  <Link
+                    to="/settings"
+                    onClick={() => setNotificationOpen(false)}
+                    className="text-xs text-[#D4650A] hover:underline font-medium"
+                  >
                     View all notifications
-                  </button>
+                  </Link>
                 </div>
               </div>
             </>
