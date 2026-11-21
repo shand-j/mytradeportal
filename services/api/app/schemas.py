@@ -3,6 +3,7 @@
 from datetime import UTC, date, datetime
 from decimal import Decimal, InvalidOperation
 from typing import Any, Literal
+from urllib.parse import urlparse
 from uuid import UUID
 
 from pydantic import (
@@ -106,6 +107,71 @@ class TenantUpdate(BaseModel):
     # time-saved metric; persisted verbatim into tenant.settings).
     quotes_per_week: int | None = Field(default=None, alias="quotesPerWeek")
     avg_minutes_per_quote: int | None = Field(default=None, alias="avgMinutesPerQuote")
+
+    @field_validator("website")
+    @classmethod
+    def validate_website(cls, value: str | None) -> str | None:
+        if value is None or not value.strip():
+            return None
+        parsed = urlparse(value.strip())
+        if (
+            parsed.scheme not in {"http", "https"}
+            or not parsed.hostname
+            or "." not in parsed.hostname
+        ):
+            raise ValueError("website must be a valid http:// or https:// URL")
+        return value.strip()
+
+    @field_validator("review_url")
+    @classmethod
+    def validate_review_url(cls, value: str | None) -> str | None:
+        if value is None or not value.strip():
+            return None
+        parsed = urlparse(value.strip())
+        if parsed.scheme != "https" or not parsed.hostname or "." not in parsed.hostname:
+            raise ValueError("review_url must be a valid https:// URL")
+        return value.strip()
+
+    @field_validator("quotes_per_week", "avg_minutes_per_quote")
+    @classmethod
+    def validate_workload_metric(cls, value: int | None) -> int | None:
+        if value is not None and value < 0:
+            raise ValueError("workload metrics must be zero or positive")
+        return value
+
+    @field_validator("settings")
+    @classmethod
+    def validate_settings_urls_and_metrics(
+        cls, value: dict[str, Any] | None
+    ) -> dict[str, Any] | None:
+        if value is None:
+            return None
+        website = value.get("website")
+        if isinstance(website, str) and website.strip():
+            parsed = urlparse(website.strip())
+            if (
+                parsed.scheme not in {"http", "https"}
+                or not parsed.hostname
+                or "." not in parsed.hostname
+            ):
+                raise ValueError("website must be a valid http:// or https:// URL")
+        review_url = value.get("review_url") or value.get("reviewUrl")
+        if isinstance(review_url, str) and review_url.strip():
+            parsed = urlparse(review_url.strip())
+            if parsed.scheme != "https" or not parsed.hostname or "." not in parsed.hostname:
+                raise ValueError("review_url must be a valid https:// URL")
+        for key in (
+            "quotes_per_week",
+            "quotesPerWeek",
+            "avg_minutes_per_quote",
+            "avgMinutesPerQuote",
+        ):
+            metric = value.get(key)
+            if metric is None:
+                continue
+            if isinstance(metric, bool) or not isinstance(metric, int) or metric < 0:
+                raise ValueError("workload metrics must be zero or positive whole numbers")
+        return value
 
 
 class TenantRead(BaseModel):

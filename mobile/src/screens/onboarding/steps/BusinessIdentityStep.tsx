@@ -32,8 +32,78 @@ export function BusinessIdentityStep({ data, onNext }: BusinessIdentityStepProps
   const [chStatus] = useState<"self_declared" | "verified" | "pending">(
     (data?.chStatus as "self_declared" | "verified" | "pending") ?? "self_declared"
   );
+  const [yearError, setYearError] = useState<string | null>(null);
+  const [websiteError, setWebsiteError] = useState<string | null>(null);
+  const [quotesError, setQuotesError] = useState<string | null>(null);
+  const [minutesError, setMinutesError] = useState<string | null>(null);
 
   const isLtd = structure === "ltd" || structure === "llp";
+  const currentYear = new Date().getFullYear();
+
+  const validateUrl = (raw: string): string | null => {
+    const value = raw.trim();
+    if (!value) return null;
+    try {
+      const parsed = new URL(value);
+      if (!/^https?:$/.test(parsed.protocol) || !parsed.hostname.includes(".")) {
+        return "Enter a full http:// or https:// website address.";
+      }
+      return null;
+    } catch {
+      return "Enter a full http:// or https:// website address.";
+    }
+  };
+
+  const validateAndContinue = () => {
+    const nextYearError = (() => {
+      const value = year.trim();
+      if (!value) return null;
+      if (!/^\d{4}$/.test(value)) return "Enter a valid four-digit year.";
+      const numeric = Number(value);
+      if (numeric < 1800 || numeric > currentYear) {
+        return `Enter a year between 1800 and ${currentYear}.`;
+      }
+      return null;
+    })();
+    const nextWebsiteError = validateUrl(website);
+    const nextQuotesError = (() => {
+      const value = quotesPerWeek.trim();
+      if (!value) return null;
+      const numeric = Number(value);
+      if (!Number.isInteger(numeric) || numeric < 0) {
+        return "Enter zero or a positive whole number.";
+      }
+      return null;
+    })();
+    const nextMinutesError = (() => {
+      const value = avgMinutesPerQuote.trim();
+      if (!value) return null;
+      const numeric = Number(value);
+      if (!Number.isInteger(numeric) || numeric < 0) {
+        return "Enter zero or a positive whole number.";
+      }
+      return null;
+    })();
+
+    setYearError(nextYearError);
+    setWebsiteError(nextWebsiteError);
+    setQuotesError(nextQuotesError);
+    setMinutesError(nextMinutesError);
+    if (nextYearError || nextWebsiteError || nextQuotesError || nextMinutesError) return;
+
+    onNext({
+      tradingName,
+      structure,
+      year: year.trim() || undefined,
+      website: website.trim() || undefined,
+      chNumber,
+      chStatus,
+      quotesPerWeek: quotesPerWeek.trim() ? parseInt(quotesPerWeek, 10) : undefined,
+      avgMinutesPerQuote: avgMinutesPerQuote.trim()
+        ? parseInt(avgMinutesPerQuote, 10)
+        : undefined,
+    });
+  };
 
   return (
     <ScrollView className="flex-1" keyboardShouldPersistTaps="handled">
@@ -94,54 +164,57 @@ export function BusinessIdentityStep({ data, onNext }: BusinessIdentityStepProps
         <FormField
           label="Year established"
           value={year}
-          onChangeText={setYear}
+          onChangeText={(value) => {
+            setYear(value);
+            setYearError(null);
+          }}
           placeholder="YYYY"
           keyboardType="number-pad"
           maxLength={4}
+          error={yearError}
         />
 
         <FormField
           label="Website / Facebook (optional)"
           value={website}
-          onChangeText={setWebsite}
+          onChangeText={(value) => {
+            setWebsite(value);
+            setWebsiteError(null);
+          }}
           placeholder="https://..."
           autoCapitalize="none"
           helper="Used to suggest a logo later."
+          error={websiteError}
         />
 
         <FormField
           label="Quotes you typically send per week"
           value={quotesPerWeek}
-          onChangeText={setQuotesPerWeek}
+          onChangeText={(value) => {
+            setQuotesPerWeek(value);
+            setQuotesError(null);
+          }}
           placeholder="e.g. 6"
           keyboardType="number-pad"
+          error={quotesError}
         />
 
         <FormField
           label="Average time per quote (minutes)"
           value={avgMinutesPerQuote}
-          onChangeText={setAvgMinutesPerQuote}
+          onChangeText={(value) => {
+            setAvgMinutesPerQuote(value);
+            setMinutesError(null);
+          }}
           placeholder="e.g. 45"
           keyboardType="number-pad"
           helper="Used to show how much time AI quoting saves you."
+          error={minutesError}
         />
 
         <Button
           title="Continue"
-          onPress={() =>
-            onNext({
-              tradingName,
-              structure,
-              year,
-              website,
-              chNumber,
-              chStatus,
-              quotesPerWeek: quotesPerWeek.trim() ? parseInt(quotesPerWeek, 10) || undefined : undefined,
-              avgMinutesPerQuote: avgMinutesPerQuote.trim()
-                ? parseInt(avgMinutesPerQuote, 10) || undefined
-                : undefined,
-            })
-          }
+          onPress={validateAndContinue}
           disabled={!tradingName}
         />
       </View>
