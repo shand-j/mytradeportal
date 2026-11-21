@@ -27,6 +27,9 @@ export class PortalApiError extends Error {
 
 export { SessionExpiredError }
 
+export const PORTAL_NETWORK_ERROR =
+  'Couldn’t send — check your connection and try again.'
+
 /* ------------------------------------------------------------------ */
 /* Public config                                                       */
 /* ------------------------------------------------------------------ */
@@ -78,7 +81,19 @@ function extractDetail(data: unknown): string {
   if (typeof detail === 'string') return detail
   if (Array.isArray(detail)) {
     return detail
-      .map((e) => (e && typeof e === 'object' ? ((e as { msg?: unknown }).msg ?? '') : String(e)))
+      .map((e) => {
+        if (!e || typeof e !== 'object') return String(e)
+        const item = e as { loc?: unknown; msg?: unknown }
+        const msg = typeof item.msg === 'string' ? item.msg.trim() : ''
+        if (!msg) return ''
+        if (Array.isArray(item.loc) && item.loc.length > 0) {
+          const field = String(item.loc[item.loc.length - 1])
+            .replace(/[_-]+/g, ' ')
+            .replace(/\b\w/g, (letter) => letter.toUpperCase())
+          return `${field}: ${msg}`
+        }
+        return msg
+      })
       .filter(Boolean)
       .join(' · ')
   }
@@ -94,6 +109,9 @@ async function parseError(res: Response): Promise<never> {
   }
   if (res.status === 404) throw new PortalApiError(detail || 'Not found.', 404)
   if (res.status === 429) throw new PortalApiError('Too many attempts — try again in a little while.', 429)
+  if (res.status >= 500) {
+    throw new PortalApiError('Something went wrong — please try again.', res.status)
+  }
   throw new PortalApiError(detail || 'Something went wrong — please try again.', res.status)
 }
 
@@ -162,30 +180,35 @@ export async function submitQuoteRequest(
   slug: string,
   input: QuoteRequestInput,
 ): Promise<QuoteRequestAck> {
-  const res = await fetch(`${API_BASE}/businesses/${encodeURIComponent(slug)}/quote-requests`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      contact: {
-        name: input.name,
-        email: input.email,
-        phone: input.phone || null,
-        address: input.address || null,
-        postcode: input.postcode || null,
-        ...(input.preferred_contact_method
-          ? { preferred_contact_method: input.preferred_contact_method }
-          : {}),
-      },
-      category: input.category || null,
-      title: input.description.slice(0, 80),
-      raw_text: input.description,
-      media_urls: input.media_urls,
-      preferred_dates: input.preferred_dates,
-      sync_check: input.sync_check,
-      entry_channel: input.entry_channel,
-      structured_data: input.structured_data ?? {},
-    }),
-  })
+  let res: Response
+  try {
+    res = await fetch(`${API_BASE}/businesses/${encodeURIComponent(slug)}/quote-requests`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        contact: {
+          name: input.name,
+          email: input.email,
+          phone: input.phone || null,
+          address: input.address || null,
+          postcode: input.postcode || null,
+          ...(input.preferred_contact_method
+            ? { preferred_contact_method: input.preferred_contact_method }
+            : {}),
+        },
+        category: input.category || null,
+        title: input.description.slice(0, 80),
+        raw_text: input.description,
+        media_urls: input.media_urls,
+        preferred_dates: input.preferred_dates,
+        sync_check: input.sync_check,
+        entry_channel: input.entry_channel,
+        structured_data: input.structured_data ?? {},
+      }),
+    })
+  } catch {
+    throw new PortalApiError(PORTAL_NETWORK_ERROR, 0)
+  }
   if (!res.ok) await parseError(res)
   return (await res.json()) as QuoteRequestAck
 }
@@ -194,10 +217,15 @@ export async function submitQuoteRequest(
 export async function uploadQuoteRequestImages(slug: string, files: File[]): Promise<string[]> {
   const form = new FormData()
   files.forEach((file) => form.append('files', file))
-  const res = await fetch(
-    `${API_BASE}/businesses/${encodeURIComponent(slug)}/quote-requests/uploads`,
-    { method: 'POST', body: form },
-  )
+  let res: Response
+  try {
+    res = await fetch(
+      `${API_BASE}/businesses/${encodeURIComponent(slug)}/quote-requests/uploads`,
+      { method: 'POST', body: form },
+    )
+  } catch {
+    throw new PortalApiError(PORTAL_NETWORK_ERROR, 0)
+  }
   if (!res.ok) await parseError(res)
   const data = (await res.json()) as { urls: string[] }
   return data.urls
