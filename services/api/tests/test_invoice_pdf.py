@@ -16,7 +16,8 @@ pytestmark = pytest.mark.asyncio
 async def _create_tenant(client: AsyncClient, slug: str) -> dict[str, Any]:
     response = await client.post("/tenants", json={"slug": slug, "name": f"{slug} Ltd"})
     assert response.status_code == 201
-    return response.json()
+    data: dict[str, Any] = response.json()
+    return data
 
 
 async def _create_contact(client: AsyncClient, tenant_id: str, name: str) -> dict[str, Any]:
@@ -26,7 +27,8 @@ async def _create_contact(client: AsyncClient, tenant_id: str, name: str) -> dic
         json={"name": name, "email": f"{name.lower().replace(' ', '.')}@example.com"},
     )
     assert response.status_code == 201
-    return response.json()
+    data: dict[str, Any] = response.json()
+    return data
 
 
 async def _create_invoice(client: AsyncClient, tenant_id: str, contact_id: str) -> dict[str, Any]:
@@ -47,7 +49,8 @@ async def _create_invoice(client: AsyncClient, tenant_id: str, contact_id: str) 
         },
     )
     assert response.status_code == 201
-    return response.json()
+    data: dict[str, Any] = response.json()
+    return data
 
 
 async def test_invoice_pdf_endpoint_returns_valid_pdf(client: AsyncClient) -> None:
