@@ -479,6 +479,16 @@ async def update_job(
     previous_start = job.scheduled_start
     for key, value in changes.items():
         setattr(job, key, value)
+    if (
+        job.scheduled_start is not None
+        and job.scheduled_end is not None
+        and job.scheduled_end <= job.scheduled_start
+    ):
+        await db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="scheduled_end must be after scheduled_start",
+        )
     if "scheduled_start" in changes or "scheduled_end" in changes:
         appointments = await _sync_linked_appointments(db, tenant.id, job, previous_start)
         # Guardrails run after the new spans are known but before the booking

@@ -263,6 +263,8 @@ async def test_reversed_or_zero_schedule_windows_rejected_on_update(
     for patch in (
         {"scheduled_start": "2026-02-01T10:00:00", "scheduled_end": "2026-02-01T09:00:00"},
         {"scheduled_start": "2026-02-01T10:00:00", "scheduled_end": "2026-02-01T10:00:00"},
+        {"scheduled_start": "2026-02-01T11:00:00"},
+        {"scheduled_end": "2026-02-01T08:00:00"},
     ):
         response = await admin_client.patch(f"/jobs/{job_id}", json=patch)
         assert response.status_code == 422
@@ -281,6 +283,8 @@ async def test_reversed_or_zero_schedule_windows_rejected_on_update(
     for patch in (
         {"start_at": "2026-02-01T14:00:00", "end_at": "2026-02-01T13:00:00"},
         {"start_at": "2026-02-01T14:00:00", "end_at": "2026-02-01T14:00:00"},
+        {"start_at": "2026-02-01T14:00:00"},
+        {"end_at": "2026-02-01T11:00:00"},
     ):
         response = await admin_client.patch(f"/appointments/{appointment_id}", json=patch)
         assert response.status_code == 422
@@ -325,3 +329,17 @@ async def test_back_to_back_and_dst_normalized_windows_still_work(
     body = dst.json()
     assert body["start_at"] == "2026-03-29T00:30:00"
     assert body["end_at"] == "2026-03-29T01:30:00"
+
+
+@pytest.mark.parametrize("endpoint", ["/quotes", "/invoices"])
+async def test_document_line_requires_explicit_unit_price(
+    admin_client: AsyncClient,
+    endpoint: str,
+) -> None:
+    contact_id = await _create_contact(admin_client)
+    payload = _document_payload(endpoint, contact_id)
+    payload["line_items"] = [{"description": "Labour", "quantity": "1"}]
+
+    response = await admin_client.post(endpoint, json=payload)
+
+    assert response.status_code == 422

@@ -366,7 +366,7 @@ class ContactRead(BaseModel):
 class QuoteLineItemCreate(BaseModel):
     description: str
     quantity: PositiveLineQuantity = Decimal("1.00")
-    unit_price: PositiveLineUnitPrice = Decimal("1.0000")
+    unit_price: PositiveLineUnitPrice
     # None = the client did not send a unit (both first-party clients omit it
     # when round-tripping line items). Create coalesces to "ea"; update
     # preserves the stored line's unit so a unitless PATCH can neither reset
@@ -1085,7 +1085,7 @@ class AppointmentRead(BaseModel):
 class InvoiceLineItemCreate(BaseModel):
     description: str
     quantity: PositiveLineQuantity = Decimal("1.00")
-    unit_price: PositiveLineUnitPrice = Decimal("1.0000")
+    unit_price: PositiveLineUnitPrice
 
     @field_validator("description")
     @classmethod

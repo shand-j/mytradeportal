@@ -200,6 +200,12 @@ async def update_appointment(
         await _validate_assignee(db, tenant.id, changes["assigned_user_id"])
     for key, value in changes.items():
         setattr(appointment, key, value)
+    if appointment.end_at <= appointment.start_at:
+        await db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="end_at must be after start_at",
+        )
     schedule_changed = "start_at" in changes or "end_at" in changes
     if (
         schedule_changed or "assigned_user_id" in changes
