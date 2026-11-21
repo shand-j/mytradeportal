@@ -23,7 +23,11 @@ test('beta pricing surface excludes unavailable features and billing claims', as
 })
 
 test('beta pricing surface excludes unavailable features and billing claims', async ({ page }) => {
+  const flagsLoaded = page.waitForResponse(
+    (response) => new URL(response.url()).pathname.endsWith('/feature-flags') && response.ok(),
+  )
   await page.goto('/')
+  await flagsLoaded
 
   const pricing = page.locator('#pricing')
   await expect(pricing).toBeVisible()
