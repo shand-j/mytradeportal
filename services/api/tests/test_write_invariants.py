@@ -263,7 +263,6 @@ async def test_reversed_or_zero_schedule_windows_rejected_on_update(
     for patch in (
         {"scheduled_start": "2026-02-01T10:00:00", "scheduled_end": "2026-02-01T09:00:00"},
         {"scheduled_start": "2026-02-01T10:00:00", "scheduled_end": "2026-02-01T10:00:00"},
-        {"scheduled_start": "2026-02-01T11:00:00"},
         {"scheduled_end": "2026-02-01T08:00:00"},
     ):
         response = await admin_client.patch(f"/jobs/{job_id}", json=patch)
@@ -343,3 +342,27 @@ async def test_document_line_requires_explicit_unit_price(
     response = await admin_client.post(endpoint, json=payload)
 
     assert response.status_code == 422
+
+
+async def test_job_start_only_reschedule_preserves_duration(
+    admin_client: AsyncClient,
+) -> None:
+    contact_id = await _create_contact(admin_client)
+    created = await admin_client.post(
+        "/jobs",
+        json={
+            "contact_id": contact_id,
+            "title": "Duration-preserving reschedule",
+            "scheduled_start": "2026-02-01T09:00:00",
+            "scheduled_end": "2026-02-01T10:00:00",
+        },
+    )
+    assert created.status_code == 201, created.text
+
+    moved = await admin_client.patch(
+        f"/jobs/{created.json()['id']}",
+        json={"scheduled_start": "2026-02-01T11:00:00"},
+    )
+
+    assert moved.status_code == 200, moved.text
+    assert moved.json()["scheduled_end"] == "2026-02-01T12:00:00"

@@ -477,8 +477,17 @@ async def update_job(
     if assignee_changed:
         await _validate_assignee(db, tenant.id, changes["assigned_user_id"])
     previous_start = job.scheduled_start
+    previous_end = job.scheduled_end
     for key, value in changes.items():
         setattr(job, key, value)
+    if (
+        "scheduled_start" in changes
+        and "scheduled_end" not in changes
+        and previous_start is not None
+        and previous_end is not None
+        and job.scheduled_start is not None
+    ):
+        job.scheduled_end = previous_end + (job.scheduled_start - previous_start)
     if (
         job.scheduled_start is not None
         and job.scheduled_end is not None
