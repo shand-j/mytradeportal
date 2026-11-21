@@ -24,12 +24,8 @@ SECRET_ENV_NAMES = (
 )
 
 BEARER_PATTERN = re.compile(r"(?i)\bbearer\s+[A-Za-z0-9._~+/-]+={0,2}")
-JWT_PATTERN = re.compile(
-    r"\beyJ[A-Za-z0-9_-]*\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\b"
-)
-COOKIE_PATTERN = re.compile(
-    r"(?i)\b(?:session|access_token|refresh_token|auth_token|jwt)=[^;\s,]+"
-)
+JWT_PATTERN = re.compile(r"\beyJ[A-Za-z0-9_-]*\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\b")
+COOKIE_PATTERN = re.compile(r"(?i)\b(?:session|access_token|refresh_token|auth_token|jwt)=[^;\s,]+")
 
 
 def redact(text: str, extra_secrets: Iterable[str] = ()) -> str:
@@ -40,7 +36,9 @@ def redact(text: str, extra_secrets: Iterable[str] = ()) -> str:
             redacted = redacted.replace(secret, "[REDACTED]")
     redacted = BEARER_PATTERN.sub("[REDACTED]", redacted)
     redacted = JWT_PATTERN.sub("[REDACTED]", redacted)
-    redacted = COOKIE_PATTERN.sub(lambda match: match.group(0).split("=", 1)[0] + "=[REDACTED]", redacted)
+    redacted = COOKIE_PATTERN.sub(
+        lambda match: match.group(0).split("=", 1)[0] + "=[REDACTED]", redacted
+    )
     return redacted
 
 
