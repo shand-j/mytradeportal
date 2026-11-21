@@ -6,6 +6,7 @@ import { useUiStore } from '@/stores/uiStore';
 import { StatusPill } from '@/components/shared/StatusPill';
 import { toast } from 'sonner';
 import { useContacts } from '@/lib/api/hooks';
+import { formatGBP } from '@/lib/utils';
 
 export function QuotesList() {
   const setPageTitle = useUiStore(s => s.setPageTitle);
@@ -21,6 +22,7 @@ export function QuotesList() {
   const [statusFilter, setStatusFilter] = useState('all');
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [isAiDialogOpen, setIsAiDialogOpen] = useState(false);
+  const [createError, setCreateError] = useState('');
 
   useEffect(() => {
     setPageTitle('Quotes');
@@ -73,9 +75,12 @@ export function QuotesList() {
       {
         onSuccess: () => {
           toast.success('Quote created');
+          setCreateError('');
           setIsDialogOpen(false);
         },
-        onError: (err) => toast.error(err.message || 'Failed to create quote'),
+        onError: () => setCreateError(
+          'The quote could not be saved. Check the quantities and prices, then try again.',
+        ),
       }
     );
   };
@@ -126,7 +131,7 @@ export function QuotesList() {
             Generate with AI
           </button>
           <button
-            onClick={() => setIsDialogOpen(true)}
+            onClick={() => { setCreateError(''); setIsDialogOpen(true); }}
             className="h-9 px-4 flex items-center gap-2 rounded-lg bg-[#D4650A] text-white text-xs font-semibold uppercase tracking-[0.05em] hover:bg-[#B85500] transition-colors"
           >
             <Plus className="w-4 h-4" />
@@ -198,7 +203,7 @@ export function QuotesList() {
                     </div>
                   </td>
                   <td className="px-4 py-3 text-sm text-[#57534E]">{quote.serviceType}</td>
-                  <td className="px-4 py-3 text-sm font-semibold text-[#1C1917] text-right">£{quote.total.toLocaleString()}</td>
+                  <td className="px-4 py-3 text-sm font-semibold text-[#1C1917] text-right">{formatGBP(quote.total)}</td>
                   <td className="px-4 py-3"><StatusPill status={quote.status} /></td>
                   <td className="px-4 py-3 text-xs text-[#78716C]">{new Date(quote.createdAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}</td>
                   <td className="px-4 py-3 text-center">
@@ -234,7 +239,7 @@ export function QuotesList() {
         )}
       </div>
 
-      {isDialogOpen && <QuoteDialog contacts={contacts ?? []} onClose={() => setIsDialogOpen(false)} onSubmit={handleCreate} isSubmitting={createQuote.isPending} />}
+      {isDialogOpen && <QuoteDialog contacts={contacts ?? []} onClose={() => setIsDialogOpen(false)} onSubmit={handleCreate} isSubmitting={createQuote.isPending} createError={createError} />}
       {isAiDialogOpen && (
         <AiQuoteDialog
           contacts={contacts ?? []}
@@ -261,6 +266,7 @@ function QuoteDialog({
   onClose,
   onSubmit,
   isSubmitting,
+  createError,
 }: {
   contacts: { id: string; firstName: string; lastName: string }[];
   onClose: () => void;
@@ -272,15 +278,50 @@ function QuoteDialog({
     lineItems: { description: string; quantity: number; unit: string; unitPrice: number }[];
   }) => void;
   isSubmitting: boolean;
+  createError: string;
 }) {
   const [customerId, setCustomerId] = useState('');
   const [reference, setReference] = useState('');
   const [serviceType, setServiceType] = useState('');
   const [propertyAddress, setPropertyAddress] = useState('');
   const [description, setDescription] = useState('');
-  const [quantity, setQuantity] = useState(1);
+  const [quantity, setQuantity] = useState('1');
   const [unit, setUnit] = useState('item');
-  const [unitPrice, setUnitPrice] = useState(0);
+  const [unitPrice, setUnitPrice] = useState('0');
+  const [numericError, setNumericError] = useState('');
+
+  const validateAndSubmit = () => {
+    const quantityNumber = Number(quantity);
+    const unitPriceNumber = Number(unitPrice);
+    if (!quantity.trim() || !Number.isFinite(quantityNumber) || quantityNumber < 0) {
+      setNumericError('Quantity must be a finite number that is not negative');
+      return;
+    }
+    if (quantityNumber > 99_999_999.99) {
+      setNumericError('Quantity is too large');
+      return;
+    }
+    if (!unitPrice.trim() || !Number.isFinite(unitPriceNumber) || unitPriceNumber < 0) {
+      setNumericError('Unit price must be a finite number that is not negative');
+      return;
+    }
+    if (unitPriceNumber > 99_999_999.9999) {
+      setNumericError('Unit price is too large');
+      return;
+    }
+    if (!unit.trim()) {
+      setNumericError('Unit is required');
+      return;
+    }
+    setNumericError('');
+    onSubmit({
+      customerId,
+      reference,
+      serviceType,
+      propertyAddress,
+      lineItems: [{ description, quantity: quantityNumber, unit: unit.trim(), unitPrice: unitPriceNumber }],
+    });
+  };
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
@@ -304,17 +345,19 @@ function QuoteDialog({
             <label className="block text-[11px] font-semibold uppercase text-[#78716C] mb-1">Line Item</label>
             <input placeholder="Description" value={description} onChange={e => setDescription(e.target.value)} className="w-full h-10 px-3 text-sm border border-[#E7E5E4] rounded-lg focus:outline-none focus:border-[#D4650A] mb-2" />
             <div className="grid grid-cols-3 gap-2">
-              <input type="number" min={1} value={quantity} onChange={e => setQuantity(Number(e.target.value))} className="h-10 px-3 text-sm border border-[#E7E5E4] rounded-lg focus:outline-none focus:border-[#D4650A]" />
-              <input placeholder="Unit" value={unit} onChange={e => setUnit(e.target.value)} className="h-10 px-3 text-sm border border-[#E7E5E4] rounded-lg focus:outline-none focus:border-[#D4650A]" />
-              <input type="number" min={0} value={unitPrice} onChange={e => setUnitPrice(Number(e.target.value))} className="h-10 px-3 text-sm border border-[#E7E5E4] rounded-lg focus:outline-none focus:border-[#D4650A]" />
+              <input type="number" min={0} max={99_999_999.99} value={quantity} onChange={e => { setQuantity(e.target.value); setNumericError(''); }} className="h-10 px-3 text-sm border border-[#E7E5E4] rounded-lg focus:outline-none focus:border-[#D4650A]" />
+              <input placeholder="Unit" value={unit} onChange={e => { setUnit(e.target.value); setNumericError(''); }} className="h-10 px-3 text-sm border border-[#E7E5E4] rounded-lg focus:outline-none focus:border-[#D4650A]" />
+              <input type="number" min={0} max={99_999_999.9999} value={unitPrice} onChange={e => { setUnitPrice(e.target.value); setNumericError(''); }} className="h-10 px-3 text-sm border border-[#E7E5E4] rounded-lg focus:outline-none focus:border-[#D4650A]" />
             </div>
+            {numericError && <p role="alert" className="mt-2 text-sm text-[#B91C1C]">{numericError}</p>}
+            {createError && <p role="alert" className="mt-2 text-sm text-[#B91C1C]">{createError}</p>}
           </div>
         </div>
         <div className="flex justify-end gap-2 pt-2">
           <button onClick={onClose} className="h-9 px-4 text-sm font-medium text-[#57534E] hover:bg-[#F5F4F0] rounded-lg">Cancel</button>
           <button
             disabled={isSubmitting || !customerId || !reference || !serviceType}
-            onClick={() => onSubmit({ customerId, reference, serviceType, propertyAddress, lineItems: [{ description, quantity, unit, unitPrice }] })}
+            onClick={validateAndSubmit}
             className="h-9 px-4 text-sm font-semibold bg-[#D4650A] text-white rounded-lg hover:bg-[#B85500] disabled:opacity-50"
           >
             {isSubmitting ? 'Saving...' : 'Create Quote'}

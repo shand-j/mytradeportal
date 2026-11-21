@@ -136,6 +136,25 @@ describe('quote hooks', () => {
     expect((result.current.data as Quote).status).toBe('sent');
   });
 
+  it('maps description to service and preserves line units', async () => {
+    mockFetch.mockResolvedValueOnce(mockQuoteResponse('q-units', {
+      title: 'Q-UNITS',
+      description: 'Consumer unit replacement - 1 Test Road',
+      line_items: [
+        { id: 'li-hour', description: 'Labour', quantity: 2, unit_price: 50, unit: 'hour', total: 100 },
+        { id: 'li-day', description: 'Day rate', quantity: 1, unit_price: 350, unit: 'day', total: 350 },
+      ],
+    }));
+
+    const { result } = renderHookNoAuth(() => useQuote('q-units'));
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+
+    const quote = result.current.data as Quote;
+    expect(quote.serviceType).toBe('Consumer unit replacement');
+    expect(quote.propertyAddress).toBe('1 Test Road');
+    expect(quote.lineItems.map((line) => line.unit)).toEqual(['hour', 'day']);
+  });
+
   it('useQuote does not fetch when the id is empty', () => {
     renderHookNoAuth(() => useQuote(''));
     expect(mockFetch).not.toHaveBeenCalled();
