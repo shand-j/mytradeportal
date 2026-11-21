@@ -16,5 +16,5 @@ test('help content describes the free beta without paid-trial claims', async ({ 
 test('blog states scheduling and job tracking are available', async ({ page }) => {
   await page.goto('/blog/tradify-jobber-alternatives')
   await expect(page.getByText(/Scheduling and job tracking are available/i)).toBeVisible()
-  await expect(page.getByText(/we don’t yet do scheduling or job tracking/i)).toHaveCount(0)
+  await expect(page.getByText(/we (?:don’t|don't) yet do scheduling or job tracking/i)).toHaveCount(0)
 })
