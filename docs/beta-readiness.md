@@ -173,14 +173,14 @@ missing. A green implementation PR alone never closes a live gate.
 | Gate | Status | Current evidence and remaining work |
 |---|---|---|
 | G1 | IN PROGRESS | This rebaseline updates the tracker. Copilot and the owner are assigned to every action. CI/reproducibility additions are #76 and #377. |
-| G2 | BLOCKED | #52 has no production OWASP/tenancy verdict and required dedicated test-tenant secrets are absent. Node audit passes (30 findings, four high ignored); Python reports 174 advisories across 20 packages, with 171 fixable records requiring severity/package triage in #53. |
+| G2 | BLOCKED | #52 has no production OWASP/tenancy verdict and required dedicated test-tenant secrets are absent. #427 confirms raw LLM provider exceptions cross API/UI boundaries and must be sanitized. Node audit passes (30 findings, four high ignored); Python reports 174 advisories across 20 packages and the nested landing audit reports 11 fixable highs, requiring triage in #53. |
 | G3 | PASS | Railway Signals has no entries, so `paddle_billing` defaults false. Production `/` and `/subscribe` show free-beta copy and make no `paddle.com` requests; delayed/cancelled events do not lock access out. #322 stays open only for the current staging-suite run URL before final sign-off. |
 | G4 | BLOCKED | #323 has runbook/validation only. No isolated production restore, RPO/RTO measurement, media/Qdrant recovery or teardown evidence exists. Fresh-volume storage provisioning remains #315. |
 | G5 | BLOCKED (card path) | #44, #45 and #32 are reopened because current configuration, device KYC and real-card evidence is absent. #355 needs owner/legal liability approval. #30 is a confirmed webhook-safety defect. Bank-transfer-only remains an alternative, not evidence for Stripe. |
-| G6 | BLOCKED | #30: Stripe, Paddle and Telnyx all write their dedupe record before handler success, so a transient failure can become a permanent `duplicate`. #369 tracks non-VAT fixtures that currently block staging journeys; #387 requires write-side money/schedule invariants after reproduced invalid inputs. VAT #324 has automated regression coverage; device VAT save/send evidence belongs to G7. |
+| G6 | BLOCKED | #30: Stripe, Paddle and Telnyx all write their dedupe record before handler success, so a transient failure can become a permanent `duplicate`. #369 tracks non-VAT fixtures that currently block staging journeys; #387 requires write-side money/schedule invariants after reproduced invalid inputs; #388 covers duplicate invoice-from-job creation. VAT #324 has automated regression coverage; device VAT save/send evidence belongs to G7. |
 | G7 | BLOCKED | No single current TestFlight build has the full matrix. #36, #92, #325 and #326 were reopened. #102 remains open; #181 needs Apple Calendar device proof; #313 refresh-loop is unverified and a hard fail if reproduced. |
 | G8 | BLOCKED | `/terms` and `/privacy` are placeholders, not approved documents. #327, #69, #70 and #83 require legal/compliance approval and publication/link evidence. `/fair-use` content matches current ~500/month cheap-route/no-hard-block behavior but still needs approval. |
-| G9 | IN PROGRESS | Main CI and production/staging readiness pass, but current-SHA staging E2E `44879790207` failed at API deployment. The preceding #391 run found missing Mailpit networking, VAT fixture failures (#369), and AI provider timeouts (#429). Mailpit is now restored and authenticated, but no complete rerun has passed. #373 also tracks public pricing that contradicts free-beta scope. #313 and #315 remain open; #382 landed bounded CI/stale-run handling and #377 still needs deterministic landing installs/builds. #378 is post-beta only because `web/app` is parked. |
+| G9 | IN PROGRESS | Main CI and production/staging readiness pass, but current-SHA staging E2E `44879790207` failed at API deployment. The preceding #391 run found missing Mailpit networking, VAT fixture failures (#369), and AI provider timeouts (#429). Mailpit is now restored and authenticated, but no complete rerun has passed. #373 tracks pricing scope drift; #405 blocks quote/invoice PDF downloads; #427 requires safe provider errors. #313 and #315 remain open; #382 landed bounded CI/stale-run handling and #377 still needs deterministic landing installs/builds. #378 is post-beta only because `web/app` is parked. |
 
 ### Additional confirmed findings
 
@@ -192,11 +192,23 @@ missing. A green implementation PR alone never closes a live gate.
   web/OCERP resources and invalid MinIO startup configuration. Persistent
   RustFS environments are healthy, but fresh PR volumes required manual
   ownership repair; both belong to #315.
+- Exploratory QA run `hunt-2026-11-20T22-42-01` at `485841e` recorded 31 raw
+  findings (3 Critical, 1 High, 22 Medium, 5 Low), grouped into 18 non-overlapping
+  Copilot assignments. In addition to the release blockers in the scorecard, it
+  confirmed #370/#371 (test/lint harness), #388 (duplicate invoices),
+  #406/#407/#409 (parked web back-office), #411/#413/#415/#417 (landing/portal),
+  and #419/#421/#423 (mobile auth/onboarding). The production public AI demo
+  passed in 6.1s and offline evals passed 15/15; neither offsets the staging and
+  native-device gates. The run's sanitized evidence remains under
+  `reports/qa/hunt-2026-11-20T22-42-01/` (gitignored).
 - The local full suite recorded 1,311 passes plus two database-connection
   resets, and both failed tests passed on rerun. Main CI is the authoritative
-  current-SHA green run. Web unit tests pass (163), as do landing build/type
-  checks and mobile TypeScript. The parked `web/app` build failure is tracked
-  separately in #378 and does not block concierge beta.
+  current-SHA green run. The QA run recorded 163 web unit tests and web
+  lint/build passing; a separate local production build failed under Vite
+  8.3.5/lightningcss (#378), so that result is environment-specific rather than
+  a reproducible-build pass. Landing build/type checks and mobile TypeScript
+  passed, while landing lint has 33 errors (#370). The parked `web/app` build
+  work remains post-beta.
 - `pip-audit` is report-only and does not provide severity metadata here. Its
   174 findings require triage, not an assumption that every item is critical or
   that the current tree is safe (#53).
@@ -219,11 +231,12 @@ Execute in this order:
 
 1. Rebaseline documentation/tracking and CI reproducibility (#315, #377; #382
    landed the stale-run/bounded-runtime work).
-2. Production application security and dependency triage (#52, #53), then webhook
-   failure safety (#30) and reproduced write invariants (#387).
+2. Production application security and dependency triage (#52, #53), provider-error
+   sanitisation (#427), then webhook failure safety (#30), duplicate-invoice
+   prevention (#388), and reproduced write invariants (#387).
 3. Close free-beta billing evidence (#322) and align public pricing (#373) after
-   the current staging suite; repair VAT fixtures (#369) and AI staging paths
-   (#429) rather than excluding their failures.
+   the current staging suite; repair VAT fixtures (#369), PDF downloads (#405),
+   and AI staging paths (#429) rather than excluding their failures.
 4. Execute the isolated restore drill (#323).
 5. Either approve bank-transfer-only or complete the Stripe chain
    (#355 → #44 → #45 → #32).
