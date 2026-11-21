@@ -144,6 +144,7 @@ export const useAuthStore = create<AuthState>((set) => ({
       // Let callers distinguish "server unreachable" from bad credentials
       // (the latter surface as `false` so the screen can show a 401 message).
       if (err instanceof NetworkError) throw err;
+      if (err instanceof ApiError && err.status === 429) throw err;
       return false;
     }
   },

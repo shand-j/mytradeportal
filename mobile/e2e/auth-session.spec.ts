@@ -1,5 +1,14 @@
 import { test } from "@playwright/test";
-import { createTestTenant, expect, loginAsTradeOwner, sleep } from "./helpers";
+import {
+  createTestTenant,
+  expect,
+  fill,
+  gotoEntryRole,
+  loginAsTradeOwner,
+  sleep,
+  tap,
+  waitText,
+} from "./helpers";
 
 test.describe.serial("Auth/session restore regressions", () => {
   test("restores trade session after cold reload", async ({ page }) => {
@@ -53,5 +62,27 @@ test.describe.serial("Auth/session restore regressions", () => {
     const onboardingContinue = page.getByText("Continue", { exact: false }).first();
     await dashboardTab.or(onboardingContinue).waitFor({ state: "visible", timeout: 30_000 });
     await expect(page.locator('[data-testid="role-select"]')).toHaveCount(0);
+  });
+
+  test("rate-limited login shows throttling guidance instead of invalid credentials", async ({
+    page,
+  }) => {
+    await page.route("**/auth/token", (route) =>
+      route.fulfill({
+        status: 429,
+        contentType: "application/json",
+        body: JSON.stringify({ detail: "rate limited" }),
+      })
+    );
+
+    await gotoEntryRole(page, "trade");
+    await tap(page, "entry-trade-login");
+    await waitText(page, "Electrician login");
+    await fill(page, "login-email", "owner@example.com");
+    await fill(page, "login-password", "not-a-real-password");
+    await tap(page, "login-submit");
+
+    await waitText(page, "Too many sign-in attempts. Please wait a minute and try again.");
+    await expect(page.getByText("Invalid email or password.")).toHaveCount(0);
   });
 });
