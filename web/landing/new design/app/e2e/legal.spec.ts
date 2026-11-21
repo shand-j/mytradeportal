@@ -8,8 +8,8 @@ test("legal routes render and expose policy links", async ({ page }) => {
   await page.goto("/privacy");
   await expect(page.getByRole("heading", { name: "Privacy notice" })).toBeVisible();
   await expect(page.getByRole("link", { name: "Terms", exact: true }).first()).toBeVisible();
-  await expect(page.getByText("AI-assisted quotes")).toBeVisible();
-  await expect(page.getByText("Retention and access controls")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "AI-assisted quotes" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Retention and access controls" })).toBeVisible();
 
   await page.goto("/fair-use");
   await expect(page.getByRole("heading", { name: "Fair-use policy" })).toBeVisible();

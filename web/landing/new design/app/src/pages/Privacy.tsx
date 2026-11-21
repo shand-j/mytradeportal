@@ -60,8 +60,9 @@ export default function Privacy() {
           <h2 className="font-display text-lg font-extrabold uppercase">Retention and access controls</h2>
           <p className="mt-2 text-[var(--muted)]">
             Records are retained only for their stated purpose and applicable
-            legal period. UK financial records are retained for 6 years;
-            draft, declined or expired quotes are retained for 24 months.
+            legal period. UK financial records are retained for 6 years from
+            the end of the relevant financial year; draft, declined or expired
+            quotes are retained for 24 months.
             Offboarding immediately revokes access, deactivates accounts and
             anonymises personal data. Tenant isolation, role-based access and
             encrypted storage and transport are used to restrict access.
