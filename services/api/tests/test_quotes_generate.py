@@ -21,6 +21,7 @@ from app.models import (
     QuoteRequest,
     Tenant,
 )
+from app.rag.errors import LLM_TIMEOUT, LLMProviderError
 from app.rls import set_tenant_in_session
 from httpx import AsyncClient
 from mtp_shared import BoQGenerateResponse, BoQLineItem
@@ -51,6 +52,47 @@ async def _create_contact(client: AsyncClient, tenant_id: str, name: str) -> dic
     )
     assert response.status_code == 201
     return response.json()  # type: ignore[no-any-return]
+
+
+@pytest.mark.asyncio
+async def test_generate_quote_provider_timeout_returns_safe_error_without_quote(
+    client: AsyncClient, db: AsyncSession
+) -> None:
+    tenant = await _create_tenant(client, f"timeout-{uuid4().hex[:8]}")
+    contact = await _create_contact(client, tenant["id"], "Timeout Customer")
+
+    with (
+        patch(
+            "app.routers.quotes.search_cost_items_with_status",
+            new=AsyncMock(return_value=([], "not_found")),
+        ),
+        patch(
+            "app.routers.quotes.generate_quote_from_prompt",
+            new=AsyncMock(
+                side_effect=LLMProviderError(
+                    LLM_TIMEOUT,
+                    "APITimeoutError sk-live-fake-secret-litellm timeout value=30",
+                )
+            ),
+        ),
+    ):
+        response = await client.post(
+            "/quotes/generate",
+            headers={"X-Tenant-ID": tenant["id"]},
+            json={
+                "contact_id": contact["id"],
+                "description": "Replace my consumer unit",
+                "use_ocerp": False,
+            },
+        )
+
+    assert response.status_code == 503
+    body = response.json()
+    assert body["detail"]["code"] == LLM_TIMEOUT
+    assert "APITimeoutError" not in str(body)
+    assert "sk-live-fake-secret-litellm" not in str(body)
+    quotes = await client.get("/quotes", headers={"X-Tenant-ID": tenant["id"]})
+    assert quotes.json() == []
 
 
 @pytest.mark.asyncio
@@ -1021,7 +1063,9 @@ async def test_refine_quote_times_out_with_retryable_503(
         )
 
     assert response.status_code == 503
-    assert "too long" in response.json()["detail"]
+    detail = response.json()["detail"]
+    assert detail["code"] == "llm_timeout"
+    assert "too long" in detail["reason"]
 
 
 @pytest.mark.asyncio

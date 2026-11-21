@@ -16,7 +16,7 @@ import { updateQuote, useRateQuoteRefinement, useRefineQuote, useSendQuote, useU
 import { useQuoteRoundingIncrement } from "../../api/businesses";
 import { useLead } from "../../api/quoteRequests";
 import { startDirectThread } from "../../api/communications";
-import { ApiError, NetworkError } from "../../lib/apiClient";
+import { ApiError, NetworkError, safeLlmErrorMessage } from "../../lib/apiClient";
 import { formatMoneyGBP, roundUpToIncrement } from "../../lib/format";
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -387,7 +387,10 @@ export function QuoteEditScreen({
         err instanceof NetworkError
           ? "Refining took too long or the connection dropped. Your quote is unchanged — please try again."
           : err instanceof ApiError
-            ? err.detail
+            ? safeLlmErrorMessage(
+                err,
+                "Couldn't refine the quote. Your existing quote is unchanged — please try again."
+              )
             : "Couldn't refine the quote. Please try again.";
       setRefineError(message);
     }

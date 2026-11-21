@@ -7,6 +7,7 @@ from uuid import UUID, uuid4
 
 import pytest
 from app.models import Communication, Contact, QuoteRequest, User
+from app.rag.errors import LLM_RATE_LIMIT, LLMProviderError
 from app.rls import set_tenant_in_session
 from app.security import get_password_hash
 from httpx import AsyncClient
@@ -218,6 +219,39 @@ async def _seed_thread_at_turn_cap(
     await db.flush()
 
 
+async def test_ai_followup_provider_failure_is_sanitized_and_not_persisted(
+    admin_client: AsyncClient, db: AsyncSession
+) -> None:
+    tenant_id = UUID(admin_client.headers["X-Tenant-ID"])
+    quote_request = await _create_lead(db, tenant_id)
+
+    with patch(
+        "app.routers.communications.generate_followup",
+        new=AsyncMock(
+            side_effect=LLMProviderError(
+                LLM_RATE_LIMIT,
+                "RateLimitError: sk-live-fake-secret-litellm",
+            )
+        ),
+    ) as followup:
+        response = await admin_client.post(f"/communications/{quote_request.id}/ai-followup")
+
+    assert response.status_code == 503
+    assert response.json()["detail"]["code"] == LLM_RATE_LIMIT
+    assert "sk-live-fake-secret-litellm" not in response.text
+    assert "RateLimitError" not in response.text
+    assert followup.await_count == 1
+
+    messages = await db.scalars(
+        select(Communication).where(
+            Communication.quote_request_id == quote_request.id,
+            Communication.sender_role == "ai",
+        )
+    )
+    assert list(messages.all()) == []
+
+
+@pytest.mark.asyncio
 async def test_ai_followup_dedupes_unanswered_question(
     admin_client: AsyncClient, db: AsyncSession
 ) -> None:

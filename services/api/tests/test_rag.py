@@ -12,6 +12,12 @@ import pytest
 from app import config as generation_config
 from app.database import AsyncSessionLocal
 from app.models import CostItem, QuoteRequest
+from app.rag.errors import (
+    LLM_AUTH_ERROR,
+    LLM_TIMEOUT,
+    provider_error_from,
+    public_llm_error,
+)
 from app.rag.generation import (
     FOLLOWUP_SYSTEM_PROMPT,
     JOB_SUMMARY_SYSTEM_PROMPT,
@@ -1720,3 +1726,32 @@ def test_validate_generated_quote_itemised_reports_line_style() -> None:
     )
     assert result["line_style"] == "itemised"
     assert result["confidence"] == 0.0
+
+
+def test_llm_provider_error_redacts_credentials_and_public_detail_is_safe() -> None:
+    class AuthenticationError(Exception):
+        status_code = 401
+
+    exc = AuthenticationError(
+        "AuthenticationError: sk-live-super-secret leaked; Authorization: ******"
+    )
+    provider_error = provider_error_from(exc)
+
+    assert provider_error.code == LLM_AUTH_ERROR
+    assert "sk-live-super-secret" not in str(provider_error)
+    assert "abcdef123456" not in str(provider_error)
+    assert "AuthenticationError" not in str(provider_error)
+    assert "[REDACTED]" in provider_error.provider_detail
+    assert public_llm_error(exc) == {
+        "code": LLM_AUTH_ERROR,
+        "reason": str(provider_error),
+    }
+
+
+def test_llm_provider_timeout_maps_to_stable_public_code() -> None:
+    provider_error = provider_error_from(
+        TimeoutError("APITimeoutError: sk-live-super-secret timeout value=30")
+    )
+
+    assert provider_error.code == LLM_TIMEOUT
+    assert "APITimeoutError" not in str(provider_error)

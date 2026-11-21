@@ -15,7 +15,7 @@ import { Screen } from "../../components/ui/Screen";
 import { Text } from "../../components/ui/Text";
 import { useBusiness } from "../../theme/ThemeProvider";
 import { ChatMessage, ChatSenderRole, useCommunications } from "../../api/communications";
-import { ApiError } from "../../lib/apiClient";
+import { ApiError, safeLlmErrorMessage } from "../../lib/apiClient";
 import { parseServerDate } from "../../lib/datetime";
 import {
   ContactCustomerCard,
@@ -132,10 +132,17 @@ export function ChatThread({
     try {
       await generateAiFollowup();
       setFollowupState(quoteRequestId, idleFollowupState);
-    } catch {
+    } catch (err) {
+      const safeError =
+        err instanceof ApiError
+          ? safeLlmErrorMessage(
+              err,
+              "The AI assistant is temporarily unavailable. Your request and messages are still saved."
+            )
+          : "The AI assistant couldn't reply. Your request and messages are still saved.";
       setFollowupState(quoteRequestId, {
         phase: "error",
-        error: "The AI assistant couldn't reply. Your request and messages are still saved.",
+        error: safeError,
       });
     }
   };
