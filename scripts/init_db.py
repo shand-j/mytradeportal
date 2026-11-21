@@ -328,6 +328,40 @@ def run_data_migrations(conn: Connection) -> None:
     if result.rowcount:
         print(f"[init_db] data migration: expired {result.rowcount} lapsed trial(s)")
 
+    # Invoice-from-job replay bug fix (#388): older rows may contain duplicate
+    # invoices for the same tenant/job/quote tuple. Keep the earliest row as
+    # canonical and detach later duplicates from the job/quote link so we can
+    # enforce one invoice per quote-linked job flow going forward.
+    deduped = conn.execute(
+        text(
+            "WITH ranked AS ("
+            "  SELECT id, row_number() OVER ("
+            "    PARTITION BY tenant_id, job_id, quote_id"
+            "    ORDER BY created_at ASC, id ASC"
+            "  ) AS rn"
+            "  FROM invoices"
+            "  WHERE job_id IS NOT NULL AND quote_id IS NOT NULL"
+            ") "
+            "UPDATE invoices i "
+            "SET job_id = NULL, quote_id = NULL "
+            "FROM ranked r "
+            "WHERE i.id = r.id AND r.rn > 1"
+        )
+    )
+    if deduped.rowcount:
+        print(
+            "[init_db] data migration: detached "
+            f"{deduped.rowcount} duplicate invoice(s) from job/quote links"
+        )
+
+    conn.execute(
+        text(
+            "CREATE UNIQUE INDEX IF NOT EXISTS uq_invoices_tenant_job_quote "
+            "ON invoices (tenant_id, job_id, quote_id) "
+            "WHERE job_id IS NOT NULL AND quote_id IS NOT NULL"
+        )
+    )
+
 
 def _create_metabase_database(engine) -> None:
     """Create Metabase's own metadata database, owned by the BI role.

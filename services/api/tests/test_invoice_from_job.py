@@ -191,3 +191,59 @@ async def test_invoice_from_quoteless_job_keeps_scratch_behaviour(
     assert invoice["job_id"] == job["id"]
     assert Decimal(invoice["total"]) == Decimal("870.00")
     assert _rounding_adjustment(invoice) == Decimal("7.00")
+
+
+async def test_invoice_from_job_replay_returns_existing_draft(admin_client: AsyncClient) -> None:
+    """Replay on quote-linked job returns the existing draft invoice (200)."""
+    contact_id = await _create_contact(admin_client)
+    quote = await _create_approved_quote(admin_client, contact_id)
+    job = await _convert_to_job(admin_client, quote["id"])
+
+    first = await admin_client.post("/invoices", json={"contact_id": contact_id, "job_id": job["id"]})
+    assert first.status_code == 201
+    first_invoice = first.json()
+
+    replay = await admin_client.post("/invoices", json={"contact_id": contact_id, "job_id": job["id"]})
+    assert replay.status_code == 200
+    replay_invoice = replay.json()
+    assert replay_invoice["id"] == first_invoice["id"]
+    assert replay_invoice["invoice_number"] == first_invoice["invoice_number"]
+    assert replay_invoice["status"] == "draft"
+
+
+async def test_invoice_from_job_replay_returns_existing_sent(admin_client: AsyncClient) -> None:
+    """Replay returns the same invoice even after it is issued/sent."""
+    contact_id = await _create_contact(admin_client)
+    quote = await _create_approved_quote(admin_client, contact_id)
+    job = await _convert_to_job(admin_client, quote["id"])
+
+    created = await admin_client.post("/invoices", json={"contact_id": contact_id, "job_id": job["id"]})
+    assert created.status_code == 201
+    invoice_id = created.json()["id"]
+
+    sent = await admin_client.post(f"/invoices/{invoice_id}/send")
+    assert sent.status_code == 200
+
+    replay = await admin_client.post("/invoices", json={"contact_id": contact_id, "job_id": job["id"]})
+    assert replay.status_code == 200
+    assert replay.json()["id"] == invoice_id
+    assert replay.json()["status"] == "sent"
+
+
+async def test_invoice_from_quoteless_job_allows_multiple_invoices(admin_client: AsyncClient) -> None:
+    """Quote-less jobs keep scratch behavior: no replay collapse."""
+    contact_id = await _create_contact(admin_client)
+    job_response = await admin_client.post(
+        "/jobs",
+        json={"contact_id": contact_id, "title": "Quote-less job"},
+    )
+    assert job_response.status_code == 201
+    job = job_response.json()
+
+    first = await admin_client.post("/invoices", json={"contact_id": contact_id, "job_id": job["id"]})
+    second = await admin_client.post("/invoices", json={"contact_id": contact_id, "job_id": job["id"]})
+
+    assert first.status_code == 201
+    assert second.status_code == 201
+    assert first.json()["id"] != second.json()["id"]
+
