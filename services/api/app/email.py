@@ -108,11 +108,7 @@ def _resend_from(display_name: str | None = None) -> str:
     if display_name:
         address = settings.resend_from_email or RESEND_TEST_SENDER
         return formataddr((display_name, address))
-    address = (
-        settings.resend_no_reply_email
-        or settings.resend_from_email
-        or RESEND_TEST_SENDER
-    )
+    address = settings.resend_no_reply_email or settings.resend_from_email or RESEND_TEST_SENDER
     return formataddr((settings.smtp_from_name, address))
 
 
