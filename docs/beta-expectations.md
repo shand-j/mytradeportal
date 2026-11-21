@@ -3,8 +3,9 @@
 ## What this beta is
 
 The founding beta is a small, free, concierge-led programme for 3–5 known
-businesses. It is intended to exercise real quote, customer, job, invoice,
-and support workflows with direct founder assistance.
+businesses, with around 10 individual recipients across business owners and
+their invited staff. It is intended to exercise real quote, customer, job,
+invoice, and support workflows with direct founder assistance.
 
 ## What is included
 
