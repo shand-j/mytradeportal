@@ -531,6 +531,50 @@ async def test_payment_intent_succeeded_marks_invoice_paid_idempotently(
         await _cleanup(ids, [event_id, second_id])
 
 
+async def test_payment_intent_retry_after_handler_failure_reprocesses_once(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    ids = await _seed_invoice()
+    event_id = f"evt_{uuid4().hex}"
+    event = payment_intent_succeeded_event(
+        event_id, invoice_id=ids["invoice_id"], tenant_id=ids["tenant_id"]
+    )
+    _patch_construct(monkeypatch, event)
+
+    from app.routers import stripe_webhooks
+
+    real_notify_staff = stripe_webhooks.notify_staff
+    attempts = 0
+
+    async def flaky_notify_staff(*args: Any, **kwargs: Any) -> None:
+        nonlocal attempts
+        attempts += 1
+        if attempts == 1:
+            raise RuntimeError("temporary staff-notify outage")
+        await real_notify_staff(*args, **kwargs)
+
+    monkeypatch.setattr("app.routers.stripe_webhooks.notify_staff", flaky_notify_staff)
+    try:
+        with pytest.raises(RuntimeError, match="temporary staff-notify outage"):
+            await _post_event(event)
+        assert await _payment_count(ids["invoice_id"]) == 0
+        assert await _staff_notification_count(ids["tenant_id"], "invoice_paid") == 0
+
+        second = await _post_event(event)
+        assert second.status_code == 200
+        assert second.json()["status"] == "ok"
+        assert await _payment_count(ids["invoice_id"]) == 1
+        assert await _staff_notification_count(ids["tenant_id"], "invoice_paid") == 1
+        assert await _dedupe_row_exists(event_id)
+
+        third = await _post_event(event)
+        assert third.status_code == 200
+        assert third.json()["status"] == "duplicate"
+        assert await _payment_count(ids["invoice_id"]) == 1
+    finally:
+        await _cleanup(ids, [event_id])
+
+
 async def test_payment_intent_succeeded_bypasses_rls_without_tenant_context(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
