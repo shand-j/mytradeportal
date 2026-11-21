@@ -475,12 +475,12 @@ test.describe.serial("F — In-app chat", () => {
       phone: "07700 900789",
       quoteRequestId: leadId,
     });
-    // Seed two question turns (with interleaved customer replies). The post-reply
+    // Seed four question turns (with interleaved customer replies). The post-reply
     // follow-up in the test is then deterministically the FINAL turn, which the
     // backend always closes — confident closure ("…notified…") or turn-cap
     // callback closure ("…give you a call…"), matching the product's dual-closure
     // design. Early high-confidence closures make extra turns no-ops.
-    await seedCommunication(tenant, { quoteRequestId: leadId, turns: 2 });
+    await seedCommunication(tenant, { quoteRequestId: leadId, turns: 4 });
   });
 
   // Seeding up to 3 LLM follow-ups plus the in-test follow-up can take several
