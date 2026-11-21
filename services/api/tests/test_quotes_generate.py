@@ -348,8 +348,10 @@ async def test_generate_quote_returns_503_when_ai_not_configured(client: AsyncCl
         )
 
     assert response.status_code == 503
-    assert "private" not in response.json()["detail"]
-    assert "AI provider" in response.json()["detail"]
+    detail = response.json()["detail"]
+    assert detail["code"] == "llm_unavailable"
+    assert "private" not in detail["reason"]
+    assert "temporarily unavailable" in detail["reason"]
 
 
 @pytest.mark.asyncio
