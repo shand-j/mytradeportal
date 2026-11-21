@@ -40,6 +40,7 @@ def _finite_decimal(value: Decimal | None, *, field: str) -> Decimal | None:
         raise ValueError(f"{field} must be a finite decimal")
     return value
 
+
 # ---------------------------------------------------------------------------
 # Tenant
 # ---------------------------------------------------------------------------
@@ -1053,11 +1054,7 @@ class AppointmentUpdate(BaseModel):
 
     @model_validator(mode="after")
     def _validate_window(self) -> "AppointmentUpdate":
-        if (
-            self.start_at is not None
-            and self.end_at is not None
-            and self.end_at <= self.start_at
-        ):
+        if self.start_at is not None and self.end_at is not None and self.end_at <= self.start_at:
             raise ValueError("end_at must be after start_at")
         return self
 

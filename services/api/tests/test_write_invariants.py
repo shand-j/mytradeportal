@@ -150,7 +150,10 @@ async def test_quote_update_rejects_invalid_numeric_values_and_keeps_state(
 
     after = await admin_client.get(f"/quotes/{quote_id}")
     assert after.status_code == 200
-    assert after.json()["line_items"][0]["description"] == before.json()["line_items"][0]["description"]
+    assert (
+        after.json()["line_items"][0]["description"]
+        == before.json()["line_items"][0]["description"]
+    )
 
 
 async def test_invoice_update_rejects_invalid_numeric_values_and_keeps_state(
@@ -176,7 +179,10 @@ async def test_invoice_update_rejects_invalid_numeric_values_and_keeps_state(
 
     after = await admin_client.get(f"/invoices/{invoice_id}")
     assert after.status_code == 200
-    assert after.json()["line_items"][0]["description"] == before.json()["line_items"][0]["description"]
+    assert (
+        after.json()["line_items"][0]["description"]
+        == before.json()["line_items"][0]["description"]
+    )
 
 
 async def test_whitespace_only_contact_name_rejected(admin_client: AsyncClient) -> None:
@@ -280,7 +286,9 @@ async def test_reversed_or_zero_schedule_windows_rejected_on_update(
         assert response.status_code == 422
 
 
-async def test_back_to_back_and_dst_normalized_windows_still_work(admin_client: AsyncClient) -> None:
+async def test_back_to_back_and_dst_normalized_windows_still_work(
+    admin_client: AsyncClient,
+) -> None:
     contact_id = await _create_contact(admin_client)
 
     first = await admin_client.post(
