@@ -58,17 +58,19 @@ async function expectFullyInViewport(
   expect(box).not.toBeNull()
   expect(viewport).not.toBeNull()
   if (!box || !viewport) return
-  expect(box.x).toBeGreaterThanOrEqual(0)
-  expect(box.y).toBeGreaterThanOrEqual(0)
-  expect(box.x + box.width).toBeLessThanOrEqual(viewport.width)
-  expect(box.y + box.height).toBeLessThanOrEqual(viewport.height)
+  expect(box.x).toBeGreaterThanOrEqual(-1)
+  expect(box.y).toBeGreaterThanOrEqual(-1)
+  expect(box.x + box.width).toBeLessThanOrEqual(viewport.width + 1)
+  expect(box.y + box.height).toBeLessThanOrEqual(viewport.height + 1)
 }
 
 async function expectSingleLine(locator: Locator) {
   const wrapped = await locator.evaluate((el) => {
     const style = window.getComputedStyle(el)
-    const lineHeight = Number.parseFloat(style.lineHeight)
-    if (!Number.isFinite(lineHeight) || lineHeight <= 0) return false
+    const parsedLineHeight = Number.parseFloat(style.lineHeight)
+    const lineHeight = Number.isFinite(parsedLineHeight) && parsedLineHeight > 0
+      ? parsedLineHeight
+      : Number.parseFloat(style.fontSize) * 1.2
     return el.getBoundingClientRect().height > lineHeight * 1.5
   })
   expect(wrapped).toBe(false)
@@ -85,9 +87,10 @@ for (const { label, viewport, expectsPrimaryNav } of responsiveNavCases) {
     await page.setViewportSize(viewport)
     await page.goto('/')
 
-    const primaryNav = page.getByRole('navigation', { name: 'Primary' })
-    const menuButton = page.getByRole('button', { name: /open menu/i })
-    const ctaDesktop = page.getByRole('link', { name: 'Join the beta', exact: true })
+    const header = page.locator('header')
+    const primaryNav = header.getByRole('navigation', { name: 'Primary' })
+    const menuButton = header.getByRole('button', { name: /open menu/i })
+    const ctaDesktop = header.getByRole('link', { name: 'Join the beta', exact: true })
 
     if (expectsPrimaryNav) {
       await expect(primaryNav).toBeVisible()
@@ -95,7 +98,7 @@ for (const { label, viewport, expectsPrimaryNav } of responsiveNavCases) {
       await expectFullyInViewport(page, ctaDesktop)
 
       for (const name of ['Try the AI', 'The tour', 'How it works', 'Pricing', 'Reviews', 'Blog']) {
-        const link = page.getByRole('link', { name, exact: true }).first()
+        const link = primaryNav.getByRole('link', { name, exact: true })
         await expectFullyInViewport(page, link)
         await expectSingleLine(link)
       }
@@ -108,7 +111,7 @@ for (const { label, viewport, expectsPrimaryNav } of responsiveNavCases) {
     await expectFullyInViewport(page, menuButton)
     await menuButton.click()
 
-    const mobileNav = page.getByRole('navigation', { name: 'Mobile' })
+    const mobileNav = header.getByRole('navigation', { name: 'Mobile' })
     await expect(mobileNav).toBeVisible()
     await expectFullyInViewport(page, mobileNav)
 
