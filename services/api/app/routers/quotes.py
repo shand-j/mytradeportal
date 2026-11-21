@@ -2294,9 +2294,12 @@ def _render_quote_pdf(snapshot: dict[str, Any]) -> bytes:
     pdf = FPDF()
     pdf.add_page()
 
+    def safe_text(value: Any) -> str:
+        return str(value or "").encode("latin-1", "replace").decode("latin-1")
+
     # Header
     pdf.set_font("Helvetica", "B", 16)
-    pdf.cell(0, 10, snapshot["tenant_name"], ln=True)  # type: ignore[arg-type]
+    pdf.cell(0, 10, safe_text(snapshot["tenant_name"]), ln=True)  # type: ignore[arg-type]
     pdf.set_font("Helvetica", "", 12)
     pdf.cell(0, 10, "Quote", ln=True)  # type: ignore[arg-type]
     pdf.line(10, pdf.get_y(), 200, pdf.get_y())
@@ -2307,19 +2310,19 @@ def _render_quote_pdf(snapshot: dict[str, Any]) -> bytes:
     pdf.set_font("Helvetica", "B", 11)
     pdf.cell(0, 8, "Customer", ln=True)  # type: ignore[arg-type]
     pdf.set_font("Helvetica", "", 11)
-    pdf.cell(0, 8, contact["name"], ln=True)  # type: ignore[arg-type]
+    pdf.cell(0, 8, safe_text(contact["name"]), ln=True)  # type: ignore[arg-type]
     if contact["email"]:
-        pdf.cell(0, 8, contact["email"], ln=True)  # type: ignore[arg-type]
+        pdf.cell(0, 8, safe_text(contact["email"]), ln=True)  # type: ignore[arg-type]
     if contact["phone"]:
-        pdf.cell(0, 8, contact["phone"], ln=True)  # type: ignore[arg-type]
+        pdf.cell(0, 8, safe_text(contact["phone"]), ln=True)  # type: ignore[arg-type]
     pdf.ln(5)
 
     # Quote summary
     pdf.set_font("Helvetica", "B", 12)
-    pdf.cell(0, 10, snapshot["title"], ln=True)  # type: ignore[arg-type]
+    pdf.cell(0, 10, safe_text(snapshot["title"]), ln=True)  # type: ignore[arg-type]
     pdf.set_font("Helvetica", "", 10)
     pdf.cell(0, 6, f"Date: {snapshot['created_at'].strftime('%d/%m/%Y')}", ln=True)  # type: ignore[arg-type]
-    pdf.cell(0, 6, f"Status: {snapshot['status'].upper()}", ln=True)  # type: ignore[arg-type]
+    pdf.cell(0, 6, safe_text(f"Status: {snapshot['status'].upper()}"), ln=True)  # type: ignore[arg-type]
     pdf.ln(5)
 
     # Line items table
@@ -2333,7 +2336,7 @@ def _render_quote_pdf(snapshot: dict[str, Any]) -> bytes:
     pdf.set_font("Helvetica", "", 10)
     for item in snapshot["line_items"]:
         start_y = pdf.get_y()
-        pdf.multi_cell(100, 8, item["description"], border=1, align="L")
+        pdf.multi_cell(100, 8, safe_text(item["description"]), border=1, align="L")
         row_h = pdf.get_y() - start_y
         pdf.set_xy(110, start_y)
         pdf.cell(25, row_h, str(item["quantity"]), 1, 0, "C")  # type: ignore[arg-type]
