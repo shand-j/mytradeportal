@@ -180,5 +180,7 @@ test.describe.serial("J — Job create, convert & detail editing", () => {
     await waitText(page, "Job detail", 30000);
     const job = await waitForJob(tenant, convertQuote.title, undefined, 30000);
     expect(job).toBeTruthy();
+    const jobs = (await api(tenant, "/jobs")) as Array<{ id: string; title: string }>;
+    expect(jobs.filter((j) => j.title === convertQuote.title)).toHaveLength(1);
   });
 });
