@@ -136,8 +136,8 @@ test("reset request never reveals whether an account exists", async () => {
 
 function extractResetToken(body: string): string {
   const match =
-    body.match(/reset-password\?token=([a-zA-Z0-9_\-]+)/) ??
-    body.match(/token=([a-zA-Z0-9_\-]+)/);
+    body.match(/reset-password\?token=([a-zA-Z0-9_-]+)/) ??
+    body.match(/token=([a-zA-Z0-9_-]+)/);
   if (!match) throw new Error("no reset token found in email");
   return match[1];
 }

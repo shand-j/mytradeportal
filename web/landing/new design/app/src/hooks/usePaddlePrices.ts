@@ -23,6 +23,8 @@ function getPriceAmounts(prices: PricePreviewResponse): PaddlePrices {
   }, {})
 }
 
+const lineItems = getLineItems()
+
 /**
  * Fetches formatted price amounts (per price ID) from Paddle PricePreview,
  * localised to the visitor's country. Tolerates unconfigured price IDs and
@@ -32,32 +34,42 @@ export function usePaddlePrices(
   paddle: Paddle | undefined,
   country: string,
 ): { prices: PaddlePrices; loading: boolean } {
-  const [prices, setPrices] = useState<PaddlePrices>({})
-  const [loading, setLoading] = useState(true)
+  const requestKey = `${country}:${paddle ? 'ready' : 'waiting'}`
+  const [result, setResult] = useState<{ requestKey: string | null; prices: PaddlePrices }>({
+    requestKey: null,
+    prices: {},
+  })
 
   useEffect(() => {
-    if (!paddle) return
-    const items = getLineItems()
-    if (items.length === 0) {
-      setLoading(false)
-      return
-    }
+    if (!paddle || lineItems.length === 0) return
+    let cancelled = false
 
     const params: Partial<PricePreviewParams> = {
-      items,
+      items: lineItems,
       // 'OTHERS' is a sentinel meaning "let Paddle infer from IP".
       ...(country !== 'OTHERS' && { address: { countryCode: country } }),
     }
 
-    setLoading(true)
     paddle
       .PricePreview(params as PricePreviewParams)
       .then((response) => {
-        setPrices((prev) => ({ ...prev, ...getPriceAmounts(response) }))
-        setLoading(false)
+        if (cancelled) return
+        setResult((prev) => ({
+          requestKey,
+          prices: { ...prev.prices, ...getPriceAmounts(response) },
+        }))
       })
-      .catch(() => setLoading(false))
-  }, [country, paddle])
+      .catch(() => {
+        if (cancelled) return
+        setResult((prev) => ({ ...prev, requestKey }))
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [country, paddle, requestKey])
 
-  return { prices, loading }
+  return {
+    prices: result.prices,
+    loading: lineItems.length > 0 && result.requestKey !== requestKey,
+  }
 }

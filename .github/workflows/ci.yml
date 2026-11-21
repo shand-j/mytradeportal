@@ -20,6 +20,9 @@ on:
   pull_request:
     branches: [main]
 
+permissions:
+  contents: read
+
 jobs:
   python:
     runs-on: ubuntu-latest
@@ -182,12 +185,39 @@ jobs:
       - name: Type check
         run: pnpm exec tsc --noEmit
 
+  landing:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: "web/landing/new design/app"
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+          cache-dependency-path: "web/landing/new design/app/package-lock.json"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Build
+        run: npm run build
+
+      - name: Type check E2E suite
+        run: npm run typecheck:e2e
+
   deploy-production:
     # Deploy the mobile-beta stack from the IaC in .railway/railway.ts.
     # Requires the RAILWAY_TOKEN (project-scoped) GitHub secret and an
-    # existing Railway project wired to this repo. Runs only after both
+    # existing Railway project wired to this repo. Runs only after all
     # quality-gate jobs pass on main.
-    needs: [python, mobile, schema-sync]
+    needs: [python, mobile, landing, schema-sync]
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     runs-on: ubuntu-latest
     environment: MyTradePortal / production

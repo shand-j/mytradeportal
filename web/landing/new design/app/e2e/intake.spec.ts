@@ -97,11 +97,18 @@ test.describe("G18 — arrival & intake", () => {
     }
 
     // Server-side: lead exists with property profile + preferred dates.
-    const leads = await staffApi<Array<Record<string, any>>>(tenant, "/quote-requests");
+    const leads = await staffApi<
+      Array<{
+        raw_text: string;
+        customer_id: string | null;
+        structured_data?: { property?: { type?: string } };
+        preferred_dates?: unknown[];
+      }>
+    >(tenant, "/quote-requests");
     const lead = leads.find((l) => l.raw_text === description);
     expect(lead, "lead stored").toBeTruthy();
     expect(lead!.customer_id, "auto-provisioned customer linked").toBeTruthy();
-    expect((lead!.structured_data as any)?.property?.type).toBe("semi");
+    expect(lead!.structured_data?.property?.type).toBe("semi");
     expect(lead!.preferred_dates?.length).toBeGreaterThan(0);
 
     // The auto-provisioned account is passwordless: no password login exists.
@@ -130,7 +137,10 @@ test.describe("G18 — arrival & intake", () => {
     const chatPhase = page.getByText("A couple of quick questions");
     await expect(received.or(chatPhase).first()).toBeVisible({ timeout: 25_000 });
 
-    const leads = await staffApi<Array<Record<string, any>>>(tenant, "/quote-requests");
+    const leads = await staffApi<Array<{ raw_text: string; entry_channel: string }>>(
+      tenant,
+      "/quote-requests",
+    );
     const lead = leads.find((l) => l.raw_text === description);
     expect(lead, "lead stored").toBeTruthy();
     expect(lead!.entry_channel).toBe("qr");
@@ -202,7 +212,7 @@ test.describe("G19 — inline AI triage", () => {
       // Fail-open: no AI available — the form still succeeds and the lead is
       // with the tradesperson.
       await expect(done).toBeVisible();
-      const leads = await staffApi<Array<Record<string, any>>>(tenant, "/quote-requests");
+      const leads = await staffApi<Array<{ raw_text: string }>>(tenant, "/quote-requests");
       expect(leads.some((l) => l.raw_text === description)).toBeTruthy();
     }
   });

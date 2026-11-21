@@ -7,9 +7,8 @@ import {
   DocumentInvalid,
   DocumentLoading,
   DocumentShell,
-  useNoIndex,
-  usePublicDocument,
 } from './ViewQuote'
+import { useNoIndex, usePublicDocument } from '../hooks/usePublicDocument'
 import { isPortalMode } from '../portal/host'
 import type { PublicDocPayload } from '../lib/public-docs-api'
 

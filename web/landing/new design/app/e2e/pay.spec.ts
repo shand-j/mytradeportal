@@ -71,8 +71,8 @@ test.beforeAll(async () => {
     customerEmail,
     quoteRequestId: intake.id,
   });
-  const contacts = await staffApi<Array<Record<string, any>>>(tenant, "/contacts");
-  const contactId = contacts.find((c) => c.email === customerEmail)!.id as string;
+  const contacts = await staffApi<Array<{ id: string; email: string }>>(tenant, "/contacts");
+  const contactId = contacts.find((c) => c.email === customerEmail)!.id;
   await seedSentInvoice(tenant, { contactId });
 });
 
@@ -100,7 +100,9 @@ test("invoice list and detail render without a card option for a non-connected t
   await expect(page.locator(".StripeElement, [data-testid='card-element']")).toHaveCount(0);
 
   // Server-side: the invoice carries no payment handoff for this tenant.
-  const invoices = await customerApi<Array<Record<string, any>>>(session, "/customer/invoices");
+  const invoices = await customerApi<
+    Array<{ payment_url: string | null; payment_client_secret: string | null }>
+  >(session, "/customer/invoices");
   const invoice = invoices[0];
   expect(invoice.payment_url ?? null).toBeNull();
   expect(invoice.payment_client_secret ?? null).toBeNull();

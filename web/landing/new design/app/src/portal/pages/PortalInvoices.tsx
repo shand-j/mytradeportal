@@ -5,7 +5,8 @@ import { PortalShell } from '../components/PortalShell'
 import { RequireAuth } from '../components/auth'
 import { usePageMeta } from '../../hooks/usePageMeta'
 import { listInvoices, SessionExpiredError, type CustomerInvoice } from '../api'
-import { DocumentLoading, formatDate, formatMoney, StatusBadge } from '../../pages/ViewQuote'
+import { DocumentLoading, StatusBadge } from '../../pages/ViewQuote'
+import { formatDate, formatMoney } from '../../lib/public-document'
 
 function InvoicesList() {
   const { slug, sessionVersion } = usePortal()
