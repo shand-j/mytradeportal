@@ -206,16 +206,23 @@ async def test_feed_ics_marks_cancelled_appointments_cancelled(
 
     assert response.status_code == 200
     assert "STATUS:CANCELLED" in response.text
-    assert "Cache-Control" in response.headers
+    assert response.headers["Cache-Control"] == "no-cache, no-store, must-revalidate"
+    assert response.headers["Pragma"] == "no-cache"
 
 
+@pytest.mark.parametrize(
+    ("method", "path"),
+    [("DELETE", "/calendar/feed-link"), ("POST", "/calendar/feed-link/revoke")],
+)
 async def test_feed_link_revoke_invalidates_existing_token(
     admin_client: AsyncClient,
+    method: str,
+    path: str,
 ) -> None:
     link = (await admin_client.get("/calendar/feed-link")).json()
     token = _token_from_url(link["url"])
 
-    response = await admin_client.delete("/calendar/feed-link")
+    response = await admin_client.request(method, path)
     assert response.status_code == 200
     assert response.json() == {"revoked": True}
 
