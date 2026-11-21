@@ -15,6 +15,11 @@ export async function fetchCalendarFeedLink(): Promise<CalendarFeedLink> {
   return api.get<CalendarFeedLink>("/calendar/feed-link");
 }
 
+/** Revoke the tenant's current feed token. The next fetch mints a fresh one. */
+export async function revokeCalendarFeedLink(): Promise<{ revoked: boolean }> {
+  return api.delete<{ revoked: boolean }>("/calendar/feed-link");
+}
+
 /**
  * Trigger the native add-to-calendar flow: on iOS open the webcal:// URL so
  * the OS subscribe prompt appears; elsewhere fall back to sharing the https

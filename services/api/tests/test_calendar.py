@@ -185,3 +185,50 @@ async def test_feed_ics_vevent_fields_are_complete_and_tz_aware(
 async def test_feed_ics_unknown_token_returns_404(admin_client: AsyncClient) -> None:
     response = await admin_client.get("/calendar/feed.ics?token=does-not-exist")
     assert response.status_code == 404
+
+
+async def test_feed_ics_marks_cancelled_appointments_cancelled(
+    admin_client: AsyncClient,
+) -> None:
+    contact = await _create_contact(admin_client, "Cancelled Customer")
+    start = datetime.utcnow().replace(microsecond=0) + timedelta(days=2)
+    appointment = await _create_appointment(
+        admin_client, contact["id"], start, start + timedelta(hours=1)
+    )
+    await admin_client.patch(
+        f"/appointments/{appointment['id']}",
+        json={"status": "cancelled"},
+    )
+
+    link = (await admin_client.get("/calendar/feed-link")).json()
+    token = _token_from_url(link["url"])
+    response = await admin_client.get(f"/calendar/feed.ics?token={token}")
+
+    assert response.status_code == 200
+    assert "STATUS:CANCELLED" in response.text
+    assert response.headers["Cache-Control"] == "no-cache, no-store, must-revalidate"
+    assert response.headers["Pragma"] == "no-cache"
+
+
+@pytest.mark.parametrize(
+    ("method", "path"),
+    [("DELETE", "/calendar/feed-link"), ("POST", "/calendar/feed-link/revoke")],
+)
+async def test_feed_link_revoke_invalidates_existing_token(
+    admin_client: AsyncClient,
+    method: str,
+    path: str,
+) -> None:
+    link = (await admin_client.get("/calendar/feed-link")).json()
+    token = _token_from_url(link["url"])
+
+    response = await admin_client.request(method, path)
+    assert response.status_code == 200
+    assert response.json() == {"revoked": True}
+
+    old_feed = await admin_client.get(f"/calendar/feed.ics?token={token}")
+    assert old_feed.status_code == 404
+
+    replacement = await admin_client.get("/calendar/feed-link")
+    assert replacement.status_code == 200
+    assert _token_from_url(replacement.json()["url"]) != token
