@@ -61,11 +61,21 @@ describe('TopBar', () => {
 
   it('disables search and refreshes the page', async () => {
     const user = userEvent.setup();
-    renderWithRouter(<TopBar />);
+    const originalLocation = window.location;
+    const reload = vi.fn();
+    Object.defineProperty(window, 'location', {
+      configurable: true,
+      value: { ...originalLocation, reload },
+    });
 
-    expect(screen.getByRole('button', { name: 'Search (coming soon)' })).toBeDisabled();
-    await user.click(screen.getByRole('button', { name: 'Refresh page' }));
-    expect(screen.getByTestId('location-display')).toHaveTextContent('/');
+    try {
+      renderWithRouter(<TopBar />);
+      expect(screen.getByRole('button', { name: 'Search (coming soon)' })).toBeDisabled();
+      await user.click(screen.getByRole('button', { name: 'Refresh page' }));
+      expect(reload).toHaveBeenCalledOnce();
+    } finally {
+      Object.defineProperty(window, 'location', { configurable: true, value: originalLocation });
+    }
   });
 
   it('closes notifications when navigating from "View all notifications"', async () => {

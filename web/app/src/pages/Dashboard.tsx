@@ -210,7 +210,7 @@ function KpiCard({ label, value, change, changePositive, icon, progress, warning
       )}
       {warning && <div className="mt-2 text-[11px] text-[#DC2626]">{warning}</div>}
       {stars !== undefined && (
-        <div className="flex gap-0.5 mt-2">
+        <div className="flex gap-0.5 mt-2" role="img" aria-label={`Rating: ${stars} out of 5 stars`}>
           {[1, 2, 3, 4, 5].map(s => (
             <Star key={s} className={`w-4 h-4 ${s <= Math.floor(stars) ? 'text-amber-400 fill-amber-400' : s - 0.5 <= stars ? 'text-amber-400 fill-amber-400/50' : 'text-[#E7E5E4]'}`} />
           ))}

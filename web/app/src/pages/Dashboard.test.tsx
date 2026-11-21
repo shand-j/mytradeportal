@@ -66,7 +66,7 @@ describe('Dashboard', () => {
 
     renderPage(<Dashboard />);
     expect(screen.getByText('0 reviews')).toBeInTheDocument();
-    const customerRatingCard = screen.getByText('Customer Rating').closest('.bg-white');
-    expect(customerRatingCard?.querySelectorAll('svg').length).toBeGreaterThanOrEqual(7);
+    const rating = screen.getByRole('img', { name: 'Rating: 0 out of 5 stars' });
+    expect(rating.querySelectorAll('svg')).toHaveLength(5);
   });
 });
