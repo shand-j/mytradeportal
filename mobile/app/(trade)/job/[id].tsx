@@ -121,8 +121,8 @@ export default function JobDetailRoute() {
       onStart={() => start.mutateAsync().then(() => undefined)}
       onComplete={() => complete.mutateAsync().then(() => undefined)}
       // A draft hold (auto-created at quote acceptance) is confirmed by
-      // converting its quote — the backend adopts the draft in place, so the
-      // returned job keeps this screen's id.
+      // converting its quote — the backend adopts the draft and its current
+      // schedule in place, so the returned job keeps this screen's id.
       onConfirmDraft={
         raw.quoteId
           ? async () => {
