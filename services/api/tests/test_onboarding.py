@@ -1,5 +1,7 @@
 """Tests for the progressive business-onboarding endpoints."""
 
+from datetime import datetime
+
 from httpx import AsyncClient
 
 _LAUNCH_GATE_STEPS = ["business_identity", "compliance", "services"]
@@ -93,6 +95,53 @@ async def test_onboarding_metrics_via_tenant_update(admin_client: AsyncClient) -
     settings = tenant.json()["settings"]
     assert settings["quotes_per_week"] == 8
     assert settings["avg_minutes_per_quote"] == 30
+
+
+async def test_onboarding_rejects_invalid_identity_metrics_and_urls(
+    admin_client: AsyncClient,
+) -> None:
+    current_year = datetime.utcnow().year
+    invalid_values = [
+        {"year": "9999"},
+        {"year": str(current_year + 1)},
+        {"quotes_per_week": -5},
+        {"avg_minutes_per_quote": -1},
+        {"website": "not-a-url"},
+    ]
+    for value in invalid_values:
+        response = await admin_client.patch(
+            "/onboarding/step/business_identity",
+            json={"step": "business_identity", "value": value},
+        )
+        assert response.status_code == 400, response.text
+
+    valid = await admin_client.patch(
+        "/onboarding/step/business_identity",
+        json={
+            "step": "business_identity",
+            "value": {
+                "year": "1800",
+                "website": "",
+                "quotes_per_week": 0,
+                "avg_minutes_per_quote": 0,
+            },
+        },
+    )
+    assert valid.status_code == 200, valid.text
+
+
+async def test_onboarding_rejects_malformed_review_url(admin_client: AsyncClient) -> None:
+    response = await admin_client.patch(
+        "/onboarding/step/branding",
+        json={"step": "branding", "value": {"review_url": "not-a-url"}},
+    )
+    assert response.status_code == 400, response.text
+
+    optional_blank = await admin_client.patch(
+        "/onboarding/step/branding",
+        json={"step": "branding", "value": {"review_url": ""}},
+    )
+    assert optional_blank.status_code == 200, optional_blank.text
 
 
 async def test_brand_colours_persist_via_tenant_update(admin_client: AsyncClient) -> None:
