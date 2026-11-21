@@ -6,6 +6,13 @@ when the PR opens — so `main` can be locked behind passing CI.
 
 Workflow: [`.github/workflows/pr-verify.yml`](../.github/workflows/pr-verify.yml)
 
+## Local Playwright commands
+
+- `cd web/app && pnpm test:e2e` runs the default Docker/back-office suite. It
+  excludes `e2e/pr-env/**`, which belongs to the deployed landing bundle.
+- `cd web/app && TEST_LANDING_URL=https://<landing-host> pnpm exec playwright test --config playwright.pr.config.ts`
+  runs only the PR landing/public-token smoke specs against `TEST_LANDING_URL`.
+
 ## Jobs
 
 1. **quality-gates** — identical setup to the `python` job in `ci.yml`: ruff
