@@ -1,7 +1,12 @@
 import Logo from '../components/Logo'
 import { TESTFLIGHT_URL } from '@/lib/site'
+import { useLocation } from 'react-router'
 
 export default function Footer() {
+  const { pathname } = useLocation()
+  const onHome = pathname === '/'
+  const resolveHref = (href: string) => (onHome ? href : `/${href}`)
+
   return (
     <footer className="bg-[var(--ink-deep)] text-[var(--paper-on-dark)]">
       <div className="mx-auto max-w-[1400px] px-5 py-[var(--space-2xl)] md:px-10">
@@ -18,11 +23,11 @@ export default function Footer() {
             </div>
           </div>
           <p className="text-[13.5px] text-[var(--paper-on-dark-muted)]">
-            <a href="#features" className="underline-offset-4 transition-colors duration-[length:var(--dur-micro)] hover:text-[var(--paper-on-dark)] hover:underline">The tour</a>
+            <a href={resolveHref('#features')} className="underline-offset-4 transition-colors duration-[length:var(--dur-micro)] hover:text-[var(--paper-on-dark)] hover:underline">The tour</a>
             <span className="mx-[var(--space-sm)] text-[var(--rule-on-dark)]" aria-hidden>·</span>
-            <a href="#pricing" className="underline-offset-4 transition-colors duration-[length:var(--dur-micro)] hover:text-[var(--paper-on-dark)] hover:underline">Pricing</a>
+            <a href={resolveHref('#pricing')} className="underline-offset-4 transition-colors duration-[length:var(--dur-micro)] hover:text-[var(--paper-on-dark)] hover:underline">Pricing</a>
             <span className="mx-[var(--space-sm)] text-[var(--rule-on-dark)]" aria-hidden>·</span>
-            <a href="#reviews" className="underline-offset-4 transition-colors duration-[length:var(--dur-micro)] hover:text-[var(--paper-on-dark)] hover:underline">Reviews</a>
+            <a href={resolveHref('#reviews')} className="underline-offset-4 transition-colors duration-[length:var(--dur-micro)] hover:text-[var(--paper-on-dark)] hover:underline">Reviews</a>
             <span className="mx-[var(--space-sm)] text-[var(--rule-on-dark)]" aria-hidden>·</span>
             <a href="/blog" className="underline-offset-4 transition-colors duration-[length:var(--dur-micro)] hover:text-[var(--paper-on-dark)] hover:underline">Blog</a>
             <span className="mx-[var(--space-sm)] text-[var(--rule-on-dark)]" aria-hidden>·</span>

@@ -1,5 +1,4 @@
 import { useEffect } from 'react'
-import Lenis from 'lenis'
 import { useSmoothScroll } from '../hooks/useSmoothScroll'
 import { usePageMeta } from '../hooks/usePageMeta'
 import Nav from '../sections/Nav'
@@ -41,7 +40,7 @@ export default function Home() {
     return () => io.disconnect()
   }, [])
 
-  /* Anchor navigation goes through Lenis so scroll stays smooth */
+  /* Anchor navigation scrolls to the target offset and updates the hash. */
   useEffect(() => {
     const handler = (e: MouseEvent) => {
       const a = (e.target as HTMLElement).closest<HTMLAnchorElement>('a[href^="#"]')
@@ -51,10 +50,23 @@ export default function Home() {
       const el = document.querySelector(id)
       if (!el) return
       e.preventDefault()
-      const lenis = (window as unknown as { __lenis?: Lenis }).__lenis
-      lenis?.scrollTo(el as HTMLElement, { offset: -70 })
+      window.history.pushState(null, '', id)
+      const top = el.getBoundingClientRect().top + window.scrollY - 70
+      window.scrollTo({ top, behavior: 'smooth' })
     }
     document.addEventListener('click', handler)
+
+    const initialHash = window.location.hash
+    if (initialHash) {
+      const el = document.querySelector(initialHash)
+      if (el) {
+        requestAnimationFrame(() => {
+          const top = el.getBoundingClientRect().top + window.scrollY - 70
+          window.scrollTo({ top, behavior: 'auto' })
+        })
+      }
+    }
+
     return () => document.removeEventListener('click', handler)
   }, [])
 

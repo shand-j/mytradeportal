@@ -141,5 +141,28 @@ for (const { label, viewport, expectsPrimaryNav } of responsiveNavCases) {
       await expectFullyInViewport(page, mobileNav.getByRole('link', { name, exact: true }))
     }
     await expectFullyInViewport(page, mobileNav.getByRole('link', { name: 'Join the beta', exact: true }))
+const footerSectionLinks = [
+  { name: 'The tour', hash: 'features' },
+  { name: 'Pricing', hash: 'pricing' },
+  { name: 'Reviews', hash: 'reviews' },
+] as const
+
+for (const path of ['/', '/blog', '/blog/ai-in-the-trades', '/help/getting-started']) {
+  test(`footer home-section links work from ${path}`, async ({ page }) => {
+    await page.goto(path, { waitUntil: 'domcontentloaded' })
+
+    for (const link of footerSectionLinks) {
+      await page.goto(path, { waitUntil: 'domcontentloaded' })
+      const footerLink = page.locator('footer').getByRole('link', { name: link.name, exact: true })
+      await expect(footerLink).toHaveAttribute(
+        'href',
+        path === '/' ? `#${link.hash}` : `/#${link.hash}`,
+      )
+      await footerLink.click()
+
+      await expect(page).toHaveURL(new RegExp(`/#${link.hash}$`))
+      await expect(page.locator(`#${link.hash}`)).toBeInViewport()
+      await expect(page.context().pages()).toHaveLength(1)
+    }
   })
 }
