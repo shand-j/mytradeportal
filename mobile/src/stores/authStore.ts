@@ -35,6 +35,7 @@ async function fetchOnboardingComplete(): Promise<boolean> {
 type AuthState = {
   role: AppRole;
   user: User | null;
+  sessionRestored: boolean;
   onboardingComplete: boolean;
   isRegistering: boolean;
   /** True while a real API login is in flight. */
@@ -74,6 +75,7 @@ const mapApiUser = (apiUser: ApiUser): User => ({
 export const useAuthStore = create<AuthState>((set) => ({
   role: "guest",
   user: null,
+  sessionRestored: false,
   onboardingComplete: false,
   isRegistering: false,
   loading: false,
@@ -99,6 +101,7 @@ export const useAuthStore = create<AuthState>((set) => ({
         set({
           user: mapApiUser(apiUser),
           role: "trade",
+          sessionRestored: true,
           onboardingComplete,
           isRegistering: false,
           loading: false,
@@ -110,6 +113,7 @@ export const useAuthStore = create<AuthState>((set) => ({
         set({
           user: { id: customer.id, email: customer.email, fullName: customer.fullName, role: "owner" },
           role: "customer",
+          sessionRestored: true,
           onboardingComplete: true,
           isRegistering: false,
           loading: false,
@@ -152,6 +156,7 @@ export const useAuthStore = create<AuthState>((set) => ({
           role: "owner",
         },
         role: "customer",
+        sessionRestored: true,
         onboardingComplete: true,
         isRegistering: false,
         loading: false,
@@ -200,6 +205,7 @@ export const useAuthStore = create<AuthState>((set) => ({
       set({
         user: mapApiUser(apiUser),
         role: "trade",
+        sessionRestored: true,
         onboardingComplete: true,
         isRegistering: false,
         loading: false,
@@ -216,7 +222,7 @@ export const useAuthStore = create<AuthState>((set) => ({
       // Skip the round-trip (and a noisy 401) when no token is stored.
       const token = await tokenStorage.getToken();
       if (!token) {
-        set({ loading: false });
+        set({ loading: false, sessionRestored: true });
         return false;
       }
       const apiUser = await fetchMe();
@@ -230,6 +236,7 @@ export const useAuthStore = create<AuthState>((set) => ({
       set({
         user: mapApiUser(apiUser),
         role: "trade",
+        sessionRestored: true,
         onboardingComplete,
         isRegistering: false,
         loading: false,
@@ -249,6 +256,7 @@ export const useAuthStore = create<AuthState>((set) => ({
               role: "owner",
             },
             role: "customer",
+            sessionRestored: true,
             onboardingComplete: true,
             isRegistering: false,
             loading: false,
@@ -266,7 +274,7 @@ export const useAuthStore = create<AuthState>((set) => ({
           // fall through to signed-out state
         }
       }
-      set({ loading: false });
+      set({ loading: false, sessionRestored: true });
       return false;
     }
   },
