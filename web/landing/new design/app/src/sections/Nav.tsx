@@ -34,7 +34,7 @@ export default function Nav() {
           </span>
         </a>
 
-        <nav aria-label="Primary" className="ml-auto hidden md:block">
+        <nav aria-label="Primary" className="ml-auto hidden lg:block">
           <ul className="flex items-center gap-7">
             {LINKS.map(([label, href]) => (
               <li key={href}>
@@ -58,7 +58,7 @@ export default function Nav() {
           </ul>
         </nav>
 
-        <a href={TESTFLIGHT_URL} target="_blank" rel="noopener noreferrer" className="chip chip--fill ml-auto hidden !min-h-[40px] md:ml-2 md:inline-flex">
+        <a href={TESTFLIGHT_URL} target="_blank" rel="noopener noreferrer" className="chip chip--fill ml-auto hidden !min-h-[40px] lg:ml-2 lg:inline-flex">
           Join the beta
         </a>
 
@@ -67,7 +67,7 @@ export default function Nav() {
           aria-label={open ? 'Close menu' : 'Open menu'}
           aria-expanded={open}
           onClick={() => setOpen(!open)}
-          className="ml-auto flex h-11 w-11 flex-col items-center justify-center gap-[5px] border-1.5 border-[var(--ink)] md:hidden"
+          className="ml-auto flex h-11 w-11 flex-col items-center justify-center gap-[5px] border-1.5 border-[var(--ink)] lg:hidden"
           style={{ borderWidth: '1.5px' }}
         >
           <span className={`h-[2px] w-5 bg-[var(--ink)] transition-transform duration-[length:var(--dur-short)] ${open ? 'translate-y-[7px] rotate-45' : ''}`} />
@@ -77,7 +77,7 @@ export default function Nav() {
       </div>
 
       {open && (
-        <nav aria-label="Mobile" className="border-t border-[var(--rule)] md:hidden">
+        <nav aria-label="Mobile" className="border-t border-[var(--rule)] lg:hidden">
           <ul className="flex flex-col px-6 py-2">
             {LINKS.map(([label, href]) => (
               <li key={href} className="border-b border-[var(--rule)] last:border-0">
