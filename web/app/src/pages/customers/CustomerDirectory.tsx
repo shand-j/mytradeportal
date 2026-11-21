@@ -4,6 +4,7 @@ import { Plus, Search, Phone, Mail, Star, Wrench, X } from 'lucide-react';
 import { useContacts, useCreateContact, useDeleteContact } from '@/lib/api/hooks';
 import { api } from '@/lib/api/client';
 import { useUiStore } from '@/stores/uiStore';
+import { displayInitials } from '@/lib/utils';
 import { toast } from 'sonner';
 import type { SourceChannel } from '@/types';
 
@@ -47,18 +48,6 @@ function normalizePostcode(value: string): string {
 
 function sortAddressOptions(options: string[]): string[] {
   return options.slice().sort((a, b) => a.localeCompare(b, 'en-GB', { numeric: true }));
-}
-
-export function displayInitials(displayName: string): string {
-  const words = displayName.trim().split(/\s+/).filter(Boolean);
-  const firstGrapheme = (word: string) => {
-    if (typeof Intl !== 'undefined' && 'Segmenter' in Intl) {
-      const segmenter = new Intl.Segmenter(undefined, { granularity: 'grapheme' });
-      return segmenter.segment(word)[Symbol.iterator]().next().value?.segment ?? Array.from(word)[0] ?? '';
-    }
-    return Array.from(word)[0] ?? '';
-  };
-  return words.slice(0, 2).map(firstGrapheme).join('');
 }
 
 function isValidEmail(value: string): boolean {

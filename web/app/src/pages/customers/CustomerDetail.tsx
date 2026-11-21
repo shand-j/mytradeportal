@@ -5,7 +5,7 @@ import { useContact, useUpdateContact, useQuotes, useJobs, useInvoices } from '@
 import { useUiStore } from '@/stores/uiStore';
 import { toast } from 'sonner';
 import type { SourceChannel } from '@/types';
-import { displayInitials } from './CustomerDirectory';
+import { displayInitials } from '@/lib/utils';
 
 const sourceChannels: SourceChannel[] = ['pwa', 'chatbot', 'voice', 'whatsapp', 'referral', 'manual'];
 
@@ -249,7 +249,7 @@ function CustomerEditDialog({
   }, [isSubmitting]);
 
   const handleSubmit = () => {
-    if (submittedRef.current || isSubmitting || !emailIsValid || !firstName || !lastName || !phone) return;
+    if (submittedRef.current || isSubmitting || !emailIsValid || !firstName || !phone) return;
     submittedRef.current = true;
     onSubmit({
       firstName,
@@ -301,7 +301,7 @@ function CustomerEditDialog({
         <div className="flex justify-end gap-2 pt-2">
           <button onClick={onClose} className="h-9 px-4 text-sm font-medium text-[#57534E] hover:bg-[#F5F4F0] rounded-lg">Cancel</button>
           <button
-            disabled={isSubmitting || !firstName || !lastName || !phone || !emailIsValid}
+            disabled={isSubmitting || !firstName || !phone || !emailIsValid}
             onClick={handleSubmit}
             className="h-9 px-4 text-sm font-semibold bg-[#D4650A] text-white rounded-lg hover:bg-[#B85500] disabled:opacity-50"
           >

@@ -182,6 +182,11 @@ describe('CustomerDirectory', () => {
       createdAt: '2026-11-21',
     });
 
+    expect(customer.firstName).toBe('Mary');
+    expect(customer.lastName).toBe('Jane 😀 Smith');
     expect(`${customer.firstName} ${customer.lastName}`.trim()).toBe('Mary Jane 😀 Smith');
+
+    const singleName = toCustomer({ id: 'c-2', name: 'Prince', createdAt: '2026-11-21' });
+    expect(`${singleName.firstName} ${singleName.lastName}`.trim()).toBe('Prince');
   });
 });
