@@ -88,7 +88,7 @@ test.describe("G18 — arrival & intake", () => {
     await expect(received.or(chatPhase).first()).toBeVisible({ timeout: 25_000 });
     expect(submitCount).toBe(2);
 
-    const leads = await staffApi<Array<Record<string, any>>>(tenant, "/quote-requests");
+    const leads = await staffApi<Array<{ raw_text: string }>>(tenant, "/quote-requests");
     expect(leads.filter((lead) => lead.raw_text === description)).toHaveLength(1);
   });
 
