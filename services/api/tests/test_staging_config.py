@@ -19,6 +19,7 @@ def test_staging_mirror_uses_sandbox_and_safe_llm_caps() -> None:
 
     assert api["ENVIRONMENT"] == "staging"
     assert api["PADDLE_SANDBOX"] == "true"
+    assert api["LLM_PROVIDER_MODE"] == "staging_double"
     assert api["LLM_MODEL"] == "openai/kimi-k2.6"
     assert api["LLM_MAX_RETRIES"] == "1"
     assert api["AI_BURST_LIMIT_PER_HOUR"] == "10"

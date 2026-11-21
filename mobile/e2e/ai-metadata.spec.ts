@@ -92,12 +92,7 @@ test.describe.serial("T — AI metadata contract", () => {
           "Replace a consumer unit and install four new double sockets in a 3-bed semi in Stockport",
       },
     });
-    if (res.status === 503) {
-      // No LLM configured on the target api (local dev) — the metadata fields
-      // only exist after a real generation pass, so nothing to assert.
-      test.skip(true, "LLM not configured on target api (POST /quotes/generate -> 503)");
-    }
-    expect(res.status).toBe(201);
+    expect(res.status, `POST /quotes/generate returned ${res.status}: ${JSON.stringify(res.json)}`).toBe(201);
 
     const quote = res.json as {
       ai_generated: boolean;

@@ -69,6 +69,10 @@ class Settings(BaseSettings):
     embedding_model: str = Field(default="text-embedding-3-large")
     embedding_dimensions: int | None = Field(default=None)
     llm_model: str = Field(default="gpt-4o-mini")
+    # Test/deployment provider boundary. "staging_double" makes quote and
+    # follow-up generation use deterministic local responses instead of calling
+    # an external LLM; unset/empty selects the normal live provider route.
+    llm_provider_mode: str = Field(default="")
     # Optional vision-capable model override for the photo-observation step
     # that captions customer photos attached to quote requests. Empty falls
     # back to ``llm_model`` — set this when the configured chat model cannot
