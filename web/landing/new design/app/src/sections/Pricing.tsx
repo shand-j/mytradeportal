@@ -9,10 +9,8 @@ import { useFeatureFlags } from '@/lib/feature-flags'
 /**
  * Pricing — flat per business, seat-capped tiers (1 / 5 / 15 users), AI
  * unmetered on every plan.
- * Prices are pulled live from Paddle (PricePreview), localised to the
- * visitor's country with tax handled by Paddle, falling back to static GBP
- * launch prices when Paddle isn't configured. During beta every plan is
- * free; shown prices are the launch prices.
+ * Prices remain future launch planning only. While the paddle_billing flag
+ * is disabled, no provider preview or checkout is shown and beta access is free.
  */
 export default function Pricing() {
   const { paddleBilling } = useFeatureFlags()
@@ -47,10 +45,9 @@ export default function Pricing() {
               Every price on the page.
             </h2>
             <p className="reveal mt-[var(--space-md)] max-w-[44ch] text-[15.5px] leading-[1.75] text-[var(--muted)]" style={{ ['--i' as string]: 1 }}>
-              Free while we&apos;re in beta — join TestFlight and every plan is
-              unlocked. At launch: one flat price per business — seats for
-              your team on every plan, and AI included throughout. No
-              credits, no counting.
+              Free while we&apos;re in beta — join TestFlight for a
+              concierge-led beta. Paid plans and checkout are not active.
+              Future launch prices are shown for planning only.
             </p>
           </div>
 
@@ -126,7 +123,7 @@ export default function Pricing() {
                         {shown}
                       </span>
                       <span className={`pb-1.5 text-[13px] font-medium ${tier.featured ? 'text-[var(--paper-on-dark-muted)]' : 'text-[var(--muted)]'}`}>
-                        per business /{frequency === 'year' ? 'yr' : 'mo'}
+                        future /{frequency === 'year' ? 'yr' : 'mo'}
                       </span>
                     </>
                   )}
@@ -201,10 +198,10 @@ export default function Pricing() {
           style={{ ['--i' as string]: 3 }}
         >
           <p className="font-display text-[13px] font-bold uppercase tracking-[0.12em] text-[var(--ink)]">
-            14 days free — full features, no card needed.
+            Beta access is free — no card or paid subscription.
           </p>
           <p className="mt-1 text-[13.5px] leading-[1.6] text-[var(--muted)] md:mt-0 md:text-right">
-            Send 3 AI quotes during your trial and we&apos;ll extend you to 30 days.
+            Future launch pricing is not available to purchase during beta.
           </p>
         </div>
 
@@ -213,8 +210,7 @@ export default function Pricing() {
           <Link to="/fair-use" className="link-arrow">
             fair-use policy
           </Link>{' '}
-          that only exists to stop abuse. Prices shown with local tax where
-          applicable, via Paddle.
+          that only exists to stop abuse. Beta access does not require a trial or payment.
         </p>
       </div>
     </section>
