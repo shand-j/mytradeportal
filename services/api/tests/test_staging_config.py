@@ -47,4 +47,4 @@ def test_staging_workflow_and_iac_preserve_mailpit() -> None:
     assert workflow.count("Route staging email to Mailpit") == 2
     assert workflow.count("python3 scripts/ci/route_env_email.py") == 2
     assert 'service("mailpit"' in iac
-    assert 'image("axllent/mailpit:v1.18")' in iac
+    assert 'image("axllent/mailpit:latest")' in iac
