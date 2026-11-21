@@ -103,6 +103,11 @@ async def update_onboarding_step(
     if step_name == "business_identity":
         year = data.value.get("year")
         if year is not None and year != "":
+            if isinstance(year, bool) or (isinstance(year, float) and not year.is_integer()):
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Year established must be a valid year.",
+                )
             try:
                 numeric_year = int(year)
             except (TypeError, ValueError):
@@ -135,9 +140,9 @@ async def update_onboarding_step(
             ("avg_minutes_per_quote", "Average minutes per quote"),
         ):
             metric = data.value.get(key)
-            if isinstance(metric, bool) or metric is None:
+            if metric is None:
                 continue
-            if not isinstance(metric, int) or metric < 0:
+            if isinstance(metric, bool) or not isinstance(metric, int) or metric < 0:
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
                     detail=f"{label} must be zero or a positive whole number.",

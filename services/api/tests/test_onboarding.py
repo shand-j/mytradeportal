@@ -106,6 +106,10 @@ async def test_onboarding_rejects_invalid_identity_metrics_and_urls(
         {"year": str(current_year + 1)},
         {"quotes_per_week": -5},
         {"avg_minutes_per_quote": -1},
+        {"quotes_per_week": True},
+        {"quotes_per_week": "6"},
+        {"avg_minutes_per_quote": 1.5},
+        {"year": 2020.5},
         {"website": "not-a-url"},
     ]
     for value in invalid_values:

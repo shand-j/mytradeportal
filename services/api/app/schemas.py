@@ -167,10 +167,10 @@ class TenantUpdate(BaseModel):
             "avgMinutesPerQuote",
         ):
             metric = value.get(key)
-            if isinstance(metric, bool):
+            if metric is None:
+                continue
+            if isinstance(metric, bool) or not isinstance(metric, int) or metric < 0:
                 raise ValueError("workload metrics must be zero or positive whole numbers")
-            if isinstance(metric, int) and metric < 0:
-                raise ValueError("workload metrics must be zero or positive")
         return value
 
 
