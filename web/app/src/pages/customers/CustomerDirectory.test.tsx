@@ -7,6 +7,7 @@ import { api } from '@/lib/api/client';
 import { useContacts, useCreateContact, useDeleteContact } from '@/lib/api/hooks';
 import { renderPage, resetStores } from '@/test/test-utils';
 import { mockCustomers } from '@/lib/mock/data/customers';
+import { toCustomer } from '@/lib/api/hooks/contacts';
 
 const defaultMutations = {
   mutate: vi.fn(),
@@ -36,6 +37,7 @@ vi.mock('@/lib/api/hooks', async (importOriginal) => {
 
 describe('CustomerDirectory', () => {
   beforeEach(() => {
+    vi.clearAllMocks();
     resetStores();
     vi.mocked(useContacts).mockReturnValue({ data: mockCustomers, isLoading: false, error: null });
     vi.mocked(useCreateContact).mockReturnValue(defaultMutations);
@@ -137,5 +139,49 @@ describe('CustomerDirectory', () => {
       typeof input === 'string' ? input : input instanceof URL ? input.toString() : String(input),
     );
     expect(requestedUrls.some((url) => url.includes('nominatim.openstreetmap.org/search'))).toBe(false);
+  });
+
+  it('guards duplicate Save Customer activation', async () => {
+    const user = userEvent.setup();
+    renderPage(<CustomerDirectory />);
+    await user.click(screen.getByRole('button', { name: /add customer/i }));
+
+    await user.type(screen.getByPlaceholderText(/first name/i), 'Mary Jane');
+    await user.type(screen.getByPlaceholderText(/last name/i), 'Smith');
+    await user.type(screen.getByPlaceholderText(/email/i), 'mary@example.com');
+    await user.type(screen.getByPlaceholderText(/phone/i), '07700 900000');
+
+    const save = screen.getByRole('button', { name: /save customer/i });
+    await user.dblClick(save);
+
+    expect(defaultMutations.mutate).toHaveBeenCalledTimes(1);
+  });
+
+  it('rejects malformed email inline', async () => {
+    const user = userEvent.setup();
+    renderPage(<CustomerDirectory />);
+    await user.click(screen.getByRole('button', { name: /add customer/i }));
+
+    await user.type(screen.getByPlaceholderText(/first name/i), 'José');
+    await user.type(screen.getByPlaceholderText(/last name/i), 'O’Neill');
+    await user.type(screen.getByPlaceholderText(/phone/i), '07700 900000');
+    await user.type(screen.getByPlaceholderText(/email/i), 'not-an-email');
+
+    expect(screen.getByRole('alert')).toHaveTextContent(/valid email address/i);
+    expect(screen.getByRole('button', { name: /save customer/i })).toBeDisabled();
+  });
+
+  it('preserves the canonical name and Unicode/emoji display text', () => {
+    const customer = toCustomer({
+      id: 'c-1',
+      name: 'Mary Jane 😀 Smith',
+      email: null,
+      phone: '',
+      address: null,
+      postcode: null,
+      createdAt: '2026-11-21',
+    });
+
+    expect(`${customer.firstName} ${customer.lastName}`.trim()).toBe('Mary Jane 😀 Smith');
   });
 });

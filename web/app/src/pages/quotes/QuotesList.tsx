@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { Plus, Search, Sparkles, Send, XCircle, Trash2, X, Wand2 } from 'lucide-react';
 import { useQuotes, useCreateQuote, useSendQuote, useRejectQuote, useDeleteQuote, useGenerateQuote } from '@/lib/api/hooks';
 import { useUiStore } from '@/stores/uiStore';
@@ -17,6 +17,9 @@ export function QuotesList() {
   const deleteQuote = useDeleteQuote();
   const generateQuote = useGenerateQuote();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const initialCustomerId = searchParams.get('customerId') ?? '';
+  const initialPropertyAddress = searchParams.get('propertyAddress') ?? '';
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
   const [isDialogOpen, setIsDialogOpen] = useState(false);
@@ -25,6 +28,10 @@ export function QuotesList() {
   useEffect(() => {
     setPageTitle('Quotes');
   }, [setPageTitle]);
+
+  useEffect(() => {
+    if (initialCustomerId) setIsDialogOpen(true);
+  }, [initialCustomerId]);
 
   const filtered = (quotes ?? []).filter(q => {
     const matchesSearch = !search || q.reference.toLowerCase().includes(search.toLowerCase()) ||
@@ -234,7 +241,16 @@ export function QuotesList() {
         )}
       </div>
 
-      {isDialogOpen && <QuoteDialog contacts={contacts ?? []} onClose={() => setIsDialogOpen(false)} onSubmit={handleCreate} isSubmitting={createQuote.isPending} />}
+      {isDialogOpen && (
+        <QuoteDialog
+          contacts={contacts ?? []}
+          initialCustomerId={initialCustomerId}
+          initialPropertyAddress={initialPropertyAddress}
+          onClose={() => setIsDialogOpen(false)}
+          onSubmit={handleCreate}
+          isSubmitting={createQuote.isPending}
+        />
+      )}
       {isAiDialogOpen && (
         <AiQuoteDialog
           contacts={contacts ?? []}
@@ -258,11 +274,15 @@ export function QuotesList() {
 
 function QuoteDialog({
   contacts,
+  initialCustomerId = '',
+  initialPropertyAddress = '',
   onClose,
   onSubmit,
   isSubmitting,
 }: {
   contacts: { id: string; firstName: string; lastName: string }[];
+  initialCustomerId?: string;
+  initialPropertyAddress?: string;
   onClose: () => void;
   onSubmit: (payload: {
     customerId: string;
@@ -273,10 +293,10 @@ function QuoteDialog({
   }) => void;
   isSubmitting: boolean;
 }) {
-  const [customerId, setCustomerId] = useState('');
+  const [customerId, setCustomerId] = useState(initialCustomerId);
   const [reference, setReference] = useState('');
   const [serviceType, setServiceType] = useState('');
-  const [propertyAddress, setPropertyAddress] = useState('');
+  const [propertyAddress, setPropertyAddress] = useState(initialPropertyAddress);
   const [description, setDescription] = useState('');
   const [quantity, setQuantity] = useState(1);
   const [unit, setUnit] = useState('item');
