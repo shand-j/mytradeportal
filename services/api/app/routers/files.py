@@ -103,7 +103,9 @@ def store_upload(tenant_id: UUID, file: UploadFile, content: bytes) -> dict[str,
             raise
         # The volume can disappear between head_bucket and put_object.
         # Recreate it and retry once instead of turning media upload into 503.
-        logger.warning("minio_bucket_removed_during_upload_recreating", bucket=settings.minio_bucket)
+        logger.warning(
+            "minio_bucket_removed_during_upload_recreating", bucket=settings.minio_bucket
+        )
         client.create_bucket(Bucket=settings.minio_bucket)
         client.put_object(
             Bucket=settings.minio_bucket,
