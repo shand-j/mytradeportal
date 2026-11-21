@@ -23,7 +23,9 @@ concurrency:
 jobs:
   security-audit:
     runs-on: ubuntu-latest
-    environment: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'staging' && 'MyTradePortal / staging' || 'MyTradePortal / production' }}
+    # The manual environment input must select the matching GitHub
+    # environment. Scheduled runs have no input and remain production.
+    environment: ${{ inputs.environment == 'staging' && 'MyTradePortal / staging' || 'MyTradePortal / production' }}
     env:
       # Scheduled runs carry no inputs; they always target production.
       SECURITY_ENVIRONMENT: ${{ github.event.inputs.environment || 'production' }}
@@ -72,6 +74,9 @@ jobs:
           print("Security test configuration OK")
           PY
 
+      - name: Validate primary and secondary tenant access
+        run: python -m security.validate_target
+
       - name: Run security tests
         run: pytest -m security -v --junitxml=security-results.xml
 
@@ -97,28 +102,10 @@ jobs:
               f"Result: {os.environ.get('JOB_STATUS', 'see workflow status')}",
           ]
           Path("security-artifacts/run-summary.txt").write_text("\n".join(summary) + "\n")
-
-          for name in ("security-results.xml", "soc2-results.xml"):
-              source = Path(name)
-              if not source.exists():
-                  continue
-              target = source.read_text(errors="replace")
-              for secret_name in (
-                  "SECURITY_TENANT_SLUG",
-                  "SECURITY_ADMIN_EMAIL",
-                  "SECURITY_ADMIN_PASSWORD",
-                  "SECURITY_SECONDARY_TENANT_SLUG",
-                  "SECURITY_SECONDARY_ADMIN_EMAIL",
-                  "SECURITY_SECONDARY_ADMIN_PASSWORD",
-                  "SECURITY_API_BASE_URL",
-                  "SECURITY_WEB_BASE_URL",
-                  "SECURITY_ADMIN_BASE_URL",
-              ):
-                  secret = os.environ.get(secret_name)
-                  if secret:
-                      target = target.replace(secret, "[REDACTED]")
-              Path("security-artifacts", name).write_text(target)
           PY
+          python -m security.sanitize_artifacts \
+            --output security-artifacts \
+            security-results.xml soc2-results.xml
 
       - name: Upload sanitized security evidence
         if: always()
