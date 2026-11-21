@@ -386,6 +386,8 @@ class Settings(BaseSettings):
             token in self.allowed_origin_regex for token in ("*", ".+")
         ):
             violations.append("allowed_origin_regex (wildcard)")
+        if self.llm_provider_mode.strip():
+            violations.append("llm_provider_mode (test doubles are not allowed in production)")
 
         if violations:
             raise InsecureProductionConfigError(

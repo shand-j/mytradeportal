@@ -979,7 +979,9 @@ async def test_followup_transport_timeout_is_sanitized(monkeypatch: pytest.Monke
     ):
         await generate_followup("Consumer unit replacement", [])
 
-    assert str(exc.value) == "AI provider temporarily unavailable"
+    assert str(exc.value) == (
+        "The AI service took too long to respond. Your existing data is unchanged; please try again."
+    )
     assert "private" not in str(exc.value)
 
 
@@ -1003,7 +1005,9 @@ async def test_quote_transport_timeout_is_sanitized(monkeypatch: pytest.MonkeyPa
             knowledge_chunks=[],
         )
 
-    assert str(exc.value) == "AI provider temporarily unavailable"
+    assert str(exc.value) == (
+        "The AI service took too long to respond. Your existing data is unchanged; please try again."
+    )
     assert "private" not in str(exc.value)
 
 
