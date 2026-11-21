@@ -69,11 +69,11 @@ async def test_paddle_webhook_endpoint_accepts_valid_event(
 
     recorded: dict[str, Any] = {}
 
-    async def fake_record_payment(inv_id: str, event_data: dict[str, Any]) -> None:
+    async def fake_record_payment(session: Any, inv_id: str, event_data: dict[str, Any]) -> None:
         recorded["invoice_id"] = inv_id
         recorded["amount"] = Decimal(event_data["details"]["totals"]["total"]) / 100
 
-    monkeypatch.setattr("app.routers.webhooks._record_payment", fake_record_payment)
+    monkeypatch.setattr("app.routers.webhooks._record_payment_in_session", fake_record_payment)
     monkeypatch.setattr("app.paddle_client.settings.paddle_webhook_secret", secret)
 
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
@@ -123,10 +123,10 @@ async def test_paddle_webhook_dedupes_repeated_event_id(
 
     upsert_calls: list[Any] = []
 
-    async def fake_upsert(event_type: str, event_data: dict[str, Any]) -> None:
+    async def fake_upsert(session: Any, event_type: str, event_data: dict[str, Any]) -> None:
         upsert_calls.append((event_type, event_data))
 
-    monkeypatch.setattr("app.routers.webhooks._upsert_subscription", fake_upsert)
+    monkeypatch.setattr("app.routers.webhooks._upsert_subscription_in_session", fake_upsert)
 
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         first = await client.post(
@@ -146,6 +146,54 @@ async def test_paddle_webhook_dedupes_repeated_event_id(
     assert second.json()["status"] == "duplicate"
     # Handler ran exactly once.
     assert len(upsert_calls) == 1
+
+
+async def test_paddle_webhook_retry_after_handler_failure_reprocesses_once(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    secret = "whsec_retry_secret"
+    payload = {
+        "event_id": f"evt_{uuid4().hex}",
+        "event_type": "subscription.created",
+        "data": {"id": "sub_retry_1", "custom_data": {"tenant_id": str(uuid4())}},
+    }
+    body = json.dumps(payload).encode()
+    signature = _make_signature_payload(secret, body)
+
+    monkeypatch.setattr("app.paddle_client.settings.paddle_webhook_secret", secret)
+    calls = 0
+
+    async def flaky_upsert(session: Any, event_type: str, event_data: dict[str, Any]) -> None:
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            raise RuntimeError("temporary upsert outage")
+
+    monkeypatch.setattr("app.routers.webhooks._upsert_subscription_in_session", flaky_upsert)
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        with pytest.raises(RuntimeError, match="temporary upsert outage"):
+            await client.post(
+                "/webhooks/paddle",
+                content=body,
+                headers={"Paddle-Signature": signature, "Content-Type": "application/json"},
+            )
+        second = await client.post(
+            "/webhooks/paddle",
+            content=body,
+            headers={"Paddle-Signature": signature, "Content-Type": "application/json"},
+        )
+        third = await client.post(
+            "/webhooks/paddle",
+            content=body,
+            headers={"Paddle-Signature": signature, "Content-Type": "application/json"},
+        )
+
+    assert second.status_code == 200
+    assert second.json()["status"] == "ok"
+    assert third.status_code == 200
+    assert third.json()["status"] == "duplicate"
+    assert calls == 2
 
 
 async def test_paddle_webhook_delays_valid_events_when_paddle_billing_off(
@@ -168,8 +216,8 @@ async def test_paddle_webhook_delays_valid_events_when_paddle_billing_off(
     upsert = AsyncMock()
     record_payment = AsyncMock()
     dunning = AsyncMock()
-    monkeypatch.setattr("app.routers.webhooks._upsert_subscription", upsert)
-    monkeypatch.setattr("app.routers.webhooks._record_payment", record_payment)
+    monkeypatch.setattr("app.routers.webhooks._upsert_subscription_in_session", upsert)
+    monkeypatch.setattr("app.routers.webhooks._record_payment_in_session", record_payment)
     monkeypatch.setattr("app.routers.webhooks.maybe_start_dunning", dunning)
 
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
@@ -178,9 +226,16 @@ async def test_paddle_webhook_delays_valid_events_when_paddle_billing_off(
             content=body,
             headers={"Paddle-Signature": signature, "Content-Type": "application/json"},
         )
+        duplicate = await client.post(
+            "/webhooks/paddle",
+            content=body,
+            headers={"Paddle-Signature": signature, "Content-Type": "application/json"},
+        )
 
     assert response.status_code == 200
     assert response.json()["status"] == "delayed"
+    assert duplicate.status_code == 200
+    assert duplicate.json()["status"] == "duplicate"
     upsert.assert_not_awaited()
     record_payment.assert_not_awaited()
     dunning.assert_not_awaited()
@@ -218,15 +273,15 @@ async def test_paddle_webhook_routes_subscription_created_to_upsert(
 
     seen: dict[str, Any] = {}
 
-    async def fake_upsert(event_type: str, event_data: dict[str, Any]) -> None:
+    async def fake_upsert(session: Any, event_type: str, event_data: dict[str, Any]) -> None:
         seen["event_type"] = event_type
         seen["event_data"] = event_data
 
-    async def fake_record_payment(inv_id: str, event_data: dict[str, Any]) -> None:
+    async def fake_record_payment(session: Any, inv_id: str, event_data: dict[str, Any]) -> None:
         raise AssertionError("record_payment should not be called for subscription events")
 
-    monkeypatch.setattr("app.routers.webhooks._upsert_subscription", fake_upsert)
-    monkeypatch.setattr("app.routers.webhooks._record_payment", fake_record_payment)
+    monkeypatch.setattr("app.routers.webhooks._upsert_subscription_in_session", fake_upsert)
+    monkeypatch.setattr("app.routers.webhooks._record_payment_in_session", fake_record_payment)
 
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         response = await client.post(
@@ -816,11 +871,11 @@ async def test_recorded_transaction_completed_routes_to_payment_recording(
 
     recorded: dict[str, Any] = {}
 
-    async def fake_record_payment(inv_id: str, event_data: dict[str, Any]) -> None:
+    async def fake_record_payment(session: Any, inv_id: str, event_data: dict[str, Any]) -> None:
         recorded["invoice_id"] = inv_id
         recorded["event_data"] = event_data
 
-    clean_price_env.setattr("app.routers.webhooks._record_payment", fake_record_payment)
+    clean_price_env.setattr("app.routers.webhooks._record_payment_in_session", fake_record_payment)
 
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         response = await _post_paddle(client, payload, secret)
@@ -849,14 +904,14 @@ async def test_recorded_transaction_billed_mutates_no_state(
     data = _transaction_data(status="billed", subscription_id=paddle_sub_id)
     payload = _envelope("transaction.billed", data)
 
-    async def fail_record_payment(inv_id: str, event_data: dict[str, Any]) -> None:
+    async def fail_record_payment(session: Any, inv_id: str, event_data: dict[str, Any]) -> None:
         raise AssertionError("billed events must never reach the payment recorder")
 
-    async def fail_upsert(event_type: str, event_data: dict[str, Any]) -> None:
+    async def fail_upsert(session: Any, event_type: str, event_data: dict[str, Any]) -> None:
         raise AssertionError("billed events must never reach the subscription upsert")
 
-    clean_price_env.setattr("app.routers.webhooks._record_payment", fail_record_payment)
-    clean_price_env.setattr("app.routers.webhooks._upsert_subscription", fail_upsert)
+    clean_price_env.setattr("app.routers.webhooks._record_payment_in_session", fail_record_payment)
+    clean_price_env.setattr("app.routers.webhooks._upsert_subscription_in_session", fail_upsert)
 
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         response = await _post_paddle(client, payload, secret)
