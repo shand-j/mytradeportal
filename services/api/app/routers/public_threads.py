@@ -37,6 +37,7 @@ from app.limiter import limiter
 from app.models import Communication, QuoteRequest, Tenant
 from app.quote_automation import build_triage_description, requote_after_triage_close
 from app.rag import generate_followup
+from app.rag.errors import redact_provider_detail
 from app.rls import set_tenant_in_session
 from app.routers.communications import _notify_staff_triage_closed
 
@@ -227,7 +228,7 @@ async def post_guest_message(
             tenant_id=str(tenant.id),
             quote_request_id=str(qr_id),
             error_type=type(exc).__name__,
-            error=str(exc)[:200],
+            error=redact_provider_detail(str(exc))[:200],
         )
     if result is None:
         await db.commit()

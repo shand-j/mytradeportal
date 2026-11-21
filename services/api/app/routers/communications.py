@@ -25,6 +25,7 @@ from app.quote_automation import (
     requote_after_triage_close,
 )
 from app.rag import generate_followup
+from app.rag.errors import LLMProviderError, public_llm_error
 from app.rls import set_tenant_in_session
 from app.routers.contacts import BLOCKED_CUSTOMER_DETAIL, contact_is_blocked
 from app.schemas import CommunicationCreate, CommunicationRead
@@ -469,7 +470,15 @@ async def ai_followup(
         )
     except RuntimeError as exc:
         raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=(
+                public_llm_error(exc)
+                if isinstance(exc, LLMProviderError)
+                else {
+                    "code": "llm_unavailable",
+                    "reason": "The AI service is temporarily unavailable. Please try again.",
+                }
+            ),
         ) from exc
     confidence = int(result.get("confidence", 0))
     complete = bool(result.get("complete", False)) or confidence >= 80

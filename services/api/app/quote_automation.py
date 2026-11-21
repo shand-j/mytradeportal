@@ -44,6 +44,7 @@ from app.calculations import apply_quote_rounding, calculate_quote_totals
 from app.database import get_db_session
 from app.models import Quote, QuoteLineItem, QuoteRequest, Tenant
 from app.push import notify_customer, notify_staff
+from app.rag.errors import redact_provider_detail
 from app.rls import set_tenant_in_session
 from app.routers import quotes as quotes_router
 from app.schemas import QuoteGenerateRequest, QuoteRead
@@ -131,7 +132,7 @@ async def generate_quote_async_worker(tenant_id: UUID, data: QuoteGenerateReques
             "async_generate_failed",
             tenant_id=str(tenant_id),
             quote_request_id=str(data.quote_request_id) if data.quote_request_id else None,
-            error=str(exc),
+            error=redact_provider_detail(str(exc)),
             error_type=type(exc).__name__,
         )
         try:
@@ -179,7 +180,7 @@ async def auto_draft_quote_for_request(tenant_id: UUID, quote_request_id: UUID) 
             "auto_draft_quote_failed",
             tenant_id=str(tenant_id),
             quote_request_id=str(quote_request_id),
-            error=str(exc),
+            error=redact_provider_detail(str(exc)),
             error_type=type(exc).__name__,
         )
 

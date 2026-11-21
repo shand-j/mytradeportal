@@ -27,6 +27,25 @@ export class NetworkError extends Error {
   }
 }
 
+/** Convert structured LLM 503 failures to stable, actionable mobile copy. */
+export function safeLlmErrorMessage(error: ApiError, fallback: string): string {
+  switch (error.code) {
+    case "llm_authentication_failed":
+      return "The AI service isn't configured correctly. Please retry later.";
+    case "llm_timeout":
+      return "The AI service took too long to respond. Your existing data is unchanged — please try again.";
+    case "llm_rate_limited":
+      return "The AI service is busy. Please wait a moment and try again.";
+    case "llm_connection_failed":
+      return "The AI service couldn't be reached. Please try again.";
+    case "llm_unavailable":
+    case "llm_no_output":
+      return fallback;
+    default:
+      return fallback;
+  }
+}
+
 type RequestOptions = {
   method?: "GET" | "POST" | "PATCH" | "PUT" | "DELETE";
   /** camelCase body; converted to snake_case on the wire. */

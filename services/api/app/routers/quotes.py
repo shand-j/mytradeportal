@@ -76,6 +76,7 @@ from app.rag import (
     search_cost_items_with_status,
     validate_generated_quote,
 )
+from app.rag.errors import LLMProviderError, public_llm_error
 from app.rag.validation import build_quote_from_validation
 from app.rag.vision import (
     MAX_OBSERVED_IMAGES,
@@ -716,15 +717,19 @@ async def refine_quote(
     except TimeoutError as exc:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail=(
-                "The AI service took too long to respond — your quote is unchanged. "
-                "Please try again."
-            ),
+            detail=public_llm_error(exc),
         ) from exc
     except RuntimeError as exc:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail=str(exc),
+            detail=(
+                public_llm_error(exc)
+                if isinstance(exc, LLMProviderError)
+                else {
+                    "code": "llm_unavailable",
+                    "reason": "The AI service is temporarily unavailable. Please try again.",
+                }
+            ),
         ) from exc
 
     validated = validate_generated_quote(
@@ -1717,9 +1722,21 @@ async def _generate_quote_impl(
                 "again or build the quote manually."
             )
     except RuntimeError as exc:
+        if isinstance(exc, LLMProviderError):
+            detail = public_llm_error(exc)
+        elif "did not return any line items" in str(exc):
+            detail = {
+                "code": "llm_no_output",
+                "reason": str(exc),
+            }
+        else:
+            detail = {
+                "code": "llm_unavailable",
+                "reason": "The AI service is temporarily unavailable. Please try again.",
+            }
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail=str(exc),
+            detail=detail,
         ) from exc
 
     # Round the (freshly calculated) total up when the tenant enabled it.
