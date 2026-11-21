@@ -1,6 +1,7 @@
 import { useEffect } from 'react';
 import { TrendingUp, TrendingDown, FileText, Wrench, Star, Clock, Phone, Sparkles } from 'lucide-react';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, PieChart, Pie, Cell, ResponsiveContainer } from 'recharts';
+import { Link } from 'react-router-dom';
 import { useDashboard } from '@/lib/api/hooks';
 import { useUiStore } from '@/stores/uiStore';
 import { formatDistanceToNow } from 'date-fns';
@@ -68,9 +69,14 @@ export function Dashboard() {
             <h2 className="text-lg font-semibold text-[#1C1917]">Revenue Overview</h2>
             <div className="flex gap-1">
               {['Week', 'Month', 'Year'].map(p => (
-                <button key={p} className={`px-3 py-1 text-xs font-medium rounded-md transition-colors ${
-                  p === 'Month' ? 'bg-[#1C1917] text-white' : 'text-[#57534E] hover:bg-[#F5F4F0]'
-                }`}>
+                <button
+                  key={p}
+                  disabled={p !== 'Month'}
+                  title={p === 'Month' ? undefined : `${p} view coming soon`}
+                  className={`px-3 py-1 text-xs font-medium rounded-md transition-colors ${
+                    p === 'Month' ? 'bg-[#1C1917] text-white' : 'text-[#57534E]'
+                  } ${p !== 'Month' ? 'cursor-not-allowed opacity-50' : ''}`}
+                >
                   {p}
                 </button>
               ))}
@@ -145,7 +151,9 @@ export function Dashboard() {
       <div className="bg-white rounded-xl border border-[#E7E5E4] p-5 shadow-sm">
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-lg font-semibold text-[#1C1917]">Recent Activity</h2>
-          <button className="text-xs font-medium text-[#D4650A] hover:underline">View all</button>
+          <Link to="/jobs" className="text-xs font-medium text-[#D4650A] hover:underline">
+            View all
+          </Link>
         </div>
         <div className="space-y-1">
           {recentActivity.map(act => (
@@ -201,8 +209,8 @@ function KpiCard({ label, value, change, changePositive, icon, progress, warning
         </div>
       )}
       {warning && <div className="mt-2 text-[11px] text-[#DC2626]">{warning}</div>}
-      {stars && (
-        <div className="flex gap-0.5 mt-2">
+      {stars !== undefined && (
+        <div className="flex gap-0.5 mt-2" role="img" aria-label={`Rating: ${stars} out of 5 stars`}>
           {[1, 2, 3, 4, 5].map(s => (
             <Star key={s} className={`w-4 h-4 ${s <= Math.floor(stars) ? 'text-amber-400 fill-amber-400' : s - 0.5 <= stars ? 'text-amber-400 fill-amber-400/50' : 'text-[#E7E5E4]'}`} />
           ))}
