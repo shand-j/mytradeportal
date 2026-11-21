@@ -3,11 +3,11 @@
  *
  * Walks every step of the wizard with a unique-tagged throwaway identity,
  * asserting each step's validation blocks Continue until the step is complete.
- * Stops at the Review step: tapping "Choose your plan" there would POST
+ * Stops at the Review step: tapping "Continue" there would POST
  * /tenants and provision a REAL tenant (finishRegistration runs before the
  * plan/Paddle step), which we must not do against production. The plan step
- * itself therefore cannot be rendered without creating a tenant — its entry
- * point (onboarding-choose-plan) is asserted instead.
+ * itself therefore cannot be rendered without creating a tenant — the continue
+ * entry point (onboarding-choose-plan) is asserted instead.
  *
  * No backend rows are created, so no cleanup is required; the wizard state is
  * in-memory only and is discarded by relaunchApp() in the after hook.
@@ -264,9 +264,10 @@ describe("02 onboarding: wizard walk-through (stops before tenant creation)", ()
     await waitForText("Cover: £2m");
     // Services summary shows the step-7 picks.
     await waitForText("ev charger · eicr");
-    // The plan entry point renders — but tapping it would POST /tenants and
+    // The review Continue entry point renders — but tapping it would POST /tenants and
     // provision a REAL tenant (finishRegistration runs at this transition,
     // before the read-only plan step), so we assert and stop here.
+    await waitForText("Continue");
     await waitForId("onboarding-choose-plan");
   });
 

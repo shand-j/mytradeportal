@@ -11,10 +11,10 @@ on:
   workflow_dispatch:
 
 concurrency:
-  # Never cancel an in-flight staging run: it is the pre-production safety
-  # net and its results must be attributable to exactly one deploy.
-  group: staging-e2e
-  cancel-in-progress: false
+  # Keep evidence fresh on main: newer pushes cancel older in-flight staging
+  # runs for this ref, while manual workflow_dispatch runs are left untouched.
+  group: staging-e2e-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'push' }}
 
 env:
   RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN_STAGING }}
@@ -34,11 +34,22 @@ env:
 jobs:
   apply-staging-iac:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     environment: MyTradePortal / staging
     permissions:
       contents: read
     steps:
       - uses: actions/checkout@v4
+
+      - name: Fail fast on stale push run
+        if: github.event_name == 'push'
+        run: |
+          git fetch --no-tags --depth=1 origin "${GITHUB_REF_NAME}"
+          LATEST_SHA=$(git rev-parse "origin/${GITHUB_REF_NAME}")
+          if [ "$LATEST_SHA" != "$GITHUB_SHA" ]; then
+            echo "::error::Stale staging run: this run targets ${GITHUB_SHA}, but ${GITHUB_REF_NAME} is now at ${LATEST_SHA}. Cancel this run and rely on the newest run so staging/deploy evidence stays fresh."
+            exit 1
+          fi
 
       - name: Set up Node
         uses: actions/setup-node@v4
@@ -74,6 +85,7 @@ jobs:
   staging-verify:
     needs: apply-staging-iac
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     # GitHub environment holding the staging-scoped RAILWAY_TOKEN; Railway
     # tokens are environment-bound, so this job must not pick up the
     # production token from the repo-level secret.
@@ -197,6 +209,7 @@ jobs:
     # environment's webhook secrets, so it runs only here — pr-verify stays
     # read-only and skips every deployed_write test.
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     environment: MyTradePortal / staging
     permissions:
       contents: read
