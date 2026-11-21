@@ -17,7 +17,7 @@ builds.
 
 ## 1. Automated coverage
 
-### 1.1 API test suite (pytest, ~1,160 tests)
+### 1.1 API test suite (pytest, ~1,300 tests)
 
 Runs: locally on every change, in CI on every PR/push (`ci.yml` python job),
 against native Postgres with RLS genuinely enforced (non-superuser role).
@@ -46,7 +46,14 @@ against native Postgres with RLS genuinely enforced (non-superuser role).
   (guards the no-Alembic schema model).
 - Dependency audit: `pnpm audit --audit-level=high` hard gate (4 documented
   deferrals allow-listed); `pip-audit` report-only.
-- `tsc --noEmit` for mobile and landing; `npm run build` for landing.
+- `tsc --noEmit` for mobile runs in `ci.yml`. Landing typecheck/build passed
+  locally in this review but are **not yet current CI gates**; #377 must add a
+  committed, deterministic install path, frozen lockfile, and explicit landing
+  typecheck/build jobs. An install that requires `--ignore-workspace` is not a
+  valid release build.
+- Staging and preview jobs must have bounded runtimes and explicit stale-run
+  cancellation semantics (#76). Pending, cancelled, timed-out, or superseded
+  runs are not evidence of a pass.
 
 ### 1.3 Browser automation (Playwright)
 
