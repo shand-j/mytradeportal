@@ -11,6 +11,8 @@ import { useFeatureFlags } from '@/lib/feature-flags'
  * unmetered on every plan.
  * Prices remain future launch planning only. While the paddle_billing flag
  * is disabled, no provider preview or checkout is shown and beta access is free.
+ * When enabled, previews and checkout also require the explicit live-pricing
+ * opt-in and the rebuilt flat per-business catalogue.
  */
 export default function Pricing() {
   const { paddleBilling } = useFeatureFlags()
