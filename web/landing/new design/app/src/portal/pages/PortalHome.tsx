@@ -7,6 +7,7 @@ import { usePageMeta } from '../../hooks/usePageMeta'
 import { serviceCategoryLabel } from '../labels'
 import {
   PortalApiError,
+  PORTAL_NETWORK_ERROR,
   postGuestMessage,
   submitQuoteRequest,
   uploadQuoteRequestImages,
@@ -309,9 +310,13 @@ export default function PortalHome() {
         setPhase('done')
       }
     } catch (err) {
-      setSubmitError(
-        err instanceof Error ? err.message : 'Something went wrong — please try again.',
-      )
+      if (err instanceof PortalApiError) {
+        setSubmitError(
+          err.status === 0 ? PORTAL_NETWORK_ERROR : err.message || 'Something went wrong — please try again.',
+        )
+      } else {
+        setSubmitError('Something went wrong — please try again.')
+      }
       setPhase('form')
     }
   }

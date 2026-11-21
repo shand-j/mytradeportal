@@ -41,6 +41,85 @@ test.beforeAll(async () => {
 });
 
 test.describe("G18 — arrival & intake", () => {
+  test("network abort preserves fields and successful retry submits once", async ({ page }) => {
+    const tenant = await loadTenant("portal-intake");
+    const description = "Network retry consumer unit inspection";
+    const email = uniqueEmail("network-retry");
+    let submitCount = 0;
+
+    await page.route(`**/businesses/${tenant.slug}/quote-requests`, async (route) => {
+      submitCount += 1;
+      if (submitCount === 1) {
+        await route.abort("failed");
+        return;
+      }
+      await route.continue();
+    });
+
+    await gotoPortal(page, tenant.slug);
+    await page.locator("#qr-name").fill("Network Retry Customer");
+    await page.locator("#qr-email").fill(email);
+    await page.locator("#qr-phone").fill("07700 900777");
+    await page.locator("#qr-address").fill("77 Network Road");
+    await page.locator("#qr-postcode").fill("M20 7AA");
+    await page.locator("#qr-description").fill(description);
+
+    const submit = page.getByRole("button", { name: "Request a quote" });
+    await submit.click();
+    await expect(
+      page.getByText("Couldn’t send — check your connection and try again."),
+    ).toBeVisible();
+    await expect(submit).toBeEnabled();
+    await expect(page.locator("#qr-name")).toHaveValue("Network Retry Customer");
+    await expect(page.locator("#qr-email")).toHaveValue(email);
+    await expect(page.locator("#qr-phone")).toHaveValue("07700 900777");
+    await expect(page.locator("#qr-address")).toHaveValue("77 Network Road");
+    await expect(page.locator("#qr-postcode")).toHaveValue("M20 7AA");
+    await expect(page.locator("#qr-description")).toHaveValue(description);
+    expect(submitCount).toBe(1);
+
+    await submit.click();
+    const received = page.getByText("Request received");
+    const chatPhase = page.getByText("A couple of quick questions");
+    await expect(received.or(chatPhase).first()).toBeVisible({ timeout: 25_000 });
+    expect(submitCount).toBe(2);
+
+    const leads = await staffApi<Array<Record<string, any>>>(tenant, "/quote-requests");
+    expect(leads.filter((lead) => lead.raw_text === description)).toHaveLength(1);
+  });
+
+  test("server validation remains field-specific and sanitized", async ({ page }) => {
+    const tenant = await loadTenant("portal-intake");
+    let submitCount = 0;
+
+    await page.route(`**/businesses/${tenant.slug}/quote-requests`, async (route) => {
+      submitCount += 1;
+      await route.fulfill({
+        status: 422,
+        contentType: "application/json",
+        body: JSON.stringify({
+          detail: [
+            {
+              loc: ["body", "contact", "email"],
+              msg: "Enter a valid email address",
+              type: "value_error",
+            },
+          ],
+        }),
+      });
+    });
+
+    await gotoPortal(page, tenant.slug);
+    await page.locator("#qr-name").fill("Validation Customer");
+    await page.locator("#qr-email").fill(uniqueEmail("validation"));
+    await page.locator("#qr-description").fill("Validation test socket installation");
+
+    await page.getByRole("button", { name: "Request a quote" }).click();
+    await expect(page.getByText("Email: Enter a valid email address")).toBeVisible();
+    await expect(page.getByText(/Failed to fetch|provider|internal/i)).toBeHidden();
+    expect(submitCount).toBe(1);
+  });
+
   test("tenant-branded portal renders for ?slug= and unknown slugs 404", async ({ page }) => {
     const tenant = await loadTenant("portal-intake");
 
