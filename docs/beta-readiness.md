@@ -1,6 +1,6 @@
 # Beta readiness and release decision
 
-Last reviewed: **2026-11-20 (full rebaseline)**. Review baseline: `485841e` on `main` (after #365).
+Last reviewed: **2026-11-21 (full rebaseline, refreshed after #391/#382/#404)**. Review baseline: `99e532d` on `main`.
 
 This is the current source of truth for beta scope and go/no-go decisions. The
 [GitHub Beta project](https://github.com/users/shand-j/projects/4) and master
@@ -17,13 +17,17 @@ then, all release blockers remain open even if their implementation code has a
 green PR.
 
 The current baseline has green main CI ([run
-44830578492](https://github.com/shand-j/mytradeportal/actions/runs/44830578492))
-and successful production/staging deployments (`9c800527` / `e15d9fcd`), with
-`/health` and `/ready` passing in both environments. Current-SHA staging E2E
-([run 44830578607](https://github.com/shand-j/mytradeportal/actions/runs/44830578607))
-failed on Mailpit after the staging IaC apply removed the manually provisioned
-service. The root fix is in #391; until it lands and the suite is rerun, staging
-E2E is not a pass. The weekly security audit still fails
+44879790143](https://github.com/shand-j/mytradeportal/actions/runs/44879790143)).
+Production deployment `9c800527` and the recovered staging API deployment
+`6105b67d` are successful, with `/health` and `/ready` passing in both
+environments on 2026-11-21. Current-SHA staging E2E ([run
+44879790207](https://github.com/shand-j/mytradeportal/actions/runs/44879790207))
+is red because its fresh API deployment failed; a manual redeploy recovered
+readiness but does not make that E2E run a pass. The preceding #391 run
+([44879575868](https://github.com/shand-j/mytradeportal/actions/runs/44879575868))
+exposed missing Mailpit networking, VAT fixture failures (#369), and AI provider
+timeouts (#429). Staging Mailpit now has authenticated UI/API and SMTP evidence,
+but the complete suite must still be rerun. The weekly security audit still fails
 before pytest because required credentials are missing; that is a
 harness/configuration failure, not an OWASP or tenancy pass and not by itself a
 confirmed product vulnerability.
@@ -160,7 +164,7 @@ and other issues labelled `beta-blocker` are closed or carry an explicit scope
 exception in the final review. No blocker is omitted because it was discovered
 before this reset.
 
-## 2026-11-20 rebaseline scorecard
+## 2026-11-21 rebaseline scorecard
 
 `PASS` means the gate has current evidence; `IN PROGRESS` means evidence is
 partial or a run is pending; `BLOCKED` means a defect or required evidence is
@@ -173,10 +177,10 @@ missing. A green implementation PR alone never closes a live gate.
 | G3 | PASS | Railway Signals has no entries, so `paddle_billing` defaults false. Production `/` and `/subscribe` show free-beta copy and make no `paddle.com` requests; delayed/cancelled events do not lock access out. #322 stays open only for the current staging-suite run URL before final sign-off. |
 | G4 | BLOCKED | #323 has runbook/validation only. No isolated production restore, RPO/RTO measurement, media/Qdrant recovery or teardown evidence exists. Fresh-volume storage provisioning remains #315. |
 | G5 | BLOCKED (card path) | #44, #45 and #32 are reopened because current configuration, device KYC and real-card evidence is absent. #355 needs owner/legal liability approval. #30 is a confirmed webhook-safety defect. Bank-transfer-only remains an alternative, not evidence for Stripe. |
-| G6 | BLOCKED | #30: Stripe, Paddle and Telnyx all write their dedupe record before handler success, so a transient failure can become a permanent `duplicate`. VAT #324 has automated regression coverage; device VAT save/send evidence belongs to G7. |
+| G6 | BLOCKED | #30: Stripe, Paddle and Telnyx all write their dedupe record before handler success, so a transient failure can become a permanent `duplicate`. #369 tracks non-VAT fixtures that currently block staging journeys; #387 requires write-side money/schedule invariants after reproduced invalid inputs. VAT #324 has automated regression coverage; device VAT save/send evidence belongs to G7. |
 | G7 | BLOCKED | No single current TestFlight build has the full matrix. #36, #92, #325 and #326 were reopened. #102 remains open; #181 needs Apple Calendar device proof; #313 refresh-loop is unverified and a hard fail if reproduced. |
 | G8 | BLOCKED | `/terms` and `/privacy` are placeholders, not approved documents. #327, #69, #70 and #83 require legal/compliance approval and publication/link evidence. `/fair-use` content matches current ~500/month cheap-route/no-hard-block behavior but still needs approval. |
-| G9 | IN PROGRESS | Main CI and production/staging readiness pass. Current staging E2E failed on Mailpit removed by IaC; #391 is the root fix. #313 and #315 remain open; #76 adds bounded CI jobs/stale-run handling and #377 makes landing installs/builds deterministic. New Copilot triage #369/#373/#387 requires review, not automatic acceptance as confirmed defects. #378 is post-beta only because `web/app` is parked. |
+| G9 | IN PROGRESS | Main CI and production/staging readiness pass, but current-SHA staging E2E `44879790207` failed at API deployment. The preceding #391 run found missing Mailpit networking, VAT fixture failures (#369), and AI provider timeouts (#429). Mailpit is now restored and authenticated, but no complete rerun has passed. #373 also tracks public pricing that contradicts free-beta scope. #313 and #315 remain open; #382 landed bounded CI/stale-run handling and #377 still needs deterministic landing installs/builds. #378 is post-beta only because `web/app` is parked. |
 
 ### Additional confirmed findings
 
@@ -213,10 +217,13 @@ and webhook safety are in place.
 
 Execute in this order:
 
-1. Rebaseline documentation/tracking and CI reproducibility (#76, #315, #377).
+1. Rebaseline documentation/tracking and CI reproducibility (#315, #377; #382
+   landed the stale-run/bounded-runtime work).
 2. Production application security and dependency triage (#52, #53), then webhook
-   failure safety (#30).
-3. Close free-beta billing evidence (#322) after the current staging suite.
+   failure safety (#30) and reproduced write invariants (#387).
+3. Close free-beta billing evidence (#322) and align public pricing (#373) after
+   the current staging suite; repair VAT fixtures (#369) and AI staging paths
+   (#429) rather than excluding their failures.
 4. Execute the isolated restore drill (#323).
 5. Either approve bank-transfer-only or complete the Stripe chain
    (#355 → #44 → #45 → #32).
