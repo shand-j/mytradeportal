@@ -581,6 +581,7 @@ test.describe.serial("G — Fresh business signup", () => {
 
     // Review & launch — this provisions the tenant (finishRegistration).
     await waitText(page, "Review & launch");
+    await waitText(page, "Continue");
     await tap(page, "onboarding-choose-plan");
 
     // Bank details — required for every invoice (#189).
