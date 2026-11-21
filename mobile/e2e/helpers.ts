@@ -129,9 +129,40 @@ export async function loginAsTradeOwner(page: Page, tenant: Tenant): Promise<voi
   await waitText(page, "Electrician login");
   await fill(page, "login-email", tenant.adminEmail);
   await fill(page, "login-password", tenant.adminPassword);
-  await tap(page, "login-submit");
-  await waitText(page, "Dashboard", 30000);
-  await settleAfterLogin();
+
+  // Staging can return transient /auth/token 429s under suite-wide login
+  // churn. Retry the submit with backoff so tests fail only on real auth
+  // issues, not temporary throttling.
+  const maxAttempts = 3;
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    const authResponsePromise = page
+      .waitForResponse(
+        (response) =>
+          response.request().method() === "POST" && response.url().endsWith("/auth/token"),
+        { timeout: 20000 }
+      )
+      .catch(() => null);
+
+    await tap(page, "login-submit");
+
+    const authResponse = await authResponsePromise;
+    const status = authResponse?.status();
+
+    if (status === 429 && attempt < maxAttempts) {
+      await sleep(15000);
+      continue;
+    }
+
+    if (status === 401) {
+      throw new Error(`Trade login failed for ${tenant.adminEmail}: invalid credentials.`);
+    }
+
+    await waitText(page, "Dashboard", 30000);
+    await settleAfterLogin();
+    return;
+  }
+
+  throw new Error(`Trade login failed for ${tenant.adminEmail}: /auth/token remained rate-limited.`);
 }
 
 export async function loginAsCustomer(
