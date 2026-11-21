@@ -90,12 +90,29 @@ def store_upload(tenant_id: UUID, file: UploadFile, content: bytes) -> dict[str,
     key = f"tenants/{tenant_id}/{uuid.uuid4()}/{safe_name}"
     client = s3_client()
     _ensure_bucket(client)
-    client.put_object(
-        Bucket=settings.minio_bucket,
-        Key=key,
-        Body=content,
-        ContentType=file.content_type or "application/octet-stream",
-    )
+    try:
+        client.put_object(
+            Bucket=settings.minio_bucket,
+            Key=key,
+            Body=content,
+            ContentType=file.content_type or "application/octet-stream",
+        )
+    except ClientError as exc:
+        code = str(exc.response.get("Error", {}).get("Code", ""))
+        if code not in ("404", "NoSuchBucket"):
+            raise
+        # The volume can disappear between head_bucket and put_object.
+        # Recreate it and retry once instead of turning media upload into 503.
+        logger.warning(
+            "minio_bucket_removed_during_upload_recreating", bucket=settings.minio_bucket
+        )
+        client.create_bucket(Bucket=settings.minio_bucket)
+        client.put_object(
+            Bucket=settings.minio_bucket,
+            Key=key,
+            Body=content,
+            ContentType=file.content_type or "application/octet-stream",
+        )
     return {"key": key, "url": f"/files/download?key={key}"}
 
 
