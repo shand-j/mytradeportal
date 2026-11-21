@@ -645,17 +645,15 @@ function PlansView({
 /* ------------------------------------------------------------------ */
 
 function CheckoutView({ txn, onCompleted }: { txn: string; onCompleted: () => void }) {
-  const [error, setError] = useState('')
+  const token = import.meta.env.VITE_PADDLE_CLIENT_TOKEN as string | undefined
+  const [error, setError] = useState(() =>
+    token ? '' : 'Checkout isn’t configured on this site yet — please try again later.'
+  )
   const [paddle, setPaddle] = useState<Paddle | undefined>()
   const [closed, setClosed] = useState(false)
 
-  const token = import.meta.env.VITE_PADDLE_CLIENT_TOKEN as string | undefined
-
   useEffect(() => {
-    if (!token) {
-      setError('Checkout isn’t configured on this site yet — please try again later.')
-      return
-    }
+    if (!token) return
     let cancelled = false
     // Paddle.js auto-opens a checkout for the _ptxn query parameter at
     // Initialize time — with DEFAULT settings (variant "multi-page"), which
