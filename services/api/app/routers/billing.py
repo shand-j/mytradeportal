@@ -36,6 +36,7 @@ from app.paddle_client import (
     get_or_create_customer,
     get_payment_method_update_transaction,
     get_price,
+    schedule_subscription_cancellation,
     update_subscription,
     update_subscription_custom_data,
 )
@@ -493,6 +494,62 @@ async def change_plan(
         "billing_plan_change_applied",
         tenant_id=str(tenant_id),
         plan_key=sub.plan_key,
+        paddle_subscription_id=sub.paddle_subscription_id,
+    )
+    return await _subscription_read(db, sub)
+
+
+@router.post("/cancel-at-period-end")
+@router.post("/cancel")
+async def cancel_at_period_end(
+    tenant: TenantDep,
+    current_user: CurrentUserDep,
+    db: DbDep,
+) -> SubscriptionRead:
+    """Schedule cancellation at the end of the current Paddle billing period."""
+    if not await paddle_billing_enabled():
+        raise _paddle_disabled_error()
+    if current_user is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authentication required",
+        )
+
+    tenant_id = tenant.id
+    await set_tenant_in_session(db, tenant_id)
+    sub = await db.scalar(select(Subscription).where(Subscription.tenant_id == tenant_id))
+    if sub is None or not sub.paddle_subscription_id:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="No active Paddle subscription for this business",
+        )
+
+    try:
+        updated = await schedule_subscription_cancellation(sub.paddle_subscription_id)
+    except Exception as exc:
+        logger.error(
+            "billing_cancel_scheduled_failed",
+            tenant_id=str(tenant_id),
+            paddle_subscription_id=sub.paddle_subscription_id,
+            error_type=type(exc).__name__,
+            error=str(exc)[:300],
+        )
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Payment provider is unavailable. Try again shortly.",
+        ) from exc
+
+    await _upsert_subscription("subscription.updated", updated)
+    await db.rollback()
+    sub = await db.scalar(select(Subscription).where(Subscription.tenant_id == tenant_id))
+    if sub is None:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Subscription failed to sync. Try again shortly.",
+        )
+    logger.info(
+        "billing_cancellation_scheduled",
+        tenant_id=str(tenant_id),
         paddle_subscription_id=sub.paddle_subscription_id,
     )
     return await _subscription_read(db, sub)
