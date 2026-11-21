@@ -1,12 +1,16 @@
 """Invoice endpoints."""
 
+import asyncio
 from datetime import datetime, timedelta
 from decimal import Decimal
+from io import BytesIO
 from typing import Annotated, Any
 from uuid import UUID
 
 import structlog
 from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi.responses import StreamingResponse
+from fpdf import FPDF
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -354,6 +358,122 @@ async def get_invoice(invoice_id: UUID, tenant: TenantDep, db: DbDep) -> Invoice
     """Get a single invoice."""
     invoice = await _get_invoice(db, tenant.id, invoice_id)
     return _to_invoice_read(invoice)
+
+
+@router.get("/{invoice_id}/pdf")
+async def invoice_pdf(invoice_id: UUID, tenant: TenantDep, db: DbDep) -> StreamingResponse:
+    """Generate a PDF version of an invoice."""
+    invoice = await _get_invoice(db, tenant.id, invoice_id)
+    snapshot = _invoice_pdf_snapshot(invoice, tenant.name)
+    pdf_bytes = await asyncio.to_thread(_render_invoice_pdf, snapshot)
+
+    buffer = BytesIO(pdf_bytes)
+    buffer.seek(0)
+    filename = f"invoice-{invoice.id}.pdf"
+    headers = {"Content-Disposition": f"attachment; filename={filename}"}
+    return StreamingResponse(buffer, media_type="application/pdf", headers=headers)
+
+
+def _invoice_pdf_snapshot(invoice: Invoice, tenant_name: str) -> dict[str, Any]:
+    """Pre-materialise invoice data needed by the sync PDF renderer."""
+    return {
+        "id": str(invoice.id),
+        "tenant_name": tenant_name,
+        "invoice_number": invoice.invoice_number,
+        "status": invoice.status,
+        "issue_date": invoice.issue_date,
+        "due_date": invoice.due_date,
+        "subtotal": float(invoice.subtotal),
+        "vat_rate": float(invoice.vat_rate),
+        "vat_amount": float(invoice.vat_amount),
+        "total": float(invoice.total),
+        "contact": {
+            "name": invoice.contact.name,
+            "email": invoice.contact.email,
+            "phone": invoice.contact.phone,
+        },
+        "line_items": [
+            {
+                "description": item.description,
+                "quantity": float(item.quantity),
+                "unit_price": float(item.unit_price),
+                "total": float(item.total),
+            }
+            for item in invoice.line_items
+        ],
+    }
+
+
+def _render_invoice_pdf(snapshot: dict[str, Any]) -> bytes:
+    """Render an invoice PDF from a snapshot payload."""
+    pdf = FPDF()
+    pdf.add_page()
+
+    def safe_text(value: Any) -> str:
+        return str(value or "").encode("latin-1", "replace").decode("latin-1")
+
+    # Header
+    pdf.set_font("Helvetica", "B", 16)
+    pdf.cell(0, 10, safe_text(snapshot["tenant_name"]), ln=True)  # type: ignore[arg-type]
+    pdf.set_font("Helvetica", "", 12)
+    pdf.cell(0, 10, "Invoice", ln=True)  # type: ignore[arg-type]
+    pdf.line(10, pdf.get_y(), 200, pdf.get_y())
+    pdf.ln(5)
+
+    # Invoice metadata
+    pdf.set_font("Helvetica", "B", 11)
+    pdf.cell(0, 8, safe_text(f"Invoice: {snapshot['invoice_number']}"), ln=True)  # type: ignore[arg-type]
+    pdf.set_font("Helvetica", "", 10)
+    pdf.cell(0, 6, safe_text(f"Date: {snapshot['issue_date'].strftime('%d/%m/%Y')}"), ln=True)  # type: ignore[arg-type]
+    pdf.cell(0, 6, safe_text(f"Due: {snapshot['due_date'].strftime('%d/%m/%Y')}"), ln=True)  # type: ignore[arg-type]
+    pdf.cell(0, 6, safe_text(f"Status: {snapshot['status'].upper()}"), ln=True)  # type: ignore[arg-type]
+    pdf.ln(5)
+
+    # Customer details
+    contact = snapshot["contact"]
+    pdf.set_font("Helvetica", "B", 11)
+    pdf.cell(0, 8, "Bill to", ln=True)  # type: ignore[arg-type]
+    pdf.set_font("Helvetica", "", 11)
+    pdf.cell(0, 8, safe_text(contact["name"]), ln=True)  # type: ignore[arg-type]
+    if contact["email"]:
+        pdf.cell(0, 8, safe_text(contact["email"]), ln=True)  # type: ignore[arg-type]
+    if contact["phone"]:
+        pdf.cell(0, 8, safe_text(contact["phone"]), ln=True)  # type: ignore[arg-type]
+    pdf.ln(5)
+
+    # Line items table
+    pdf.set_fill_color(245, 244, 240)
+    pdf.set_font("Helvetica", "B", 10)
+    pdf.cell(100, 8, "Item", 1, 0, "L", True)  # type: ignore[arg-type]
+    pdf.cell(25, 8, "Qty", 1, 0, "C", True)  # type: ignore[arg-type]
+    pdf.cell(30, 8, "Unit Price", 1, 0, "R", True)  # type: ignore[arg-type]
+    pdf.cell(30, 8, "Total", 1, 1, "R", True)  # type: ignore[arg-type]
+
+    pdf.set_font("Helvetica", "", 10)
+    for item in snapshot["line_items"]:
+        start_y = pdf.get_y()
+        pdf.multi_cell(100, 8, safe_text(item["description"]), border=1, align="L")
+        row_h = pdf.get_y() - start_y
+        pdf.set_xy(110, start_y)
+        pdf.cell(25, row_h, str(item["quantity"]), 1, 0, "C")  # type: ignore[arg-type]
+        pdf.set_xy(135, start_y)
+        pdf.cell(30, row_h, f"£{item['unit_price']:,.2f}", 1, 0, "R")  # type: ignore[arg-type]
+        pdf.set_xy(165, start_y)
+        pdf.cell(30, row_h, f"£{item['total']:,.2f}", 1, 1, "R")  # type: ignore[arg-type]
+
+    pdf.ln(5)
+
+    # Totals
+    pdf.set_font("Helvetica", "B", 11)
+    pdf.cell(0, 8, f"Subtotal: £{snapshot['subtotal']:,.2f}", ln=True, align="R")  # type: ignore[arg-type]
+    vat_label = f"VAT ({snapshot['vat_rate'] * 100:.0f}%): £{snapshot['vat_amount']:,.2f}"
+    pdf.cell(0, 8, vat_label, ln=True, align="R")  # type: ignore[arg-type]
+    pdf.cell(0, 8, f"Total: £{snapshot['total']:,.2f}", ln=True, align="R")  # type: ignore[arg-type]
+
+    output = pdf.output(dest="S")  # type: ignore[call-overload]
+    if isinstance(output, str):
+        return output.encode("latin-1")
+    return bytes(output)
 
 
 @router.patch("/{invoice_id}")
