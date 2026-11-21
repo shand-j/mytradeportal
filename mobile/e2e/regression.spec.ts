@@ -493,6 +493,7 @@ test.describe.serial("F — In-app chat", () => {
     await tap(page, "customer-ai-banner");
     // Wait for the chat screen to load with the seeded AI follow-up message.
     await page.locator('[data-testid="chat-composer"]').waitFor({ state: "visible", timeout: 30000 });
+    await expect(page.getByText(/circuits|fuse box|fusebox/i).last()).toBeVisible();
 
     // Verify the AI question is contextual (references circuits/fuse box) and
     // not a generic "tell us more" message.
