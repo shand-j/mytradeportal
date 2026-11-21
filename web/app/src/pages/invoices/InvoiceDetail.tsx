@@ -1,6 +1,7 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { Send, CheckCircle, FileDown, XCircle } from 'lucide-react';
+import { API_BASE_URL } from '@/lib/api/client';
 import { useInvoice, useSendInvoice, useMarkInvoicePaid, useCancelInvoice, useSettings } from '@/lib/api/hooks';
 import { useUiStore } from '@/stores/uiStore';
 import { StatusPill } from '@/components/shared/StatusPill';
@@ -15,6 +16,7 @@ export function InvoiceDetail() {
   const sendInvoice = useSendInvoice();
   const markPaid = useMarkInvoicePaid();
   const cancelInvoice = useCancelInvoice();
+  const [downloadError, setDownloadError] = useState<string | null>(null);
 
   useEffect(() => {
     setPageTitle('Invoice Detail');
@@ -43,6 +45,32 @@ export function InvoiceDetail() {
       onSuccess: () => toast.success('Invoice cancelled'),
       onError: (err) => toast.error(err.message || 'Failed to cancel invoice'),
     });
+  };
+
+  const handleDownloadPdf = async () => {
+    try {
+      setDownloadError(null);
+      const response = await fetch(`${API_BASE_URL}/invoices/${invoice.id}/pdf`, {
+        credentials: 'include',
+      });
+      if (!response.ok) {
+        throw new Error(`Failed to download PDF (HTTP ${response.status})`);
+      }
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `invoice-${invoice.id}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+      toast.success('PDF downloaded');
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to download PDF';
+      setDownloadError(message);
+      toast.error(message);
+    }
   };
 
   return (
@@ -129,9 +157,12 @@ export function InvoiceDetail() {
                   <XCircle className="w-4 h-4" /> Cancel Invoice
                 </button>
               )}
-              <button className="w-full h-10 flex items-center justify-center gap-2 rounded-lg text-[#57534E] text-xs font-medium hover:bg-[#F5F4F0] transition-colors">
+              <button onClick={handleDownloadPdf} className="w-full h-10 flex items-center justify-center gap-2 rounded-lg text-[#57534E] text-xs font-medium hover:bg-[#F5F4F0] transition-colors">
                 <FileDown className="w-4 h-4" /> Download PDF
               </button>
+              {downloadError && (
+                <p className="text-xs text-[#DC2626]">{downloadError}</p>
+              )}
             </div>
           </div>
         </div>

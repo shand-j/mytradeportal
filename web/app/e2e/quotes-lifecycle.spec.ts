@@ -1,3 +1,4 @@
+import type { Route } from '@playwright/test';
 import { test, expect } from './fixtures';
 import {
   ensureDefaultAdminSession,
@@ -19,6 +20,18 @@ test('create, send, approve and convert a quote', async ({ page, testId }) => {
 
   await openQuoteDetail(page, reference);
   await expect(page.getByText(customerName)).toBeVisible();
+
+  const [quoteDownload] = await Promise.all([
+    page.waitForEvent('download'),
+    page.getByRole('button', { name: /download pdf/i }).click(),
+  ]);
+  expect(await quoteDownload.path()).toBeTruthy();
+
+  const failQuotePdfRoute = (route: Route) => route.fulfill({ status: 500, body: 'pdf failed' });
+  await page.route(/\/quotes\/[^/]+\/pdf$/, failQuotePdfRoute);
+  await page.getByRole('button', { name: /download pdf/i }).click();
+  await expect(page.getByText(/failed to download pdf \(http 500\)/i)).toBeVisible();
+  await page.unroute(/\/quotes\/[^/]+\/pdf$/, failQuotePdfRoute);
 
   await sendQuote(page);
   await expect(page.locator('span', { hasText: /sent/i }).filter({ hasClass: /rounded-full/ }).first()).toBeVisible();

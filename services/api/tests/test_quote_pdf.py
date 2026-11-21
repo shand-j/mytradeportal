@@ -6,6 +6,7 @@ import asyncio
 from decimal import Decimal
 from typing import TYPE_CHECKING
 from unittest.mock import patch
+from uuid import uuid4
 
 import pytest
 from app.routers.quotes import _render_quote_pdf
@@ -143,23 +144,23 @@ async def test_quote_pdf_snapshot_does_not_lazy_load_under_threadpool(
 def test_render_quote_pdf_handles_unicode_safely() -> None:
     """The PDF font is latin-1; the renderer must not crash on the £ symbol.
 
-    The £ glyph is encodable in latin-1, but we also force a non-latin-1
-    character to verify the encoding path doesn't blow up downstream.
+    The £ glyph is encodable in latin-1, but we also force non-latin-1
+    characters to verify the encoding path doesn't blow up downstream.
     """
     snapshot = {
         "id": "u-1",
-        "tenant_name": "Café Sparks",  # Non-ASCII but latin-1 safe
-        "title": "Quote with £ and é",
+        "tenant_name": "Café Sparks ⚡",
+        "title": "Quote with £, é and 漢字",
         "status": "draft",
         "created_at": __import__("datetime").datetime(2026, 6, 23),
         "subtotal": float(Decimal("123.45")),
         "vat_rate": 0.2,
         "vat_amount": float(Decimal("24.69")),
         "total": float(Decimal("148.14")),
-        "contact": {"name": "André", "email": None, "phone": None},
+        "contact": {"name": "André 🚀", "email": None, "phone": None},
         "line_items": [
             {
-                "description": "Émergency callout",
+                "description": "Émergency callout with 🔧",
                 "quantity": 1.0,
                 "unit_price": 123.45,
                 "total": 123.45,
@@ -168,3 +169,41 @@ def test_render_quote_pdf_handles_unicode_safely() -> None:
     }
     pdf_bytes = _render_quote_pdf(snapshot)
     assert pdf_bytes.startswith(b"%PDF-")
+
+
+@pytest.mark.asyncio
+async def test_quote_pdf_is_tenant_scoped(client: AsyncClient) -> None:
+    tenant_a = (
+        await client.post(
+            "/tenants", json={"slug": f"quotepdf-a-{uuid4().hex[:8]}", "name": "A Ltd"}
+        )
+    ).json()
+    tenant_b = (
+        await client.post(
+            "/tenants", json={"slug": f"quotepdf-b-{uuid4().hex[:8]}", "name": "B Ltd"}
+        )
+    ).json()
+
+    contact = await client.post(
+        "/contacts",
+        headers={"X-Tenant-ID": tenant_a["id"]},
+        json={"name": "Scoped Contact", "email": "scoped@example.com"},
+    )
+    assert contact.status_code == 201
+
+    quote = await client.post(
+        "/quotes",
+        headers={"X-Tenant-ID": tenant_a["id"]},
+        json={
+            "contact_id": contact.json()["id"],
+            "title": "Tenant A quote",
+            "line_items": [{"description": "Labour", "quantity": 1, "unit_price": 100}],
+        },
+    )
+    assert quote.status_code == 201
+
+    response = await client.get(
+        f"/quotes/{quote.json()['id']}/pdf",
+        headers={"X-Tenant-ID": tenant_b["id"]},
+    )
+    assert response.status_code == 404

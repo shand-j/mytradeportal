@@ -50,6 +50,7 @@ export function QuoteDetail() {
   const [draftItems, setDraftItems] = useState<Array<{ id: string; description: string; quantity: number | string; unit: string; unitPrice: number | string }>>([]);
   const [refineInstructions, setRefineInstructions] = useState('');
   const [editError, setEditError] = useState('');
+  const [downloadError, setDownloadError] = useState<string | null>(null);
 
   useEffect(() => {
     setPageTitle('Quote Detail');
@@ -239,10 +240,13 @@ export function QuoteDetail() {
 
   const handleDownloadPdf = async () => {
     try {
+      setDownloadError(null);
       const response = await fetch(`${API_BASE_URL}/quotes/${quote.id}/pdf`, {
         credentials: 'include',
       });
-      if (!response.ok) throw new Error('Failed to generate PDF');
+      if (!response.ok) {
+        throw new Error(`Failed to download PDF (HTTP ${response.status})`);
+      }
       const blob = await response.blob();
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
@@ -254,7 +258,9 @@ export function QuoteDetail() {
       URL.revokeObjectURL(url);
       toast.success('PDF downloaded');
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed to download PDF');
+      const message = err instanceof Error ? err.message : 'Failed to download PDF';
+      setDownloadError(message);
+      toast.error(message);
     }
   };
 
@@ -560,6 +566,9 @@ export function QuoteDetail() {
               <button onClick={handleDownloadPdf} className="w-full h-10 flex items-center justify-center gap-2 rounded-lg text-[#57534E] text-xs font-medium hover:bg-[#F5F4F0] transition-colors">
                 <FileDown className="w-4 h-4" /> Download PDF
               </button>
+              {downloadError && (
+                <p className="text-xs text-[#DC2626]">{downloadError}</p>
+              )}
               <button onClick={handleDelete} disabled={deleteQuote.isPending} className="w-full h-10 flex items-center justify-center gap-2 rounded-lg text-[#DC2626] text-xs font-medium hover:bg-[#FEF2F2] transition-colors disabled:opacity-50">
                 <Trash2 className="w-4 h-4" /> Delete Quote
               </button>
