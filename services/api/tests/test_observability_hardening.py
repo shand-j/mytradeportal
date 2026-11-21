@@ -127,6 +127,9 @@ async def test_dropped_event_count_increments_only_on_write_failure(
     assert get_dropped_event_count() == baseline + 1
     monkeypatch.undo()
 
+    assert await record_ai_event(db, feature="outcome", trace_id=f"drop-{uuid4().hex}") is not None
+    assert get_dropped_event_count() == baseline + 1
+
 
 async def test_tracker_fail_open_business_result_unaffected(
     db: AsyncSession, monkeypatch: pytest.MonkeyPatch
