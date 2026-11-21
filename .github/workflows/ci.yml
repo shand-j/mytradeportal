@@ -206,6 +206,14 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Install landing dependencies from npm lockfile
+        working-directory: web/landing/new design/app
+        run: npm ci
+
+      - name: Audit landing dependencies
+        working-directory: web/landing/new design/app
+        run: npm audit --audit-level=high
+
       - name: Lint
         run: pnpm lint
 

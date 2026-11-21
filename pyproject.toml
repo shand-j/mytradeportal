@@ -43,6 +43,9 @@ dependencies = [
     "python-multipart>=0.0.9",
     "httpx>=0.27.0",
     "structlog>=24.1.0",
+    # python-jose 3.5.0 and its ecdsa 0.19.2 dependency currently have
+    # PYSEC-2026-4298 / PYSEC-2026-1325 with no fixed releases. Keep them
+    # as genuine report-only exceptions until upstream publishes fixes.
     "python-jose[cryptography]>=3.3.0",
     "passlib[bcrypt]>=1.7.4",
     # Rate limiting
