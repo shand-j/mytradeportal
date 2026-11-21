@@ -153,7 +153,7 @@ Legal/compliance has approved the Terms of Service, Privacy Notice (#69),
 Beta/Founding Member terms (#70), Fair Use (#83), payment/refund/dispute and
 retention/AI/analytics disclosures. The
 [beta comms pack](beta-comms-pack.md) assembles the onboarding guide,
-expectations, and approved founding terms; send completion is logged in the
+expectations, and draft founding terms; send completion is logged in the
 [cohort register](beta-cohort-register.md). Approved documents are publicly reachable
 and linked from marketing, onboarding, portal, payment/document, and relevant
 mobile surfaces. Copy matches free-beta, Paddle-disabled, Stripe/bank-transfer

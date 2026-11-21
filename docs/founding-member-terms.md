@@ -1,9 +1,10 @@
 # Founding-Member Terms — Beta Cohort
 
-> **Approved beta terms.** These terms apply uniformly to the wave-1 founding
-> cohort and are part of the [beta comms pack](beta-comms-pack.md).
+> **DRAFT — pending founder and legal/compliance approval.** Not yet sent to
+> beta users. Once approved, these terms apply uniformly to the wave-1 founding
+> cohort as part of the [beta comms pack](beta-comms-pack.md).
 
-Approved terms for the wave-1 beta users who are helping us build My Trade
+Proposed terms for the wave-1 beta users who are helping us build My Trade
 Portal before launch.
 
 ## The offer
@@ -27,9 +28,14 @@ Beta feedback shapes the product; these terms are the thank-you. They also
 de-risk the pricing transition: nobody who helped us build gets a surprise
 bill, and the 20% / 12-month lock is simple enough to say in one sentence.
 
-## Uniform application
+## Uniform application and approval record
 
-These terms apply to every wave-1 beta participant on the same terms. There is
-no individual negotiation or one-off variation. Grandfathering beyond the
-12-month launch-period lock is deliberately excluded; the terms will be
-reviewed again at the end of that period.
+If approved, these terms apply to every wave-1 beta participant on the same
+terms. There is no individual negotiation or one-off variation. Grandfathering
+beyond the 12-month launch-period lock is deliberately excluded; the terms
+will be reviewed again at the end of that period.
+
+- 20% discount depth: **pending founder and legal/compliance approval**
+- 12-month lock length: **pending founder and legal/compliance approval**
+- 30-day notice: **pending founder and legal/compliance approval**
+- Written approval evidence: **not yet recorded**
