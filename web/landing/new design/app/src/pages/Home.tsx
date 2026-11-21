@@ -47,7 +47,7 @@ export default function Home() {
       if (!a) return
       const id = a.getAttribute('href')
       if (!id || id === '#') return
-      const el = document.querySelector(id)
+      const el = document.getElementById(id.slice(1))
       if (!el) return
       e.preventDefault()
       window.history.pushState(null, '', id)
@@ -58,7 +58,7 @@ export default function Home() {
 
     const initialHash = window.location.hash
     if (initialHash) {
-      const el = document.querySelector(initialHash)
+      const el = document.getElementById(initialHash.slice(1))
       if (el) {
         requestAnimationFrame(() => {
           const top = el.getBoundingClientRect().top + window.scrollY - 70

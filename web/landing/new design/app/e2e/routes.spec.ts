@@ -164,3 +164,13 @@ for (const path of ['/', '/blog', '/blog/ai-in-the-trades', '/help/getting-start
     }
   })
 }
+
+test('home ignores an unknown CSS-invalid hash without a page error', async ({ page }) => {
+  const errors: string[] = []
+  page.on('pageerror', (error) => errors.push(error.message))
+
+  await page.goto('/#123.not-a-valid-css-id')
+
+  await expect(page.locator('main')).toBeVisible()
+  expect(errors).toEqual([])
+})
