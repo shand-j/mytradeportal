@@ -39,9 +39,9 @@ export const articles: HelpArticle[] = [
   {
     slug: 'getting-started',
     audience: 'electricians',
-    title: 'Getting started: install, set up your business, choose a plan',
+    title: 'Getting started: install, set up your business and join the beta',
     summary:
-      'From download to a fully set-up business in about fifteen minutes — onboarding, bank details, card payments and picking a plan.',
+      'From download to a fully set-up business in about fifteen minutes — onboarding, bank details, card payments and free beta access.',
     blocks: [
       {
         type: 'p',
@@ -66,28 +66,28 @@ export const articles: HelpArticle[] = [
           '**Review** — check everything, then launch. Your business is created here.',
           '**Bank details** — sort code and account number. These print on every invoice so customers can pay by bank transfer.',
           '**Card payments** — “Will you take card payments?” Say yes to complete Stripe’s secure setup without leaving the app (takes a few minutes), or **Not now** and do it later from **Settings → Payments**.',
-          '**Plan** — see the plans and prices. Subscribing happens on our website (mytradeportal.co.uk), not in the app.',
+          '**Beta access** — invited businesses get free beta access. No subscription or card is needed to use the app during the free concierge beta.',
         ],
       },
       {
         type: 'h2',
-        text: 'Choosing a plan',
+        text: 'Beta access',
       },
       {
         type: 'p',
-        text: 'Every plan is one flat price per business with AI included — no credits, no counting. The only difference is how many staff seats you get:',
+        text: 'During the free concierge beta, invited businesses get full app access at no charge. Paddle billing is paused, so app access does not require a card or a subscription.',
       },
       {
         type: 'ul',
         items: [
-          '**Sole Trader — £25/month** (£250/year): just you, 1 seat.',
-          '**Pro — £39/month** (£390/year): growing businesses, up to 5 seats.',
-          '**Team — £69/month** (£690/year): multi-engineer teams, up to 15 seats.',
+          '**Sole Trader — future launch plan:** just you, 1 seat.',
+          '**Pro — future launch plan:** growing businesses, up to 5 seats.',
+          '**Team — future launch plan:** multi-engineer teams, up to 15 seats.',
         ],
       },
       {
         type: 'p',
-        text: 'All plans start with a **14-day free trial**. Subscribe at **mytradeportal.co.uk** — payment is handled by our billing partner, Paddle, and we never see your card number. Change or cancel any time from your account on the website; the app shows your plan status under **Settings → Subscription**.',
+        text: 'If you are invited to the beta, you do not need to subscribe or enter card details. Future paid-plan details will be announced before billing starts; this help page does not create a paid trial or charge.',
       },
     ],
   },
@@ -273,7 +273,7 @@ export const articles: HelpArticle[] = [
       },
       {
         type: 'p',
-        text: '**Pending invites count toward your seats** until they’re accepted, so a full plan can’t hold open invitations. If you hit the limit the app tells you which plan has more seats — change plans any time from your account at **mytradeportal.co.uk**.',
+        text: '**Pending invites count toward your seats** until they’re accepted, so a full plan can’t hold open invitations. During the free beta, seat changes are managed by the concierge team; future plan changes and seat limits will be announced before paid billing starts.',
       },
       {
         type: 'p',
@@ -357,7 +357,7 @@ export const articles: HelpArticle[] = [
       },
       {
         type: 'p',
-        text: 'Included on every plan, unmetered. No credits, no allowances, no per-quote charges. A fair-use policy applies to abuse, not to normal busy weeks.',
+        text: 'Included for beta businesses, unmetered. No credits, no allowances and no per-quote charges during the free beta. A fair-use policy applies to abuse, not to normal busy weeks.',
       },
       {
         type: 'h2',
@@ -377,19 +377,19 @@ export const articles: HelpArticle[] = [
       },
       {
         type: 'h2',
-        text: 'What happens when my free trial ends?',
+        text: 'What happens during the beta?',
       },
       {
         type: 'p',
-        text: 'Your chosen plan starts and the card you subscribed with at mytradeportal.co.uk is billed by Paddle, our billing partner. Cancel before the trial ends from your account on the website and you pay nothing — your data stays put either way.',
+        text: 'Invited beta businesses keep free app access; there is no paid trial and Paddle billing is paused, so no subscription charge starts automatically. Your beta terms and any future paid plans will be confirmed before paid billing begins.',
       },
       {
         type: 'h2',
-        text: 'Can I change plans later?',
+        text: 'Can I change plans during the beta?',
       },
       {
         type: 'p',
-        text: 'Any time, from your account at mytradeportal.co.uk. Upgrades apply straight away; downgrades take effect at the next renewal.',
+        text: 'Plan changes and paid billing are not active during the free beta. Seat and access changes are managed by the concierge team while the current cohort is in place.',
       },
       {
         type: 'h2',

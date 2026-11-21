@@ -324,7 +324,7 @@ export const posts: BlogPost[] = [
       },
       {
         type: 'p',
-        text: 'Now the honest caveats, because you deserve them: **we’re new, and we’re in beta.** That means free access while we finish baking, direct access to the people building it, and a product that improves weekly. It also means we’re iOS-only for now, we don’t yet do scheduling or job tracking like Tradify does, and you’d be an early adopter, not customer number fifty thousand. Some people love that; some need the safer established choice. Both are reasonable.',
+        text: 'Now the honest caveats, because you deserve them: **we’re new, and we’re in beta.** That means free concierge-led access, direct access to the people building it, and a product that improves weekly. Scheduling and job tracking are available, but some advanced integrations and workflows are still being refined. We’re iOS-only for now, and you’d be an early adopter, not customer number fifty thousand. Some people love that; some need the safer established choice. Both are reasonable.',
       },
       {
         type: 'h2',
