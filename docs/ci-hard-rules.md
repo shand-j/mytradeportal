@@ -19,6 +19,13 @@ CI must never call a live LLM provider or the live Paddle API:
   payloads locally with the *sandbox* webhook secret read from the staging
   environment — it never calls the Paddle API.
 
+  Staging quote generation, refinement and triage follow-up paths use the
+  `LLM_PROVIDER_MODE=staging_double` external-provider boundary. The real API
+  retrieval, validation, persistence and journey assertions remain in play; only
+  chat-completion responses are deterministic doubles. No staging test may treat
+  a 503 AI response as a pass or skip the generation/follow-up journey. A live
+  provider run remains a separate manual, credentialed check outside CI.
+
 Rationale: live calls would make CI non-deterministic, burn quota, and leak
 credentials into a context that must remain safe for forked-PR style workflows.
 

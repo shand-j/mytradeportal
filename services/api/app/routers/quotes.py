@@ -724,7 +724,7 @@ async def refine_quote(
     except RuntimeError as exc:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail=str(exc),
+            detail="AI provider temporarily unavailable",
         ) from exc
 
     validated = validate_generated_quote(
@@ -1719,7 +1719,7 @@ async def _generate_quote_impl(
     except RuntimeError as exc:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail=str(exc),
+            detail="AI provider temporarily unavailable",
         ) from exc
 
     # Round the (freshly calculated) total up when the tenant enabled it.
