@@ -27,7 +27,7 @@ test.describe.serial("Q — Rounding & VAT chain", () => {
 
   test.beforeAll(async () => {
     tenant = await createTestTenant("rounding");
-    novat = await createTestTenant("novat");
+    novat = await createTestTenant("novat", { vatRegistered: false });
     contactId = (await seedContact(tenant, { name: "E2E Rounding Customer" })).id as string;
   });
 

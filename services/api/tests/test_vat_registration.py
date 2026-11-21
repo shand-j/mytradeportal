@@ -181,6 +181,25 @@ async def test_non_vat_registered_tenant_explicit_positive_vat_rejected_on_creat
     assert len(invoices_after.json()) == len(invoices_before.json())
 
 
+async def test_non_vat_registered_tenant_explicit_20_percent_vat_rejected(
+    admin_client: AsyncClient,
+) -> None:
+    await _set_vat_registered(admin_client, False)
+    contact_id = await _create_contact(admin_client)
+
+    response = await admin_client.post(
+        "/quotes",
+        json={
+            "contact_id": contact_id,
+            "title": "20% VAT regression quote",
+            "vat_rate": "0.20",
+            "line_items": [{"description": "Labour", "quantity": "1", "unit_price": "100.00"}],
+        },
+    )
+    assert response.status_code == 400
+    assert "registered VAT rate" in response.json()["detail"]
+
+
 # --- Per-quote/per-invoice VAT opt-out (issue #110) -------------------------
 
 

@@ -117,7 +117,7 @@ async function seedRemote({ slug, name, adminEmail, adminPassword, adminName }) 
   });
 }
 
-export async function createTenant(prefix = "e2e") {
+export async function createTenant(prefix = "e2e", { vatRegistered = true } = {}) {
   const slug = slugify(prefix);
   const adminEmail = `owner-${slug}@e2e-regression.trade`;
   const adminPassword = "E2E-Password-1";
@@ -172,6 +172,22 @@ export async function createTenant(prefix = "e2e") {
   if (!remote) {
     await new Promise((resolve) => setTimeout(resolve, 15000));
   }
+
+  // Make the VAT scenario explicit for every fixture tenant. Groups that
+  // intentionally exercise 20% VAT use the default; non-VAT groups can opt out.
+  await api("/onboarding/step/tax", {
+    method: "PATCH",
+    headers: {
+      Authorization: "Bearer " + auth.access_token,
+      "X-Tenant-ID": auth.user.tenant_id,
+    },
+    body: {
+      step: "tax",
+      value: vatRegistered
+        ? { vat_registered: true, vat_number: "GB123456789", vat_scheme: "standard" }
+        : { vat_registered: false },
+    },
+  });
 
   // Fetch public config for the 6-digit customer lookup code.
   const publicConfig = await api(`/businesses/${slug}/public-config`);
