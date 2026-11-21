@@ -7,9 +7,12 @@ import argparse
 import json
 import subprocess
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Iterable
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from collections.abc import Iterable
 
 
 @dataclass(frozen=True)
@@ -38,9 +41,7 @@ def inventory_feature(path: Path) -> list[Scenario]:
     for raw_line in path.read_text(encoding="utf-8").splitlines():
         line = raw_line.strip()
         if line.startswith("@"):
-            pending_tags.extend(
-                tag for tag in line.split() if tag.startswith("@")
-            )
+            pending_tags.extend(tag for tag in line.split() if tag.startswith("@"))
         elif line.startswith("Scenario:") or line.startswith("Scenario Outline:"):
             name = line.split(":", 1)[1].strip()
             scenarios.append(Scenario(name=name, tags=tuple(pending_tags)))
@@ -57,10 +58,7 @@ def load_statuses(path: Path | None) -> dict[str, str]:
     data = json.loads(path.read_text(encoding="utf-8"))
     if not isinstance(data, dict):
         raise ValueError("status JSON must contain an object")
-    return {
-        str(key): str(value).lower()
-        for key, value in data.items()
-    }
+    return {str(key): str(value).lower() for key, value in data.items()}
 
 
 def current_commit(repo: Path) -> str:
@@ -89,7 +87,7 @@ def render_log(
         f"- Commit: `{commit}`",
         f"- Environment: `{environment}`",
         f"- Tester: `{tester}`",
-        f"- Generated: {datetime.now(timezone.utc).isoformat()}",
+        f"- Generated: {datetime.now(UTC).isoformat()}",
         "- Live/device evidence: attach only sanitized artifacts; no tokens or PII",
         "",
         "## Journey sweep",
@@ -98,7 +96,7 @@ def render_log(
 
     feature_paths = sorted(features_dir.glob("*.feature"))
     total = 0
-    totals = {status: 0 for status in valid_statuses}
+    totals = dict.fromkeys(valid_statuses, 0)
 
     for feature_path in feature_paths:
         scenarios = inventory_feature(feature_path)
@@ -114,8 +112,7 @@ def render_log(
             status = statuses.get(key, statuses.get(scenario.name, "not-run"))
             if status not in valid_statuses:
                 raise ValueError(
-                    f"invalid status {status!r} for {key}; "
-                    f"expected one of {sorted(valid_statuses)}"
+                    f"invalid status {status!r} for {key}; expected one of {sorted(valid_statuses)}"
                 )
             totals[status] += 1
             total += 1
@@ -145,8 +142,7 @@ def render_log(
         status = uat_statuses.get(item, "not-run")
         if status not in valid_statuses:
             raise ValueError(
-                f"invalid UAT status {status!r}; "
-                f"expected one of {sorted(valid_statuses)}"
+                f"invalid UAT status {status!r}; expected one of {sorted(valid_statuses)}"
             )
         lines.append(f"- [{status.upper()}] {item}")
 
@@ -180,10 +176,7 @@ def parse_args(argv: Iterable[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "--output",
         type=Path,
-        default=Path(__file__).resolve().parents[1]
-        / "docs"
-        / "evidence"
-        / "pre-beta-bug-bash.md",
+        default=Path(__file__).resolve().parents[1] / "docs" / "evidence" / "pre-beta-bug-bash.md",
     )
     parser.add_argument("--environment", default="staging")
     parser.add_argument("--tester", default="unassigned")

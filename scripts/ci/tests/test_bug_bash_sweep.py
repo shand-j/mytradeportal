@@ -4,7 +4,6 @@ import importlib.util
 import sys
 from pathlib import Path
 
-
 SCRIPT = Path(__file__).resolve().parents[2] / "bug_bash_sweep.py"
 SPEC = importlib.util.spec_from_file_location("bug_bash_sweep", SCRIPT)
 assert SPEC and SPEC.loader
@@ -32,9 +31,7 @@ def test_inventory_feature_records_tags(tmp_path: Path) -> None:
 def test_render_log_records_every_scenario_and_uat_item(tmp_path: Path) -> None:
     feature = tmp_path / "journey.feature"
     feature.write_text(
-        "Feature: Journey\n"
-        "  Scenario: First step\n"
-        "  Scenario Outline: Second step\n",
+        "Feature: Journey\n  Scenario: First step\n  Scenario Outline: Second step\n",
         encoding="utf-8",
     )
 
