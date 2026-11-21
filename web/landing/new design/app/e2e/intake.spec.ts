@@ -48,6 +48,10 @@ test.describe("G18 — arrival & intake", () => {
     let submitCount = 0;
 
     await page.route(`**/businesses/${tenant.slug}/quote-requests`, async (route) => {
+      if (route.request().method() !== 'POST') {
+        await route.continue();
+        return;
+      }
       submitCount += 1;
       if (submitCount === 1) {
         await route.abort("failed");
@@ -93,6 +97,10 @@ test.describe("G18 — arrival & intake", () => {
     let submitCount = 0;
 
     await page.route(`**/businesses/${tenant.slug}/quote-requests`, async (route) => {
+      if (route.request().method() !== 'POST') {
+        await route.continue();
+        return;
+      }
       submitCount += 1;
       await route.fulfill({
         status: 422,
