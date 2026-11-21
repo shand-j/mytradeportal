@@ -22,7 +22,7 @@ Work is divided into **Beta Blockers** (must exist before the first beta tradie 
 | 0.7 | Fair-use policy page (threshold placeholder OK) | Pricing PRD §3.2 | Page live, linked from T&Cs |
 | 0.8 | Trial logic + engagement extension | Pricing PRD §3.4 | Extension triggers on ≥3 sent AI quotes |
 | 0.9 | Compliance: privacy notice covers AI processing + analytics + payment metadata; retention limits; access controls | Portal PRD §6, Payments PRD §3 | Reviewed and published |
-| 0.10 | Beta comms pack: onboarding guide, expectations, founding-member terms | Stakeholder doc §3 | Sent to first cohort |
+| 0.10 | [Beta comms pack](../beta-comms-pack.md): onboarding guide, expectations, founding-member terms | Stakeholder doc §3 | Sent to first cohort and logged in the [cohort register](../beta-cohort-register.md) |
 | 0.11 | **Online payments (Stripe Connect)**: tradie onboarding flow, pay button on invoice email/portal/PDF, webhooks → auto-mark paid, `invoice_paid` event, refunds (full), receipts | [PRD-Online-Payments.md](PRD-Online-Payments.md) | Sandbox E2E passes: invoice → customer pays → invoice auto-marked paid → tradie notified |
 
 **Why these block:** items 0.1–0.5 are the measurement system — every day of beta without them is data we can never recover. 0.6–0.8 make flat pricing safe to operate. 0.9 is a legal precondition for capturing customer data. **0.11 is competitive table stakes — Tradify includes online payments on its Lite tier, so a beta without them fails parity on day one and forfeits the "get paid faster" story that justifies switching.**
