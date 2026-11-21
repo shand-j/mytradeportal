@@ -35,9 +35,7 @@ router = APIRouter(prefix="/webhooks", tags=["Webhooks"])
 logger = structlog.get_logger("api.stripe_webhooks")
 
 
-async def _mark_event_seen(
-    session: AsyncSession, event_id: str, event_type: str
-) -> bool:
+async def _mark_event_seen(session: AsyncSession, event_id: str, event_type: str) -> bool:
     """Insert into the dedup ledger inside the handler transaction.
 
     The ledger row is committed with the handler mutations, not separately.
@@ -123,8 +121,7 @@ async def _handle_payment_intent_succeeded(
         kind="invoice_paid",
         title="Invoice paid",
         body=(
-            f"Invoice {invoice.invoice_number} for £{invoice.total} "
-            "has been paid online by card."
+            f"Invoice {invoice.invoice_number} for £{invoice.total} has been paid online by card."
         ),
         link=f"/invoices/{invoice.id}",
     )
@@ -149,9 +146,7 @@ async def _handle_payment_intent_succeeded(
     logger.info("stripe_invoice_paid", invoice_id=log_invoice_id)
 
 
-async def _handle_charge_refunded(
-    session: AsyncSession, event_data: dict[str, Any]
-) -> None:
+async def _handle_charge_refunded(session: AsyncSession, event_data: dict[str, Any]) -> None:
     """Mark the invoice refunded when Stripe confirms the refund."""
     intent_id = event_data.get("payment_intent")
     if not intent_id:
@@ -204,9 +199,7 @@ async def _handle_dispute_created(event_data: dict[str, Any]) -> None:
     logger.warning("stripe_dispute_created", payment_intent_id=intent_id, reason=reason)
 
 
-async def _handle_account_updated(
-    session: AsyncSession, event_data: dict[str, Any]
-) -> None:
+async def _handle_account_updated(session: AsyncSession, event_data: dict[str, Any]) -> None:
     """Mirror Stripe's capability flags onto our StripeAccount row."""
     account_id = event_data.get("id")
     if not account_id:
