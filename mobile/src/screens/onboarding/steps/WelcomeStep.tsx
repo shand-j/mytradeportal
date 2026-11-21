@@ -90,14 +90,17 @@ const styles = StyleSheet.create({
   },
   dots: {
     flexDirection: "row",
+    flexWrap: "wrap",
     justifyContent: "space-between",
     alignItems: "flex-start",
-    gap: 8,
+    rowGap: 12,
+    columnGap: 4,
   },
   step: {
-    flex: 1,
+    width: "25%",
     alignItems: "center",
     gap: 6,
+    paddingHorizontal: 2,
   },
   dot: {
     width: 16,

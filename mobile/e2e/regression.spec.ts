@@ -519,6 +519,7 @@ test.describe.serial("F — In-app chat", () => {
 
 test.describe.serial("G — Fresh business signup", () => {
   test("owner starts the business signup wizard from the entry screen", async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
     // Full-onboarding coverage lives in a dedicated wizard suite (post-beta);
     // this smoke asserts the register-business path opens the onboarding
     // wizard rather than a broken dead-end. The wizard header shows
@@ -530,6 +531,10 @@ test.describe.serial("G — Fresh business signup", () => {
     await tap(page, "role-electrician");
     await tap(page, "entry-register-trade");
     await waitText(page, "Onboarding", 30000);
+    await waitText(page, "A short, guided setup");
+    for (const label of ["Account", "Business", "Address", "Tax", "Compliance", "Services", "Launch"]) {
+      await expect(page.getByText(label, { exact: true })).toBeVisible();
+    }
   });
 
   test("owner drives the signup wizard to plan selection without a 500 (C23)", async ({ page }) => {
@@ -556,6 +561,22 @@ test.describe.serial("G — Fresh business signup", () => {
     // Business identity — only the trading name is required.
     await waitText(page, "Business identity");
     await page.getByPlaceholder("e.g. Smith Electrical Ltd").fill("E2E Signup Electrical");
+    await page.getByPlaceholder("YYYY").fill("9999");
+    await page.getByPlaceholder("https://...").fill("not-a-url");
+    await page.getByPlaceholder("e.g. 6").fill("-5");
+    await page.getByPlaceholder("e.g. 45").fill("-1");
+    await tapText(page, "Continue");
+    await waitText(page, "Enter a year between");
+    await waitText(page, "Enter a full http:// or https:// website address.");
+    await waitText(page, "Enter zero or a positive whole number.");
+
+    // Preserve the entered values after errors, then prove valid boundaries
+    // and optional blanks can advance.
+    await expect(page.getByPlaceholder("YYYY")).toHaveValue("9999");
+    await page.getByPlaceholder("YYYY").fill("1800");
+    await page.getByPlaceholder("https://...").fill("");
+    await page.getByPlaceholder("e.g. 6").fill("0");
+    await page.getByPlaceholder("e.g. 45").fill("0");
     await tapText(page, "Continue");
 
     // Address & service area — postcode + address are required.
@@ -577,6 +598,11 @@ test.describe.serial("G — Fresh business signup", () => {
 
     // Branding — keep the default colour.
     await waitText(page, "Branding");
+    await page.getByTestId("branding-review-url").fill("not-a-url");
+    await waitText(page, "This doesn't look like a full https:// link");
+    await tap(page, "branding-continue");
+    await expect(page.getByText("Branding", { exact: true })).toBeVisible();
+    await page.getByTestId("branding-review-url").fill("");
     await tap(page, "branding-continue");
 
     // Review & launch — this provisions the tenant (finishRegistration).

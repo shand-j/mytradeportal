@@ -28,9 +28,13 @@ const HEX_RE = /^#?([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/;
 function reviewUrlWarning(raw: string): string | null {
   const value = raw.trim();
   if (!value) return null;
-  return /^https:\/\/.+\..+/.test(value)
-    ? null
-    : "This doesn't look like a full https:// link — customers will be sent here exactly as typed.";
+  try {
+    const parsed = new URL(value);
+    if (parsed.protocol === "https:" && parsed.hostname.includes(".")) return null;
+  } catch {
+    // Fall through to the helpful warning below.
+  }
+  return "This doesn't look like a full https:// link — customers will be sent here exactly as typed.";
 }
 
 /** Normalise #RGB/#RRGGBB (any case, # optional) to uppercase #RRGGBB, or null. */
@@ -231,13 +235,14 @@ export function BrandingStep({ data, onNext }: BrandingStepProps) {
         <Button
           testID="branding-continue"
           title="Continue"
-          onPress={() =>
+          onPress={() => {
+            if (reviewUrlWarning(reviewUrl)) return;
             onNext({
               primaryColor,
               reviewUrl: reviewUrl.trim() || undefined,
               ...(logoAsset ? { logoAsset } : {}),
-            })
-          }
+            });
+          }}
         />
         <Button title="Skip for now" variant="outline" onPress={() => onNext({ skipped: true })} />
       </View>

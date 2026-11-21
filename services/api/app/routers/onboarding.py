@@ -1,6 +1,8 @@
 """Progressive business onboarding endpoints."""
 
+from datetime import datetime
 from typing import Annotated, Any
+from urllib.parse import urlparse
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -98,6 +100,55 @@ async def update_onboarding_step(
     """Update a single onboarding step and recalculate launch eligibility."""
     await _set_tenant(db, tenant.id)
 
+    if step_name == "business_identity":
+        year = data.value.get("year")
+        if year is not None and year != "":
+            try:
+                numeric_year = int(year)
+            except (TypeError, ValueError):
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Year established must be a valid year.",
+                ) from None
+            current_year = datetime.utcnow().year
+            if numeric_year < 1800 or numeric_year > current_year:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"Year established must be between 1800 and {current_year}.",
+                )
+
+        website = data.value.get("website")
+        if isinstance(website, str) and website.strip():
+            parsed = urlparse(website.strip())
+            if parsed.scheme not in {"http", "https"} or not parsed.hostname or "." not in parsed.hostname:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Website must be a valid http:// or https:// URL.",
+                )
+
+        for key, label in (
+            ("quotes_per_week", "Quotes per week"),
+            ("avg_minutes_per_quote", "Average minutes per quote"),
+        ):
+            metric = data.value.get(key)
+            if isinstance(metric, bool) or metric is None:
+                continue
+            if not isinstance(metric, int) or metric < 0:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"{label} must be zero or a positive whole number.",
+                )
+
+    if step_name == "branding":
+        review_url = data.value.get("review_url")
+        if isinstance(review_url, str) and review_url.strip():
+            parsed = urlparse(review_url.strip())
+            if parsed.scheme != "https" or not parsed.hostname or "." not in parsed.hostname:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Review link must be a valid https:// URL.",
+                )
+
     # Copy the JSONB dict so the reassignment below is a genuinely new object.
     # Mutating the existing dict in place is not tracked by SQLAlchemy, which
     # would silently drop every step after the first.
@@ -106,6 +157,17 @@ async def update_onboarding_step(
 
     if step_name == "services":
         await _sync_business_services(db, tenant.id, data.value)
+
+    if step_name == "business_identity":
+        year = data.value.get("year")
+        if year is not None and year != "":
+            tenant.year_established = int(year)
+        website = data.value.get("website")
+        if isinstance(website, str):
+            tenant.settings = {
+                **(tenant.settings or {}),
+                "website": website.strip() or None,
+            }
 
     # Workload metrics captured during onboarding (e.g. in the business
     # identity step) are persisted into tenant.settings verbatim; the
@@ -159,8 +221,6 @@ async def update_onboarding_step(
         tenant.status = "onboarding"
     elif tenant.status in {"onboarding", "provisional"}:
         tenant.status = "active"
-        from datetime import datetime
-
         tenant.launched_at = datetime.utcnow()
 
     tenant.onboarding_progress = progress
@@ -187,8 +247,6 @@ async def launch_business(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Cannot launch; pending steps: {', '.join(pending_steps)}",
         )
-
-    from datetime import datetime
 
     tenant.status = "active"
     tenant.launched_at = datetime.utcnow()
