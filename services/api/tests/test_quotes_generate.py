@@ -1063,7 +1063,9 @@ async def test_refine_quote_times_out_with_retryable_503(
         )
 
     assert response.status_code == 503
-    assert "too long" in response.json()["detail"]
+    detail = response.json()["detail"]
+    assert detail["code"] == "llm_timeout"
+    assert "too long" in detail["reason"]
 
 
 @pytest.mark.asyncio
