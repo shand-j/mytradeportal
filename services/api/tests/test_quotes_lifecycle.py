@@ -7,6 +7,7 @@ from uuid import UUID, uuid4
 
 import pytest
 from app.models import BillOfQuantities, Contact, Customer, Notification, Quote, QuoteRequest
+from app.rag.errors import LLM_CONNECTION, LLMProviderError
 from app.rls import set_tenant_in_session
 from httpx import AsyncClient
 from sqlalchemy import select
@@ -275,6 +276,56 @@ async def test_refine_quote(client: AsyncClient) -> None:
     ai_line = next(li for li in body["line_items"] if li["description"] == "Regenerated labour")
     assert ai_line["ai_generated"] is True
     assert body["ai_generated"] is True
+
+
+async def test_refine_provider_failure_is_sanitized_and_quote_is_unchanged(
+    client: AsyncClient,
+) -> None:
+    tenant = await _create_tenant(client, f"quote-{uuid4().hex[:8]}")
+    contact = await _create_contact(client, tenant["id"], "Quote Refiner")
+    quote = await _create_quote(client, tenant["id"], contact["id"])
+    original = await client.get(
+        f"/quotes/{quote['id']}",
+        headers={"X-Tenant-ID": tenant["id"]},
+    )
+
+    with (
+        patch(
+            "app.routers.quotes.search_cost_items_with_status",
+            new=AsyncMock(return_value=([], "no_index")),
+        ),
+        patch(
+            "app.routers.quotes.generate_quote_from_prompt",
+            new=AsyncMock(
+                side_effect=LLMProviderError(
+                    LLM_CONNECTION,
+                    "APIConnectionError: sk-live-fake-secret-litellm",
+                )
+            ),
+        ),
+    ):
+        response = await client.post(
+            f"/quotes/{quote['id']}/refine",
+            headers={"X-Tenant-ID": tenant["id"]},
+            json={"instructions": "Change all the lines"},
+        )
+
+    assert response.status_code == 503
+    assert response.json()["detail"]["code"] == LLM_CONNECTION
+    assert "APIConnectionError" not in response.text
+    assert "sk-live-fake-secret-litellm" not in response.text
+
+    after = await client.get(
+        f"/quotes/{quote['id']}",
+        headers={"X-Tenant-ID": tenant["id"]},
+    )
+    before_lines = original.json()["line_items"]
+    after_lines = after.json()["line_items"]
+    assert len(after_lines) == len(before_lines)
+    assert [line["id"] for line in after_lines] == [line["id"] for line in before_lines]
+    assert [line["description"] for line in after_lines] == [
+        line["description"] for line in before_lines
+    ]
 
 
 async def test_delete_quote(client: AsyncClient) -> None:

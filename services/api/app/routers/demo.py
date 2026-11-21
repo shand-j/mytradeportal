@@ -41,6 +41,7 @@ from app.rag import (
     search_cost_items_with_status,
     validate_generated_quote,
 )
+from app.rag.errors import log_llm_provider_error
 from app.redis_client import get_redis
 from app.routers.quotes import _fallback_line_items, _intake_completeness
 
@@ -402,7 +403,7 @@ async def demo_generate_quote(
             **llm_overrides,
         )
     except RuntimeError as exc:
-        logger.error("demo_quote_llm_error", error=str(exc)[:300])
+        log_llm_provider_error(logger, exc, demo_path="generate")
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail=_LLM_BUSY_MESSAGE,
@@ -507,7 +508,7 @@ async def demo_refine_quote(
             **llm_overrides,
         )
     except RuntimeError as exc:
-        logger.error("demo_quote_refine_llm_error", error=str(exc)[:300])
+        log_llm_provider_error(logger, exc, demo_path="refine")
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail=_LLM_BUSY_MESSAGE,

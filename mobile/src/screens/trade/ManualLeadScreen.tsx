@@ -10,7 +10,7 @@ import { Contact, findOrCreateContact } from "../../api/contacts";
 import { createQuoteRequest } from "../../api/quoteRequests";
 import { generateQuoteAsync } from "../../api/quotes";
 import { useQuoteGenerationStore } from "../../stores/quoteGenerationStore";
-import { ApiError } from "../../lib/apiClient";
+import { ApiError, safeLlmErrorMessage } from "../../lib/apiClient";
 import { LeadSource } from "../../types";
 
 const SOURCES: { key: LeadSource; label: string }[] = [
@@ -112,7 +112,10 @@ export function ManualLeadScreen({ onClose, prefillName, onSaved }: ManualLeadSc
     } catch (err) {
       setError(
         err instanceof ApiError
-          ? err.detail
+          ? safeLlmErrorMessage(
+              err,
+              "Couldn't start the AI quote. Please try again."
+            )
           : "Couldn't start the AI quote. Please try again."
       );
       setSubmitting(null);

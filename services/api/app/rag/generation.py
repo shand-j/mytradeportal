@@ -26,6 +26,12 @@ from openai import APIError
 from app.ai_pricing import estimate_cost
 from app.ai_telemetry import AiCallContext, AiCallTracker
 from app.config import settings
+from app.rag.errors import (
+    LLM_AUTH_ERROR,
+    LLMProviderError,
+    log_llm_provider_error,
+    provider_error_from,
+)
 from app.rag.validation import QUOTE_LINE_STYLE_JOB_SUMMARY, resolve_quote_line_style
 
 logger = structlog.get_logger("api.rag")
@@ -644,7 +650,7 @@ async def generate_followup(
     """
     model, api_key, api_base = _resolve_followup_route()
     if not api_key:
-        raise RuntimeError("LLM API key is not configured")
+        raise LLMProviderError(LLM_AUTH_ERROR, "LLM API key is not configured")
 
     messages = _build_followup_messages(job_description, prior_messages, final_turn=final_turn)
     completion_kwargs: dict[str, Any] = {
@@ -675,21 +681,29 @@ async def generate_followup(
             response = await acompletion(**completion_kwargs)
             tracker.set_usage(_extract_usage(response))
     except APIError as exc:
-        logger.error(
-            "llm_error",
+        log_llm_provider_error(
+            logger,
+            exc,
             phase="followup",
             model=model,
-            error_type=type(exc).__name__,
         )
-        raise RuntimeError(f"LLM generation failed: {exc.message}") from exc
+        raise provider_error_from(exc) from exc
+    except TimeoutError as exc:
+        log_llm_provider_error(
+            logger,
+            exc,
+            phase="followup",
+            model=model,
+        )
+        raise provider_error_from(exc) from exc
     except (httpx.HTTPError, ConnectionError, OSError) as exc:
-        logger.error(
-            "llm_error",
+        log_llm_provider_error(
+            logger,
+            exc,
             phase="followup",
             model=model,
-            error_type=type(exc).__name__,
         )
-        raise RuntimeError(f"LLM service unavailable: {exc}") from exc
+        raise provider_error_from(exc) from exc
 
     content = response.choices[0].message.content
     if not content:
@@ -814,7 +828,7 @@ async def generate_quote_from_prompt(
     resolved_model = model or settings.llm_model
     resolved_api_key = api_key or settings.resolved_llm_api_key
     if not resolved_api_key:
-        raise RuntimeError("LLM API key is not configured")
+        raise LLMProviderError(LLM_AUTH_ERROR, "LLM API key is not configured")
 
     if knowledge_chunks is None:
         # Local import: retrieval imports generation for the followup prompts.
@@ -869,21 +883,29 @@ async def generate_quote_from_prompt(
             response = await acompletion(**completion_kwargs)
             tracker.set_usage(_extract_usage(response))
     except APIError as exc:
-        logger.error(
-            "llm_error",
+        log_llm_provider_error(
+            logger,
+            exc,
             phase="quote_generation",
             model=resolved_model,
-            error_type=type(exc).__name__,
         )
-        raise RuntimeError(f"LLM generation failed: {exc.message}") from exc
+        raise provider_error_from(exc) from exc
+    except TimeoutError as exc:
+        log_llm_provider_error(
+            logger,
+            exc,
+            phase="quote_generation",
+            model=resolved_model,
+        )
+        raise provider_error_from(exc) from exc
     except (httpx.HTTPError, ConnectionError, OSError) as exc:
-        logger.error(
-            "llm_error",
+        log_llm_provider_error(
+            logger,
+            exc,
             phase="quote_generation",
             model=resolved_model,
-            error_type=type(exc).__name__,
         )
-        raise RuntimeError(f"LLM service unavailable: {exc}") from exc
+        raise provider_error_from(exc) from exc
 
     content = response.choices[0].message.content
     if not content:
