@@ -120,7 +120,11 @@ async def update_onboarding_step(
         website = data.value.get("website")
         if isinstance(website, str) and website.strip():
             parsed = urlparse(website.strip())
-            if parsed.scheme not in {"http", "https"} or not parsed.hostname or "." not in parsed.hostname:
+            if (
+                parsed.scheme not in {"http", "https"}
+                or not parsed.hostname
+                or "." not in parsed.hostname
+            ):
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
                     detail="Website must be a valid http:// or https:// URL.",

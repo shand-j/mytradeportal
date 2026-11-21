@@ -114,7 +114,11 @@ class TenantUpdate(BaseModel):
         if value is None or not value.strip():
             return None
         parsed = urlparse(value.strip())
-        if parsed.scheme not in {"http", "https"} or not parsed.hostname or "." not in parsed.hostname:
+        if (
+            parsed.scheme not in {"http", "https"}
+            or not parsed.hostname
+            or "." not in parsed.hostname
+        ):
             raise ValueError("website must be a valid http:// or https:// URL")
         return value.strip()
 
@@ -137,20 +141,31 @@ class TenantUpdate(BaseModel):
 
     @field_validator("settings")
     @classmethod
-    def validate_settings_urls_and_metrics(cls, value: dict[str, Any] | None) -> dict[str, Any] | None:
+    def validate_settings_urls_and_metrics(
+        cls, value: dict[str, Any] | None
+    ) -> dict[str, Any] | None:
         if value is None:
             return None
         website = value.get("website")
         if isinstance(website, str) and website.strip():
             parsed = urlparse(website.strip())
-            if parsed.scheme not in {"http", "https"} or not parsed.hostname or "." not in parsed.hostname:
+            if (
+                parsed.scheme not in {"http", "https"}
+                or not parsed.hostname
+                or "." not in parsed.hostname
+            ):
                 raise ValueError("website must be a valid http:// or https:// URL")
         review_url = value.get("review_url") or value.get("reviewUrl")
         if isinstance(review_url, str) and review_url.strip():
             parsed = urlparse(review_url.strip())
             if parsed.scheme != "https" or not parsed.hostname or "." not in parsed.hostname:
                 raise ValueError("review_url must be a valid https:// URL")
-        for key in ("quotes_per_week", "quotesPerWeek", "avg_minutes_per_quote", "avgMinutesPerQuote"):
+        for key in (
+            "quotes_per_week",
+            "quotesPerWeek",
+            "avg_minutes_per_quote",
+            "avgMinutesPerQuote",
+        ):
             metric = value.get(key)
             if isinstance(metric, bool):
                 raise ValueError("workload metrics must be zero or positive whole numbers")
