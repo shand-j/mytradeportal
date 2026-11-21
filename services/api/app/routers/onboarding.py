@@ -109,7 +109,7 @@ async def update_onboarding_step(
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
                     detail="Year established must be a valid year.",
-                )
+                ) from None
             current_year = datetime.utcnow().year
             if numeric_year < 1800 or numeric_year > current_year:
                 raise HTTPException(
@@ -164,7 +164,10 @@ async def update_onboarding_step(
             tenant.year_established = int(year)
         website = data.value.get("website")
         if isinstance(website, str):
-            tenant.website = website.strip() or None
+            tenant.settings = {
+                **(tenant.settings or {}),
+                "website": website.strip() or None,
+            }
 
     # Workload metrics captured during onboarding (e.g. in the business
     # identity step) are persisted into tenant.settings verbatim; the
@@ -218,8 +221,6 @@ async def update_onboarding_step(
         tenant.status = "onboarding"
     elif tenant.status in {"onboarding", "provisional"}:
         tenant.status = "active"
-        from datetime import datetime
-
         tenant.launched_at = datetime.utcnow()
 
     tenant.onboarding_progress = progress
@@ -246,8 +247,6 @@ async def launch_business(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Cannot launch; pending steps: {', '.join(pending_steps)}",
         )
-
-    from datetime import datetime
 
     tenant.status = "active"
     tenant.launched_at = datetime.utcnow()
