@@ -97,7 +97,7 @@ bug-bash; P0/P1 findings must remain linked in GitHub and P2 findings labelled
 for beta. Live-provider/device checks are manual and cannot be signed off from
 this inventory alone.
 
-### 1.5 Security & evals
+### 1.6 Security & evals
 
 - **Security suite** (`security/`, weekly cron Mon 06:17 UTC + manual dispatch):
   OWASP and tenancy tests against a live target (needs `SECURITY_*` credentials).
