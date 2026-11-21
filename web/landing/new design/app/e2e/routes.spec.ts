@@ -143,3 +143,37 @@ for (const { label, viewport, expectsPrimaryNav } of responsiveNavCases) {
     await expectFullyInViewport(page, mobileNav.getByRole('link', { name: 'Join the beta', exact: true }))
   })
 }
+
+const footerSectionLinks = [
+  { name: 'The tour', hash: 'features' },
+  { name: 'Pricing', hash: 'pricing' },
+  { name: 'Reviews', hash: 'reviews' },
+] as const
+
+for (const path of ['/', '/blog', '/blog/ai-in-the-trades', '/help/getting-started']) {
+  test(`footer home-section links work from ${path}`, async ({ page }) => {
+    for (const link of footerSectionLinks) {
+      await page.goto(path, { waitUntil: 'domcontentloaded' })
+      const footerLink = page.locator('footer').getByRole('link', { name: link.name, exact: true })
+      await expect(footerLink).toHaveAttribute(
+        'href',
+        path === '/' ? `#${link.hash}` : `/#${link.hash}`,
+      )
+      await footerLink.click()
+
+      await expect(page).toHaveURL(new RegExp(`/#${link.hash}$`))
+      await expect(page.locator(`#${link.hash}`)).toBeInViewport()
+      await expect(page.context().pages()).toHaveLength(1)
+    }
+  })
+}
+
+test('home ignores an unknown CSS-invalid hash without a page error', async ({ page }) => {
+  const errors: string[] = []
+  page.on('pageerror', (error) => errors.push(error.message))
+
+  await page.goto('/#123.not-a-valid-css-id')
+
+  await expect(page.locator('main')).toBeVisible()
+  expect(errors).toEqual([])
+})
