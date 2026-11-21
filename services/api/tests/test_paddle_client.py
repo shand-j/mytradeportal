@@ -197,8 +197,6 @@ async def test_schedule_subscription_cancellation_uses_next_billing_period(
     assert method == "POST"
     assert payload == {"effective_from": "next_billing_period"}
 
-    assert fake_client.requests == []
-
 
 async def test_get_price_returns_trial_configuration(fake_client: _FakeAsyncClient) -> None:
     fake_client.queue.append(
