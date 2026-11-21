@@ -563,9 +563,7 @@ class Invoice(TenantScopedBase):
             "job_id",
             "quote_id",
             unique=True,
-            postgresql_where=(
-                text("job_id IS NOT NULL AND quote_id IS NOT NULL")
-            ),
+            postgresql_where=(text("job_id IS NOT NULL AND quote_id IS NOT NULL")),
         ),
     )
 

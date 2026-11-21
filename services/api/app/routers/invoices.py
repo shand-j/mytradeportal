@@ -282,9 +282,7 @@ async def create_invoice(
     job: Job | None = None
     if data.job_id:
         job_result = await db.execute(
-            select(Job)
-            .where(Job.id == data.job_id, Job.tenant_id == tenant.id)
-            .with_for_update()
+            select(Job).where(Job.id == data.job_id, Job.tenant_id == tenant.id).with_for_update()
         )
         job = job_result.scalar_one_or_none()
         if job is None:
