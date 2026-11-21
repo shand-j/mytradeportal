@@ -29,6 +29,7 @@ import { WelcomeStep } from "./steps/WelcomeStep";
 type WizardStepProps = {
   data?: Record<string, unknown>;
   onNext: (data?: Record<string, unknown>) => void;
+  isFinalizing?: boolean;
   /** Account step only: set when the final registration attempt hit a
    * duplicate-email 409, so the conflict is shown inline under the field. */
   emailTaken?: boolean;
@@ -108,6 +109,12 @@ export function OnboardingStepperScreen() {
   // guard a second tap fires a parallel registration that 409s against the
   // first and the wizard jumps back to the account step (#225).
   const submittingRef = useRef(false);
+  // Final plan-step completion is a one-way transition into the app shell.
+  // Guard it so rapid double taps stay idempotent and don't leak into the
+  // destination screen while navigation settles.
+  const finalizingRef = useRef(false);
+  const [isFinalizing, setIsFinalizing] = useState(false);
+  const finalizeNavigationTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Prefill the wizard from the server-side onboarding progress so the review
   // summary (and any back-navigation) shows what was already captured.
@@ -145,6 +152,15 @@ export function OnboardingStepperScreen() {
   useEffect(() => {
     scrollRef.current?.scrollTo({ y: 0, animated: false });
   }, [stepIndex]);
+
+  useEffect(
+    () => () => {
+      if (finalizeNavigationTimeoutRef.current) {
+        clearTimeout(finalizeNavigationTimeoutRef.current);
+      }
+    },
+    []
+  );
 
   const StepComponent = STEPS[stepIndex].component;
   const isFirst = stepIndex === 0;
@@ -211,18 +227,26 @@ export function OnboardingStepperScreen() {
       }
     }
     if (isLast) {
+      if (finalizingRef.current) return;
+      finalizingRef.current = true;
+      setIsFinalizing(true);
       // Already registered at the review step; the plan step only points to
       // web subscription (no in-app purchase). Mark onboarding complete so
       // the index route never bounces a
       // finished (esp. resumed) wizard back into /onboarding?resume=1 (#225).
       completeOnboarding();
-      router.replace("/(trade)/dashboard");
+      // Keep the disabled CTA visible for one tap cadence so a double-tap
+      // cannot fall through onto the newly mounted dashboard tabs.
+      finalizeNavigationTimeoutRef.current = setTimeout(() => {
+        router.replace("/(trade)/dashboard");
+      }, 300);
     } else {
       setStepIndex((i) => i + 1);
     }
   };
 
   const goBack = () => {
+    if (finalizingRef.current) return;
     // Errors belong to the step that raised them; don't trail them backwards.
     setError(null);
     if (isFirst) {
@@ -291,6 +315,7 @@ export function OnboardingStepperScreen() {
                 : data[STEPS[stepIndex].key]) as Record<string, unknown>
             }
             emailTaken={emailConflict}
+            isFinalizing={isFinalizing && isLast}
             onNext={(stepData?: Record<string, unknown>) => {
               void goNext(stepData);
             }}
