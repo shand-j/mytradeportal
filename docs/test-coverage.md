@@ -76,8 +76,11 @@ Shared API-test support not tied to one journey: test_tenancy.py:3, test_tenant_
 | Offline mode | PRD-Pricing-and-Billing.md §2; backlog F9 | planned |
 | Multi-user / roles | Team tier, plans.py / Pricing PRD §2 | assignee field exists; no invitations/roles |
 
-Also blocked (not @gap, infra): portal wildcard domains S3 — Railway Hobby's
-2-custom-domain limit; needs Pro upgrade or apex consolidation (beta-backlog).
+Resolved: portal wildcard domains S3 — `.railway/railway.ts` declares
+`mytradeportal.co.uk` and `*.mytradeportal.co.uk` on the landing service, and
+the wildcard is intentional for tenant-subdomain portals (ADR-004). Live DNS,
+certificate issuance and wildcard routing remain an ops/device verification
+gate; do not use the old Hobby 2-domain-limit assessment as a blocker.
 
 ## 3. How to extend
 

@@ -205,6 +205,33 @@ async def test_branded_send_keeps_quotes_address(monkeypatch: MonkeyPatch) -> No
 
 
 @pytest.mark.asyncio
+async def test_resend_uses_verified_test_sender_when_addresses_are_unset(
+    monkeypatch: MonkeyPatch,
+) -> None:
+    """Resend must not substitute the local SMTP From address."""
+    from app import email as email_module
+
+    monkeypatch.setattr(email_module.settings, "resend_api_key", "re_dev_test")
+    monkeypatch.setattr(email_module.settings, "resend_from_email", "")
+    monkeypatch.setattr(email_module.settings, "resend_no_reply_email", "")
+    monkeypatch.setattr(email_module.settings, "smtp_from_email", "quotes@mytradeportal.local")
+
+    fake_response = _FakeResponse(200, {"id": "resend-test-sender"})
+    fake_client = _FakeAsyncClient(fake_response)
+    monkeypatch.setattr(email_module.httpx, "AsyncClient", lambda **_: fake_client)
+
+    await send_email(
+        to_email="user@example.com",
+        subject="Reset your password",
+        html_body="<p>reset</p>",
+    )
+
+    _, payload, _ = fake_client.posts[0]
+    assert "onboarding@resend.dev" in payload["from"]
+    assert "mytradeportal.local" not in payload["from"]
+
+
+@pytest.mark.asyncio
 async def test_send_email_smtp_honours_tenant_display_name_and_reply_to(
     monkeypatch: MonkeyPatch,
 ) -> None:
