@@ -74,4 +74,20 @@ describe('QuotesList', () => {
     expect(screen.getByText('EV Charger Installation')).toBeInTheDocument();
     expect(screen.queryByText('Full Rewire')).not.toBeInTheDocument();
   });
+
+  it('shows the service description and fixed-two-decimal GBP value', () => {
+    vi.mocked(useQuotes).mockReturnValue({
+      data: [{
+        ...mockQuotes[0],
+        serviceType: 'Consumer unit replacement',
+        total: 20.2,
+      }],
+      isLoading: false,
+      error: null,
+    });
+    renderPage(<QuotesList />);
+
+    expect(screen.getByText('Consumer unit replacement')).toBeInTheDocument();
+    expect(screen.getByText('£20.20')).toBeInTheDocument();
+  });
 });

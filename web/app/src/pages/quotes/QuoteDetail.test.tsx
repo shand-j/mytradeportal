@@ -78,6 +78,7 @@ vi.mock('@/lib/api/hooks', async (importOriginal) => {
     useRejectQuote: vi.fn(defaultMutation),
     useConvertQuoteToInvoice: vi.fn(defaultMutation),
     useDeleteQuote: vi.fn(defaultMutation),
+    useUpdateQuote: vi.fn(defaultMutation),
     useRefineQuote: vi.fn(defaultMutation),
   };
 });
@@ -218,5 +219,49 @@ describe('QuoteDetail', () => {
 
     await user.click(screen.getByRole('button', { name: /edit quote/i }));
     expect(screen.getAllByRole('button', { name: /remove/i }).length).toBeGreaterThan(0);
+  });
+
+  it('preserves the unit and rejects a negative quantity without coercing it', async () => {
+    const hourQuote = {
+      ...deterministicQuote,
+      lineItems: [{ ...deterministicQuote.lineItems[0], unit: 'hour', quantity: 2 }],
+    };
+    vi.mocked(hooks.useQuote).mockReturnValue({ data: hourQuote, isLoading: false, error: null });
+    const mutation = defaultMutation();
+    vi.mocked(hooks.useUpdateQuote).mockReturnValue(mutation as unknown as ReturnType<typeof hooks.useUpdateQuote>);
+
+    const user = userEvent.setup();
+    renderQuoteDetail(hourQuote.id);
+
+    expect(screen.getByText('2 hour')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: /edit quote/i }));
+    const quantity = screen.getAllByRole('spinbutton', { name: /quantity/i })[0];
+    await user.clear(quantity);
+    await user.type(quantity, '-1');
+    await user.click(screen.getByRole('button', { name: /^save$/i }));
+
+    expect(screen.getByRole('alert')).toHaveTextContent(/cannot be negative/i);
+    expect(quantity).toHaveValue(-1);
+    expect(mutation.mutate).not.toHaveBeenCalled();
+  });
+
+  it('keeps edit input and shows an actionable error after API rejection', async () => {
+    vi.mocked(hooks.useQuote).mockReturnValue({ data: deterministicQuote, isLoading: false, error: null });
+    const mutation = defaultMutation();
+    mutation.mutate.mockImplementation((_variables, options) => {
+      options?.onError?.({ status: 422, message: 'raw validation detail' } as never);
+    });
+    vi.mocked(hooks.useUpdateQuote).mockReturnValue(mutation as unknown as ReturnType<typeof hooks.useUpdateQuote>);
+
+    const user = userEvent.setup();
+    renderQuoteDetail(deterministicQuote.id);
+    await user.click(screen.getByRole('button', { name: /edit quote/i }));
+    const quantity = screen.getAllByRole('spinbutton', { name: /quantity/i })[0];
+    await user.clear(quantity);
+    await user.type(quantity, '7');
+    await user.click(screen.getByRole('button', { name: /^save$/i }));
+
+    expect(screen.getByRole('alert')).toHaveTextContent(/could not be saved/i);
+    expect(quantity).toHaveValue(7);
   });
 });

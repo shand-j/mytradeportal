@@ -6,12 +6,32 @@ import { useQuote, useSendQuote, useApproveQuote, useRejectQuote, useConvertQuot
 import { useUiStore } from '@/stores/uiStore';
 import { StatusPill } from '@/components/shared/StatusPill';
 import { toast } from 'sonner';
+import { formatGBP } from '@/lib/utils';
+
+const MAX_QUANTITY = 99_999_999.99;
+const MAX_UNIT_PRICE = 99_999_999.9999;
 
 function formatCurrency(value: number, fractionDigits = 2): string {
   return value.toLocaleString('en-GB', {
     minimumFractionDigits: fractionDigits,
     maximumFractionDigits: fractionDigits,
   });
+}
+
+function validateNumericValue(value: number | string, label: 'Quantity' | 'Unit price', max: number): string | null {
+  const text = String(value).trim();
+  if (!text) return `${label} is required`;
+  const numeric = Number(text);
+  if (!Number.isFinite(numeric)) return `${label} must be a finite number`;
+  if (numeric < 0) return `${label} cannot be negative`;
+  if (numeric > max) return `${label} is too large`;
+  return null;
+}
+
+function validPreviewValue(value: number | string, max: number): number {
+  const text = String(value).trim();
+  const numeric = Number(text);
+  return text && Number.isFinite(numeric) && numeric >= 0 && numeric <= max ? numeric : 0;
 }
 
 export function QuoteDetail() {
@@ -27,8 +47,9 @@ export function QuoteDetail() {
   const convertQuote = useConvertQuoteToInvoice();
   const deleteQuote = useDeleteQuote();
   const [isEditing, setIsEditing] = useState(false);
-  const [draftItems, setDraftItems] = useState<Array<{ id: string; description: string; quantity: number; unitPrice: number }>>([]);
+  const [draftItems, setDraftItems] = useState<Array<{ id: string; description: string; quantity: number | string; unit: string; unitPrice: number | string }>>([]);
   const [refineInstructions, setRefineInstructions] = useState('');
+  const [editError, setEditError] = useState('');
 
   useEffect(() => {
     setPageTitle('Quote Detail');
@@ -41,6 +62,7 @@ export function QuoteDetail() {
         id: item.id,
         description: item.description,
         quantity: item.quantity,
+        unit: item.unit,
         unitPrice: item.unitPrice,
       })),
     );
@@ -51,7 +73,10 @@ export function QuoteDetail() {
 
   const vatRateMultiplier = quote.vatRate > 1 ? quote.vatRate / 100 : quote.vatRate;
   const vatRateDisplay = vatRateMultiplier * 100;
-  const editingSubtotal = draftItems.reduce((sum, item) => sum + (item.quantity * item.unitPrice), 0);
+  const editingSubtotal = draftItems.reduce(
+    (sum, item) => sum + (validPreviewValue(item.quantity, MAX_QUANTITY) * validPreviewValue(item.unitPrice, MAX_UNIT_PRICE)),
+    0,
+  );
   const editingVat = editingSubtotal * vatRateMultiplier;
   const editingTotal = editingSubtotal + editingVat;
   const aiGeneratedLineIds = new Set(quote.lineItems.filter((item) => item.aiGenerated).map((item) => item.id));
@@ -99,6 +124,7 @@ export function QuoteDetail() {
   };
 
   const handleStartEdit = () => {
+    setEditError('');
     setIsEditing(true);
   };
 
@@ -108,28 +134,29 @@ export function QuoteDetail() {
         id: item.id,
         description: item.description,
         quantity: item.quantity,
+        unit: item.unit,
         unitPrice: item.unitPrice,
       })),
     );
+    setEditError('');
     setIsEditing(false);
   };
 
   const handleDraftChange = (
     id: string,
-    key: 'description' | 'quantity' | 'unitPrice',
+    key: 'description' | 'quantity' | 'unit' | 'unitPrice',
     value: string,
   ) => {
     setDraftItems((current) =>
       current.map((item) => {
         if (item.id !== id) return item;
-        if (key === 'description') {
-          return { ...item, description: value };
+        if (key === 'description' || key === 'unit') {
+          return { ...item, [key]: value };
         }
-        const numeric = Number(value);
-        if (Number.isNaN(numeric)) return item;
-        return { ...item, [key]: numeric };
+        return { ...item, [key]: value };
       }),
     );
+    setEditError('');
   };
 
   const handleAddLineItem = () => {
@@ -139,6 +166,7 @@ export function QuoteDetail() {
         id: `new-${crypto.randomUUID()}`,
         description: 'New line item',
         quantity: 1,
+        unit: 'item',
         unitPrice: 0,
       },
     ]);
@@ -149,16 +177,34 @@ export function QuoteDetail() {
   };
 
   const handleSaveEdit = () => {
+    for (const item of draftItems) {
+      const quantityError = validateNumericValue(item.quantity, 'Quantity', MAX_QUANTITY);
+      if (quantityError) {
+        setEditError(quantityError);
+        return;
+      }
+      const unitPriceError = validateNumericValue(item.unitPrice, 'Unit price', MAX_UNIT_PRICE);
+      if (unitPriceError) {
+        setEditError(unitPriceError);
+        return;
+      }
+      if (!item.unit.trim()) {
+        setEditError('Unit is required');
+        return;
+      }
+    }
+
     const sanitized = draftItems
       .map((item) => ({
         description: item.description.trim(),
-        quantity: Math.max(0, item.quantity),
-        unitPrice: Math.max(0, item.unitPrice),
+        quantity: Number(item.quantity),
+        unit: item.unit.trim(),
+        unitPrice: Number(item.unitPrice),
       }))
       .filter((item) => item.description.length > 0);
 
     if (sanitized.length === 0) {
-      toast.error('At least one line item is required');
+      setEditError('At least one line item is required');
       return;
     }
 
@@ -170,7 +216,7 @@ export function QuoteDetail() {
             id: '',
             description: item.description,
             quantity: item.quantity,
-            unit: 'item',
+            unit: item.unit,
             unitPrice: item.unitPrice,
             total: item.quantity * item.unitPrice,
             aiGenerated: false,
@@ -181,9 +227,12 @@ export function QuoteDetail() {
       {
         onSuccess: () => {
           toast.success('Quote updated');
+          setEditError('');
           setIsEditing(false);
         },
-        onError: (err) => toast.error(err.message || 'Failed to update quote'),
+        onError: () => setEditError(
+          'The quote could not be saved. Check the quantities and prices, then try again.',
+        ),
       },
     );
   };
@@ -244,7 +293,7 @@ export function QuoteDetail() {
                 <StatusPill status={quote.status} />
               </div>
               <div className="text-right">
-                <div className="text-2xl font-bold text-[#1C1917]">£{formatCurrency(quote.total)}</div>
+                <div className="text-2xl font-bold text-[#1C1917]">{formatGBP(quote.total)}</div>
                 <div className="text-xs text-[#78716C]">inc. VAT</div>
               </div>
             </div>
@@ -287,6 +336,11 @@ export function QuoteDetail() {
                 </div>
               ) : null}
             </div>
+            {editError && (
+              <p role="alert" className="mb-3 rounded-md border border-[#FECACA] bg-[#FEF2F2] px-3 py-2 text-sm text-[#B91C1C]">
+                {editError}
+              </p>
+            )}
             <table className="w-full">
               <thead>
                 <tr className="border-b border-[#F0EFEA]">
@@ -322,30 +376,44 @@ export function QuoteDetail() {
                     </td>
                     <td className="py-2.5 text-sm text-[#57534E] text-right">
                       {isEditing ? (
-                        <input
-                          type="number"
-                          min={0}
-                          step="0.1"
-                          value={item.quantity}
-                          onChange={(e) => handleDraftChange(item.id, 'quantity', e.target.value)}
-                          className="w-20 rounded-md border border-[#E7E5E4] px-2 py-1 text-right text-sm"
-                        />
-                      ) : <>{item.quantity} item</>}
+                        <div className="flex items-center justify-end gap-1">
+                          <input
+                            type="number"
+                            min={0}
+                            max={MAX_QUANTITY}
+                            step="0.1"
+                            aria-label="Quantity"
+                            value={item.quantity}
+                            onChange={(e) => handleDraftChange(item.id, 'quantity', e.target.value)}
+                            className="w-20 rounded-md border border-[#E7E5E4] px-2 py-1 text-right text-sm"
+                          />
+                          <input
+                            aria-label="Unit"
+                            value={item.unit}
+                            onChange={(e) => handleDraftChange(item.id, 'unit', e.target.value)}
+                            className="w-16 rounded-md border border-[#E7E5E4] px-2 py-1 text-sm"
+                          />
+                        </div>
+                      ) : <>{item.quantity} {item.unit}</>}
                     </td>
                     <td className="py-2.5 text-sm text-[#57534E] text-right">
                       {isEditing ? (
                         <input
                           type="number"
                           min={0}
+                          max={MAX_UNIT_PRICE}
                           step="0.01"
                           value={item.unitPrice}
                           onChange={(e) => handleDraftChange(item.id, 'unitPrice', e.target.value)}
                           className="w-28 rounded-md border border-[#E7E5E4] px-2 py-1 text-right text-sm"
                         />
-                      ) : <>£{formatCurrency(item.unitPrice)}</>}
+                      ) : <>{formatGBP(item.unitPrice)}</>}
                     </td>
                     <td className="py-2.5 text-sm font-medium text-[#1C1917] text-right">
-                      £{formatCurrency(item.quantity * item.unitPrice)}
+                      {formatGBP(
+                        validPreviewValue(item.quantity, MAX_QUANTITY)
+                        * validPreviewValue(item.unitPrice, MAX_UNIT_PRICE),
+                      )}
                     </td>
                     {isEditing ? (
                       <td className="py-2.5 pl-2 text-right">
@@ -372,9 +440,9 @@ export function QuoteDetail() {
               </div>
             ) : null}
             <div className="mt-4 pt-4 border-t border-[#F0EFEA] space-y-1">
-              <div className="flex justify-between text-sm text-[#57534E]"><span>Subtotal</span><span>£{formatCurrency(isEditing ? editingSubtotal : quote.subtotal)}</span></div>
-              <div className="flex justify-between text-sm text-[#57534E]"><span>VAT ({formatCurrency(vatRateDisplay, 0)}%)</span><span>£{formatCurrency(isEditing ? editingVat : quote.vatAmount)}</span></div>
-              <div className="flex justify-between text-lg font-bold text-[#1C1917]"><span>Total</span><span>£{formatCurrency(isEditing ? editingTotal : quote.total)}</span></div>
+              <div className="flex justify-between text-sm text-[#57534E]"><span>Subtotal</span><span>{formatGBP(isEditing ? editingSubtotal : quote.subtotal)}</span></div>
+              <div className="flex justify-between text-sm text-[#57534E]"><span>VAT ({formatCurrency(vatRateDisplay, 0)}%)</span><span>{formatGBP(isEditing ? editingVat : quote.vatAmount)}</span></div>
+              <div className="flex justify-between text-lg font-bold text-[#1C1917]"><span>Total</span><span>{formatGBP(isEditing ? editingTotal : quote.total)}</span></div>
             </div>
           </div>
 
