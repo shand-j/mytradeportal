@@ -28,9 +28,20 @@ def tenant_vat_rate(tenant: Tenant) -> Decimal:
     if raw is None:
         return DEFAULT_VAT_RATE
     try:
-        return Decimal(str(raw))
+        configured = Decimal(str(raw))
     except ArithmeticError:
         return DEFAULT_VAT_RATE
+    if configured.is_nan() or configured.is_infinite():
+        return DEFAULT_VAT_RATE
+    # Public tenant setting contract is percentage points (20 = 20%), but
+    # legacy rows may contain a fraction (0.20). Accept both forms.
+    if configured < 0:
+        return Decimal("0")
+    if configured <= 1:
+        return configured
+    if configured <= 100:
+        return configured / Decimal("100")
+    return DEFAULT_VAT_RATE
 
 
 def vat_rate_within_tenant_limit(tenant: Tenant, vat_rate: Decimal) -> bool:

@@ -1,8 +1,9 @@
 """Pydantic schemas for API requests and responses."""
 
+import math
 from datetime import UTC, date, datetime
 from decimal import Decimal, InvalidOperation
-from typing import Any, Literal
+from typing import Annotated, Any, Literal
 from uuid import UUID
 
 from pydantic import (
@@ -17,6 +18,26 @@ from pydantic import (
 )
 
 from app.preferred_dates import format_preferred_date
+
+PositiveLineQuantity = Annotated[Decimal, Field(gt=0, max_digits=10, decimal_places=2)]
+PositiveLineUnitPrice = Annotated[Decimal, Field(gt=0, max_digits=12, decimal_places=4)]
+NonNegativeDocumentVatRate = Annotated[Decimal, Field(ge=0, le=1, max_digits=5, decimal_places=2)]
+NonNegativeEstimatedHours = Annotated[Decimal, Field(ge=0, max_digits=6, decimal_places=2)]
+
+
+def _strip_non_empty(value: str, *, field: str) -> str:
+    stripped = value.strip()
+    if not stripped:
+        raise ValueError(f"{field} must not be empty")
+    return stripped
+
+
+def _finite_decimal(value: Decimal | None, *, field: str) -> Decimal | None:
+    if value is None:
+        return None
+    if not value.is_finite():
+        raise ValueError(f"{field} must be a finite decimal")
+    return value
 
 # ---------------------------------------------------------------------------
 # Tenant
@@ -107,6 +128,19 @@ class TenantUpdate(BaseModel):
     quotes_per_week: int | None = Field(default=None, alias="quotesPerWeek")
     avg_minutes_per_quote: int | None = Field(default=None, alias="avgMinutesPerQuote")
 
+    @field_validator("vat_rate")
+    @classmethod
+    def _normalize_vat_rate_percent(cls, value: float | None) -> float | None:
+        if value is None:
+            return None
+        if not math.isfinite(value):
+            raise ValueError("vatRate must be finite")
+        if value < 0 or value > 100:
+            raise ValueError("vatRate must be between 0 and 100")
+        # Public tenant setting contract is percentage points (20 = 20%).
+        # Accept historical fraction input for compatibility and normalize.
+        return value * 100 if 0 < value <= 1 else value
+
 
 class TenantRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
@@ -169,6 +203,11 @@ class ContactCreate(BaseModel):
     parking_notes: str | None = None
     access_notes: str | None = None
 
+    @field_validator("name")
+    @classmethod
+    def _normalize_name(cls, value: str) -> str:
+        return _strip_non_empty(value, field="name")
+
 
 class ContactUpdate(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=255)
@@ -191,6 +230,13 @@ class ContactUpdate(BaseModel):
     # of reminders (downward of the tenant cadence only), null clears the
     # override back to the tenant default. Keys must be known preference keys.
     reminder_preferences: dict[str, bool | int | None] | None = None
+
+    @field_validator("name")
+    @classmethod
+    def _normalize_name(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        return _strip_non_empty(value, field="name")
 
 
 class ContactBlockRequest(BaseModel):
@@ -252,8 +298,8 @@ class ContactRead(BaseModel):
 
 class QuoteLineItemCreate(BaseModel):
     description: str
-    quantity: Decimal = Decimal("1.00")
-    unit_price: Decimal = Decimal("0.00")
+    quantity: PositiveLineQuantity = Decimal("1.00")
+    unit_price: PositiveLineUnitPrice = Decimal("1.0000")
     # None = the client did not send a unit (both first-party clients omit it
     # when round-tripping line items). Create coalesces to "ea"; update
     # preserves the stored line's unit so a unitless PATCH can neither reset
@@ -264,6 +310,18 @@ class QuoteLineItemCreate(BaseModel):
     # ai_generated=True when it still matches an existing AI-drafted line
     # exactly, so edits (which refine must preserve) cannot be claimed as AI.
     ai_generated: bool = False
+
+    @field_validator("description")
+    @classmethod
+    def _normalize_description(cls, value: str) -> str:
+        return _strip_non_empty(value, field="description")
+
+    @field_validator("quantity", "unit_price", mode="after")
+    @classmethod
+    def _finite_line_numbers(cls, value: Decimal) -> Decimal:
+        finite = _finite_decimal(value, field="line item numeric value")
+        assert finite is not None
+        return finite
 
 
 class QuoteLineItemRead(BaseModel):
@@ -470,11 +528,16 @@ class QuoteCreate(BaseModel):
     # Staff notes; the router merges the contact's CRM notes in at creation.
     notes: str | None = None
     line_items: list[QuoteLineItemCreate] = Field(default_factory=list)
-    vat_rate: Decimal = Decimal("0.20")
+    vat_rate: NonNegativeDocumentVatRate = Decimal("0.20")
     valid_until: datetime | None = None
-    estimated_hours: Decimal | None = None
+    estimated_hours: NonNegativeEstimatedHours | None = None
 
     _normalize_valid_until = field_validator("valid_until", mode="after")(_strip_tz)
+
+    @field_validator("vat_rate", "estimated_hours", mode="after")
+    @classmethod
+    def _finite_decimals(cls, value: Decimal | None) -> Decimal | None:
+        return _finite_decimal(value, field="numeric field")
 
 
 class QuoteRead(BaseModel):
@@ -591,11 +654,11 @@ class QuoteUpdate(BaseModel):
     status: str | None = None
     line_items: list[QuoteLineItemCreate] | None = None
     # Explicit null clears the estimate; omitting the key leaves it untouched.
-    estimated_hours: Decimal | None = None
+    estimated_hours: NonNegativeEstimatedHours | None = None
     # Per-quote VAT override (zero-rated jobs such as new builds): a fraction
     # between 0 and 1 (0.20 = 20%). Omitting the key leaves the rate untouched;
     # the router rejects values above the tenant's registered rate.
-    vat_rate: Decimal | None = Field(default=None, ge=0, le=1)
+    vat_rate: NonNegativeDocumentVatRate | None = None
 
     _normalize_valid_until = field_validator("valid_until", mode="after")(_strip_tz)
 
@@ -608,6 +671,11 @@ class QuoteUpdate(BaseModel):
                 "vat_rate must be a number between 0 and 1; omit the field to leave it unchanged"
             )
         return self
+
+    @field_validator("vat_rate", "estimated_hours", mode="after")
+    @classmethod
+    def _finite_decimals(cls, value: Decimal | None) -> Decimal | None:
+        return _finite_decimal(value, field="numeric field")
 
 
 class QuoteGenerateRequest(BaseModel):
@@ -741,6 +809,16 @@ class JobCreate(BaseModel):
         _strip_tz
     )
 
+    @model_validator(mode="after")
+    def _validate_schedule_window(self) -> "JobCreate":
+        if (
+            self.scheduled_start is not None
+            and self.scheduled_end is not None
+            and self.scheduled_end <= self.scheduled_start
+        ):
+            raise ValueError("scheduled_end must be after scheduled_start")
+        return self
+
 
 class JobConvertRequest(BaseModel):
     """Optional scheduling for quote → job conversion."""
@@ -772,6 +850,16 @@ class JobUpdate(BaseModel):
     def _null_clears_measurements(cls, value: Any) -> Any:
         """An explicit null clears the list; omitting the key leaves it alone."""
         return [] if value is None else value
+
+    @model_validator(mode="after")
+    def _validate_schedule_window(self) -> "JobUpdate":
+        if (
+            self.scheduled_start is not None
+            and self.scheduled_end is not None
+            and self.scheduled_end <= self.scheduled_start
+        ):
+            raise ValueError("scheduled_end must be after scheduled_start")
+        return self
 
 
 # Before/after labelling for job photos; anything without a label is general.
@@ -879,6 +967,12 @@ class AppointmentCreate(BaseModel):
 
     _normalize_window = field_validator("start_at", "end_at", mode="after")(_strip_tz)
 
+    @model_validator(mode="after")
+    def _validate_window(self) -> "AppointmentCreate":
+        if self.end_at <= self.start_at:
+            raise ValueError("end_at must be after start_at")
+        return self
+
 
 class AppointmentUpdate(BaseModel):
     title: str | None = Field(default=None, min_length=1, max_length=255)
@@ -890,6 +984,16 @@ class AppointmentUpdate(BaseModel):
     assigned_user_id: UUID | None = None
 
     _normalize_window = field_validator("start_at", "end_at", mode="after")(_strip_tz)
+
+    @model_validator(mode="after")
+    def _validate_window(self) -> "AppointmentUpdate":
+        if (
+            self.start_at is not None
+            and self.end_at is not None
+            and self.end_at <= self.start_at
+        ):
+            raise ValueError("end_at must be after start_at")
+        return self
 
 
 class AppointmentRead(BaseModel):
@@ -917,8 +1021,20 @@ class AppointmentRead(BaseModel):
 
 class InvoiceLineItemCreate(BaseModel):
     description: str
-    quantity: Decimal = Decimal("1.00")
-    unit_price: Decimal = Decimal("0.00")
+    quantity: PositiveLineQuantity = Decimal("1.00")
+    unit_price: PositiveLineUnitPrice = Decimal("1.0000")
+
+    @field_validator("description")
+    @classmethod
+    def _normalize_description(cls, value: str) -> str:
+        return _strip_non_empty(value, field="description")
+
+    @field_validator("quantity", "unit_price", mode="after")
+    @classmethod
+    def _finite_line_numbers(cls, value: Decimal) -> Decimal:
+        finite = _finite_decimal(value, field="line item numeric value")
+        assert finite is not None
+        return finite
 
 
 class InvoiceLineItemRead(BaseModel):
@@ -937,10 +1053,17 @@ class InvoiceCreate(BaseModel):
     quote_id: UUID | None = None
     invoice_number: str | None = Field(default=None, min_length=1, max_length=50)
     due_date: datetime | None = None
-    vat_rate: Decimal = Decimal("0.20")
+    vat_rate: NonNegativeDocumentVatRate = Decimal("0.20")
     line_items: list[InvoiceLineItemCreate] = Field(default_factory=list)
 
     _normalize_due_date = field_validator("due_date", mode="after")(_strip_tz)
+
+    @field_validator("vat_rate", mode="after")
+    @classmethod
+    def _finite_vat_rate(cls, value: Decimal) -> Decimal:
+        finite = _finite_decimal(value, field="vat_rate")
+        assert finite is not None
+        return finite
 
 
 class InvoiceUpdate(BaseModel):
@@ -950,7 +1073,7 @@ class InvoiceUpdate(BaseModel):
     # Per-invoice VAT override (zero-rated jobs such as new builds): a fraction
     # between 0 and 1 (0.20 = 20%). Omitting the key leaves the rate untouched;
     # the router rejects values above the tenant's registered rate.
-    vat_rate: Decimal | None = Field(default=None, ge=0, le=1)
+    vat_rate: NonNegativeDocumentVatRate | None = None
     # Per-invoice card-payment override; explicit null restores tenant-default
     # inheritance (see app.routers.payments.invoice_accepts_card).
     accept_card_payments: bool | None = None
@@ -968,6 +1091,11 @@ class InvoiceUpdate(BaseModel):
                 "vat_rate must be a number between 0 and 1; omit the field to leave it unchanged"
             )
         return self
+
+    @field_validator("vat_rate", mode="after")
+    @classmethod
+    def _finite_vat_rate(cls, value: Decimal | None) -> Decimal | None:
+        return _finite_decimal(value, field="vat_rate")
 
 
 class QuoteConvertToInvoice(BaseModel):

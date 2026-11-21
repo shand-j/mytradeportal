@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 from datetime import UTC, date, datetime
 from decimal import Decimal
 from typing import Any
@@ -165,7 +166,15 @@ class Tenant(Base, TimestampMixin):
 
     @property
     def vat_rate(self) -> float:
-        return float(self.settings.get("vat_rate", 20) or 20)
+        raw = self.settings.get("vat_rate", 20) if self.settings else 20
+        try:
+            rate = float(raw)
+        except (TypeError, ValueError):
+            return 20.0
+        if not math.isfinite(rate):
+            return 20.0
+        # Public contract is percentage points; normalize legacy fraction rows.
+        return rate * 100 if 0 < rate <= 1 else rate
 
     @property
     def plan_tier(self) -> str:
