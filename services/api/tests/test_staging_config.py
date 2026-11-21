@@ -50,6 +50,7 @@ def test_production_rejects_deterministic_llm_provider() -> None:
     with pytest.raises(InsecureProductionConfigError, match="llm_provider_mode"):
         settings.validate_production()
 
+
 def test_staging_workflow_and_iac_preserve_mailpit() -> None:
     workflow = (ROOT / ".github" / "workflows" / "staging-e2e.yml").read_text()
     iac = (ROOT / ".railway" / "railway.ts").read_text()
