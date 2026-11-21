@@ -59,3 +59,12 @@ def test_staging_workflow_and_iac_preserve_mailpit() -> None:
     assert workflow.count("python3 scripts/ci/route_env_email.py") == 2
     assert 'service("mailpit"' in iac
     assert 'image("axllent/mailpit:latest")' in iac
+
+
+def test_iac_pins_rustfs_and_bootstraps_fresh_volume_permissions() -> None:
+    iac = (ROOT / ".railway" / "railway.ts").read_text()
+
+    assert 'image("rustfs/rustfs:1.0.6")' in iac
+    assert 'start: \'/bin/sh -c "mkdir -p /mnt/data/rustfs && chown 10001:10001 /mnt/data/rustfs && exec /etc/rustfs/entrypoint.sh"\'' in iac
+    assert 'RUSTFS_VOLUMES: "/mnt/data/rustfs"' in iac
+    assert not (ROOT / ".railway" / ".railway" / "railway.ts").exists()
