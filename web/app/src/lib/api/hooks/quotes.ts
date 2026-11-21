@@ -147,11 +147,13 @@ export function toQuote(raw: Record<string, unknown>): Quote {
   const customer = raw.customer ? toCustomer(raw.customer as Record<string, unknown>) : undefined;
   const description = typeof raw.description === 'string' ? raw.description.trim() : '';
   const descriptionParts = description ? description.split(/\s+-\s+/) : [];
-  const serviceType = (raw.serviceType as string)
-    ?? (descriptionParts[0] || (raw.title as string) || '');
-  const propertyAddress = (raw.propertyAddress as string)
-    ?? (descriptionParts.length > 1 ? descriptionParts.slice(1).join(' - ') : '')
-    ?? '';
+  const serviceType = (descriptionParts[0]
+    || (raw.serviceType as string)
+    || (raw.title as string)
+    || '');
+  const propertyAddress = ((raw.propertyAddress as string)?.trim())
+    || (descriptionParts.length > 1 ? descriptionParts.slice(1).join(' - ') : '')
+    || '';
   return {
     id: String(raw.id),
     reference: (raw.reference as string) ?? (raw.title as string) ?? `Q-${String(raw.id).slice(0, 8)}`,
