@@ -453,3 +453,50 @@ async def test_convert_to_job_adopts_draft(
         json={},
     )
     assert again.status_code == 409
+
+
+async def test_convert_to_job_preserves_rescheduled_draft(
+    client: AsyncClient, db: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    tenant, _, quote, raw = await _send_quote_and_get_token(client, monkeypatch)
+    _mute_confirmation_email(monkeypatch)
+    monkeypatch.setattr("app.routers.jobs.send_customer_email", AsyncMock(return_value=True))
+    monkeypatch.setattr("app.routers.quotes._email_booking_confirmed", AsyncMock(return_value=None))
+
+    first = date.today() + timedelta(days=2)
+    second = date.today() + timedelta(days=3)
+    chosen = date.today() + timedelta(days=5)
+    accept = await client.post(
+        f"/public/quote/{raw}/accept",
+        json={
+            "preferred_dates": [
+                {"date": first.isoformat(), "time": "morning"},
+                {"date": second.isoformat(), "time": "afternoon"},
+            ]
+        },
+    )
+    assert accept.status_code == 200, accept.text
+    draft = await _get_job_for_quote(db, tenant["id"], quote["id"])
+    assert draft is not None and draft.status == "draft"
+
+    reschedule = await client.patch(
+        f"/jobs/{draft.id}",
+        headers={"X-Tenant-ID": tenant["id"]},
+        json={
+            "scheduled_start": f"{chosen.isoformat()}T10:00:00",
+            "scheduled_end": f"{chosen.isoformat()}T12:00:00",
+        },
+    )
+    assert reschedule.status_code == 200, reschedule.text
+    assert reschedule.json()["scheduled_start"] == f"{chosen.isoformat()}T10:00:00"
+
+    convert = await client.post(
+        f"/quotes/{quote['id']}/convert-to-job",
+        headers={"X-Tenant-ID": tenant["id"]},
+        json={},
+    )
+    assert convert.status_code == 201, convert.text
+    converted = convert.json()
+    assert converted["id"] == str(draft.id)
+    assert converted["scheduled_start"] == f"{chosen.isoformat()}T10:00:00"
+    assert converted["scheduled_end"] == f"{chosen.isoformat()}T12:00:00"

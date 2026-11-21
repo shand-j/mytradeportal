@@ -48,6 +48,7 @@ test.describe.serial("S — Acceptance date reconfirmation", () => {
   let quoteTitle: string;
   let dateA: string;
   let dateB: string;
+  let chosenDate: string;
   // Second customer + quote without preferred dates — the direct-accept branch.
   let plainQuoteId: string;
   const customerA = {
@@ -65,6 +66,7 @@ test.describe.serial("S — Acceptance date reconfirmation", () => {
     // Two consecutive working days, starting next Monday.
     dateA = isoDay(nextWeekday(1));
     dateB = isoDay(new Date(new Date(`${dateA}T12:00:00`).getTime() + 86_400_000));
+    chosenDate = isoDay(new Date(new Date(`${dateA}T12:00:00`).getTime() + 4 * 86_400_000));
 
     // Lead WITH preferred dates → the reconfirm panel must appear.
     const leadA = await seedLead(tenant, {
@@ -214,7 +216,34 @@ test.describe.serial("S — Acceptance date reconfirmation", () => {
     await expect(page.locator('[data-testid="job-start"]')).toHaveCount(0);
   });
 
-  test("G28: converting to a job prefills the earliest date and carries the dates into the job", async ({
+  test("G28: the tradesperson can reschedule the draft away from every customer preference", async ({
+    page,
+  }) => {
+    await loginAsTradeOwner(page, tenant);
+    const jobs = (await api(tenant, "/jobs")) as Array<{
+      id: string;
+      quote_id: string;
+      status: string;
+    }>;
+    const draft = jobs.find((j) => j.quote_id === quoteId);
+    expect(draft, "acceptance did not create a draft job").toBeTruthy();
+
+    await page.goto(`/(trade)/job/${draft!.id}`, { waitUntil: "networkidle" });
+    await waitText(page, "Job detail");
+    await tap(page, "job-reschedule-button");
+    await page.locator('[data-testid="job-schedule-date"]').fill(chosenDate);
+    await page.locator('[data-testid="job-schedule-time"]').fill("10:30");
+    await tap(page, "job-schedule-save");
+    await expect(page.locator('[data-testid="job-schedule-save"]')).not.toBeVisible();
+
+    const rescheduled = (await api(tenant, `/jobs/${draft!.id}`)) as {
+      scheduled_start: string;
+      scheduled_end: string;
+    };
+    expect(rescheduled.scheduled_start).toBe(`${chosenDate}T10:30:00`);
+  });
+
+  test("G28: confirming a rescheduled draft preserves the tradesperson's selected date", async ({
     page,
   }) => {
     await loginAsTradeOwner(page, tenant);
@@ -234,9 +263,9 @@ test.describe.serial("S — Acceptance date reconfirmation", () => {
     const job = jobs.find((j) => j.quote_id === quoteId);
     expect(job, "quote did not convert to a job").toBeTruthy();
 
-    // No explicit slot was given: the earliest confirmed date prefills 09:00
-    // (naive-local schedule convention).
-    expect(job!.scheduled_start).toBe(`${dateA}T09:00:00`);
+    // No conversion slot was given: the already-rescheduled draft wins over
+    // the customer's ranked suggestions (naive-local schedule convention).
+    expect(job!.scheduled_start).toBe(`${chosenDate}T10:30:00`);
     // The reconfirmed dates ride into the job notes for the on-site visit.
     expect(job!.notes).toContain("Customer confirmed preferred dates");
     expect(job!.notes).toContain(dateA);

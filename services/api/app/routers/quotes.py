@@ -1992,7 +1992,8 @@ async def convert_quote_to_job(
     its quote request (``MediaAsset`` rows and the intake form's ``media_urls``)
     move onto the job record. When the acceptance flow already auto-created a
     tentative DRAFT job for the quote, conversion adopts and confirms that job
-    in place instead of raising the usual already-has-a-job 409.
+    in place instead of raising the usual already-has-a-job 409. A rescheduled
+    draft keeps the tradesperson's chosen slot when conversion supplies none.
     """
     quote = await _get_quote(db, tenant.id, quote_id)
     if quote.status != "approved":
@@ -2044,6 +2045,10 @@ async def convert_quote_to_job(
 
     scheduled_start = schedule.scheduled_start
     scheduled_end = schedule.scheduled_end
+    if existing is not None and scheduled_start is None and existing.scheduled_start is not None:
+        scheduled_start = existing.scheduled_start
+        if scheduled_end is None:
+            scheduled_end = existing.scheduled_end
     # The quote's stored estimate wins over the older labour-lines heuristic.
     estimated = float(quote.estimated_hours) if quote.estimated_hours is not None else 0.0
     if estimated <= 0:
