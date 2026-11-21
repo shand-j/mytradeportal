@@ -10,9 +10,11 @@ const contactKeys = {
 };
 
 export function toCustomer(raw: Record<string, unknown>): Customer {
-  const name = String(raw.name ?? '');
-  const [firstName, ...rest] = name.split(' ');
-  const lastName = rest.join(' ') || '';
+  const name = String(raw.name ?? '').trim();
+  // The backend canonical field is `name`. Preserve it intact rather than
+  // guessing at a given/family split; explicit fields remain supported.
+  const firstName = name || String(raw.firstName ?? raw.first_name ?? '').trim();
+  const lastName = name ? '' : String(raw.lastName ?? raw.last_name ?? '').trim();
   return {
     id: String(raw.id),
     firstName,
