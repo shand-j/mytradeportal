@@ -48,6 +48,7 @@ test.describe.serial("S — Acceptance date reconfirmation", () => {
   let quoteTitle: string;
   let dateA: string;
   let dateB: string;
+  let chosenDate: string;
   // Second customer + quote without preferred dates — the direct-accept branch.
   let plainQuoteId: string;
   const customerA = {
@@ -65,6 +66,7 @@ test.describe.serial("S — Acceptance date reconfirmation", () => {
     // Two consecutive working days, starting next Monday.
     dateA = isoDay(nextWeekday(1));
     dateB = isoDay(new Date(new Date(`${dateA}T12:00:00`).getTime() + 86_400_000));
+    chosenDate = isoDay(new Date(new Date(`${dateA}T12:00:00`).getTime() + 4 * 86_400_000));
 
     // Lead WITH preferred dates → the reconfirm panel must appear.
     const leadA = await seedLead(tenant, {
@@ -229,7 +231,7 @@ test.describe.serial("S — Acceptance date reconfirmation", () => {
     await page.goto(`/(trade)/job/${draft!.id}`, { waitUntil: "networkidle" });
     await waitText(page, "Job detail");
     await tap(page, "job-reschedule-button");
-    await page.locator('[data-testid="job-schedule-date"]').fill(dateB);
+    await page.locator('[data-testid="job-schedule-date"]').fill(chosenDate);
     await page.locator('[data-testid="job-schedule-time"]').fill("10:30");
     await tap(page, "job-schedule-save");
     await expect(page.locator('[data-testid="job-schedule-save"]')).not.toBeVisible();
@@ -238,7 +240,7 @@ test.describe.serial("S — Acceptance date reconfirmation", () => {
       scheduled_start: string;
       scheduled_end: string;
     };
-    expect(rescheduled.scheduled_start).toBe(`${dateB}T10:30:00`);
+    expect(rescheduled.scheduled_start).toBe(`${chosenDate}T10:30:00`);
   });
 
   test("G28: confirming a rescheduled draft preserves the tradesperson's selected date", async ({
@@ -263,7 +265,7 @@ test.describe.serial("S — Acceptance date reconfirmation", () => {
 
     // No conversion slot was given: the already-rescheduled draft wins over
     // the customer's ranked suggestions (naive-local schedule convention).
-    expect(job!.scheduled_start).toBe(`${dateB}T10:30:00`);
+    expect(job!.scheduled_start).toBe(`${chosenDate}T10:30:00`);
     // The reconfirmed dates ride into the job notes for the on-site visit.
     expect(job!.notes).toContain("Customer confirmed preferred dates");
     expect(job!.notes).toContain(dateA);
