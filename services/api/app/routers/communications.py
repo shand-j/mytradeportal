@@ -469,7 +469,8 @@ async def ai_followup(
         )
     except RuntimeError as exc:
         raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="AI provider temporarily unavailable",
         ) from exc
     confidence = int(result.get("confidence", 0))
     complete = bool(result.get("complete", False)) or confidence >= 80
