@@ -1,5 +1,8 @@
 name: CI
 
+permissions:
+  contents: read
+
 # Mobile-beta scope. Runs the Python + mobile TypeScript quality gates on every
 # PR/push, then deploys the api / admin / data-pipeline services (plus native
 # databases, qdrant, minio) via Railway IaC on push to main.
@@ -182,12 +185,40 @@ jobs:
       - name: Type check
         run: pnpm exec tsc --noEmit
 
+  web-backoffice:
+    # Parked beta surface: validate it continuously, but do not deploy web/app.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "pnpm"
+          cache-dependency-path: pnpm-lock.yaml
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Unit tests
+        run: pnpm --filter my-app test
+
+      - name: Production build
+        run: pnpm --filter my-app build
+
+      - name: Lint
+        run: pnpm --filter my-app lint
+
   deploy-production:
     # Deploy the mobile-beta stack from the IaC in .railway/railway.ts.
     # Requires the RAILWAY_TOKEN (project-scoped) GitHub secret and an
     # existing Railway project wired to this repo. Runs only after both
     # quality-gate jobs pass on main.
-    needs: [python, mobile, schema-sync]
+    needs: [python, mobile, schema-sync, web-backoffice]
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     runs-on: ubuntu-latest
     environment: MyTradePortal / production
