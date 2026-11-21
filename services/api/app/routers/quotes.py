@@ -67,6 +67,7 @@ from app.models import (
     Tenant,
     User,
 )
+from app.pdf_fonts import configure_pdf_fonts
 from app.preferred_dates import parse_preferred_date
 from app.push import notify_customer
 from app.rag import (
@@ -2292,24 +2293,25 @@ def _render_quote_pdf(snapshot: dict[str, Any]) -> bytes:
     Pure-sync, no ORM, safe to call from a worker thread.
     """
     pdf = FPDF()
+    configure_pdf_fonts(pdf)
     pdf.add_page()
 
     def safe_text(value: Any) -> str:
-        return str(value or "").encode("latin-1", "replace").decode("latin-1")
+        return str(value or "")
 
     # Header
-    pdf.set_font("Helvetica", "B", 16)
+    pdf.set_font("DejaVu", "B", 16)
     pdf.cell(0, 10, safe_text(snapshot["tenant_name"]), ln=True)  # type: ignore[arg-type]
-    pdf.set_font("Helvetica", "", 12)
+    pdf.set_font("DejaVu", "", 12)
     pdf.cell(0, 10, "Quote", ln=True)  # type: ignore[arg-type]
     pdf.line(10, pdf.get_y(), 200, pdf.get_y())
     pdf.ln(5)
 
     # Customer details
     contact = snapshot["contact"]
-    pdf.set_font("Helvetica", "B", 11)
+    pdf.set_font("DejaVu", "B", 11)
     pdf.cell(0, 8, "Customer", ln=True)  # type: ignore[arg-type]
-    pdf.set_font("Helvetica", "", 11)
+    pdf.set_font("DejaVu", "", 11)
     pdf.cell(0, 8, safe_text(contact["name"]), ln=True)  # type: ignore[arg-type]
     if contact["email"]:
         pdf.cell(0, 8, safe_text(contact["email"]), ln=True)  # type: ignore[arg-type]
@@ -2318,22 +2320,22 @@ def _render_quote_pdf(snapshot: dict[str, Any]) -> bytes:
     pdf.ln(5)
 
     # Quote summary
-    pdf.set_font("Helvetica", "B", 12)
+    pdf.set_font("DejaVu", "B", 12)
     pdf.cell(0, 10, safe_text(snapshot["title"]), ln=True)  # type: ignore[arg-type]
-    pdf.set_font("Helvetica", "", 10)
+    pdf.set_font("DejaVu", "", 10)
     pdf.cell(0, 6, f"Date: {snapshot['created_at'].strftime('%d/%m/%Y')}", ln=True)  # type: ignore[arg-type]
     pdf.cell(0, 6, safe_text(f"Status: {snapshot['status'].upper()}"), ln=True)  # type: ignore[arg-type]
     pdf.ln(5)
 
     # Line items table
     pdf.set_fill_color(245, 244, 240)
-    pdf.set_font("Helvetica", "B", 10)
+    pdf.set_font("DejaVu", "B", 10)
     pdf.cell(100, 8, "Item", 1, 0, "L", True)  # type: ignore[arg-type]
     pdf.cell(25, 8, "Qty", 1, 0, "C", True)  # type: ignore[arg-type]
     pdf.cell(30, 8, "Unit Price", 1, 0, "R", True)  # type: ignore[arg-type]
     pdf.cell(30, 8, "Total", 1, 1, "R", True)  # type: ignore[arg-type]
 
-    pdf.set_font("Helvetica", "", 10)
+    pdf.set_font("DejaVu", "", 10)
     for item in snapshot["line_items"]:
         start_y = pdf.get_y()
         pdf.multi_cell(100, 8, safe_text(item["description"]), border=1, align="L")
@@ -2348,7 +2350,7 @@ def _render_quote_pdf(snapshot: dict[str, Any]) -> bytes:
     pdf.ln(5)
 
     # Totals
-    pdf.set_font("Helvetica", "B", 11)
+    pdf.set_font("DejaVu", "B", 11)
     pdf.cell(0, 8, f"Subtotal: £{snapshot['subtotal']:,.2f}", ln=True, align="R")  # type: ignore[arg-type]
     vat_label = f"VAT ({snapshot['vat_rate'] * 100:.0f}%): £{snapshot['vat_amount']:,.2f}"
     pdf.cell(0, 8, vat_label, ln=True, align="R")  # type: ignore[arg-type]
