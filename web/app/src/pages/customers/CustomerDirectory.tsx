@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Plus, Search, Phone, Mail, Star, Wrench, X } from 'lucide-react';
 import { useContacts, useCreateContact, useDeleteContact } from '@/lib/api/hooks';
@@ -47,6 +47,22 @@ function normalizePostcode(value: string): string {
 
 function sortAddressOptions(options: string[]): string[] {
   return options.slice().sort((a, b) => a.localeCompare(b, 'en-GB', { numeric: true }));
+}
+
+export function displayInitials(displayName: string): string {
+  const words = displayName.trim().split(/\s+/).filter(Boolean);
+  const firstGrapheme = (word: string) => {
+    if (typeof Intl !== 'undefined' && 'Segmenter' in Intl) {
+      const segmenter = new Intl.Segmenter(undefined, { granularity: 'grapheme' });
+      return segmenter.segment(word)[Symbol.iterator]().next().value?.segment ?? Array.from(word)[0] ?? '';
+    }
+    return Array.from(word)[0] ?? '';
+  };
+  return words.slice(0, 2).map(firstGrapheme).join('');
+}
+
+function isValidEmail(value: string): boolean {
+  return value.trim() === '' || /^[^\s@]+@[^\s@]+\.[^\s@]+$/u.test(value.trim());
 }
 
 function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
@@ -141,6 +157,7 @@ export function CustomerDirectory() {
     propertyType: 'house' | 'apartment' | 'commercial' | null;
     sourceChannel: SourceChannel;
   }) => {
+    if (createContact.isPending) return;
     createContact.mutate(
       {
         ...payload,
@@ -201,7 +218,7 @@ export function CustomerDirectory() {
                     <img src={customer.avatarUrl} alt="" className="w-12 h-12 rounded-full object-cover" />
                   ) : (
                     <div className="w-12 h-12 rounded-full bg-[#F5F4F0] flex items-center justify-center text-sm font-semibold text-[#57534E]">
-                      {customer.firstName[0]}{customer.lastName[0]}
+                      {displayInitials(`${customer.firstName} ${customer.lastName}`)}
                     </div>
                   )}
                   <div>
@@ -282,6 +299,36 @@ function CustomerDialog({
   const [lookupError, setLookupError] = useState<string | null>(null);
   const [propertyType, setPropertyType] = useState<'house' | 'apartment' | 'commercial' | ''>('house');
   const [sourceChannel, setSourceChannel] = useState<SourceChannel>('manual');
+  const submittedRef = useRef(false);
+  const wasSubmittingRef = useRef(false);
+  const emailIsValid = isValidEmail(email);
+
+  useEffect(() => {
+    if (wasSubmittingRef.current && !isSubmitting) submittedRef.current = false;
+    wasSubmittingRef.current = isSubmitting;
+  }, [isSubmitting]);
+
+  const handleSubmit = () => {
+    if (
+      submittedRef.current ||
+      isSubmitting ||
+      !emailIsValid ||
+      !firstName ||
+      !lastName ||
+      !phone
+    ) return;
+    submittedRef.current = true;
+    onSubmit({
+      firstName,
+      lastName,
+      email,
+      phone,
+      address,
+      postcode,
+      propertyType: propertyType || null,
+      sourceChannel,
+    });
+  };
 
   const handleLookupAddress = async () => {
     const normalizedPostcode = normalizePostcode(postcode);
@@ -401,7 +448,15 @@ function CustomerDialog({
             <input placeholder="First name" value={firstName} onChange={e => setFirstName(e.target.value)} className="h-10 px-3 text-sm border border-[#E7E5E4] rounded-lg focus:outline-none focus:border-[#D4650A]" />
             <input placeholder="Last name" value={lastName} onChange={e => setLastName(e.target.value)} className="h-10 px-3 text-sm border border-[#E7E5E4] rounded-lg focus:outline-none focus:border-[#D4650A]" />
           </div>
-          <input placeholder="Email" value={email} onChange={e => setEmail(e.target.value)} className="w-full h-10 px-3 text-sm border border-[#E7E5E4] rounded-lg focus:outline-none focus:border-[#D4650A]" />
+          <input
+            type="email"
+            placeholder="Email"
+            value={email}
+            onChange={e => setEmail(e.target.value)}
+            aria-invalid={!emailIsValid}
+            className={`w-full h-10 px-3 text-sm border rounded-lg focus:outline-none ${emailIsValid ? 'border-[#E7E5E4] focus:border-[#D4650A]' : 'border-[#DC2626] focus:border-[#DC2626]'}`}
+          />
+          {!emailIsValid && <p role="alert" className="text-xs text-[#DC2626]">Enter a valid email address</p>}
           <input placeholder="Phone" value={phone} onChange={e => setPhone(e.target.value)} className="w-full h-10 px-3 text-sm border border-[#E7E5E4] rounded-lg focus:outline-none focus:border-[#D4650A]" />
           <input placeholder="Address" value={address} onChange={e => setAddress(e.target.value)} className="w-full h-10 px-3 text-sm border border-[#E7E5E4] rounded-lg focus:outline-none focus:border-[#D4650A]" />
           <div className="grid grid-cols-[1fr_auto] gap-2">
@@ -449,8 +504,8 @@ function CustomerDialog({
         <div className="flex justify-end gap-2 pt-2">
           <button onClick={onClose} className="h-9 px-4 text-sm font-medium text-[#57534E] hover:bg-[#F5F4F0] rounded-lg">Cancel</button>
           <button
-            disabled={isSubmitting || !firstName || !lastName || !phone}
-            onClick={() => onSubmit({ firstName, lastName, email, phone, address, postcode, propertyType: propertyType || null, sourceChannel })}
+            disabled={isSubmitting || !firstName || !lastName || !phone || !emailIsValid}
+            onClick={handleSubmit}
             className="h-9 px-4 text-sm font-semibold bg-[#D4650A] text-white rounded-lg hover:bg-[#B85500] disabled:opacity-50"
           >
             {isSubmitting ? 'Saving...' : 'Save Customer'}

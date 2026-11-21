@@ -1,12 +1,17 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { Phone, Mail, MapPin, Star, FileText, Wrench, X } from 'lucide-react';
 import { useContact, useUpdateContact, useQuotes, useJobs, useInvoices } from '@/lib/api/hooks';
 import { useUiStore } from '@/stores/uiStore';
 import { toast } from 'sonner';
 import type { SourceChannel } from '@/types';
+import { displayInitials } from './CustomerDirectory';
 
 const sourceChannels: SourceChannel[] = ['pwa', 'chatbot', 'voice', 'whatsapp', 'referral', 'manual'];
+
+function isValidEmail(value: string): boolean {
+  return value.trim() === '' || /^[^\s@]+@[^\s@]+\.[^\s@]+$/u.test(value.trim());
+}
 
 export function CustomerDetail() {
   const { id = '' } = useParams<{ id: string }>();
@@ -30,6 +35,7 @@ export function CustomerDetail() {
   const customerInvoices = (allInvoices ?? []).filter(i => i.customerId === id);
 
   const handleUpdate = (data: Partial<typeof customer>) => {
+    if (updateContact.isPending) return;
     updateContact.mutate(
       { id, data },
       {
@@ -59,7 +65,7 @@ export function CustomerDetail() {
                   <img src={customer.avatarUrl} alt="" className="w-16 h-16 rounded-full object-cover" />
                 ) : (
                   <div className="w-16 h-16 rounded-full bg-[#F5F4F0] flex items-center justify-center text-lg font-semibold text-[#57534E]">
-                    {customer.firstName[0]}{customer.lastName[0]}
+                    {displayInitials(`${customer.firstName} ${customer.lastName}`)}
                   </div>
                 )}
                 <div className="flex-1">
@@ -157,15 +163,35 @@ export function CustomerDetail() {
           <div className="bg-white rounded-xl border border-[#E7E5E4] p-5 shadow-sm">
             <h3 className="text-sm font-semibold text-[#1C1917] mb-3 uppercase tracking-[0.05em]">Quick Actions</h3>
             <div className="space-y-2">
-              <Link to="/quotes" className="w-full h-10 flex items-center justify-center gap-2 rounded-lg bg-[#D4650A] text-white text-xs font-semibold hover:bg-[#B85500] transition-colors">
+              <Link
+                to={`/quotes?customerId=${encodeURIComponent(id)}&propertyAddress=${encodeURIComponent(customer.address ?? '')}`}
+                className="w-full h-10 flex items-center justify-center gap-2 rounded-lg bg-[#D4650A] text-white text-xs font-semibold hover:bg-[#B85500] transition-colors"
+              >
                 <FileText className="w-4 h-4" /> New Quote
               </Link>
-              <button className="w-full h-10 flex items-center justify-center gap-2 rounded-lg bg-[#F5F4F0] border border-[#E7E5E4] text-[#1C1917] text-xs font-semibold hover:bg-[#EFEEE9] transition-colors">
+              <Link
+                to={`/jobs?customerId=${encodeURIComponent(id)}&propertyAddress=${encodeURIComponent(customer.address ?? '')}`}
+                className="w-full h-10 flex items-center justify-center gap-2 rounded-lg bg-[#F5F4F0] border border-[#E7E5E4] text-[#1C1917] text-xs font-semibold hover:bg-[#EFEEE9] transition-colors"
+              >
                 <Wrench className="w-4 h-4" /> Schedule Job
-              </button>
-              <button className="w-full h-10 flex items-center justify-center gap-2 rounded-lg bg-[#F5F4F0] border border-[#E7E5E4] text-[#1C1917] text-xs font-semibold hover:bg-[#EFEEE9] transition-colors">
-                <Phone className="w-4 h-4" /> Log Call
-              </button>
+              </Link>
+              {customer.phone ? (
+                <a
+                  href={`tel:${customer.phone.replace(/[^\d+]/g, '')}`}
+                  className="w-full h-10 flex items-center justify-center gap-2 rounded-lg bg-[#F5F4F0] border border-[#E7E5E4] text-[#1C1917] text-xs font-semibold hover:bg-[#EFEEE9] transition-colors"
+                  aria-label={`Log Call for ${customer.firstName} ${customer.lastName}`}
+                >
+                  <Phone className="w-4 h-4" /> Log Call
+                </a>
+              ) : (
+                <button
+                  disabled
+                  title="No phone number on customer record"
+                  className="w-full h-10 flex items-center justify-center gap-2 rounded-lg bg-[#F5F4F0] border border-[#E7E5E4] text-[#A8A29E] text-xs font-semibold disabled:opacity-60"
+                >
+                  <Phone className="w-4 h-4" /> Log Call
+                </button>
+              )}
             </div>
           </div>
 
@@ -213,6 +239,29 @@ function CustomerEditDialog({
   const [postcode, setPostcode] = useState(customer.postcode ?? '');
   const [propertyType, setPropertyType] = useState<'house' | 'apartment' | 'commercial' | ''>(customer.propertyType ?? 'house');
   const [sourceChannel, setSourceChannel] = useState<SourceChannel>(customer.sourceChannel);
+  const submittedRef = useRef(false);
+  const wasSubmittingRef = useRef(false);
+  const emailIsValid = isValidEmail(email);
+
+  useEffect(() => {
+    if (wasSubmittingRef.current && !isSubmitting) submittedRef.current = false;
+    wasSubmittingRef.current = isSubmitting;
+  }, [isSubmitting]);
+
+  const handleSubmit = () => {
+    if (submittedRef.current || isSubmitting || !emailIsValid || !firstName || !lastName || !phone) return;
+    submittedRef.current = true;
+    onSubmit({
+      firstName,
+      lastName,
+      email: email || null,
+      phone,
+      address: address || null,
+      postcode: postcode || null,
+      propertyType: propertyType || null,
+      sourceChannel,
+    });
+  };
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
@@ -226,7 +275,15 @@ function CustomerEditDialog({
             <input placeholder="First name" value={firstName} onChange={e => setFirstName(e.target.value)} className="h-10 px-3 text-sm border border-[#E7E5E4] rounded-lg focus:outline-none focus:border-[#D4650A]" />
             <input placeholder="Last name" value={lastName} onChange={e => setLastName(e.target.value)} className="h-10 px-3 text-sm border border-[#E7E5E4] rounded-lg focus:outline-none focus:border-[#D4650A]" />
           </div>
-          <input placeholder="Email" value={email} onChange={e => setEmail(e.target.value)} className="w-full h-10 px-3 text-sm border border-[#E7E5E4] rounded-lg focus:outline-none focus:border-[#D4650A]" />
+          <input
+            type="email"
+            placeholder="Email"
+            value={email}
+            onChange={e => setEmail(e.target.value)}
+            aria-invalid={!emailIsValid}
+            className={`w-full h-10 px-3 text-sm border rounded-lg focus:outline-none ${emailIsValid ? 'border-[#E7E5E4] focus:border-[#D4650A]' : 'border-[#DC2626] focus:border-[#DC2626]'}`}
+          />
+          {!emailIsValid && <p role="alert" className="text-xs text-[#DC2626]">Enter a valid email address</p>}
           <input placeholder="Phone" value={phone} onChange={e => setPhone(e.target.value)} className="w-full h-10 px-3 text-sm border border-[#E7E5E4] rounded-lg focus:outline-none focus:border-[#D4650A]" />
           <input placeholder="Address" value={address} onChange={e => setAddress(e.target.value)} className="w-full h-10 px-3 text-sm border border-[#E7E5E4] rounded-lg focus:outline-none focus:border-[#D4650A]" />
           <input placeholder="Postcode" value={postcode} onChange={e => setPostcode(e.target.value)} className="w-full h-10 px-3 text-sm border border-[#E7E5E4] rounded-lg focus:outline-none focus:border-[#D4650A]" />
@@ -244,8 +301,8 @@ function CustomerEditDialog({
         <div className="flex justify-end gap-2 pt-2">
           <button onClick={onClose} className="h-9 px-4 text-sm font-medium text-[#57534E] hover:bg-[#F5F4F0] rounded-lg">Cancel</button>
           <button
-            disabled={isSubmitting || !firstName || !lastName || !phone}
-            onClick={() => onSubmit({ firstName, lastName, email: email || null, phone, address: address || null, postcode: postcode || null, propertyType: propertyType || null, sourceChannel })}
+            disabled={isSubmitting || !firstName || !lastName || !phone || !emailIsValid}
+            onClick={handleSubmit}
             className="h-9 px-4 text-sm font-semibold bg-[#D4650A] text-white rounded-lg hover:bg-[#B85500] disabled:opacity-50"
           >
             {isSubmitting ? 'Saving...' : 'Save Changes'}

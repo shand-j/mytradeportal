@@ -14,4 +14,18 @@ test('add a customer and view their profile', async ({ page, testId }) => {
   await card.getByRole('link').click();
   await page.waitForURL(/\/customers\/[0-9a-f-]+$/);
   await expect(page.getByRole('heading', { name: customerName })).toBeVisible();
+
+  await expect(page.getByRole('link', { name: 'Schedule Job' })).toHaveAttribute(
+    'href',
+    /\/jobs\?customerId=.+/,
+  );
+  await expect(page.getByRole('link', { name: /Log Call/ })).toHaveAttribute(
+    'href',
+    /^tel:/,
+  );
+
+  await page.getByRole('link', { name: 'Schedule Job' }).click();
+  await page.waitForURL(/\/jobs\?customerId=.+/);
+  await expect(page.getByRole('heading', { name: 'New Job' })).toBeVisible();
+  await expect(page.getByRole('combobox').first()).not.toHaveValue('');
 });
