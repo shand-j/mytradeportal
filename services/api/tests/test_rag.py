@@ -8,8 +8,8 @@ from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
 
-import pytest
 import httpx
+import pytest
 from app import config as generation_config
 from app.database import AsyncSessionLocal
 from app.models import CostItem, QuoteRequest
@@ -926,7 +926,9 @@ async def test_generate_followup_uses_chat_route_and_budget(
 
 
 @pytest.mark.asyncio
-async def test_staging_provider_double_skips_external_followup(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_staging_provider_double_skips_external_followup(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     monkeypatch.setattr(generation_config.settings, "llm_provider_mode", "staging_double")
     monkeypatch.setattr(generation_config.settings, "llm_api_key", "")
     monkeypatch.setattr(generation_config.settings, "openai_api_key", "")
@@ -941,7 +943,9 @@ async def test_staging_provider_double_skips_external_followup(monkeypatch: pyte
 
 
 @pytest.mark.asyncio
-async def test_staging_provider_double_skips_external_quote(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_staging_provider_double_skips_external_quote(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     monkeypatch.setattr(generation_config.settings, "llm_provider_mode", "staging_double")
     monkeypatch.setattr(generation_config.settings, "llm_api_key", "")
     monkeypatch.setattr(generation_config.settings, "openai_api_key", "")
@@ -966,12 +970,14 @@ async def test_followup_transport_timeout_is_sanitized(monkeypatch: pytest.Monke
     monkeypatch.setattr(generation_config.settings, "openai_api_key", "test-key")
     monkeypatch.setattr(generation_config.settings, "llm_api_base", "")
 
-    with patch(
-        "app.rag.generation.acompletion",
-        new=AsyncMock(side_effect=httpx.TimeoutException("https://private/provider")),
+    with (
+        patch(
+            "app.rag.generation.acompletion",
+            new=AsyncMock(side_effect=httpx.TimeoutException("https://private/provider")),
+        ),
+        pytest.raises(RuntimeError) as exc,
     ):
-        with pytest.raises(RuntimeError) as exc:
-            await generate_followup("Consumer unit replacement", [])
+        await generate_followup("Consumer unit replacement", [])
 
     assert str(exc.value) == "AI provider temporarily unavailable"
     assert "private" not in str(exc.value)
@@ -983,17 +989,19 @@ async def test_quote_transport_timeout_is_sanitized(monkeypatch: pytest.MonkeyPa
     monkeypatch.setattr(generation_config.settings, "llm_api_key", "test-key")
     monkeypatch.setattr(generation_config.settings, "llm_api_base", "")
 
-    with patch(
-        "app.rag.generation.acompletion",
-        new=AsyncMock(side_effect=httpx.TimeoutException("https://private/provider")),
+    with (
+        patch(
+            "app.rag.generation.acompletion",
+            new=AsyncMock(side_effect=httpx.TimeoutException("https://private/provider")),
+        ),
+        pytest.raises(RuntimeError) as exc,
     ):
-        with pytest.raises(RuntimeError) as exc:
-            await generate_quote_from_prompt(
-                "Replace my fuse board",
-                cost_items=[],
-                tenant_settings={},
-                knowledge_chunks=[],
-            )
+        await generate_quote_from_prompt(
+            "Replace my fuse board",
+            cost_items=[],
+            tenant_settings={},
+            knowledge_chunks=[],
+        )
 
     assert str(exc.value) == "AI provider temporarily unavailable"
     assert "private" not in str(exc.value)
