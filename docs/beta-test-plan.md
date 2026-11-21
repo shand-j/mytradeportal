@@ -76,7 +76,28 @@ messages, notifications, settings, follow-ups, lifecycle → invoice send).
 Run on demand against production. Not in CI (requires a physically attached
 device).
 
-### 1.5 Security & evals
+### 1.5 Pre-beta bug-bash sweep log
+
+For the scripted founder/tradie sweep, generate the complete scenario inventory
+from `docs/features/` and record one pass/fail state per scenario:
+
+```bash
+python3 scripts/bug_bash_sweep.py \
+  --environment staging \
+  --tester "<name>" \
+  --statuses /path/to/scenario-statuses.json \
+  --uat-statuses /path/to/uat-statuses.json \
+  --output docs/evidence/pre-beta-bug-bash.md
+```
+
+Status JSON keys use `feature-stem:Scenario name`; UAT keys use the exact item
+text printed by the script. Allowed values are `pass`, `fail`, `not-run`,
+`blocked`, and `waived`. The generated log is the pass/fail index for the
+bug-bash; P0/P1 findings must remain linked in GitHub and P2 findings labelled
+for beta. Live-provider/device checks are manual and cannot be signed off from
+this inventory alone.
+
+### 1.6 Security & evals
 
 - **Security suite** (`security/`, weekly cron Mon 06:17 UTC + manual dispatch):
   OWASP and tenancy tests against a live target (needs `SECURITY_*` credentials).
