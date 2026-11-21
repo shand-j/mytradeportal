@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test'
+import { expect, test, type Locator, type Page } from '@playwright/test'
 
 test('unknown marketing routes show an accessible branded not-found page', async ({ page }) => {
   await page.goto('/this-page-does-not-exist')
@@ -45,5 +45,79 @@ for (const path of validMarketingPaths) {
       page.getByRole('heading', { level: 1, name: "That page isn't here" }),
     ).toHaveCount(0)
     await expect(page).toHaveURL(new RegExp(`${path.replaceAll('/', '\\/')}$`))
+  })
+}
+
+async function expectFullyInViewport(
+  page: Page,
+  locator: Locator,
+) {
+  await expect(locator).toBeVisible()
+  const box = await locator.boundingBox()
+  const viewport = page.viewportSize()
+  expect(box).not.toBeNull()
+  expect(viewport).not.toBeNull()
+  if (!box || !viewport) return
+  expect(box.x).toBeGreaterThanOrEqual(-1)
+  expect(box.y).toBeGreaterThanOrEqual(-1)
+  expect(box.x + box.width).toBeLessThanOrEqual(viewport.width + 1)
+  expect(box.y + box.height).toBeLessThanOrEqual(viewport.height + 1)
+}
+
+async function expectSingleLine(locator: Locator) {
+  const wrapped = await locator.evaluate((el) => {
+    const style = window.getComputedStyle(el)
+    const parsedLineHeight = Number.parseFloat(style.lineHeight)
+    const lineHeight = Number.isFinite(parsedLineHeight) && parsedLineHeight > 0
+      ? parsedLineHeight
+      : Number.parseFloat(style.fontSize) * 1.2
+    return el.getBoundingClientRect().height > lineHeight * 1.5
+  })
+  expect(wrapped).toBe(false)
+}
+
+const responsiveNavCases = [
+  { label: 'desktop', viewport: { width: 1440, height: 900 }, expectsPrimaryNav: true },
+  { label: 'tablet', viewport: { width: 768, height: 1024 }, expectsPrimaryNav: false },
+  { label: 'mobile', viewport: { width: 390, height: 844 }, expectsPrimaryNav: false },
+]
+
+for (const { label, viewport, expectsPrimaryNav } of responsiveNavCases) {
+  test(`marketing nav is fully usable at ${label} viewport`, async ({ page }) => {
+    await page.setViewportSize(viewport)
+    await page.goto('/')
+
+    const header = page.locator('header')
+    const primaryNav = header.getByRole('navigation', { name: 'Primary' })
+    const menuButton = header.getByRole('button', { name: /open menu/i })
+    const ctaDesktop = header.getByRole('link', { name: 'Join the beta', exact: true })
+
+    if (expectsPrimaryNav) {
+      await expect(primaryNav).toBeVisible()
+      await expect(menuButton).toBeHidden()
+      await expectFullyInViewport(page, ctaDesktop)
+
+      for (const name of ['Try the AI', 'The tour', 'How it works', 'Pricing', 'Reviews', 'Blog']) {
+        const link = primaryNav.getByRole('link', { name, exact: true })
+        await expectFullyInViewport(page, link)
+        await expectSingleLine(link)
+      }
+      await expectSingleLine(ctaDesktop)
+      return
+    }
+
+    await expect(primaryNav).toBeHidden()
+    await expect(menuButton).toBeVisible()
+    await expectFullyInViewport(page, menuButton)
+    await menuButton.click()
+
+    const mobileNav = header.getByRole('navigation', { name: 'Mobile' })
+    await expect(mobileNav).toBeVisible()
+    await expectFullyInViewport(page, mobileNav)
+
+    for (const name of ['Try the AI', 'The tour', 'How it works', 'Pricing', 'Reviews', 'Blog']) {
+      await expectFullyInViewport(page, mobileNav.getByRole('link', { name, exact: true }))
+    }
+    await expectFullyInViewport(page, mobileNav.getByRole('link', { name: 'Join the beta', exact: true }))
   })
 }
