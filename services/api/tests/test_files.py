@@ -72,6 +72,30 @@ async def test_upload_recreates_missing_bucket(admin_client: AsyncClient) -> Non
 
 
 @pytest.mark.asyncio
+async def test_upload_retries_when_bucket_disappears_between_head_and_put(
+    admin_client: AsyncClient,
+) -> None:
+    """A race between bucket recreation and put_object must not regress to 503."""
+    from botocore.exceptions import ClientError
+
+    store: dict[str, bytes] = {}
+    client = _fake_s3(store)
+    missing = ClientError(
+        {"Error": {"Code": "NoSuchBucket", "Message": "Bucket missing"}}, "PutObject"
+    )
+    client.put_object.side_effect = [missing, None]
+
+    with patch("app.routers.files.s3_client", return_value=client):
+        upload = await admin_client.post(
+            "/files/upload", files={"file": ("photo.jpg", b"jpeg-bytes", "image/jpeg")}
+        )
+
+    assert upload.status_code == 200, upload.text
+    client.create_bucket.assert_called_once()
+    assert client.put_object.call_count == 2
+
+
+@pytest.mark.asyncio
 async def test_download_rejects_other_tenant_keys(admin_client: AsyncClient) -> None:
     store: dict[str, bytes] = {}
     with patch("app.routers.files.s3_client", return_value=_fake_s3(store)):
