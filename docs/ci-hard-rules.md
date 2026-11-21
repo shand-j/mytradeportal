@@ -94,3 +94,20 @@ feature flag (`services/api/app/feature_flags.py`, covered by
 `services/api/tests/test_feature_flags.py`). This is a code-review rule rather
 than a CI-enforced gate — CI cannot detect "user-visible" — but it is listed
 here so the full set of hard rules lives in one place.
+
+## 5. Staging verification must be fresh, bounded, and attributable
+
+The `staging-e2e.yml` workflow is a release gate; stale or hung runs are not
+acceptable evidence.
+
+- **Queue/cancellation semantics**: push-triggered staging runs use
+  ref-scoped concurrency with `cancel-in-progress: true`, so the newest push to
+  `main` always wins and older in-flight runs are cancelled.
+- **Bounded execution**: each staging job has `timeout-minutes` so a hung
+  deployment wait or test job cannot block the queue indefinitely.
+- **Actionable stale-run diagnostic**: the workflow fails fast on push runs
+  when `GITHUB_SHA` is no longer the branch head, with a direct message to use
+  the newest run for fresh evidence.
+
+A cancelled or timed-out staging run is never a pass and must be replaced by a
+green run for the latest commit.
