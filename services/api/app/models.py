@@ -19,6 +19,7 @@ from sqlalchemy import (
     String,
     Text,
     UniqueConstraint,
+    text,
 )
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.postgresql import UUID as PGUUID
@@ -555,6 +556,16 @@ class Invoice(TenantScopedBase):
     """An invoice for completed work, payable by card (Stripe Connect) or manually."""
 
     __tablename__ = "invoices"
+    __table_args__ = (
+        Index(
+            "uq_invoices_tenant_job_quote",
+            "tenant_id",
+            "job_id",
+            "quote_id",
+            unique=True,
+            postgresql_where=(text("job_id IS NOT NULL AND quote_id IS NOT NULL")),
+        ),
+    )
 
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
 

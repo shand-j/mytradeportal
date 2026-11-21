@@ -474,6 +474,49 @@ async def test_replayed_event_id_is_duplicate_without_side_effects(
         await _cleanup(ids["tenant_id"])
 
 
+async def test_inbound_retry_after_handler_failure_processes_once(
+    monkeypatch: pytest.MonkeyPatch, telnyx_public_key: None
+) -> None:
+    ids = await _seed()
+    event_id = str(uuid4())
+    body = _inbound_event(from_number=_CUSTOMER_PHONE_E164, text="STOP", event_id=event_id)
+
+    from app.routers import telnyx_webhooks
+
+    real_set_sms_opt_out = telnyx_webhooks._set_sms_opt_out
+    attempts = 0
+
+    async def flaky_set_sms_opt_out(
+        session: AsyncSession, from_number: str, *, opted_out: bool
+    ) -> int:
+        nonlocal attempts
+        attempts += 1
+        if attempts == 1:
+            raise RuntimeError("temporary opt-out write failure")
+        return await real_set_sms_opt_out(session, from_number, opted_out=opted_out)
+
+    monkeypatch.setattr("app.routers.telnyx_webhooks._set_sms_opt_out", flaky_set_sms_opt_out)
+
+    try:
+        with pytest.raises(RuntimeError, match="temporary opt-out write failure"):
+            await _post_telnyx(body, _telnyx_headers(body))
+        contact = await _contact(ids["contact_id"])
+        assert not (contact.reminder_preferences or {}).get("sms_opt_out")
+
+        second = await _post_telnyx(body, _telnyx_headers(body))
+        assert second.status_code == 200
+        assert second.json()["status"] == "ok"
+        contact = await _contact(ids["contact_id"])
+        assert (contact.reminder_preferences or {}).get("sms_opt_out") is True
+
+        third = await _post_telnyx(body, _telnyx_headers(body))
+        assert third.status_code == 200
+        assert third.json()["status"] == "duplicate"
+        assert attempts == 2
+    finally:
+        await _cleanup(ids["tenant_id"])
+
+
 # ---------------------------------------------------------------------------
 # STOP / START opt-out
 # ---------------------------------------------------------------------------

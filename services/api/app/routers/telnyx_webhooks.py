@@ -108,18 +108,6 @@ def _verify_telnyx_signature(
         raise ValueError("invalid telnyx signature") from None
 
 
-async def _mark_event_seen(event_id: str, event_type: str) -> bool:
-    """Insert into the dedupe ledger. Returns False if already seen."""
-    async with AsyncSession(engine) as session:
-        session.add(ProcessedWebhook(provider="telnyx", event_id=event_id, event_type=event_type))
-        try:
-            await session.commit()
-        except IntegrityError:
-            await session.rollback()
-            return False
-    return True
-
-
 def _to_status(payload: dict[str, Any], event_type: str) -> str | None:
     """Recipient delivery status from a receipt payload.
 
@@ -148,7 +136,10 @@ def _error_detail(payload: dict[str, Any]) -> str | None:
 
 
 async def _handle_delivery_receipt(
-    event_type: str, payload: dict[str, Any], occurred_at: str
+    session: AsyncSession,
+    event_type: str,
+    payload: dict[str, Any],
+    occurred_at: str,
 ) -> dict[str, str]:
     """Record a delivery status transition on the matching reminder row."""
     message_id = str(payload.get("id") or "")
@@ -157,54 +148,50 @@ async def _handle_delivery_receipt(
         logger.info("telnyx_receipt_unusable", event_type=event_type, message_id=message_id or None)
         return {"status": "ignored"}
 
-    async with AsyncSession(engine) as session:
-        # The message id — not a tenant — is the lookup key, and the webhook
-        # session has no tenant GUC: bypass RLS for this transaction only,
-        # then re-scope to the matched row's tenant before writing.
-        await bypass_rls_for_transaction(session)
-        reminder = await session.scalar(
-            select(Reminder).where(
-                Reminder.entity_type == "appointment",
-                Reminder.channel == "sms",
-                Reminder.payload["telnyx_message_id"].astext == message_id,
-            )
+    # The message id — not a tenant — is the lookup key, and the webhook
+    # session has no tenant GUC: bypass RLS for this transaction only,
+    # then re-scope to the matched row's tenant before writing.
+    await bypass_rls_for_transaction(session)
+    reminder = await session.scalar(
+        select(Reminder).where(
+            Reminder.entity_type == "appointment",
+            Reminder.channel == "sms",
+            Reminder.payload["telnyx_message_id"].astext == message_id,
         )
-        if reminder is None:
-            # Not one of our appointment-reminder sends (portal test send,
-            # pre-feature send) — ack so Telnyx stops retrying.
-            logger.info("telnyx_receipt_unmatched", event_type=event_type, message_id=message_id)
-            return {"status": "ignored"}
+    )
+    if reminder is None:
+        # Not one of our appointment-reminder sends (portal test send,
+        # pre-feature send) — ack so Telnyx stops retrying.
+        logger.info("telnyx_receipt_unmatched", event_type=event_type, message_id=message_id)
+        return {"status": "ignored"}
 
-        new_payload = dict(reminder.payload or {})
-        history = list(new_payload.get("delivery_events") or [])
-        history.append({"status": receipt_status, "event_type": event_type, "at": occurred_at})
-        new_payload["delivery_events"] = history
-        current = str(new_payload.get("delivery_status") or "")
-        # Out-of-order delivery must not downgrade a terminal outcome.
-        if not (current in _TERMINAL_STATUSES and receipt_status not in _TERMINAL_STATUSES):
-            new_payload["delivery_status"] = receipt_status
-        reminder.payload = new_payload
-        tenant_id = reminder.tenant_id
+    new_payload = dict(reminder.payload or {})
+    history = list(new_payload.get("delivery_events") or [])
+    history.append({"status": receipt_status, "event_type": event_type, "at": occurred_at})
+    new_payload["delivery_events"] = history
+    current = str(new_payload.get("delivery_status") or "")
+    # Out-of-order delivery must not downgrade a terminal outcome.
+    if not (current in _TERMINAL_STATUSES and receipt_status not in _TERMINAL_STATUSES):
+        new_payload["delivery_status"] = receipt_status
+    reminder.payload = new_payload
+    tenant_id = reminder.tenant_id
 
-        alerted = False
-        role = str(new_payload.get("role") or "")
-        if receipt_status in _PERMANENT_FAILURE_STATUSES and role == "customer":
-            appointment = await session.get(Appointment, reminder.entity_id)
-            contact = (
-                await session.get(Contact, appointment.contact_id)
-                if appointment is not None
-                else None
-            )
-            alerted = await alert_staff_sms_failure(
-                session,
-                tenant_id=tenant_id,
-                contact_id=contact.id if contact is not None else None,
-                recipient_phone=str(new_payload.get("to") or "") or None,
-                purpose="appointment reminder",
-                error_class="delivery failure",
-                detail=_error_detail(payload),
-            )
-        await session.commit()
+    alerted = False
+    role = str(new_payload.get("role") or "")
+    if receipt_status in _PERMANENT_FAILURE_STATUSES and role == "customer":
+        appointment = await session.get(Appointment, reminder.entity_id)
+        contact = (
+            await session.get(Contact, appointment.contact_id) if appointment is not None else None
+        )
+        alerted = await alert_staff_sms_failure(
+            session,
+            tenant_id=tenant_id,
+            contact_id=contact.id if contact is not None else None,
+            recipient_phone=str(new_payload.get("to") or "") or None,
+            purpose="appointment reminder",
+            error_class="delivery failure",
+            detail=_error_detail(payload),
+        )
     logger.info(
         "telnyx_receipt_processed",
         event_type=event_type,
@@ -268,7 +255,7 @@ async def _set_sms_opt_out(session: AsyncSession, from_number: str, *, opted_out
     return flagged
 
 
-async def _handle_inbound(payload: dict[str, Any]) -> dict[str, str]:
+async def _handle_inbound(session: AsyncSession, payload: dict[str, Any]) -> dict[str, str]:
     """CTIA keyword handling for inbound messages (STOP / START)."""
     raw_from = payload.get("from")
     from_number = normalize_phone(
@@ -281,9 +268,7 @@ async def _handle_inbound(payload: dict[str, Any]) -> dict[str, str]:
         logger.info("telnyx_inbound_ignored", from_number=from_number)
         return {"status": "ignored"}
     opted_out = keyword in _OPT_OUT_KEYWORDS
-    async with AsyncSession(engine) as session:
-        flagged = await _set_sms_opt_out(session, from_number, opted_out=opted_out)
-        await session.commit()
+    flagged = await _set_sms_opt_out(session, from_number, opted_out=opted_out)
     logger.info(
         "telnyx_opt_out_processed" if opted_out else "telnyx_opt_in_processed",
         from_number=from_number,
@@ -331,13 +316,24 @@ async def telnyx_webhook(request: Request) -> dict[str, str]:
         return {"status": "ignored"}
 
     event_id = str(data.get("id") or "")
-    if event_id and not await _mark_event_seen(event_id, event_type):
-        logger.info("telnyx_webhook_duplicate", event_id=event_id, event_type=event_type)
-        return {"status": "duplicate"}
-
     raw_payload = data.get("payload")
     payload: dict[str, Any] = raw_payload if isinstance(raw_payload, dict) else {}
     occurred_at = str(data.get("occurred_at") or "")
-    if event_type == "message.received":
-        return await _handle_inbound(payload)
-    return await _handle_delivery_receipt(event_type, payload, occurred_at)
+    async with AsyncSession(engine) as session:
+        if event_id:
+            session.add(
+                ProcessedWebhook(provider="telnyx", event_id=event_id, event_type=event_type)
+            )
+            try:
+                await session.flush()
+            except IntegrityError:
+                await session.rollback()
+                logger.info("telnyx_webhook_duplicate", event_id=event_id, event_type=event_type)
+                return {"status": "duplicate"}
+
+        if event_type == "message.received":
+            result = await _handle_inbound(session, payload)
+        else:
+            result = await _handle_delivery_receipt(session, event_type, payload, occurred_at)
+        await session.commit()
+        return result
