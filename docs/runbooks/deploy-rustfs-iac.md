@@ -54,7 +54,7 @@ RAILWAY_ENVIRONMENT=production railway config plan
 ```
 
 Expected diff:
-- ✅ `minio` service: image changes from `minio/minio:latest` → `rustfs/rustfs:1.0.6`
+- ✅ `minio` service: builds the digest-pinned `docker/rustfs/Dockerfile` wrapper
 - ✅ Volume `/mnt/data` is preserved (no data loss)
 - ✅ Environment variables preserved (MINIO_ROOT_USER, MINIO_ROOT_PASSWORD, PORT=9000)
 - ⚠️ May show drift corrections for native DB plugins (expected, pre-approved)
@@ -72,7 +72,7 @@ Repeat the plan/apply commands with `RAILWAY_ENVIRONMENT=staging` for staging.
 Expected output:
 ```
 Applying 1 configuration change...
-✅ minio: image updated to rustfs/rustfs:1.0.6
+✅ minio: wrapper build and deployment updated
 ✅ Configuration applied successfully
 ```
 
@@ -82,7 +82,7 @@ Wait ~2–3 minutes for the new minio container to start, then verify:
 **Via Railway CLI:**
 ```bash
 railway service info minio
-# Verify: Image: rustfs/rustfs:1.0.6, Status: Running
+# Verify: docker/rustfs/Dockerfile deployment, Status: Running
 ```
 
 **Via API health check:**
@@ -109,16 +109,15 @@ Then create an incident issue.
 
 ## Gotchas hit in the production rollout (2026-11-19)
 
-1. **RustFS startup now bootstraps a dedicated data path.** Railway still
-   execs `start` directly as the container command, so the IaC start command
-   must explicitly call RustFS's entrypoint:
-   `mkdir -p /mnt/data/rustfs && chown 10001:10001 /mnt/data/rustfs && exec /etc/rustfs/entrypoint.sh`.
-   This removes manual `chown` repairs for fresh volumes while avoiding
-   root-owned `/mnt/data/lost+found` failures.
-2. **Registry policy:** `rustfs/rustfs:1.0.6` is a pinned public Docker Hub
-   tag. Railway does not require private registry credentials for this image.
-   If a deploy ever reports registry authentication failures, verify no stale
-   private-registry override variables were injected in the environment.
+1. **RustFS mount ownership is bootstrapped by a wrapper image.** The upstream
+   image runs as uid/gid 10001 and cannot repair a root-owned mount itself.
+   `docker/rustfs/entrypoint.sh` starts as root, changes only `/mnt/data`'s
+   ownership (never recursively), then drops privileges with `su` before
+   executing the upstream entrypoint. `RUSTFS_VOLUMES` stays `/mnt/data`, so
+   existing objects keep their current path.
+2. **Registry policy:** the wrapper builds from `rustfs/rustfs:1.0.6` pinned by
+   SHA256 digest. Railway builds `docker/rustfs/Dockerfile` from the reviewed
+   repository source, so no private registry credentials are required.
 3. **Pre-migration objects are orphaned.** RustFS builds its own metadata
    namespace; MinIO's on-disk objects in the volume are NOT served by its
    S3 API (logos/photos 404 until re-uploaded). The old files remain in the

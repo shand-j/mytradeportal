@@ -91,10 +91,14 @@ export default defineRailway(() => {
   });
 
   const minio = service("minio", {
-    // Public Docker Hub image (no auth required). Pin to a reviewed release
-    // for reproducible deploys across fresh environments.
-    source: image("rustfs/rustfs:1.0.6"),
-    start: '/bin/sh -c "mkdir -p /mnt/data/rustfs && chown 10001:10001 /mnt/data/rustfs && exec /etc/rustfs/entrypoint.sh"',
+    // The reviewed, digest-pinned wrapper only fixes mount ownership as root,
+    // then drops to the upstream rustfs uid/gid before exec'ing its entrypoint.
+    source: github(GITHUB_REPO),
+    build: {
+      builder: "DOCKERFILE",
+      dockerfilePath: "docker/rustfs/Dockerfile",
+      watchPatterns: ["docker/rustfs/**"],
+    },
     healthcheck: "/health",
     volumeMounts: { "/mnt/data": minioData },
     regions: { [TARGET_REGION]: 1 },
@@ -103,11 +107,9 @@ export default defineRailway(() => {
       // RUSTFS_* equivalents at startup.
       MINIO_ROOT_USER: preserve(),
       MINIO_ROOT_PASSWORD: preserve(),
-      // Keep RustFS data under a dedicated subdirectory so fresh Railway
-      // volumes (`/mnt/data/lost+found`) cannot trigger "File access denied".
-      // The start command above ensures this path exists and is owned by uid
-      // 10001 (`rustfs`) before invoking the RustFS entrypoint.
-      RUSTFS_VOLUMES: "/mnt/data/rustfs",
+      // Preserve the existing object path on persistent volumes. The wrapper
+      // fixes only the mountpoint's ownership, recursively changing no data.
+      RUSTFS_VOLUMES: "/mnt/data",
       // S3-compatible API listens on 9000; Railway uses $PORT for healthchecks.
       PORT: "9000",
     },

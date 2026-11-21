@@ -191,10 +191,11 @@ missing. A green implementation PR alone never closes a live gate.
   `telnyx_webhooks.py:334` confirm the early-completion webhook defect (#30).
 - PR #333 added legal routes and links only; production snapshots show explicit
   “approved wording is pending” placeholders (#327).
-- Issue #315 infrastructure follow-up is now in progress on main:
-  `.railway/.railway/railway.ts` was removed as stale duplicate config, and
-  RustFS startup was made reproducible for fresh volumes in
-  `.railway/railway.ts` (pinned image + deterministic ownership bootstrap).
+- `.railway/.railway/railway.ts` is a stale duplicate containing deleted
+  web/OCERP resources and invalid MinIO startup configuration. Persistent
+  RustFS environments are healthy, but fresh PR volumes required manual
+  ownership repair; both belong to #315. A safe wrapper-image correction is
+  under review and still requires fresh-preview and persistent-volume evidence.
 - Exploratory QA run `hunt-2026-11-20T22-42-01` at `485841e` recorded 31 raw
   findings (3 Critical, 1 High, 22 Medium, 5 Low), grouped into 18 non-overlapping
   Copilot assignments. In addition to the release blockers in the scorecard, it
