@@ -141,6 +141,9 @@ for (const { label, viewport, expectsPrimaryNav } of responsiveNavCases) {
       await expectFullyInViewport(page, mobileNav.getByRole('link', { name, exact: true }))
     }
     await expectFullyInViewport(page, mobileNav.getByRole('link', { name: 'Join the beta', exact: true }))
+  })
+}
+
 const footerSectionLinks = [
   { name: 'The tour', hash: 'features' },
   { name: 'Pricing', hash: 'pricing' },
