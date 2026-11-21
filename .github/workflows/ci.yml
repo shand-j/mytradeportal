@@ -235,13 +235,13 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Unit tests
-        run: pnpm --filter my-app test
+        run: pnpm --filter ./web/app test
 
       - name: Production build
-        run: pnpm --filter my-app build
+        run: pnpm --filter ./web/app build
 
       - name: Lint
-        run: pnpm --filter my-app lint
+        run: pnpm --filter ./web/app lint
 
   deploy-production:
     # Deploy the mobile-beta stack from the IaC in .railway/railway.ts.
