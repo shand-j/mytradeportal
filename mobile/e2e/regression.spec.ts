@@ -632,9 +632,12 @@ test.describe.serial("G — Fresh business signup", () => {
     await page.locator('[data-testid="plan-team"]').waitFor({ state: "visible", timeout: 30000 });
     await waitText(page, "All plans are unlocked during free beta", 30000);
     expect(await bodyText(page)).not.toMatch(/internal server error|\b500\b|payment setup failed/i);
-    await tap(page, "plan-continue");
+    // Final continue must be idempotent: rapid double activation should still
+    // complete onboarding once and land on Dashboard (not Customers).
+    await page.locator('[data-testid="plan-continue"]').dblclick({ delay: 25 });
     // Free-beta access must not depend on a subscription row or paywall.
-    await page.waitForURL(/dashboard/, { timeout: 60000 });
+    await page.waitForURL(/\/dashboard(?:$|[?#/])/, { timeout: 60000 });
+    expect(page.url()).not.toMatch(/\/customers(?:$|[?#/])/);
   });
 });
 

@@ -19,6 +19,7 @@ type Plan = {
 type PlanPaymentStepProps = {
   data?: Record<string, unknown>;
   onNext: (data?: Record<string, unknown>) => void;
+  isFinalizing?: boolean;
 };
 
 // Static copy of the confirmed tier catalog — mirrors GET /billing/plans.
@@ -122,7 +123,7 @@ function toDisplayPlan(plan: BillingPlan): Plan {
  * website. The website mention below is plain text on purpose; it must never
  * become a link.
  */
-export function PlanPaymentStep({ onNext }: PlanPaymentStepProps) {
+export function PlanPaymentStep({ onNext, isFinalizing = false }: PlanPaymentStepProps) {
   const plansQuery = useBillingPlans();
   const { data: featureFlags } = useFeatureFlags();
   const paddleBillingEnabled = featureFlags?.paddleBilling === true;
@@ -203,6 +204,7 @@ export function PlanPaymentStep({ onNext }: PlanPaymentStepProps) {
         <Button
           testID="plan-continue"
           title={paddleBillingEnabled ? "I've subscribed — continue" : "Continue"}
+          disabled={isFinalizing}
           onPress={() => onNext()}
         />
       </View>
