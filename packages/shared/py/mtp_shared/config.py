@@ -69,6 +69,10 @@ class Settings(BaseSettings):
     embedding_model: str = Field(default="text-embedding-3-large")
     embedding_dimensions: int | None = Field(default=None)
     llm_model: str = Field(default="gpt-4o-mini")
+    # Test/deployment provider boundary. "staging_double" makes quote and
+    # follow-up generation use deterministic local responses instead of calling
+    # an external LLM; unset/empty selects the normal live provider route.
+    llm_provider_mode: str = Field(default="")
     # Optional vision-capable model override for the photo-observation step
     # that captions customer photos attached to quote requests. Empty falls
     # back to ``llm_model`` — set this when the configured chat model cannot
@@ -383,6 +387,9 @@ class Settings(BaseSettings):
             token in self.allowed_origin_regex for token in ("*", ".+")
         ):
             violations.append("allowed_origin_regex (wildcard)")
+        if self.llm_provider_mode.strip():
+            violations.append("llm_provider_mode (test doubles are not allowed in production)")
+
         # Resend is the required production mail transport. Fail closed if a
         # deployment has a key but no addresses or Svix secret; otherwise the
         # app can silently mix verified and unverified From domains or disable

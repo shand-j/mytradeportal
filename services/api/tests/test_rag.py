@@ -8,6 +8,7 @@ from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
 
+import httpx
 import pytest
 from app import config as generation_config
 from app.database import AsyncSessionLocal
@@ -922,6 +923,92 @@ async def test_generate_followup_uses_chat_route_and_budget(
     assert result["model"] == "gpt-4o-mini"
     assert '"options"' in FOLLOWUP_SYSTEM_PROMPT
     assert '"suggested_questions"' in FOLLOWUP_SYSTEM_PROMPT
+
+
+@pytest.mark.asyncio
+async def test_staging_provider_double_skips_external_followup(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(generation_config.settings, "llm_provider_mode", "staging_double")
+    monkeypatch.setattr(generation_config.settings, "llm_api_key", "")
+    monkeypatch.setattr(generation_config.settings, "openai_api_key", "")
+
+    with patch("app.rag.generation.acompletion", new=AsyncMock()) as mock_acompletion:
+        result = await generate_followup("Consumer unit replacement", [])
+
+    mock_acompletion.assert_not_awaited()
+    assert result["model"] == "staging-provider-double"
+    assert result["complete"] is False
+    assert "circuit" in result["message"].lower()
+
+
+@pytest.mark.asyncio
+async def test_staging_provider_double_skips_external_quote(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(generation_config.settings, "llm_provider_mode", "staging_double")
+    monkeypatch.setattr(generation_config.settings, "llm_api_key", "")
+    monkeypatch.setattr(generation_config.settings, "openai_api_key", "")
+
+    with patch("app.rag.generation.acompletion", new=AsyncMock()) as mock_acompletion:
+        result = await generate_quote_from_prompt(
+            "Replace my fuse board",
+            cost_items=[],
+            tenant_settings={},
+        )
+
+    mock_acompletion.assert_not_awaited()
+    assert result["model"] == "staging-provider-double"
+    assert result["line_items"]
+    assert "consumer unit" in result["line_items"][0]["description"].lower()
+
+
+@pytest.mark.asyncio
+async def test_followup_transport_timeout_is_sanitized(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(generation_config.settings, "llm_provider_mode", "")
+    monkeypatch.setattr(generation_config.settings, "llm_followup_model", "gpt-4o-mini")
+    monkeypatch.setattr(generation_config.settings, "openai_api_key", "test-key")
+    monkeypatch.setattr(generation_config.settings, "llm_api_base", "")
+
+    with (
+        patch(
+            "app.rag.generation.acompletion",
+            new=AsyncMock(side_effect=httpx.TimeoutException("https://private/provider")),
+        ),
+        pytest.raises(RuntimeError) as exc,
+    ):
+        await generate_followup("Consumer unit replacement", [])
+
+    assert str(exc.value) == (
+        "The AI service took too long to respond. Your existing data is unchanged; please try again."
+    )
+    assert "private" not in str(exc.value)
+
+
+@pytest.mark.asyncio
+async def test_quote_transport_timeout_is_sanitized(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(generation_config.settings, "llm_provider_mode", "")
+    monkeypatch.setattr(generation_config.settings, "llm_api_key", "test-key")
+    monkeypatch.setattr(generation_config.settings, "llm_api_base", "")
+
+    with (
+        patch(
+            "app.rag.generation.acompletion",
+            new=AsyncMock(side_effect=httpx.TimeoutException("https://private/provider")),
+        ),
+        pytest.raises(RuntimeError) as exc,
+    ):
+        await generate_quote_from_prompt(
+            "Replace my fuse board",
+            cost_items=[],
+            tenant_settings={},
+            knowledge_chunks=[],
+        )
+
+    assert str(exc.value) == (
+        "The AI service took too long to respond. Your existing data is unchanged; please try again."
+    )
+    assert "private" not in str(exc.value)
 
 
 def test_resolve_refine_route_defaults_to_cheap_model(monkeypatch: pytest.MonkeyPatch) -> None:

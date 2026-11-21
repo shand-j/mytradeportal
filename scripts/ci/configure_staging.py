@@ -29,6 +29,7 @@ STAGING_API_VARIABLES = {
     "ROLLUP_RUN_HOUR_UTC": "2",
     "ROLLUP_RUN_MINUTE_UTC": "30",
     "PADDLE_SANDBOX": "true",
+    "LLM_PROVIDER_MODE": "staging_double",
     "LLM_MODEL": "openai/kimi-k2.6",
     "LLM_REFINE_MODEL": "openai/kimi-k2.6",
     "LLM_FOLLOWUP_MODEL": "openai/kimi-k2.6",

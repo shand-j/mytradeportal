@@ -2,6 +2,9 @@ import runpy
 from pathlib import Path
 from typing import Any
 
+import pytest
+from mtp_shared.config import InsecureProductionConfigError, Settings
+
 ROOT = Path(__file__).resolve().parents[3]
 
 
@@ -19,6 +22,7 @@ def test_staging_mirror_uses_sandbox_and_safe_llm_caps() -> None:
 
     assert api["ENVIRONMENT"] == "staging"
     assert api["PADDLE_SANDBOX"] == "true"
+    assert api["LLM_PROVIDER_MODE"] == "staging_double"
     assert api["LLM_MODEL"] == "openai/kimi-k2.6"
     assert api["LLM_MAX_RETRIES"] == "1"
     assert api["AI_BURST_LIMIT_PER_HOUR"] == "10"
@@ -38,6 +42,13 @@ def test_staging_landing_forces_paddle_sandbox() -> None:
     landing = _load_staging_config()["landing"]
 
     assert landing["VITE_PADDLE_ENV"] == "sandbox"
+
+
+def test_production_rejects_deterministic_llm_provider() -> None:
+    settings = Settings(environment="production", llm_provider_mode="staging_double")
+
+    with pytest.raises(InsecureProductionConfigError, match="llm_provider_mode"):
+        settings.validate_production()
 
 
 def test_staging_workflow_and_iac_preserve_mailpit() -> None:
