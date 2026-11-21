@@ -1,9 +1,9 @@
 # Founding-Member Terms — Beta Cohort
 
-> **DRAFT — pending founder approval.** Not yet sent to beta users. Once
-> approved it becomes part of the beta comms pack (Delivery Plan item 0.10).
+> **APPROVED — founding-member terms confirmed by the founder on 2026-11-20.**
+> These terms are part of the beta comms pack (Delivery Plan item 0.10).
 
-Proposed terms for the ~10 beta users who are helping us build My Trade Portal
+Approved terms for the ~10 beta users who are helping us build My Trade Portal
 before launch.
 
 ## The offer
@@ -27,10 +27,17 @@ Beta feedback shapes the product; these terms are the thank-you. They also
 de-risk the pricing transition: nobody who helped us build gets a surprise
 bill, and the 20% / 12-month lock is simple enough to say in one sentence.
 
-## Notes for founder review
+## Founder approval record
 
-- Numbers to confirm: 20% discount depth, 12-month lock length, 30-day notice.
-- Applies to all ~10 beta users equally — no per-user negotiation, or the
-  terms stop being a policy and start being a liability.
-- Grandfathering beyond 12 months is deliberately excluded; review at the end
-  of the locked period, not before.
+- **Approved:** 20% off launch prices.
+- **Approved:** the discount is locked for 12 months from launch.
+- **Approved:** 30 days' notice before beta ends.
+- **Approved:** all ~10 beta users receive the same terms — no per-user
+  negotiation.
+- **Exclusion confirmed:** grandfathering beyond 12 months is not included;
+  terms for the period after the lock will be reviewed separately.
+
+This written approval satisfies the sign-off gate for cohort wave 1. The
+30-day pre-launch notice and 12-month billing lock remain operational delivery
+items and must be implemented and verified before founding-member billing
+goes live.
