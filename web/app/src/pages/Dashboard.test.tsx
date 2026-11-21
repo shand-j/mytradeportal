@@ -38,6 +38,9 @@ describe('Dashboard', () => {
     expect(screen.getByText('Revenue This Month')).toBeInTheDocument();
     expect(screen.getByText('£24,500')).toBeInTheDocument();
     expect(screen.getByText('Active Jobs')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Week' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Year' })).toBeDisabled();
+    expect(screen.getByRole('link', { name: 'View all' })).toHaveAttribute('href', '/jobs');
   });
 
   it('does not render the removed voice AI blocks', () => {
@@ -45,5 +48,25 @@ describe('Dashboard', () => {
     expect(screen.queryByText('Voice AI Agent is live')).not.toBeInTheDocument();
     expect(screen.queryByText('Calls Today')).not.toBeInTheDocument();
     expect(screen.queryByText('Voice Quotes')).not.toBeInTheDocument();
+  });
+
+  it('renders rating stars when average rating is zero', () => {
+    vi.mocked(useDashboard).mockReturnValue({
+      data: {
+        ...mockDashboardData,
+        kpi: {
+          ...mockDashboardData.kpi,
+          averageRating: 0,
+          reviewCount: 0,
+        },
+      },
+      isLoading: false,
+      error: null,
+    });
+
+    renderPage(<Dashboard />);
+    expect(screen.getByText('0 reviews')).toBeInTheDocument();
+    const rating = screen.getByRole('img', { name: 'Rating: 0 out of 5 stars' });
+    expect(rating.querySelectorAll('svg')).toHaveLength(5);
   });
 });

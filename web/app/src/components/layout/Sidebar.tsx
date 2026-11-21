@@ -2,7 +2,7 @@ import { useEffect } from 'react';
 import { NavLink, useLocation, useNavigate } from 'react-router-dom';
 import {
   LayoutDashboard, Calendar, FileText, Wrench, Users, Receipt, Star,
-  Sparkles, Settings, ChevronRight, Zap, Phone,
+  Sparkles, Settings, ChevronRight, Zap, Phone, LogOut,
 } from 'lucide-react';
 import type { UserRole } from '@/types';
 import { useUiStore } from '@/stores/uiStore';
@@ -179,6 +179,27 @@ export function Sidebar() {
               title="Sign out"
             >
               Logout
+            </button>
+          </div>
+        )}
+
+        {sidebarCollapsed && currentUser && (
+          <div className="mt-2 flex flex-col items-center gap-2">
+            <NavLink
+              to="/settings"
+              aria-label="Account settings"
+              className="w-8 h-8 rounded-full bg-[#D4650A] text-white text-xs font-semibold flex items-center justify-center hover:bg-[#B85500] transition-colors"
+              title={currentUser.fullName}
+            >
+              {currentUser.fullName.charAt(0).toUpperCase()}
+            </NavLink>
+            <button
+              onClick={handleLogout}
+              aria-label="Logout"
+              className="h-8 w-8 rounded-lg flex items-center justify-center text-[#D4650A] hover:bg-[#F5F4F0] transition-colors"
+              title="Logout"
+            >
+              <LogOut className="w-4 h-4" />
             </button>
           </div>
         )}

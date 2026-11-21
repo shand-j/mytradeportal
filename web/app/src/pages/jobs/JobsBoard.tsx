@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import { Plus, Search, X } from 'lucide-react';
 import { useJobs, useCreateJob, useTransitionJobStatus } from '@/lib/api/hooks';
 import { useContacts } from '@/lib/api/hooks';
@@ -25,10 +25,17 @@ export function JobsBoard() {
   const cancelJob = useTransitionJobStatus('cancel');
   const [search, setSearch] = useState('');
   const [isDialogOpen, setIsDialogOpen] = useState(false);
+  const [searchParams] = useSearchParams();
+  const initialCustomerId = searchParams.get('customerId') ?? '';
+  const initialPropertyAddress = searchParams.get('propertyAddress') ?? '';
 
   useEffect(() => {
     setPageTitle('Jobs');
   }, [setPageTitle]);
+
+  useEffect(() => {
+    if (initialCustomerId) setIsDialogOpen(true);
+  }, [initialCustomerId]);
 
   const filtered = (jobs ?? []).filter(j => !search || j.customer.firstName.toLowerCase().includes(search.toLowerCase()) || j.serviceType.toLowerCase().includes(search.toLowerCase()));
 
@@ -146,18 +153,31 @@ export function JobsBoard() {
         })}
       </div>
 
-      {isDialogOpen && <JobDialog contacts={contacts ?? []} onClose={() => setIsDialogOpen(false)} onSubmit={handleCreate} isSubmitting={createJob.isPending} />}
+      {isDialogOpen && (
+        <JobDialog
+          contacts={contacts ?? []}
+          initialCustomerId={initialCustomerId}
+          initialPropertyAddress={initialPropertyAddress}
+          onClose={() => setIsDialogOpen(false)}
+          onSubmit={handleCreate}
+          isSubmitting={createJob.isPending}
+        />
+      )}
     </div>
   );
 }
 
 function JobDialog({
   contacts,
+  initialCustomerId = '',
+  initialPropertyAddress = '',
   onClose,
   onSubmit,
   isSubmitting,
 }: {
   contacts: { id: string; firstName: string; lastName: string }[];
+  initialCustomerId?: string;
+  initialPropertyAddress?: string;
   onClose: () => void;
   onSubmit: (payload: {
     customerId: string;
@@ -170,11 +190,11 @@ function JobDialog({
   }) => void;
   isSubmitting: boolean;
 }) {
-  const [customerId, setCustomerId] = useState('');
+  const [customerId, setCustomerId] = useState(initialCustomerId);
   const [reference, setReference] = useState('');
   const [serviceType, setServiceType] = useState('');
   const [scheduledDate, setScheduledDate] = useState(new Date().toISOString().split('T')[0]);
-  const [propertyAddress, setPropertyAddress] = useState('');
+  const [propertyAddress, setPropertyAddress] = useState(initialPropertyAddress);
   const [value, setValue] = useState(0);
   const [description, setDescription] = useState('');
 

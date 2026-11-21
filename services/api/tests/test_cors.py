@@ -92,3 +92,24 @@ def test_production_rejects_wildcard_origin_regex() -> None:
 
     with pytest.raises(InsecureProductionConfigError, match="allowed_origin_regex"):
         settings.validate_production()
+
+
+def test_production_resend_requires_split_senders_and_webhook_secret() -> None:
+    settings = Settings(
+        environment="production",
+        allowed_origins="https://www.mytradeportal.co.uk",
+        allowed_origin_regex=r"",
+        auth_secret_key="production-secret",
+        app_role_password="production-app-password",
+        minio_access_key="production-minio-access",
+        minio_secret_key="production-minio-secret",
+        resend_api_key="re_test_key",
+    )
+
+    with pytest.raises(InsecureProductionConfigError) as exc:
+        settings.validate_production()
+
+    message = str(exc.value)
+    assert "resend_from_email" in message
+    assert "resend_no_reply_email" in message
+    assert "resend_webhook_secret" in message

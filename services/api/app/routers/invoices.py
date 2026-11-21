@@ -6,7 +6,7 @@ from typing import Annotated, Any
 from uuid import UUID
 
 import structlog
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Response, status
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -88,6 +88,25 @@ async def _get_invoice(db: AsyncSession, tenant_id: UUID, invoice_id: UUID) -> I
     if invoice is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Invoice not found")
     return invoice
+
+
+async def _get_existing_job_quote_invoice(
+    db: AsyncSession, tenant_id: UUID, job_id: UUID, quote_id: UUID
+) -> Invoice | None:
+    """Return the existing invoice for a quote-linked job flow, if any."""
+    await set_tenant_in_session(db, tenant_id)
+    result = await db.execute(
+        select(Invoice)
+        .options(selectinload(Invoice.line_items), selectinload(Invoice.contact))
+        .where(
+            Invoice.tenant_id == tenant_id,
+            Invoice.job_id == job_id,
+            Invoice.quote_id == quote_id,
+        )
+        .order_by(Invoice.created_at.asc())
+        .limit(1)
+    )
+    return result.scalar_one_or_none()
 
 
 def _sms_available(contact: Contact | None) -> bool:
@@ -215,12 +234,22 @@ def _lines_match_quote(quote: Quote, items: list[Any]) -> bool:
     return True
 
 
-@router.post("", status_code=status.HTTP_201_CREATED)
+@router.post(
+    "",
+    status_code=status.HTTP_201_CREATED,
+    responses={
+        status.HTTP_200_OK: {
+            "description": "Existing invoice for quote-linked job replay",
+            "model": InvoiceRead,
+        }
+    },
+)
 async def create_invoice(
     data: InvoiceCreate,
     tenant: TenantDep,
     current_user: CurrentUserDep,
     db: DbDep,
+    response: Response,
 ) -> InvoiceRead:
     """Create an invoice with line items.
 
@@ -252,8 +281,11 @@ async def create_invoice(
 
     job: Job | None = None
     if data.job_id:
-        job = await db.get(Job, data.job_id)
-        if job is None or job.tenant_id != tenant.id:
+        job_result = await db.execute(
+            select(Job).where(Job.id == data.job_id, Job.tenant_id == tenant.id).with_for_update()
+        )
+        job = job_result.scalar_one_or_none()
+        if job is None:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid job")
 
     # The quote is taken explicitly, or resolved from the job's attributed
@@ -269,6 +301,15 @@ async def create_invoice(
         quote = quote_result.scalar_one_or_none()
         if quote is None:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid quote")
+
+    # Invoice-from-job replay guard: quote-linked jobs are single-invoice flows.
+    # Repeating the same request returns the existing invoice instead of creating
+    # a duplicate draft/sent/paid document.
+    if job is not None and quote is not None and job.quote_id == quote.id:
+        existing = await _get_existing_job_quote_invoice(db, tenant.id, job.id, quote.id)
+        if existing is not None:
+            response.status_code = status.HTTP_200_OK
+            return _to_invoice_read(existing)
 
     invoice_number = data.invoice_number or await generate_invoice_number(db, tenant.id)
     due_date = data.due_date or (datetime.utcnow() + timedelta(days=14))

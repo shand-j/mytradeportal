@@ -10,9 +10,12 @@ const contactKeys = {
 };
 
 export function toCustomer(raw: Record<string, unknown>): Customer {
-  const name = String(raw.name ?? '');
-  const [firstName, ...rest] = name.split(' ');
-  const lastName = rest.join(' ') || '';
+  const name = String(raw.name ?? '').trim();
+  const [firstWord = '', ...remainingWords] = name.split(/\s+/);
+  const firstName = name ? firstWord : String(raw.firstName ?? raw.first_name ?? '').trim();
+  const lastName = name
+    ? remainingWords.join(' ')
+    : String(raw.lastName ?? raw.last_name ?? '').trim();
   return {
     id: String(raw.id),
     firstName,

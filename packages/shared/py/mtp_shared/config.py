@@ -225,6 +225,7 @@ class Settings(BaseSettings):
     resend_api_key: str = Field(default="")
     resend_from_email: str = Field(default="")
     resend_no_reply_email: str = Field(default="")
+    resend_webhook_secret: str = Field(default="")
 
     # SMS appointment reminders (Telnyx Messaging API). Plan-included feature:
     # customers and the assigned electrician get a text before each appointment.
@@ -388,6 +389,18 @@ class Settings(BaseSettings):
             violations.append("allowed_origin_regex (wildcard)")
         if self.llm_provider_mode.strip():
             violations.append("llm_provider_mode (test doubles are not allowed in production)")
+
+        # Resend is the required production mail transport. Fail closed if a
+        # deployment has a key but no addresses or Svix secret; otherwise the
+        # app can silently mix verified and unverified From domains or disable
+        # bounce/failure alerting.
+        if self.resend_api_key:
+            if not self.resend_from_email:
+                violations.append("resend_from_email")
+            if not self.resend_no_reply_email:
+                violations.append("resend_no_reply_email")
+            if not self.resend_webhook_secret:
+                violations.append("resend_webhook_secret")
 
         if violations:
             raise InsecureProductionConfigError(
