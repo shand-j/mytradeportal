@@ -174,10 +174,14 @@ def test_render_quote_pdf_handles_unicode_safely() -> None:
 @pytest.mark.asyncio
 async def test_quote_pdf_is_tenant_scoped(client: AsyncClient) -> None:
     tenant_a = (
-        await client.post("/tenants", json={"slug": f"quotepdf-a-{uuid4().hex[:8]}", "name": "A Ltd"})
+        await client.post(
+            "/tenants", json={"slug": f"quotepdf-a-{uuid4().hex[:8]}", "name": "A Ltd"}
+        )
     ).json()
     tenant_b = (
-        await client.post("/tenants", json={"slug": f"quotepdf-b-{uuid4().hex[:8]}", "name": "B Ltd"})
+        await client.post(
+            "/tenants", json={"slug": f"quotepdf-b-{uuid4().hex[:8]}", "name": "B Ltd"}
+        )
     ).json()
 
     contact = await client.post(

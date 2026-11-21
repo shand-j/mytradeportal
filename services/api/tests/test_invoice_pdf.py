@@ -38,7 +38,11 @@ async def _create_invoice(client: AsyncClient, tenant_id: str, contact_id: str) 
             "invoice_number": "INV-PDF-001",
             "line_items": [
                 {"description": "Emergency callout 🚨", "quantity": "1", "unit_price": "200.00"},
-                {"description": "Kitchen socket install — Δ", "quantity": "2", "unit_price": "55.00"},
+                {
+                    "description": "Kitchen socket install — Δ",
+                    "quantity": "2",
+                    "unit_price": "55.00",
+                },
             ],
         },
     )
