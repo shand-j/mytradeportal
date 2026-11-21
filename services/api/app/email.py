@@ -25,6 +25,7 @@ from app.portal_links import magic_link_url
 logger = structlog.get_logger("api.email")
 
 RESEND_ENDPOINT = "https://api.resend.com/emails"
+RESEND_TEST_SENDER = "onboarding@resend.dev"
 
 
 async def resolve_customer_magic_link(
@@ -101,15 +102,13 @@ def _resend_from(display_name: str | None = None) -> str:
     Transactional sends (password resets, account mail) pass no display name
     and go out on ``resend_no_reply_email`` under the platform name, so
     account security mail never impersonates a tenant and never invites a
-    reply. Falls back to ``resend_from_email`` then the SMTP sender when the
-    no-reply address is not configured.
+    reply. Falls back to ``resend_from_email`` then Resend's verified
+    onboarding sender when the no-reply address is not configured.
     """
     if display_name:
-        address = settings.resend_from_email or settings.smtp_from_email
+        address = settings.resend_from_email or RESEND_TEST_SENDER
         return formataddr((display_name, address))
-    address = (
-        settings.resend_no_reply_email or settings.resend_from_email or settings.smtp_from_email
-    )
+    address = settings.resend_no_reply_email or settings.resend_from_email or RESEND_TEST_SENDER
     return formataddr((settings.smtp_from_name, address))
 
 
