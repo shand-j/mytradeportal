@@ -38,3 +38,13 @@ def test_staging_landing_forces_paddle_sandbox() -> None:
     landing = _load_staging_config()["landing"]
 
     assert landing["VITE_PADDLE_ENV"] == "sandbox"
+
+
+def test_staging_workflow_and_iac_preserve_mailpit() -> None:
+    workflow = (ROOT / ".github" / "workflows" / "staging-e2e.yml").read_text()
+    iac = (ROOT / ".railway" / "railway.ts").read_text()
+
+    assert workflow.count("Route staging email to Mailpit") == 2
+    assert workflow.count("python3 scripts/ci/route_env_email.py") == 2
+    assert 'service("mailpit"' in iac
+    assert 'image("axllent/mailpit:latest")' in iac
