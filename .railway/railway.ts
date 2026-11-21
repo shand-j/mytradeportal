@@ -91,7 +91,14 @@ export default defineRailway(() => {
   });
 
   const minio = service("minio", {
-    source: image("rustfs/rustfs:latest"),
+    // The reviewed, digest-pinned wrapper only fixes mount ownership as root,
+    // then drops to the upstream rustfs uid/gid before exec'ing its entrypoint.
+    source: github(GITHUB_REPO),
+    build: {
+      builder: "DOCKERFILE",
+      dockerfilePath: "docker/rustfs/Dockerfile",
+      watchPatterns: ["docker/rustfs/**"],
+    },
     healthcheck: "/health",
     volumeMounts: { "/mnt/data": minioData },
     regions: { [TARGET_REGION]: 1 },
@@ -100,10 +107,8 @@ export default defineRailway(() => {
       // RUSTFS_* equivalents at startup.
       MINIO_ROOT_USER: preserve(),
       MINIO_ROOT_PASSWORD: preserve(),
-      // Data lives on the mounted volume. Do NOT set a start command: Railway
-      // execs it directly (no entrypoint), and the RustFS entrypoint is what
-      // resolves RUSTFS_VOLUMES into the server invocation. Overriding start
-      // with the volume path fails deploys ("no permission to execute").
+      // Preserve the existing object path on persistent volumes. The wrapper
+      // fixes only the mountpoint's ownership, recursively changing no data.
       RUSTFS_VOLUMES: "/mnt/data",
       // S3-compatible API listens on 9000; Railway uses $PORT for healthchecks.
       PORT: "9000",

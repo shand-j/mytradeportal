@@ -1,7 +1,7 @@
 # Runbook: Deploy RustFS to staging/prod via Railway IaC
 
 ## Situation
-After PR #318 merged (commit 781b3d6), the `.railway/railway.ts` IaC definition was updated to use `rustfs/rustfs:latest` instead of `minio/minio:latest` for object storage. The API service redeployed successfully, but the `minio` service image was not updated because the CI `railway config apply` step fails silently due to a token issue.
+After PR #318 merged (commit 781b3d6), the `.railway/railway.ts` IaC definition was updated to use RustFS instead of `minio/minio:latest` for object storage. The API service redeployed successfully, but the `minio` service image was not updated because the CI `railway config apply` step fails silently due to a token issue.
 
 ## Action
 Production deploys now apply the IaC from CI and staging applies it before the
@@ -54,7 +54,7 @@ RAILWAY_ENVIRONMENT=production railway config plan
 ```
 
 Expected diff:
-- ✅ `minio` service: image changes from `minio/minio:latest` → `rustfs/rustfs:latest`
+- ✅ `minio` service: builds the digest-pinned `docker/rustfs/Dockerfile` wrapper
 - ✅ Volume `/mnt/data` is preserved (no data loss)
 - ✅ Environment variables preserved (MINIO_ROOT_USER, MINIO_ROOT_PASSWORD, PORT=9000)
 - ⚠️ May show drift corrections for native DB plugins (expected, pre-approved)
@@ -72,7 +72,7 @@ Repeat the plan/apply commands with `RAILWAY_ENVIRONMENT=staging` for staging.
 Expected output:
 ```
 Applying 1 configuration change...
-✅ minio: image updated to rustfs/rustfs:latest
+✅ minio: wrapper build and deployment updated
 ✅ Configuration applied successfully
 ```
 
@@ -82,7 +82,7 @@ Wait ~2–3 minutes for the new minio container to start, then verify:
 **Via Railway CLI:**
 ```bash
 railway service info minio
-# Verify: Image: rustfs/rustfs:latest, Status: Running
+# Verify: docker/rustfs/Dockerfile deployment, Status: Running
 ```
 
 **Via API health check:**
@@ -109,25 +109,15 @@ Then create an incident issue.
 
 ## Gotchas hit in the production rollout (2026-11-19)
 
-1. **Never set `start` for the RustFS service.** Railway execs the IaC
-   `start` value directly as the container command — unlike
-   docker-compose's `command:`, it is NOT passed to the image entrypoint.
-   `start: "/mnt/data"` tried to exec a directory and failed the deploy with
-   "We don't have permission to execute your start command". Leave `start`
-   unset and point the entrypoint at the volume via `RUSTFS_VOLUMES`
-   (resolved by `/etc/rustfs/entrypoint.sh`).
-2. **Volume ownership: MinIO ran as root, RustFS runs as uid 10001
-   (`rustfs`).** The pre-existing volume mountpoint and files are
-   root-owned, so the first RustFS boot dies with
-   `[FATAL] Server runtime failed: File access denied` (a subdirectory
-   under the mount fails the same way). Fix once by temporarily pointing the
-   service at a root image with a one-shot chown, then reverting:
-   - `source: image("alpine:latest")`,
-     `start: 'sh -c "chown -R 10001:10001 /mnt/data && echo CHOWN-DONE && sleep 600"'`
-     → `railway config apply`, wait for `CHOWN-DONE` in the logs
-     (`railway logs --deployment <id>` — the service-level log tail lags and
-     interleaves old deployments; query by deployment id).
-   - Revert to the RustFS block → apply again. Deploy goes green.
+1. **RustFS mount ownership is bootstrapped by a wrapper image.** The upstream
+   image runs as uid/gid 10001 and cannot repair a root-owned mount itself.
+   `docker/rustfs/entrypoint.sh` starts as root, changes only `/mnt/data`'s
+   ownership (never recursively), then drops privileges with `su` before
+   executing the upstream entrypoint. `RUSTFS_VOLUMES` stays `/mnt/data`, so
+   existing objects keep their current path.
+2. **Registry policy:** the wrapper builds from `rustfs/rustfs:1.0.6` pinned by
+   SHA256 digest. Railway builds `docker/rustfs/Dockerfile` from the reviewed
+   repository source, so no private registry credentials are required.
 3. **Pre-migration objects are orphaned.** RustFS builds its own metadata
    namespace; MinIO's on-disk objects in the volume are NOT served by its
    S3 API (logos/photos 404 until re-uploaded). The old files remain in the
