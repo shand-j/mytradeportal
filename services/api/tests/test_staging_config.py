@@ -36,6 +36,7 @@ def test_staging_mirror_enables_worker_and_rollup_schedules() -> None:
     assert api["ROLLUP_SCHEDULER_ENABLED"] == "true"
     assert api["ROLLUP_TICK_SECONDS"] == "60"
     assert api["SEED_DEMO_ESTATE"] == "true"
+    assert api["RATE_LIMIT_ENABLED"] == "false"
 
 
 def test_staging_landing_forces_paddle_sandbox() -> None:

@@ -90,6 +90,10 @@ export const useAuthStore = create<AuthState>((set) => ({
   setUser: (user) => set({ user }),
 
   login: async (email, password, targetRole) => {
+    // A previous 402 or paywall route is session state, not a credential
+    // state. Clear it before the new login so stale billing state cannot
+    // redirect the first dashboard navigation.
+    usePaywallStore.getState().setRequired(false);
     set({ loading: true });
     try {
       const slug = useBusinessStore.getState().business?.slug;
@@ -140,6 +144,7 @@ export const useAuthStore = create<AuthState>((set) => ({
       // Let callers distinguish "server unreachable" from bad credentials
       // (the latter surface as `false` so the screen can show a 401 message).
       if (err instanceof NetworkError) throw err;
+      if (err instanceof ApiError && err.status === 429) throw err;
       return false;
     }
   },
@@ -224,6 +229,7 @@ export const useAuthStore = create<AuthState>((set) => ({
   restoreSession: () => {
     if (restoreInFlight) return restoreInFlight;
 
+    usePaywallStore.getState().setRequired(false);
     set({ loading: true });
     restoreInFlight = (async () => {
       try {

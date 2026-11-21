@@ -8,7 +8,7 @@ import { Text } from "../../components/ui/Text";
 import { requestPasswordReset } from "../../api/auth";
 import { requestInviteMagicLink } from "../../api/users";
 import { useAuth } from "../../contexts/AuthContext";
-import { NetworkError } from "../../lib/apiClient";
+import { ApiError, NetworkError } from "../../lib/apiClient";
 import { config } from "../../lib/config";
 import { openInAppBrowser } from "../../lib/inAppBrowser";
 import { pendingInviteStorage } from "../../lib/pendingInvite";
@@ -153,7 +153,9 @@ export function LoginScreen({ role, mode = "login", initialEmail, onBack }: Logi
             : "Invalid email or password."
         );
       } catch (err) {
-        if (err instanceof NetworkError) {
+        if (err instanceof ApiError && err.status === 429) {
+          setError("Too many sign-in attempts. Please wait a minute and try again.");
+        } else if (err instanceof NetworkError) {
           setError("Can't reach the server. Check your connection and try again.");
         } else {
           setError("Something went wrong. Please try again.");
