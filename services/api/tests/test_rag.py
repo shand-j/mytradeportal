@@ -943,6 +943,28 @@ async def test_staging_provider_double_skips_external_followup(
 
 
 @pytest.mark.asyncio
+async def test_staging_provider_double_followup_after_circuit_answer(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(generation_config.settings, "llm_provider_mode", "staging_double")
+    monkeypatch.setattr(generation_config.settings, "llm_api_key", "")
+    monkeypatch.setattr(generation_config.settings, "openai_api_key", "")
+
+    prior_messages = [
+        {"role": "ai", "text": "How many circuits are in the existing consumer unit?"},
+        {"role": "business", "text": "It has 8 circuits including the main switch."},
+    ]
+    with patch("app.rag.generation.acompletion", new=AsyncMock()) as mock_acompletion:
+        result = await generate_followup("Consumer unit replacement", prior_messages)
+
+    mock_acompletion.assert_not_awaited()
+    assert result["model"] == "staging-provider-double"
+    assert result["complete"] is False
+    assert result["message"].strip()
+    assert "fuse box" in result["message"].lower()
+
+
+@pytest.mark.asyncio
 async def test_staging_provider_double_skips_external_quote(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
