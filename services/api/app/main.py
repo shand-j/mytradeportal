@@ -56,9 +56,9 @@ from app.routers import (
     quotes,
     resend_webhooks,
     reviews,
+    smsworks_webhooks,
     staff_ops,
     stripe_webhooks,
-    telnyx_webhooks,
     tenants,
     users,
     webhooks,
@@ -213,7 +213,7 @@ app.include_router(billing.router)
 app.include_router(webhooks.router)
 app.include_router(stripe_webhooks.router)
 app.include_router(resend_webhooks.router)
-app.include_router(telnyx_webhooks.router)
+app.include_router(smsworks_webhooks.router)
 app.include_router(analytics.router)
 app.include_router(reviews.router)
 app.include_router(communications.router)

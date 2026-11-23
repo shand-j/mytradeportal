@@ -227,19 +227,15 @@ class Settings(BaseSettings):
     resend_no_reply_email: str = Field(default="")
     resend_webhook_secret: str = Field(default="")
 
-    # SMS appointment reminders (Telnyx Messaging API). Plan-included feature:
-    # customers and the assigned electrician get a text before each appointment.
-    # ``telnyx_api_key`` plus at least one of ``telnyx_from_number`` /
-    # ``telnyx_messaging_profile_id`` must be set for SMS to be attempted;
-    # otherwise appointment reminders degrade to email/push.
-    telnyx_api_key: str = Field(default="")
-    telnyx_from_number: str = Field(default="")
-    telnyx_messaging_profile_id: str = Field(default="")
-    # Ed25519 public key (base64, from Mission Control → Keys & Credentials)
-    # verifying POST /webhooks/telnyx signatures (delivery receipts + inbound
-    # STOP opt-outs). Empty disables the endpoint: it answers 503 so Telnyx
-    # keeps retrying until configured.
-    telnyx_public_key: str = Field(default="")
+    # SMS appointment reminders (The SMS Works API). ``smsworks_api_token`` and
+    # ``smsworks_from_number`` are required for outbound reminders; otherwise
+    # reminders degrade to email/push. The optional delivery report URL points
+    # back to /webhooks/smsworks; basic-auth credentials secure inbound reports.
+    smsworks_api_token: str = Field(default="")
+    smsworks_from_number: str = Field(default="")
+    smsworks_delivery_report_url: str = Field(default="")
+    smsworks_webhook_username: str = Field(default="")
+    smsworks_webhook_password: str = Field(default="")
 
     # PostHog product analytics (optional passthrough from ``app.analytics``).
     # Empty ``posthog_api_key`` disables the integration entirely — events are

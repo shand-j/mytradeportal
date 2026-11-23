@@ -35,7 +35,7 @@ REMINDER_SCHEDULER_ENABLED: bool = os.environ.get(
 # after startup so a fresh deploy never immediately blasts customers.
 REMINDER_TICK_SECONDS: int = int(os.environ.get("REMINDER_TICK_SECONDS", "3600"))
 
-# --- SMS appointment reminders (Telnyx Messaging API) ------------------------
+# --- SMS appointment reminders (SMS Works API) ------------------------
 # Plan-included feature (``sms_reminders`` on every tier): the hourly reminder
 # sweep texts the customer AND the assigned electrician before each appointment
 # (windows below), falling back to the existing email/push channels when SMS is

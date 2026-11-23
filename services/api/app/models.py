@@ -254,7 +254,7 @@ class Contact(TenantScopedBase):
     # Per-customer reminder (chase) overrides (F2). NULL = tenant defaults.
     # Supported keys: quote_chase_enabled / invoice_chase_enabled (bool),
     # max_reminders (int, caps the tenant cadence downward only) and
-    # sms_opt_out (bool — set by POST /webhooks/telnyx when the customer
+    # sms_opt_out (bool — set by POST /webhooks/smsworks when the customer
     # replies STOP; appointment reminders then skip SMS and fall back to
     # email, and START/UNSTOP clears it again).
     reminder_preferences: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
@@ -1712,8 +1712,8 @@ class EmailFailureAlert(Base):
     or Resend bounce webhook for a contact inserts a row and pages staff;
     every further failure that day — any purpose, either source — sees the
     row and stays silent, so a broken mailbox cannot spam the electrician's
-    bell on every reminder sweep or webhook retry. Telnyx SMS delivery
-    receipts (``source="telnyx_dlr"``) share the same ledger, so a customer
+    bell on every reminder sweep or webhook retry. SMS Works SMS delivery
+    receipts (``source="smsworks_dlr"``) share the same ledger, so a customer
     whose details are wrong on both channels pages staff at most once a day.
 
     Deliberately a plain ``Base`` (same pattern as ``ProcessedWebhook``): rows
@@ -1733,7 +1733,7 @@ class EmailFailureAlert(Base):
     tenant_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), nullable=False, index=True)
     contact_id: Mapped[UUID | None] = mapped_column(PGUUID(as_uuid=True), nullable=True, index=True)
     alert_date: Mapped[date] = mapped_column(Date, nullable=False)
-    source: Mapped[str] = mapped_column(String(20), nullable=False)  # send | bounce | telnyx_dlr
+    source: Mapped[str] = mapped_column(String(20), nullable=False)  # send | bounce | smsworks_dlr
     purpose: Mapped[str] = mapped_column(String(100), nullable=False)
     error_class: Mapped[str] = mapped_column(String(100), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)

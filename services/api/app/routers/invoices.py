@@ -117,9 +117,9 @@ async def _get_existing_job_quote_invoice(
 def _sms_available(contact: Contact | None) -> bool:
     """True when an invoice can be sent to this contact by SMS.
 
-    Mirrors the appointment-reminder channel choice: Telnyx is configured,
+    Mirrors the appointment-reminder channel choice: SMS Works is configured,
     the contact's free-text phone normalises to E.164, and the contact has
-    not replied STOP (``reminder_preferences.sms_opt_out``, set by the Telnyx
+    not replied STOP (``reminder_preferences.sms_opt_out``, set by the SMS Works
     inbound webhook).
     """
     if not sms_configured() or contact is None:
@@ -697,13 +697,13 @@ async def send_invoice_sms(
     current_user: CurrentUserDep,
     db: DbDep,
 ) -> InvoiceRead:
-    """Send the invoice to the contact by SMS (Telnyx) with a secure pay link.
+    """Send the invoice to the contact by SMS (SMS Works) with a secure pay link.
 
     SMS counterpart of :func:`send_invoice`: marks the invoice sent, texts a
     one-segment tenant-branded message carrying the secure view/pay link, and
     records the send as a ``channel="sms"`` Reminder row so it counts toward
     the monthly SMS fair-use total. 400 when SMS is unavailable for this
-    contact (Telnyx unconfigured, no normalisable phone, or the contact has
+    contact (SMS Works unconfigured, no normalisable phone, or the contact has
     replied STOP), 502 when the provider rejects the send.
     """
     invoice = await _get_invoice(db, tenant.id, invoice_id)
@@ -797,7 +797,7 @@ async def send_invoice_sms(
             payload={
                 "kind": "invoice_send",
                 "to": normalize_phone(contact.phone),
-                "telnyx_message_id": message_id,
+                "smsworks_message_id": message_id,
             },
         )
     )

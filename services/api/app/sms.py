@@ -1,10 +1,10 @@
-"""SMS dispatch via the Telnyx Messaging API.
+"""SMS dispatch via The SMS Works API.
 
 Used by the appointment-reminder sweep to text customers and the assigned
 electrician before a booked visit. Mirrors the fail-open contract of
 :func:`app.email.send_event_email`: :func:`send_sms` NEVER raises — transport
 errors and provider rejections are logged and reported as ``None`` so a flaky
-Telnyx can never hold up the reminder sweep. Callers fall back to email/push
+SMS provider can never hold up the reminder sweep. Callers fall back to email/push
 when ``None`` comes back.
 
 Phone numbers are free text in the CRM (``Contact.phone`` / ``User.phone``,
@@ -12,9 +12,9 @@ no validation anywhere), so every send goes through :func:`normalize_phone`
 to get a UK-aware E.164 number; un-normalisable numbers are skipped by the
 caller (customer → email fallback, staff → push only).
 
-Sender identity: the tenant's business name is preferred, sent as a Telnyx
-alphanumeric sender ID (see :func:`normalize_sender`); it falls back to the
-configured ``TELNYX_FROM_NUMBER`` / messaging profile. Cost model note: the
+Sender identity: the tenant's business name is preferred as an alphanumeric
+sender ID (see :func:`normalize_sender`); it falls back to the configured
+``SMSWORKS_FROM_NUMBER``. Cost model note: the
 fair-use guardrail assumes exactly ONE SMS segment per reminder, so callers
 must keep bodies within :func:`sms_segment_limit` — :func:`fit_single_segment`
 truncates to a word boundary when needed.
@@ -35,7 +35,7 @@ if TYPE_CHECKING:
 
 logger = structlog.get_logger("api.sms")
 
-TELNYX_MESSAGES_ENDPOINT = "https://api.telnyx.com/v2/messages"
+SMSWORKS_MESSAGE_SEND_ENDPOINT = "https://api.thesmsworks.co.uk/v1/message/send"
 
 _STRIP_CHARS = re.compile(r"[\s\-\.\(\)]")
 _SENDER_STRIP = re.compile(r"[^A-Z0-9]")
@@ -125,31 +125,22 @@ def normalize_phone(raw: str | None) -> str | None:
 
 
 def normalize_sender(name: str | None) -> str | None:
-    """Tenant business name → Telnyx alphanumeric sender id.
+    """Tenant business name → SMS Works alphanumeric sender id.
 
-    Uppercased, everything outside A-Z0-9 stripped, truncated to 11 chars
-    (the alphanumeric-sender limit). Returns ``None`` when nothing usable
-    remains or the result is all digits — a digit string would be read as a
-    phone number, not a sender name.
+    Uppercased, everything outside A-Z0-9 stripped, truncated to 11 chars.
+    SMS Works requires 4-11 characters; numeric-only names are rejected.
     """
     if not name:
         return None
     cleaned = _SENDER_STRIP.sub("", name.upper())[:11]
-    if not cleaned or not any(c.isalpha() for c in cleaned):
+    if len(cleaned) < 4 or not any(c.isalpha() for c in cleaned):
         return None
     return cleaned
 
 
 def sms_configured() -> bool:
-    """True when Telnyx credentials are present enough to attempt a send.
-
-    Requires the API key plus at least one sender identity: a from-number or
-    a messaging profile id (the profile can supply the sender pool).
-    """
-    return bool(
-        settings.telnyx_api_key
-        and (settings.telnyx_from_number or settings.telnyx_messaging_profile_id)
-    )
+    """True when SMS Works credentials are present enough to attempt a send."""
+    return bool(settings.smsworks_api_token and settings.smsworks_from_number)
 
 
 async def send_sms(
@@ -159,34 +150,29 @@ async def send_sms(
     tenant_name: str | None = None,
     tenant_id: UUID | None = None,
 ) -> str | None:
-    """Send one SMS via Telnyx. Never raises.
-
-    ``to_phone`` is normalised here; an un-normalisable number is a loud
-    warning and ``None`` (the caller then degrades to its fallback channel).
-    The sender is resolved per message: the tenant's business name as an
-    alphanumeric sender ID when it normalises, else the configured
-    ``TELNYX_FROM_NUMBER`` / messaging profile. Returns the Telnyx message
-    id on success, ``None`` on any failure.
-    """
-    to = normalize_phone(to_phone)
-    if to is None:
+    """Send one SMS via The SMS Works. Never raises."""
+    normalized = normalize_phone(to_phone)
+    if normalized is None:
         logger.warning("sms_skipped_unusable_number", raw=to_phone, tenant_id=str(tenant_id or ""))
         return None
-    payload: dict[str, Any] = {"to": to, "text": text}
-    sender = normalize_sender(tenant_name)
-    if sender:
-        payload["from"] = sender
-    elif settings.telnyx_from_number:
-        payload["from"] = settings.telnyx_from_number
-    if settings.telnyx_messaging_profile_id:
-        payload["messaging_profile_id"] = settings.telnyx_messaging_profile_id
+    to = normalized.lstrip("+")
+    sender = normalize_sender(tenant_name) or settings.smsworks_from_number.lstrip("+")
+    payload: dict[str, Any] = {
+        "sender": sender,
+        "destination": to,
+        "content": text,
+    }
+    if settings.smsworks_delivery_report_url:
+        payload["deliveryreporturl"] = settings.smsworks_delivery_report_url
     headers = {
-        "Authorization": f"Bearer {settings.telnyx_api_key}",
+        "Authorization": settings.smsworks_api_token,
         "Content-Type": "application/json",
     }
     try:
         async with httpx.AsyncClient(timeout=10.0) as client:
-            response = await client.post(TELNYX_MESSAGES_ENDPOINT, json=payload, headers=headers)
+            response = await client.post(
+                SMSWORKS_MESSAGE_SEND_ENDPOINT, json=payload, headers=headers
+            )
         if response.status_code >= 400:
             logger.error(
                 "sms_send_failed",
@@ -197,9 +183,11 @@ async def send_sms(
             )
             return None
         data = response.json()
-        message_id = (data.get("data") or {}).get("id")
+        message_id = data.get("messageid") or data.get("id")
+        if message_id is None and isinstance(data.get("data"), dict):
+            message_id = data["data"].get("messageid") or data["data"].get("id")
         logger.info("sms_dispatched", recipient=to, message_id=message_id)
-        return message_id
+        return str(message_id) if message_id else None
     except Exception as exc:
         logger.error(
             "sms_send_failed",

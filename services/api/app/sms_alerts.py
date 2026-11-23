@@ -1,8 +1,8 @@
 """Staff alerts for undeliverable customer-facing SMS.
 
 Mirrors :mod:`app.email_alerts` (the founder rule applied to texts): when an
-appointment-reminder SMS permanently fails — reported by the Telnyx delivery
-receipt webhook (``POST /webhooks/telnyx``, ``message.finalized`` with
+appointment-reminder SMS permanently fails — reported by the SMS Works delivery
+receipt webhook (``POST /webhooks/smsworks``, ``message.finalized`` with
 ``sending_failed`` / ``delivery_failed``) — the electrician is paged and
 directed to an alternative contact channel (email, or "another way" when the
 contact has no email).
@@ -46,7 +46,7 @@ def _alert_content(
         if email
         else "Reach them another way — their number isn't receiving texts."
     )
-    detail_part = f" Telnyx error: {detail}." if detail else ""
+    detail_part = f" SMS Works error: {detail}." if detail else ""
     body = (
         f"The {purpose} SMS to {recipient_phone or name} failed ({error_class})."
         f"{detail_part} {directive}"
@@ -68,7 +68,7 @@ async def alert_staff_sms_failure(
 
     Returns ``True`` when a new alert was raised, ``False`` when deduped (an
     alert for this contact — either channel — already went out today) or when
-    alerting itself failed. ``detail`` (the Telnyx error code/title) is
+    alerting itself failed. ``detail`` (the SMS Works error code/title) is
     appended to the staff alert body so deliverability issues are diagnosable
     from the alert alone. The caller's session is used and the caller commits;
     the writes run inside a savepoint so a dedupe race or RLS problem rolls
@@ -76,7 +76,7 @@ async def alert_staff_sms_failure(
     :func:`app.email_alerts.alert_staff_email_failure`).
     """
     try:
-        # Delivery receipts arrive for every environment sharing the Telnyx
+        # Delivery receipts arrive for every environment sharing the SMS Works
         # account; a reminder row matched here could still reference a tenant
         # torn down between send and receipt, and the notifications tenant FK
         # would reject the insert. Verify before doing anything else.
@@ -123,7 +123,7 @@ async def alert_staff_sms_failure(
                     tenant_id=tenant_id,
                     contact_id=contact_id,
                     alert_date=today,
-                    source="telnyx_dlr",
+                    source="smsworks_dlr",
                     purpose=purpose,
                     error_class=error_class,
                 )

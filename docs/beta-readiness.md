@@ -64,7 +64,7 @@ not evidence that a capability is in beta scope.
   workflow run. Code inspection alone cannot close a live-provider or device
   gate.
 - Automated provider tests use mocks or locally signed payloads. They do not
-  replace live Stripe, Telnyx, APNs, calendar, or restore evidence.
+  replace live Stripe, SMS Works, APNs, calendar, or restore evidence.
 - Manual evidence records device/build or environment, steps, observed result,
   and a sanitized artifact. Secrets, tokens, customer PII, and real card data
   must not enter tickets or committed evidence.
@@ -128,7 +128,7 @@ tenants, zero-rated documents, upper-limit rejection, rounding, persistence,
 and quote→invoice inheritance. The mobile save-then-send path surfaces rejected
 edits instead of creating an unsendable quote.
 
-Stripe, Paddle, and Telnyx failure-injection tests prove transient handler
+Stripe, Paddle, and SMS Works failure-injection tests prove transient handler
 failures remain retryable, successful retries settle once, completed duplicates
 are no-ops, and refund/dispute ordering remains safe. No event may be marked
 permanently processed before handling succeeds.
@@ -180,7 +180,7 @@ missing. A green implementation PR alone never closes a live gate.
 | G3 | PASS | Railway Signals has no entries, so `paddle_billing` defaults false. Production `/` and `/subscribe` show free-beta copy and make no `paddle.com` requests; delayed/cancelled events do not lock access out. #322 stays open only for the current staging-suite run URL before final sign-off. |
 | G4 | BLOCKED | #323 has runbook/validation only. No isolated production restore, RPO/RTO measurement, media/Qdrant recovery or teardown evidence exists. Fresh-volume storage provisioning remains #315. |
 | G5 | BLOCKED (card path) | #44, #45 and #32 are reopened because current configuration, device KYC and real-card evidence is absent. #355 needs owner/legal liability approval. #30 is a confirmed webhook-safety defect. Bank-transfer-only remains an alternative, not evidence for Stripe. |
-| G6 | BLOCKED | #30: Stripe, Paddle and Telnyx all write their dedupe record before handler success, so a transient failure can become a permanent `duplicate`. #369 tracks non-VAT fixtures that currently block staging journeys; #387 requires write-side money/schedule invariants after reproduced invalid inputs; #388 covers duplicate invoice-from-job creation. VAT #324 has automated regression coverage; device VAT save/send evidence belongs to G7. |
+| G6 | BLOCKED | #30: Stripe, Paddle and SMS Works all write their dedupe record before handler success, so a transient failure can become a permanent `duplicate`. #369 tracks non-VAT fixtures that currently block staging journeys; #387 requires write-side money/schedule invariants after reproduced invalid inputs; #388 covers duplicate invoice-from-job creation. VAT #324 has automated regression coverage; device VAT save/send evidence belongs to G7. |
 | G7 | BLOCKED | No single current TestFlight build has the full matrix. #36, #92, #325 and #326 were reopened. #102 remains open; #181 needs Apple Calendar device proof; #313 refresh-loop is unverified and a hard fail if reproduced. |
 | G8 | BLOCKED | `/terms` and `/privacy` are placeholders, not approved documents. #327, #69, #70 and #83 require legal/compliance approval and publication/link evidence. `/fair-use` content matches current ~500/month cheap-route/no-hard-block behavior but still needs approval. |
 | G9 | IN PROGRESS | Main CI and production/staging readiness pass, but current-SHA staging E2E `44879790207` failed at API deployment. The preceding #391 run found missing Mailpit networking, VAT fixture failures (#369), and AI provider timeouts (#429). Mailpit is now restored and authenticated, but no complete rerun has passed. #373 tracks pricing scope drift; #405 blocks quote/invoice PDF downloads; #427 requires safe provider errors. #313 and #315 remain open; #382 landed bounded CI/stale-run handling and #377 still needs deterministic landing installs/builds. #378 is post-beta only because `web/app` is parked. |
@@ -188,7 +188,7 @@ missing. A green implementation PR alone never closes a live gate.
 ### Additional confirmed findings
 
 - `services/api/app/routers/stripe_webhooks.py:256`, `webhooks.py:257`, and
-  `telnyx_webhooks.py:334` confirm the early-completion webhook defect (#30).
+  `smsworks_webhooks.py:334` confirm the early-completion webhook defect (#30).
 - PR #333 added legal routes and links only; production snapshots show explicit
   “approved wording is pending” placeholders (#327).
 - `.railway/.railway/railway.ts` is a stale duplicate containing deleted

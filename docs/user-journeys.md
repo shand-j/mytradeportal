@@ -13,7 +13,7 @@ QE evidence matrix (`/tmp/mtp-qe/matrix.md`, RC6 cycle) where noted.
 | **simulator** | Verified on the iOS simulator / mobile web build |
 | **web** | Verified in a browser (landing site or back-office SPA) |
 | **API-only** | Endpoint exists and is exercised by tests/clients; no full UI pass recorded |
-| **config-pending** | Code complete but needs provider configuration before it can run live (e.g. Telnyx SMS keys/number) |
+| **config-pending** | Code complete but needs provider configuration before it can run live (e.g. SMS Works SMS keys/number) |
 | **device-pending** | Code complete but only verifiable on a physical device (APNs push, on-device speech recognition) |
 
 ## Surfaces
@@ -158,7 +158,7 @@ QE evidence matrix (`/tmp/mtp-qe/matrix.md`, RC6 cycle) where noted.
   (recur until paid).
 - **API:** `GET/POST /invoices`, `GET/PATCH/DELETE /invoices/{id}`,
   `POST /invoices/{id}/issue|send|send-sms|mark-paid|refund|cancel`.
-- **Evidence:** simulator + web; **SMS send config-pending** (Telnyx).
+- **Evidence:** simulator + web; **SMS send config-pending** (SMS Works).
 
 ### E11. CRM
 - **Entry:** `app/(trade)/customers.tsx` → `app/(trade)/customer/[id].tsx`;
@@ -298,13 +298,13 @@ QE evidence matrix (`/tmp/mtp-qe/matrix.md`, RC6 cycle) where noted.
 ### C7. Reminders — email + SMS with STOP opt-out
 - **Flow:** scheduler emails quote/invoice reminders; appointment reminders
   text the customer **and** the assigned electrician (default 24h and 2h
-  before) via Telnyx, degrading to email/push when unconfigured. Inbound
-  CTIA keywords on `POST /webhooks/telnyx` (Ed25519-verified): **STOP** sets
+  before) via SMS Works, degrading to email/push when unconfigured. Inbound
+  CTIA keywords on `POST /webhooks/smsworks` (Ed25519-verified): **STOP** sets
   `sms_opt_out` on the contact (sweep falls back to email), START/UNSTOP
   re-enables. Permanent SMS failures page staff once per day.
 - **API:** `app/appointment_reminders.py`, `app/sms.py`,
-  `app/sms_alerts.py`, `app/routers/telnyx_webhooks.py`.
-- **Evidence:** **config-pending** — needs provisioned Telnyx keys/number;
+  `app/sms_alerts.py`, `app/routers/smsworks_webhooks.py`.
+- **Evidence:** **config-pending** — needs provisioned SMS Works keys/number;
   live SMS delivery to a real handset is still open per the QE matrix.
 
 ### C8. Notifications (in-app + push)
@@ -405,8 +405,8 @@ Every route and endpoint named above was checked against the code on
    `/me/offboard`.
 9. `services/api/app/routers/jobs.py` — `/suggest-schedule`,
    `/{job_id}/media`, `/{job_id}/start`, `/{job_id}/complete`.
-10. `services/api/app/routers/telnyx_webhooks.py` + `app/sms.py` — STOP
-    opt-out handling and Telnyx send path.
+10. `services/api/app/routers/smsworks_webhooks.py` + `app/sms.py` — STOP
+    opt-out handling and SMS Works send path.
 11. Onboarding step order: `OnboardingStepperScreen.tsx` `STEPS` array
     (welcome → account → identity → address → tax → compliance → services →
     branding → review, then bank_details → card_payments → plan).
