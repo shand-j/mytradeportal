@@ -30,7 +30,7 @@ export type ApiInvoice = {
   paidVia: string | null;
   /** Per-invoice card-payment override; null inherits the tenant default. */
   acceptCardPayments: boolean | null;
-  /** True when the invoice can be sent by SMS (Telnyx configured, contact has a
+  /** True when the invoice can be sent by SMS (SMS Works configured, contact has a
    * usable phone and has not opted out). Absent/false hides the SMS affordance. */
   smsAvailable?: boolean;
   lineItems: ApiInvoiceLineItem[];

@@ -1,7 +1,7 @@
 """Tests for sending invoices by SMS (POST /invoices/{id}/send-sms).
 
-Covers the Telnyx send path (link minting, one-segment tenant-branded body,
-fair-use Reminder row), the eligibility 4xx cases (Telnyx unconfigured, no
+Covers the SMS Works send path (link minting, one-segment tenant-branded body,
+fair-use Reminder row), the eligibility 4xx cases (SMS Works unconfigured, no
 normalisable phone, STOP opt-out), provider-failure handling, and the
 ``sms_available`` affordance flag on InvoiceRead.
 """
@@ -23,24 +23,22 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 @pytest.fixture
 def sms_sender(monkeypatch: pytest.MonkeyPatch) -> AsyncMock:
-    """Fake Telnyx dispatch: every send succeeds with a message id."""
+    """Fake SMS Works dispatch: every send succeeds with a message id."""
     sender = AsyncMock(return_value="msg_test_1")
     monkeypatch.setattr("app.routers.invoices.send_sms", sender)
     return sender
 
 
 @pytest.fixture
-def telnyx_configured(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(settings, "telnyx_api_key", "KEYTEST")
-    monkeypatch.setattr(settings, "telnyx_from_number", "+447700900000")
-    monkeypatch.setattr(settings, "telnyx_messaging_profile_id", "")
+def smsworks_configured(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(settings, "smsworks_api_token", "KEYTEST")
+    monkeypatch.setattr(settings, "smsworks_from_number", "447700900000")
 
 
 @pytest.fixture
-def telnyx_unconfigured(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(settings, "telnyx_api_key", "")
-    monkeypatch.setattr(settings, "telnyx_from_number", "")
-    monkeypatch.setattr(settings, "telnyx_messaging_profile_id", "")
+def smsworks_unconfigured(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(settings, "smsworks_api_token", "")
+    monkeypatch.setattr(settings, "smsworks_from_number", "")
 
 
 def _tenant_id(admin_client: AsyncClient) -> UUID:
@@ -153,7 +151,7 @@ async def test_send_sms_mints_link_sends_and_records(
     admin_client: AsyncClient,
     db: AsyncSession,
     sms_sender: AsyncMock,
-    telnyx_configured: None,
+    smsworks_configured: None,
 ) -> None:
     contact, invoice = await _make_invoice(admin_client, db)
 
@@ -193,7 +191,7 @@ async def test_send_sms_mints_link_sends_and_records(
     reminders = await _invoice_reminders(db, tenant_id, invoice["id"])
     assert [(r.channel, r.sequence) for r in reminders] == [("sms", 1)]
     assert reminders[0].payload["to"] == "+447700900123"
-    assert reminders[0].payload["telnyx_message_id"] == "msg_test_1"
+    assert reminders[0].payload["smsworks_message_id"] == "msg_test_1"
 
     audit_rows = (
         (
@@ -217,7 +215,7 @@ async def test_send_sms_resend_counts_toward_fair_use_each_time(
     admin_client: AsyncClient,
     db: AsyncSession,
     sms_sender: AsyncMock,
-    telnyx_configured: None,
+    smsworks_configured: None,
 ) -> None:
     """Every dispatched SMS appends a channel='sms' Reminder row — the rows the
     monthly fair-use guardrail counts."""
@@ -241,7 +239,7 @@ async def test_send_sms_unconfigured_returns_400(
     admin_client: AsyncClient,
     db: AsyncSession,
     sms_sender: AsyncMock,
-    telnyx_unconfigured: None,
+    smsworks_unconfigured: None,
 ) -> None:
     _, invoice = await _make_invoice(admin_client, db)
 
@@ -257,7 +255,7 @@ async def test_send_sms_without_phone_returns_400(
     admin_client: AsyncClient,
     db: AsyncSession,
     sms_sender: AsyncMock,
-    telnyx_configured: None,
+    smsworks_configured: None,
 ) -> None:
     _, invoice = await _make_invoice(admin_client, db, phone=None)
 
@@ -273,7 +271,7 @@ async def test_send_sms_unnormalisable_phone_returns_400(
     admin_client: AsyncClient,
     db: AsyncSession,
     sms_sender: AsyncMock,
-    telnyx_configured: None,
+    smsworks_configured: None,
 ) -> None:
     _, invoice = await _make_invoice(admin_client, db, phone="not-a-number")
 
@@ -288,7 +286,7 @@ async def test_send_sms_respects_stop_opt_out(
     admin_client: AsyncClient,
     db: AsyncSession,
     sms_sender: AsyncMock,
-    telnyx_configured: None,
+    smsworks_configured: None,
 ) -> None:
     _, invoice = await _make_invoice(admin_client, db, opted_out=True)
 
@@ -309,9 +307,9 @@ async def test_send_sms_provider_failure_returns_502_without_recording(
     admin_client: AsyncClient,
     db: AsyncSession,
     sms_sender: AsyncMock,
-    telnyx_configured: None,
+    smsworks_configured: None,
 ) -> None:
-    sms_sender.return_value = None  # Telnyx rejected the send
+    sms_sender.return_value = None  # SMS Works rejected the send
     _, invoice = await _make_invoice(admin_client, db)
 
     response = await admin_client.post(f"/invoices/{invoice['id']}/send-sms")
@@ -330,7 +328,7 @@ async def test_send_sms_provider_failure_returns_502_without_recording(
 async def test_sms_available_flag_on_detail_and_list(
     admin_client: AsyncClient,
     db: AsyncSession,
-    telnyx_configured: None,
+    smsworks_configured: None,
 ) -> None:
     _, eligible = await _make_invoice(admin_client, db)
     _, opted_out = await _make_invoice(admin_client, db, opted_out=True)
@@ -352,7 +350,7 @@ async def test_sms_available_flag_on_detail_and_list(
 async def test_sms_available_false_when_unconfigured(
     admin_client: AsyncClient,
     db: AsyncSession,
-    telnyx_unconfigured: None,
+    smsworks_unconfigured: None,
 ) -> None:
     _, invoice = await _make_invoice(admin_client, db)
 

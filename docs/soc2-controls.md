@@ -166,7 +166,7 @@ The engineering team maintains:
 - Third-party dependencies are scanned for known vulnerabilities.
 - Third-party vendors — Railway (hosting), Moonshot AI (Kimi LLM via
   LiteLLM), Stripe (customer→tradesperson payments), Paddle (subscription
-  billing, merchant of record), Resend (transactional email), and Telnyx
+  billing, merchant of record), Resend (transactional email), and SMS Works
   (SMS appointment reminders) — are assessed for production readiness.
 
 ## Evidence Locations

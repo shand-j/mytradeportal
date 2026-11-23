@@ -219,13 +219,14 @@ export default defineRailway(() => {
       RESEND_NO_REPLY_EMAIL: preserve(),
       // Svix signing secret for the Resend bounce webhook (/webhooks/resend).
       RESEND_WEBHOOK_SECRET: preserve(),
-      // SMS appointment reminders (Telnyx Messaging API). Plan-included
-      // feature; the reminder sweep texts customers + the assigned
-      // electrician before each visit (email/push fallback when unset).
-      // API key plus one sender identity (from-number or messaging profile).
-      TELNYX_API_KEY: preserve(),
-      TELNYX_FROM_NUMBER: preserve(),
-      TELNYX_MESSAGING_PROFILE_ID: preserve(),
+      // SMS appointment reminders (The SMS Works API). API token + numeric
+      // sender required; email/push fallback when unset. Optional per-message
+      // delivery-report URL and Basic webhook credentials.
+      SMSWORKS_API_TOKEN: preserve(),
+      SMSWORKS_FROM_NUMBER: preserve(),
+      SMSWORKS_DELIVERY_REPORT_URL: "https://api.mytradeportal.co.uk/webhooks/smsworks",
+      SMSWORKS_WEBHOOK_USERNAME: preserve(),
+      SMSWORKS_WEBHOOK_PASSWORD: preserve(),
       // Password for the mtp_metabase BI role — init_db keeps the prod role
       // in sync with this on every deploy.
       METABASE_DB_PASSWORD: preserve(),

@@ -25,7 +25,7 @@ authorise a release or replace live/device evidence.
   neither may be promised to beta users.
 - **API** (`services/api`) — FastAPI, RLS-enforced multi-tenancy, structured
   JSON logs on stdout (request IDs, LLM call metrics), `/health` + `/ready`,
-  the reminder scheduler (email quote/invoice chasers + Telnyx SMS appointment
+  the reminder scheduler (email quote/invoice chasers + SMS Works SMS appointment
   reminders), and dispatch guardrails on every assignment path.
 - **AI features** — Quote Agent (guide-priced drafts from free text, catalogue
   grounding via Qdrant when embedding keys are configured, confidence +
@@ -63,8 +63,8 @@ forecasting. No UI path leads to any of these.
 | `DATABASE_URL` / `REDIS_URL` / `QDRANT_URL` | Railway reference vars | api |
 | `MINIO_*` | Railway reference vars | api |
 | `STRIPE_SECRET_KEY` / `STRIPE_WEBHOOK_SECRET` / `STRIPE_CONNECT_CLIENT_ID` / `STRIPE_PUBLISHABLE_KEY` | prod Stripe dashboard — customer→tradesperson card payments (Connect Express) | api |
-| `TELNYX_API_KEY` + `TELNYX_FROM_NUMBER` or `TELNYX_MESSAGING_PROFILE_ID` | Telnyx Mission Control — SMS appointment reminders; unset degrades reminders to email/push | api |
-| `TELNYX_PUBLIC_KEY` | Telnyx public key for `POST /webhooks/telnyx` (delivery receipts + STOP opt-outs; 503 until set) | api |
+| `SMSWORKS_API_TOKEN` + `SMSWORKS_FROM_NUMBER` | SMS Works account — SMS appointment reminders; unset degrades reminders to email/push | api |
+| `SMSWORKS_DELIVERY_REPORT_URL` / `SMSWORKS_WEBHOOK_USERNAME` / `SMSWORKS_WEBHOOK_PASSWORD` | Delivery-report callback and optional Basic credentials for `POST /webhooks/smsworks`; partial Basic config returns 503 | api |
 | `RESEND_FROM_EMAIL` / `RESEND_NO_REPLY_EMAIL` / `RESEND_WEBHOOK_SECRET` | see `docs/resend-config.md` — branded quotes@ sender, platform no-reply sender, bounce/failure webhook | api |
 | `PUBLIC_DOCS_BASE_URL` / `PASSWORD_RESET_BASE_URL` | `https://www.mytradeportal.co.uk` — public token pages, Stripe bounce page, emailed reset/invite links | api |
 | `CALENDAR_FEED_BASE_URL` | `https://api.mytradeportal.co.uk`; verify Apple Calendar subscription on device (#36/#181) | api |

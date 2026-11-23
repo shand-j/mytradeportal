@@ -1,4 +1,4 @@
-"""Tests for SMS appointment reminders (Telnyx) and their fair-use guardrail.
+"""Tests for SMS appointment reminders (SMS Works) and their fair-use guardrail.
 
 Covers :mod:`app.sms` phone normalisation and the scheduler pass in
 :mod:`app.appointment_reminders`: window firing (24h/2h), per-window
@@ -47,17 +47,16 @@ async def email_recorder(monkeypatch: pytest.MonkeyPatch) -> AsyncGenerator[_Ema
 
 @pytest.fixture
 def sms_sender(monkeypatch: pytest.MonkeyPatch) -> AsyncMock:
-    """Fake Telnyx dispatch: every send succeeds with a message id."""
+    """Fake SMS Works dispatch: every send succeeds with a message id."""
     sender = AsyncMock(return_value="msg_test_1")
     monkeypatch.setattr("app.appointment_reminders.send_sms", sender)
     return sender
 
 
 @pytest.fixture
-def telnyx_configured(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(settings, "telnyx_api_key", "KEYTEST")
-    monkeypatch.setattr(settings, "telnyx_from_number", "+447700900000")
-    monkeypatch.setattr(settings, "telnyx_messaging_profile_id", "")
+def smsworks_configured(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(settings, "smsworks_api_token", "KEYTEST")
+    monkeypatch.setattr(settings, "smsworks_from_number", "447700900000")
 
 
 @pytest.fixture
@@ -174,6 +173,7 @@ def test_normalize_phone(raw: str | None, expected: str | None) -> None:
         ("Sparks & Sons", "SPARKSSONS"),
         ("abc electrical", "ABCELECTRIC"),  # 13 letters → truncated to 11
         ("Joe's Electrical Services!", "JOESELECTRI"),
+        ("A&B", None),  # SMS Works requires at least four sender characters
         ("12345", None),  # all digits would be read as a phone number
         ("07700 900111", None),  # digit-shaped even after stripping
         ("!!!", None),
@@ -198,14 +198,14 @@ def test_sms_segment_limit(text: str, limit: int) -> None:
     assert sms_segment_limit(text) == limit
 
 
-def _mock_telnyx_transport(monkeypatch: pytest.MonkeyPatch) -> list[dict[str, Any]]:
+def _mock_smsworks_transport(monkeypatch: pytest.MonkeyPatch) -> list[dict[str, Any]]:
     """Capture send_sms HTTP requests with a 200 MockTransport; return payloads."""
     payloads: list[dict[str, Any]] = []
     real_async_client = httpx.AsyncClient  # patched module attr would recurse
 
     def handler(request: httpx.Request) -> httpx.Response:
         payloads.append(json.loads(request.content))
-        return httpx.Response(200, json={"data": {"id": "msg_mock_1"}})
+        return httpx.Response(200, json={"messageid": "msg_mock_1"})
 
     def client_factory(*args: Any, **kwargs: Any) -> httpx.AsyncClient:
         return real_async_client(transport=httpx.MockTransport(handler), **kwargs)
@@ -216,26 +216,54 @@ def _mock_telnyx_transport(monkeypatch: pytest.MonkeyPatch) -> list[dict[str, An
 
 @pytest.mark.asyncio
 async def test_send_sms_prefers_alphanumeric_tenant_sender(
-    monkeypatch: pytest.MonkeyPatch, telnyx_configured: None
+    monkeypatch: pytest.MonkeyPatch, smsworks_configured: None
 ) -> None:
-    payloads = _mock_telnyx_transport(monkeypatch)
+    payloads = _mock_smsworks_transport(monkeypatch)
 
     message_id = await send_sms(to_phone="07700900123", text="Hi", tenant_name="Sparks & Sons")
 
     assert message_id == "msg_mock_1"
-    assert payloads[0]["from"] == "SPARKSSONS"
-    assert payloads[0]["to"] == "+447700900123"
+    assert payloads[0]["sender"] == "SPARKSSONS"
+    assert payloads[0]["destination"] == "447700900123"
 
 
 @pytest.mark.asyncio
 async def test_send_sms_falls_back_to_number_for_digit_tenant_name(
-    monkeypatch: pytest.MonkeyPatch, telnyx_configured: None
+    monkeypatch: pytest.MonkeyPatch, smsworks_configured: None
 ) -> None:
-    payloads = _mock_telnyx_transport(monkeypatch)
+    payloads = _mock_smsworks_transport(monkeypatch)
 
     await send_sms(to_phone="07700900123", text="Hi", tenant_name="12345")
 
-    assert payloads[0]["from"] == "+447700900000"  # TELNYX_FROM_NUMBER
+    assert payloads[0]["sender"] == "447700900000"  # SMSWORKS_FROM_NUMBER
+
+
+@pytest.mark.asyncio
+async def test_send_sms_uses_jwt_and_delivery_report_url(
+    monkeypatch: pytest.MonkeyPatch, smsworks_configured: None
+) -> None:
+    requests: list[httpx.Request] = []
+    real_async_client = httpx.AsyncClient
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        return httpx.Response(200, json={"messageid": "msg_mock_1"})
+
+    def client_factory(*args: Any, **kwargs: Any) -> httpx.AsyncClient:
+        return real_async_client(transport=httpx.MockTransport(handler), **kwargs)
+
+    monkeypatch.setattr("app.sms.httpx.AsyncClient", client_factory)
+    monkeypatch.setattr(
+        settings,
+        "smsworks_delivery_report_url",
+        "https://api.example.com/webhooks/smsworks",
+    )
+
+    await send_sms(to_phone="07700900123", text="Hi", tenant_name="Sparks & Sons")
+
+    assert requests[0].headers["Authorization"] == "KEYTEST"
+    payload = json.loads(requests[0].content)
+    assert payload["deliveryreporturl"] == "https://api.example.com/webhooks/smsworks"
 
 
 # --- Window firing + dedupe ---------------------------------------------------
@@ -246,7 +274,7 @@ async def test_24h_window_sends_customer_and_staff_sms(
     admin_client: AsyncClient,
     db: AsyncSession,
     sms_sender: AsyncMock,
-    telnyx_configured: None,
+    smsworks_configured: None,
 ) -> None:
     tenant_id = _tenant_id(admin_client)
     contact = await _make_contact(db, tenant_id)
@@ -296,7 +324,7 @@ async def test_2h_window_fires_its_own_rows(
     admin_client: AsyncClient,
     db: AsyncSession,
     sms_sender: AsyncMock,
-    telnyx_configured: None,
+    smsworks_configured: None,
 ) -> None:
     tenant_id = _tenant_id(admin_client)
     contact = await _make_contact(db, tenant_id)
@@ -321,7 +349,7 @@ async def test_far_future_and_cancelled_appointments_fire_nothing(
     admin_client: AsyncClient,
     db: AsyncSession,
     sms_sender: AsyncMock,
-    telnyx_configured: None,
+    smsworks_configured: None,
 ) -> None:
     tenant_id = _tenant_id(admin_client)
     contact = await _make_contact(db, tenant_id)
@@ -349,7 +377,7 @@ async def test_disabled_by_tenant_setting(
     admin_client: AsyncClient,
     db: AsyncSession,
     sms_sender: AsyncMock,
-    telnyx_configured: None,
+    smsworks_configured: None,
 ) -> None:
     tenant_id = _tenant_id(admin_client)
     tenant = await db.get(Tenant, tenant_id)
@@ -376,7 +404,7 @@ async def test_no_usable_phone_falls_back_to_one_email_per_window(
     db: AsyncSession,
     email_recorder: _EmailRecorder,
     sms_sender: AsyncMock,
-    telnyx_configured: None,
+    smsworks_configured: None,
 ) -> None:
     tenant_id = _tenant_id(admin_client)
     contact = await _make_contact(db, tenant_id, phone="not-a-number")
@@ -391,7 +419,7 @@ async def test_no_usable_phone_falls_back_to_one_email_per_window(
 
     assert summary["appointment_customer_sms"] == 0
     assert summary["appointment_email_fallbacks"] == 1
-    sms_sender.assert_not_awaited()  # un-normalisable number never hits Telnyx
+    sms_sender.assert_not_awaited()  # un-normalisable number never hits SMS Works
     assert len(email_recorder.calls) == 1
     call = email_recorder.calls[0]
     assert call["event"] == "appointment_reminder"
@@ -415,9 +443,9 @@ async def test_unconfigured_sms_degrades_to_email(
     email_recorder: _EmailRecorder,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """No Telnyx credentials → the customer still gets the email reminder."""
-    monkeypatch.setattr(settings, "telnyx_api_key", "")
-    monkeypatch.setattr(settings, "telnyx_from_number", "")
+    """No SMS Works credentials → the customer still gets the email reminder."""
+    monkeypatch.setattr(settings, "smsworks_api_token", "")
+    monkeypatch.setattr(settings, "smsworks_from_number", "")
     tenant_id = _tenant_id(admin_client)
     contact = await _make_contact(db, tenant_id)
     appointment = _make_appointment(
@@ -441,7 +469,7 @@ async def test_staff_without_phone_gets_push_only(
     admin_client: AsyncClient,
     db: AsyncSession,
     sms_sender: AsyncMock,
-    telnyx_configured: None,
+    smsworks_configured: None,
 ) -> None:
     tenant_id = _tenant_id(admin_client)
     contact = await _make_contact(db, tenant_id)
@@ -491,7 +519,7 @@ async def test_stop_line_present_when_sender_is_a_number(
     admin_client: AsyncClient,
     db: AsyncSession,
     sms_sender: AsyncMock,
-    telnyx_configured: None,
+    smsworks_configured: None,
 ) -> None:
     """A digit-only business name falls back to the numeric sender, where
     replies (and STOP) work — the opt-out line must be included."""
@@ -517,7 +545,7 @@ async def test_long_title_and_address_still_fit_one_segment(
     admin_client: AsyncClient,
     db: AsyncSession,
     sms_sender: AsyncMock,
-    telnyx_configured: None,
+    smsworks_configured: None,
 ) -> None:
     """An over-long combination drops the address/greeting and never exceeds
     the 160-char GSM-7 single-segment budget."""
@@ -549,7 +577,7 @@ async def test_non_gsm7_character_drops_limit_to_70(
     admin_client: AsyncClient,
     db: AsyncSession,
     sms_sender: AsyncMock,
-    telnyx_configured: None,
+    smsworks_configured: None,
 ) -> None:
     """A non-GSM-7 character (em dash) anywhere in the text caps the whole
     message at the 70-char UCS-2 single-segment budget."""
@@ -581,7 +609,7 @@ async def test_fair_use_pause_degrades_to_email_and_alerts_once(
     db: AsyncSession,
     email_recorder: _EmailRecorder,
     sms_sender: AsyncMock,
-    telnyx_configured: None,
+    smsworks_configured: None,
     recorded_alerts: list[tuple[str, str]],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -647,7 +675,7 @@ async def test_fair_use_pause_clears_next_month(
     admin_client: AsyncClient,
     db: AsyncSession,
     sms_sender: AsyncMock,
-    telnyx_configured: None,
+    smsworks_configured: None,
     recorded_alerts: list[tuple[str, str]],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

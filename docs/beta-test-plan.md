@@ -32,7 +32,7 @@ against native Postgres with RLS genuinely enforced (non-superuser role).
 | Billing | plan catalog + seats, checkout transaction creation, cardless-trial flow, plan-change proration, dunning follow-ups, fair-use guard (burst 429, monthly threshold, deduped staff alert), offboarding (deactivation, token revocation, PII scrub, financials preserved) |
 | Notifications | push send + receipt checking (DeviceNotRegistered cleanup, InvalidCredentials alerting), notification rows, reminder scheduler (cadence, max count, per-contact overrides, failure isolation) |
 | Email | templates (tenant branding incl. reminder CTA colour), tenant Reply-To, failure alerting per (tenant, contact, day), Resend webhook (bounce/delivery), magic links |
-| SMS (Telnyx) | E.164 normalisation, sender-ID normalisation, single-segment fitting, window firing + dedupe, fair-use degrade-to-email, inbound webhook (ed25519 verification, delivery receipts, STOP/START opt-out) |
+| SMS (SMS Works) | E.164 normalisation, sender-ID normalisation, single-segment fitting, window firing + dedupe, fair-use degrade-to-email, inbound webhook (optional Basic authentication, delivery receipts, STOP/START opt-out) |
 | AI pipeline | retrieval/generation/validation, vision captioning (fail-open), observations on QuoteRead, intake triage timeout, eval-harness fixtures (offline) |
 | Files/media | upload validation, photo carryover quote→job (both storage shapes), tenant logo (type/size validation, public serve, delete) |
 | Public URL surface | every public link resolves on mytradeportal.co.uk (document tokens, portal magic links, Stripe bounce, triage/welcome emails) |
@@ -122,7 +122,7 @@ this inventory alone.
 | 10 | Job start / close / invoice | lifecycle tests, guardrail lockdown, invoice prefill | Device walkthrough of the happy path |
 | 11 | Invoice payment (customer) | pay endpoint contract, PaymentIntent mint, webhook settle, paid-state gating, out-of-order refund-vs-paid protection | Card entry in Stripe elements (sandbox 4242), real-card go-live gate |
 | 12 | Quote & invoice follow-ups | reminder scheduler (cadence, caps, per-contact overrides), branded templates | Deliverability/spam watch on real mailboxes |
-| 13 | Job reminders — customer (SMS/email) | reminder windows, fair-use degrade, STOP opt-out, failure alerts | Live SMS to a real handset (needs Telnyx keys) |
+| 13 | Job reminders — customer (SMS/email) | reminder windows, fair-use degrade, STOP opt-out, failure alerts | Live SMS to a real handset (needs SMS Works keys) |
 | 14 | Job reminders — electrician | staff SMS + push, dedupe | Background push delivery on device (APNs) |
 | 15 | Calendar | assignee filter, feed endpoints, All/Me UI logic | iOS Calendar subscription round-trip (needs branded feed domain); wheel-driven reschedule |
 | 16 | Multi-user (invites, assignment, seats) | seats enforcement, auto-assign, picker gating, All/Me | Second-user device pairing |
@@ -151,7 +151,7 @@ silently saved quote that cannot be sent.
 
 ### 3.2 Webhook failure injection
 
-Using only signed local fixtures/mocks, cover Stripe, Paddle, and Telnyx:
+Using only signed local fixtures/mocks, cover Stripe, Paddle, and SMS Works:
 
 - failure before processing, during the handler, after an idempotent side effect,
   and around completion marking;
@@ -187,7 +187,7 @@ explicitly on, existing billing tests must retain their prior behaviour.
 | RN date/time wheel reschedule | The wheel renders no XCUITest tree — automation cannot drive it; needs RN-side AX work |
 | Customer CodeInput | No accessibility exposure in the current build; test via UI |
 | `mtp://` deep links | Cold/warm scheme routing needs a real install, not a simulator-driven web build |
-| Live SMS (Telnyx) | Needs provisioned number + keys, a real handset, delivery receipts, and STOP/START |
+| Live SMS (SMS Works) | Needs provisioned number + keys, a real handset, delivery receipts, and STOP/START |
 | Stripe hosted onboarding completion (#45) | Stripe-owned KYC UI; our prefill is verified at the payload level |
 | Isolated restore drill | Requires real restore points and recovered infrastructure; never overwrite production |
 | Weekly UAT smoke on staging | Human judgment pass over the checklist |
@@ -266,7 +266,7 @@ wrong-tenant content, duplicate navigation, or credential/token leakage.
 
 ---
 
-## 6. P0 live Telnyx SMS verification gate (issue #325)
+## 6. P0 live SMS Works SMS verification gate (issue #325)
 
 This gate is **human-run on the release environment** (staging or production)
 and closes the remaining manual residue for jobs/reminders (#13/#14). Keep all
@@ -275,12 +275,11 @@ or secrets in docs/issues/slack.
 
 ### 6.1 Preparation checklist (must be true before execution)
 
-- [ ] `TELNYX_API_KEY` configured
-- [ ] At least one sender route configured:
-  - [ ] `TELNYX_FROM_NUMBER` **or**
-  - [ ] `TELNYX_MESSAGING_PROFILE_ID`
-- [ ] `TELNYX_PUBLIC_KEY` configured (webhook signature verification enabled)
-- [ ] `POST /webhooks/telnyx` reachable from Telnyx and returning 2xx for signed events
+- [ ] `SMSWORKS_API_TOKEN` configured
+- [ ] `SMSWORKS_FROM_NUMBER` configured for the numeric sender/reply route
+- [ ] `SMSWORKS_DELIVERY_REPORT_URL` points to `POST /webhooks/smsworks`
+- [ ] `SMSWORKS_WEBHOOK_USERNAME` and `SMSWORKS_WEBHOOK_PASSWORD` are both set (or both intentionally unset)
+- [ ] `POST /webhooks/smsworks` is reachable from SMS Works and returns 2xx for valid events
 - [ ] Test recipient numbers are UK E.164 format (`+44...`) and belong to internal testers only
 - [ ] Tenant business name is a valid sender ID (where sender-ID route is used)
 - [ ] Reminder body still fits one segment (no multi-part message split)
@@ -304,7 +303,7 @@ or secrets in docs/issues/slack.
 |---|---|---|
 | Customer reminder SMS delivery | Customer handset receives reminder text | Screenshot of handset notification/message + timestamp |
 | Staff reminder SMS delivery | Assigned electrician handset receives reminder text | Screenshot + timestamp |
-| Delivery receipt webhook | `message.finalized` receipt processed and persisted | Sanitized log excerpt (redact phone numbers + Telnyx message/event IDs; keep event_type + delivery_status + reminder delivery_status transition) |
+| Delivery receipt webhook | `delivery_report` receipt processed and persisted | Sanitized log excerpt (redact phone numbers + SMS Works message/event IDs; keep event_type + delivery_status + reminder delivery_status transition) |
 | 24h/2h (or controlled equivalent) windows | Both reminder windows fire once, no duplicate spam | Timeline with two send times + dedupe confirmation |
 | Permanent failure fallback | Failed SMS triggers staff alert + contact degrades to email/push fallback | Failure log excerpt + follow-up channel evidence |
 | STOP opt-out | Reply `STOP` blocks later SMS sends for that contact | Inbound webhook evidence + subsequent skipped SMS evidence |

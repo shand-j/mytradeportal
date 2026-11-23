@@ -181,17 +181,17 @@ equivalent signal: the pickers (job create, job detail) render only when
 `GET /users` returns more than one active user, and the calendar shows its
 All/Me assignee filter only on multi-seat plans ("Me" narrows server-side).
 
-### Telnyx SMS appointment reminders (issues #169/#243)
+### SMS Works SMS appointment reminders (issues #169/#243)
 
 `services/api/app/appointment_reminders.py` texts the customer AND the
 assigned electrician before each appointment (default windows 24h and 2h) via
-the Telnyx Messaging API (`app/sms.py` — fail-open like the email layer;
+the SMS Works Messaging API (`app/sms.py` — fail-open like the email layer;
 UK-aware E.164 normalisation, tenant business name as alphanumeric sender ID,
 bodies kept to one SMS segment for the fair-use cost model). Env vars:
-`TELNYX_API_KEY` plus at least one of `TELNYX_FROM_NUMBER` /
-`TELNYX_MESSAGING_PROFILE_ID`; when unset, reminders degrade to email/push.
-`POST /webhooks/telnyx` (Ed25519 signature verified against
-`TELNYX_PUBLIC_KEY`, 503 until configured) handles delivery receipts —
+`SMSWORKS_API_TOKEN` plus `SMSWORKS_FROM_NUMBER`; when unset, reminders degrade
+to email/push. `SMSWORKS_DELIVERY_REPORT_URL` optionally points callbacks at
+`POST /webhooks/smsworks`, secured with optional Basic credentials
+(`SMSWORKS_WEBHOOK_USERNAME` / `SMSWORKS_WEBHOOK_PASSWORD`). It handles delivery receipts —
 permanent customer-SMS failures page staff once per day via
 `app/sms_alerts.py` (sharing the email-failure dedupe ledger) — and inbound
 CTIA keywords: STOP opts the number out (`sms_opt_out` on the contact, sweep
@@ -881,8 +881,9 @@ Key variables (see `.env.example` for the full template):
   default/off for the free beta. `PADDLE_API_KEY`, `PADDLE_WEBHOOK_SECRET`,
   `PADDLE_CLIENT_TOKEN`, `PADDLE_SANDBOX`, `PADDLE_PRICE_ID_*` are retained for
   a separately reviewed post-beta enablement, not required for beta access
-- `TELNYX_API_KEY`, `TELNYX_FROM_NUMBER`, `TELNYX_MESSAGING_PROFILE_ID`,
-  `TELNYX_PUBLIC_KEY` — SMS appointment reminders + inbound webhook
+- `SMSWORKS_API_TOKEN`, `SMSWORKS_FROM_NUMBER`, `SMSWORKS_DELIVERY_REPORT_URL`,
+  `SMSWORKS_WEBHOOK_USERNAME`, `SMSWORKS_WEBHOOK_PASSWORD` — SMS appointment
+  reminders + inbound webhook
 - `RESEND_API_KEY`, `RESEND_FROM_EMAIL`, `RESEND_NO_REPLY_EMAIL`,
   `RESEND_WEBHOOK_SECRET` — transactional email + bounce/failure alerts
 - Public URL knobs: `APP_PUBLIC_URL` (back-office origin only),
@@ -906,7 +907,7 @@ carried the generated `api-production-*` origin).
 2. **Live-verification residue.** Code-complete but only verifiable against
 live providers, tracked in `docs/beta-test-plan.md` §3: a real-card payment
 against live Stripe keys (go-live gate), live SMS delivery to a real handset
-(needs provisioned Telnyx number/keys), and background push delivery on a
+(needs provisioned SMS Works number/keys), and background push delivery on a
 physical device (APNs cannot be simulated).
 3. **Dead ocerp overlay block.** `docker-compose.prod-replica.yml` carries a
 resource-limits block for the deleted `services/ocerp` (the base compose
