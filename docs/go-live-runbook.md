@@ -63,7 +63,7 @@ forecasting. No UI path leads to any of these.
 | `DATABASE_URL` / `REDIS_URL` / `QDRANT_URL` | Railway reference vars | api |
 | `MINIO_*` | Railway reference vars | api |
 | `STRIPE_SECRET_KEY` / `STRIPE_WEBHOOK_SECRET` / `STRIPE_CONNECT_CLIENT_ID` / `STRIPE_PUBLISHABLE_KEY` | prod Stripe dashboard — customer→tradesperson card payments (Connect Express) | api |
-| `SMSWORKS_API_TOKEN` + `SMSWORKS_FROM_NUMBER` | SMS Works account — SMS appointment reminders; unset degrades reminders to email/push | api |
+| `SMSWORKS_API_TOKEN` (required) + optional `SMSWORKS_FROM_NUMBER` | SMS Works account JWT — tenant-name sender IDs; numeric sender only for reply-capable setups; unset degrades reminders to email/push | api |
 | `SMSWORKS_DELIVERY_REPORT_URL` / `SMSWORKS_WEBHOOK_USERNAME` / `SMSWORKS_WEBHOOK_PASSWORD` | Delivery-report callback and optional Basic credentials for `POST /webhooks/smsworks`; partial Basic config returns 503 | api |
 | `RESEND_FROM_EMAIL` / `RESEND_NO_REPLY_EMAIL` / `RESEND_WEBHOOK_SECRET` | see `docs/resend-config.md` — branded quotes@ sender, platform no-reply sender, bounce/failure webhook | api |
 | `PUBLIC_DOCS_BASE_URL` / `PASSWORD_RESET_BASE_URL` | `https://www.mytradeportal.co.uk` — public token pages, Stripe bounce page, emailed reset/invite links | api |

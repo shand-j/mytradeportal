@@ -12,7 +12,7 @@ sides of the booking:
   get the free in-app/push notification regardless.
 
 Sender identity is the tenant's business name, sent as a SMS Works alphanumeric
-sender ID (falling back to the configured from-number / messaging profile).
+sender ID (falling back to MyTradePortal or an optional numeric sender).
 
 Messages always fit ONE SMS segment (the fair-use cost model assumes one
 segment per reminder): bodies are built compactly — address line and greeting
@@ -68,6 +68,7 @@ from app.config import (
     APPOINTMENT_REMINDER_WINDOWS_HOURS,
     SMS_FAIR_USE_MONTHLY_THRESHOLD,
     SMS_REMINDERS_ENABLED,
+    settings,
 )
 from app.email import send_customer_email
 from app.email_templates import appointment_reminder as appointment_reminder_template
@@ -310,7 +311,7 @@ async def process_appointment_reminders(
     sms_allowed = sms_allowed and not sms_paused
     # STOP opt-out only makes sense when replies can reach us: an
     # alphanumeric sender ID (tenant business name) cannot receive texts.
-    numeric_sender = normalize_sender(tenant.name) is None
+    numeric_sender = normalize_sender(tenant.name) is None and bool(settings.smsworks_from_number)
 
     for appointment in appointments:
         delta = appointment.start_at - now

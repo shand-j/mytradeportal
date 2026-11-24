@@ -219,9 +219,9 @@ export default defineRailway(() => {
       RESEND_NO_REPLY_EMAIL: preserve(),
       // Svix signing secret for the Resend bounce webhook (/webhooks/resend).
       RESEND_WEBHOOK_SECRET: preserve(),
-      // SMS appointment reminders (The SMS Works API). API token + numeric
-      // sender required; email/push fallback when unset. Optional per-message
-      // delivery-report URL and Basic webhook credentials.
+      // SMS appointment reminders (The SMS Works API). Only the JWT is
+      // required; tenant names supply sender IDs. Numeric sender, per-message
+      // callback override and Basic webhook credentials are optional.
       SMSWORKS_API_TOKEN: preserve(),
       SMSWORKS_FROM_NUMBER: preserve(),
       SMSWORKS_DELIVERY_REPORT_URL: "https://api.mytradeportal.co.uk/webhooks/smsworks",

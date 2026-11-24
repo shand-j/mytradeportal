@@ -14,7 +14,7 @@ caller (customer → email fallback, staff → push only).
 
 Sender identity: the tenant's business name is preferred as an alphanumeric
 sender ID (see :func:`normalize_sender`); it falls back to the configured
-``SMSWORKS_FROM_NUMBER``. Cost model note: the
+MyTradePortal or optional ``SMSWORKS_FROM_NUMBER``. Cost model note: the
 fair-use guardrail assumes exactly ONE SMS segment per reminder, so callers
 must keep bodies within :func:`sms_segment_limit` — :func:`fit_single_segment`
 truncates to a word boundary when needed.
@@ -139,8 +139,8 @@ def normalize_sender(name: str | None) -> str | None:
 
 
 def sms_configured() -> bool:
-    """True when SMS Works credentials are present enough to attempt a send."""
-    return bool(settings.smsworks_api_token and settings.smsworks_from_number)
+    """True when an SMS Works API token is available."""
+    return bool(settings.smsworks_api_token)
 
 
 async def send_sms(
@@ -156,7 +156,10 @@ async def send_sms(
         logger.warning("sms_skipped_unusable_number", raw=to_phone, tenant_id=str(tenant_id or ""))
         return None
     to = normalized.lstrip("+")
-    sender = normalize_sender(tenant_name) or settings.smsworks_from_number.lstrip("+")
+    sender = normalize_sender(tenant_name)
+    if sender is None and settings.smsworks_from_number:
+        sender = settings.smsworks_from_number.lstrip("+")
+    sender = sender or "MyTradePortal"
     payload: dict[str, Any] = {
         "sender": sender,
         "destination": to,
