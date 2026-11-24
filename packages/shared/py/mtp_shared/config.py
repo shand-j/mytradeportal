@@ -227,9 +227,10 @@ class Settings(BaseSettings):
     resend_no_reply_email: str = Field(default="")
     resend_webhook_secret: str = Field(default="")
 
-    # SMS appointment reminders (The SMS Works API). ``smsworks_api_token`` and
-    # ``smsworks_from_number`` are required for outbound reminders; otherwise
-    # reminders degrade to email/push. The optional delivery report URL points
+    # SMS appointment reminders (The SMS Works API). Only ``smsworks_api_token``
+    # is required for outbound reminders; otherwise reminders degrade to
+    # email/push. The tenant name supplies the sender ID, with platform and
+    # optional numeric fallbacks. The optional delivery report URL points
     # back to /webhooks/smsworks; basic-auth credentials secure inbound reports.
     smsworks_api_token: str = Field(default="")
     smsworks_from_number: str = Field(default="")

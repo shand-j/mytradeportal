@@ -276,8 +276,8 @@ or secrets in docs/issues/slack.
 ### 6.1 Preparation checklist (must be true before execution)
 
 - [ ] `SMSWORKS_API_TOKEN` configured
-- [ ] `SMSWORKS_FROM_NUMBER` configured for the numeric sender/reply route
-- [ ] `SMSWORKS_DELIVERY_REPORT_URL` points to `POST /webhooks/smsworks`
+- [ ] Tenant-derived sender ID is valid; `SMSWORKS_FROM_NUMBER` is optional and only needed for reply-capable numeric sending
+- [ ] A global delivery-report webhook points to `POST /webhooks/smsworks` (no per-message URL required), or `SMSWORKS_DELIVERY_REPORT_URL` is deliberately used as an override
 - [ ] `SMSWORKS_WEBHOOK_USERNAME` and `SMSWORKS_WEBHOOK_PASSWORD` are both set (or both intentionally unset)
 - [ ] `POST /webhooks/smsworks` is reachable from SMS Works and returns 2xx for valid events
 - [ ] Test recipient numbers are UK E.164 format (`+44...`) and belong to internal testers only

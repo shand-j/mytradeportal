@@ -27,6 +27,7 @@ from app.calculations import (
     tenant_vat_rate,
     vat_rate_within_tenant_limit,
 )
+from app.config import settings
 from app.database import get_db
 from app.dependencies import CurrentUserDep, TenantDep
 from app.email import resolve_customer_magic_link, send_customer_email, tenant_reply_to
@@ -739,7 +740,7 @@ async def send_invoice_sms(
     view_url = public_document_url("invoice", raw_token)
     # STOP opt-out only makes sense when replies can reach us: an alphanumeric
     # sender ID (tenant business name) cannot receive texts.
-    numeric_sender = normalize_sender(business_name) is None
+    numeric_sender = normalize_sender(business_name) is None and bool(settings.smsworks_from_number)
     text = _invoice_sms_text(
         tenant_name=business_name,
         invoice_number=invoice.invoice_number,

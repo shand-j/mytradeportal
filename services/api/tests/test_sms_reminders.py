@@ -21,7 +21,7 @@ from app.config import settings
 from app.models import AiAlertState, Appointment, Contact, Reminder, Tenant, User
 from app.plans import current_period
 from app.scheduler import run_reminder_tick
-from app.sms import normalize_phone, normalize_sender, send_sms, sms_segment_limit
+from app.sms import normalize_phone, normalize_sender, send_sms, sms_configured, sms_segment_limit
 from httpx import AsyncClient
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -56,7 +56,6 @@ def sms_sender(monkeypatch: pytest.MonkeyPatch) -> AsyncMock:
 @pytest.fixture
 def smsworks_configured(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(settings, "smsworks_api_token", "KEYTEST")
-    monkeypatch.setattr(settings, "smsworks_from_number", "447700900000")
 
 
 @pytest.fixture
@@ -223,8 +222,10 @@ async def test_send_sms_prefers_alphanumeric_tenant_sender(
     message_id = await send_sms(to_phone="07700900123", text="Hi", tenant_name="Sparks & Sons")
 
     assert message_id == "msg_mock_1"
+    assert sms_configured() is True
     assert payloads[0]["sender"] == "SPARKSSONS"
     assert payloads[0]["destination"] == "447700900123"
+    assert "deliveryreporturl" not in payloads[0]
 
 
 @pytest.mark.asyncio
@@ -232,10 +233,23 @@ async def test_send_sms_falls_back_to_number_for_digit_tenant_name(
     monkeypatch: pytest.MonkeyPatch, smsworks_configured: None
 ) -> None:
     payloads = _mock_smsworks_transport(monkeypatch)
+    monkeypatch.setattr(settings, "smsworks_from_number", "447700900000")
 
     await send_sms(to_phone="07700900123", text="Hi", tenant_name="12345")
 
     assert payloads[0]["sender"] == "447700900000"  # SMSWORKS_FROM_NUMBER
+
+
+@pytest.mark.asyncio
+async def test_send_sms_uses_platform_sender_without_number(
+    monkeypatch: pytest.MonkeyPatch, smsworks_configured: None
+) -> None:
+    payloads = _mock_smsworks_transport(monkeypatch)
+
+    await send_sms(to_phone="07700900123", text="Hi", tenant_name="12345")
+
+    assert sms_configured() is True
+    assert payloads[0]["sender"] == "MyTradePortal"
 
 
 @pytest.mark.asyncio
@@ -520,6 +534,7 @@ async def test_stop_line_present_when_sender_is_a_number(
     db: AsyncSession,
     sms_sender: AsyncMock,
     smsworks_configured: None,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """A digit-only business name falls back to the numeric sender, where
     replies (and STOP) work — the opt-out line must be included."""
@@ -527,6 +542,7 @@ async def test_stop_line_present_when_sender_is_a_number(
     tenant = await db.get(Tenant, tenant_id)
     assert tenant is not None
     tenant.name = "12345678901"  # normalises to None → numeric sender
+    monkeypatch.setattr(settings, "smsworks_from_number", "447700900000")
     contact = await _make_contact(db, tenant_id)
     db.add(
         _make_appointment(tenant_id, contact.id, start_at=datetime.utcnow() + timedelta(hours=2))
@@ -538,6 +554,29 @@ async def test_stop_line_present_when_sender_is_a_number(
     assert summary["appointment_customer_sms"] == 1
     text = sms_sender.call_args_list[0].kwargs["text"]
     assert "Reply STOP to opt out." in text
+
+
+@pytest.mark.asyncio
+async def test_platform_fallback_does_not_offer_unsupported_reply(
+    admin_client: AsyncClient,
+    db: AsyncSession,
+    sms_sender: AsyncMock,
+    smsworks_configured: None,
+) -> None:
+    tenant_id = _tenant_id(admin_client)
+    tenant = await db.get(Tenant, tenant_id)
+    assert tenant is not None
+    tenant.name = "12345678901"
+    contact = await _make_contact(db, tenant_id)
+    db.add(
+        _make_appointment(tenant_id, contact.id, start_at=datetime.utcnow() + timedelta(hours=2))
+    )
+    await db.commit()
+
+    await run_reminder_tick(db, datetime.utcnow())
+
+    text = sms_sender.call_args_list[0].kwargs["text"]
+    assert "Reply STOP to opt out." not in text
 
 
 @pytest.mark.asyncio

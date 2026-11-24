@@ -188,8 +188,9 @@ assigned electrician before each appointment (default windows 24h and 2h) via
 the SMS Works Messaging API (`app/sms.py` — fail-open like the email layer;
 UK-aware E.164 normalisation, tenant business name as alphanumeric sender ID,
 bodies kept to one SMS segment for the fair-use cost model). Env vars:
-`SMSWORKS_API_TOKEN` plus `SMSWORKS_FROM_NUMBER`; when unset, reminders degrade
-to email/push. `SMSWORKS_DELIVERY_REPORT_URL` optionally points callbacks at
+`SMSWORKS_API_TOKEN`; when unset, reminders degrade to email/push. Tenant names
+supply sender IDs, falling back to MyTradePortal or the optional reply-capable
+`SMSWORKS_FROM_NUMBER`. `SMSWORKS_DELIVERY_REPORT_URL` optionally points callbacks at
 `POST /webhooks/smsworks`, secured with optional Basic credentials
 (`SMSWORKS_WEBHOOK_USERNAME` / `SMSWORKS_WEBHOOK_PASSWORD`). It handles delivery receipts —
 permanent customer-SMS failures page staff once per day via
