@@ -9,6 +9,7 @@ import pytest
 from app import stripe_client
 from app.models import AuditLog, Invoice, Notification
 from app.rls import set_tenant_in_session
+from app.routers.stripe_webhooks import _handle_payment_intent_succeeded
 from httpx import AsyncClient
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -365,3 +366,41 @@ async def test_refund_sets_status_writes_audit_log_and_notifies_staff(
     )
     assert notification is not None
     assert invoice["invoice_number"] in notification.body
+
+
+async def test_refund_targets_successful_payment_intent_after_abandoned_attempt(
+    admin_client: AsyncClient, db: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A later successful checkout attempt must replace an abandoned intent id."""
+    monkeypatch.setattr("app.config.STRIPE_SECRET_KEY", "sk_test_x")
+    monkeypatch.setattr("app.routers.stripe_webhooks.notify_staff", AsyncMock())
+    monkeypatch.setattr("app.routers.stripe_webhooks.send_payment_received_email", AsyncMock())
+    create_refund = AsyncMock(return_value={"id": "re_guard_2", "status": "succeeded"})
+    monkeypatch.setattr("app.stripe_client.create_refund", create_refund)
+
+    tenant_id = UUID(admin_client.headers["X-Tenant-ID"])
+    invoice = await _create_scratch_invoice(admin_client)
+    await set_tenant_in_session(db, tenant_id)
+    row = await db.get(Invoice, UUID(invoice["id"]))
+    assert row is not None
+    row.status = "sent"
+    row.paid_via = None
+    row.paid_at = None
+    row.stripe_payment_intent_id = "pi_abandoned_1"
+    await db.commit()
+
+    await _handle_payment_intent_succeeded(
+        db,
+        {
+            "id": "pi_success_1",
+            "amount_received": 60000,
+            "currency": "gbp",
+            "metadata": {"invoice_id": invoice["id"], "tenant_id": str(tenant_id)},
+        },
+    )
+    await db.commit()
+
+    response = await admin_client.post(f"/invoices/{invoice['id']}/refund")
+    assert response.status_code == 200
+    assert response.json()["status"] == "refunded"
+    create_refund.assert_awaited_once_with("pi_success_1")
