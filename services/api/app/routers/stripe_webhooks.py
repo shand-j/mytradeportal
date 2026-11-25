@@ -81,7 +81,9 @@ async def _handle_payment_intent_succeeded(
     invoice.status = "paid"
     invoice.paid_at = datetime.utcnow()
     invoice.paid_via = "stripe"
-    invoice.stripe_payment_intent_id = invoice.stripe_payment_intent_id or intent_id
+    # A prior abandoned checkout may have left an open intent on the invoice.
+    # Settlement must point refunds at the intent that actually succeeded.
+    invoice.stripe_payment_intent_id = intent_id
     session.add(invoice)
     session.add(
         Payment(
