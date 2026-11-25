@@ -480,7 +480,7 @@ async def test_construct_event_rejects_forged_signature(monkeypatch: pytest.Monk
 async def test_payment_intent_succeeded_marks_invoice_paid_idempotently(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    ids = await _seed_invoice()
+    ids = await _seed_invoice(intent_id="pi_wh_abandoned")
     event_id = f"evt_{uuid4().hex}"
     second_id = f"evt_{uuid4().hex}"
     event = payment_intent_succeeded_event(
@@ -496,6 +496,7 @@ async def test_payment_intent_succeeded_marks_invoice_paid_idempotently(
         assert invoice.status == "paid"
         assert invoice.paid_via == "stripe"
         assert invoice.paid_at is not None
+        assert invoice.stripe_payment_intent_id == "pi_wh_1"
 
         async with AsyncSession(engine) as session:
             await bypass_rls_in_session(session)
@@ -525,11 +526,35 @@ async def test_payment_intent_succeeded_marks_invoice_paid_idempotently(
         _patch_construct(monkeypatch, second)
         response = await _post_event(second)
         assert response.json()["status"] == "ok"
+        assert (await _get_invoice(ids["invoice_id"])).stripe_payment_intent_id == "pi_wh_1"
         assert await _outcome_count(ids["quote_id"]) == 1
         assert await _payment_count(ids["invoice_id"]) == 1
         assert await _staff_notification_count(ids["tenant_id"], "invoice_paid") == 1
     finally:
         await _cleanup(ids, [event_id, second_id])
+
+
+async def test_payment_intent_succeeded_replaces_abandoned_checkout_intent(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    ids = await _seed_invoice(intent_id="pi_abandoned")
+    event_id = f"evt_{uuid4().hex}"
+    event = payment_intent_succeeded_event(
+        event_id,
+        invoice_id=ids["invoice_id"],
+        tenant_id=ids["tenant_id"],
+        intent_id="pi_successful",
+    )
+    _patch_construct(monkeypatch, event)
+    try:
+        response = await _post_event(event)
+
+        assert response.status_code == 200
+        invoice = await _get_invoice(ids["invoice_id"])
+        assert invoice.status == "paid"
+        assert invoice.stripe_payment_intent_id == "pi_successful"
+    finally:
+        await _cleanup(ids, [event_id])
 
 
 async def test_payment_intent_retry_after_handler_failure_reprocesses_once(
