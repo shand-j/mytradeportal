@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "../lib/apiClient";
+import { trackAction } from "../lib/analytics";
 import { Invoice, InvoiceStatus } from "../types";
 import { ApiContact } from "./quotes";
 
@@ -84,6 +85,9 @@ export type CreateInvoiceInput = {
  * items are given, the backend builds the lines from the quote.
  */
 export async function createInvoice(input: CreateInvoiceInput): Promise<ApiInvoice> {
+  trackAction("invoice_create_submit", {
+    source: input.quoteId ? "quote" : input.jobId ? "job" : "manual",
+  });
   return api.post<ApiInvoice>("/invoices", {
     contactId: input.contactId,
     jobId: input.jobId,
@@ -97,6 +101,9 @@ export async function createInvoice(input: CreateInvoiceInput): Promise<ApiInvoi
  * sent, so it lands ready to be paid. Returns the created invoice.
  */
 export async function createAndSendInvoice(input: CreateInvoiceInput): Promise<ApiInvoice> {
+  trackAction("invoice_create_send_submit", {
+    source: input.quoteId ? "quote" : input.jobId ? "job" : "manual",
+  });
   const created = await api.post<ApiInvoice>("/invoices", {
     contactId: input.contactId,
     jobId: input.jobId,
@@ -107,11 +114,13 @@ export async function createAndSendInvoice(input: CreateInvoiceInput): Promise<A
 }
 
 export async function markInvoicePaid(id: string): Promise<ApiInvoice> {
+  trackAction("invoice_mark_paid_submit", { entity_type: "invoice", entity_id: id });
   return api.post<ApiInvoice>(`/invoices/${id}/mark-paid`);
 }
 
 /** Mark an invoice sent and notify/email the customer (also used for reminders). */
 export async function sendInvoice(id: string): Promise<ApiInvoice> {
+  trackAction("invoice_send_submit", { entity_type: "invoice", entity_id: id });
   return api.post<ApiInvoice>(`/invoices/${id}/send`);
 }
 

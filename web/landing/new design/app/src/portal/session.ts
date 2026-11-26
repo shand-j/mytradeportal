@@ -27,6 +27,10 @@ const storageKey = (slug: string) => `mtp_portal_${slug}`
 
 let memorySession: StoredSession | null = null
 
+function emitSessionChanged(): void {
+  queueMicrotask(() => window.dispatchEvent(new Event('mtp:portal-session-changed')))
+}
+
 function isExpired(session: StoredSession): boolean {
   const expiry = Date.parse(session.expiresAt)
   return Number.isNaN(expiry) || expiry <= Date.now()
@@ -39,6 +43,7 @@ export function saveSession(slug: string, session: StoredSession): void {
   } catch {
     // Private browsing / storage disabled — the in-memory copy still works.
   }
+  emitSessionChanged()
 }
 
 export function getSession(slug: string): StoredSession | null {
@@ -71,6 +76,7 @@ export function clearSession(slug: string): void {
   } catch {
     // ignore
   }
+  emitSessionChanged()
 }
 
 /* Global session-expired signal — one subscriber (PortalProvider) in
@@ -91,22 +97,61 @@ function emitSessionExpired(): void {
  * bearer token, sets JSON content type for string bodies, and on 401 clears
  * the stored session, notifies subscribers and throws SessionExpiredError.
  */
+function reportApiCall(
+  path: string,
+  method: string,
+  startedAt: number,
+  outcome: 'success' | 'network' | 'http_error',
+  httpStatus?: number,
+): void {
+  void import('../lib/analytics')
+    .then(({ normaliseRoute, shouldSampleApiSuccess, trackError, trackPerformance }) => {
+      if (outcome === 'success' && !shouldSampleApiSuccess()) return
+      trackPerformance('api_request', Date.now() - startedAt, {
+        method,
+        path: normaliseRoute(path),
+        outcome,
+        http_status: httpStatus ?? null,
+        sampled: outcome === 'success' || null,
+      })
+      if (outcome !== 'success') {
+        trackError('api_request_failed', {
+          method,
+          path: normaliseRoute(path),
+          error_type: outcome,
+          http_status: httpStatus ?? null,
+        })
+      }
+    })
+    .catch(() => undefined)
+}
+
 export async function apiFetch(
   slug: string,
   path: string,
   init: RequestInit = {},
 ): Promise<Response> {
+  const startedAt = Date.now()
+  const method = init.method ?? 'GET'
   const session = getSession(slug)
   const headers = new Headers(init.headers)
   if (session) headers.set('Authorization', `Bearer ${session.accessToken}`)
   if (typeof init.body === 'string' && !headers.has('Content-Type')) {
     headers.set('Content-Type', 'application/json')
   }
-  const res = await fetch(`${API_BASE}${path}`, { ...init, headers })
+  let res: Response
+  try {
+    res = await fetch(`${API_BASE}${path}`, { ...init, headers })
+  } catch (error) {
+    reportApiCall(path, method, startedAt, 'network')
+    throw error
+  }
+  if (!res.ok) reportApiCall(path, method, startedAt, 'http_error', res.status)
   if (res.status === 401 && session) {
     clearSession(slug)
     emitSessionExpired()
     throw new SessionExpiredError()
   }
+  if (res.ok) reportApiCall(path, method, startedAt, 'success', res.status)
   return res
 }

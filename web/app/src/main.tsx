@@ -6,6 +6,7 @@ import { ReactQueryDevtools } from '@tanstack/react-query-devtools'
 
 import { AuthProvider } from '@/lib/auth/AuthProvider'
 import App from './App.tsx'
+import { AnalyticsLifecycle } from '@/components/AnalyticsLifecycle'
 import './index.css'
 
 const queryClient = new QueryClient({
@@ -22,6 +23,7 @@ createRoot(document.getElementById('root')!).render(
     <QueryClientProvider client={queryClient}>
       <AuthProvider>
         <BrowserRouter>
+          <AnalyticsLifecycle />
           <App />
         </BrowserRouter>
       </AuthProvider>

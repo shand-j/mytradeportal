@@ -17,6 +17,7 @@ from sqlalchemy.orm import selectinload
 
 from app import stripe_client
 from app.ai_telemetry import record_quote_outcome
+from app.analytics import track
 from app.audit import Actions, write_audit_log
 from app.calculations import (
     LINE_PRECISION,
@@ -392,6 +393,16 @@ async def create_invoice(
             "contact_id": str(invoice.contact_id),
         },
     )
+    await track(
+        "invoice_created",
+        tenant_id=tenant.id,
+        user_id=current_user.id if current_user is not None else None,
+        db=db,
+        entity_type="invoice",
+        entity_id=invoice.id,
+        source="quote" if invoice.quote_id is not None else "manual",
+        from_job=invoice.job_id is not None,
+    )
     await db.commit()
     return _to_invoice_read(await _get_invoice(db, tenant.id, invoice.id))
 
@@ -600,6 +611,15 @@ async def issue_invoice(
         entity_type="invoice",
         entity_id=invoice.id,
     )
+    await track(
+        "invoice_sent",
+        tenant_id=tenant.id,
+        user_id=current_user.id if current_user is not None else None,
+        db=db,
+        entity_type="invoice",
+        entity_id=invoice.id,
+        channel="issue",
+    )
     await db.commit()
     return _to_invoice_read(await _get_invoice(db, tenant.id, invoice.id))
 
@@ -622,6 +642,15 @@ async def send_invoice(
         action=Actions.INVOICE_SENT,
         entity_type="invoice",
         entity_id=invoice.id,
+    )
+    await track(
+        "invoice_sent",
+        tenant_id=tenant.id,
+        user_id=current_user.id if current_user is not None else None,
+        db=db,
+        entity_type="invoice",
+        entity_id=invoice.id,
+        channel="email",
     )
 
     # Notify the linked customer (in-app + push) and email the contact.
@@ -830,7 +859,8 @@ async def mark_invoice_paid(
     the row and never clobbers the original ``paid_via``/``paid_at``.
     """
     invoice = await _get_invoice(db, tenant.id, invoice_id)
-    if invoice.status != "paid":
+    newly_paid = invoice.status != "paid"
+    if newly_paid:
         invoice.status = "paid"
         invoice.paid_at = datetime.utcnow()
         invoice.paid_via = data.paid_via if data is not None else "manual"
@@ -884,6 +914,16 @@ async def mark_invoice_paid(
                 user_id=current_user.id if current_user is not None else None,
                 extra_payload={"invoice_id": str(invoice.id), "actor": "staff"},
             )
+    if newly_paid:
+        await track(
+            "invoice_paid",
+            tenant_id=tenant.id,
+            user_id=current_user.id if current_user is not None else None,
+            db=db,
+            entity_type="invoice",
+            entity_id=invoice.id,
+            source=invoice.paid_via or "manual",
+        )
     await db.commit()
     return _to_invoice_read(await _get_invoice(db, tenant.id, invoice.id))
 

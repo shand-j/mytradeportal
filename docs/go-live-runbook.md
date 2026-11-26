@@ -72,6 +72,9 @@ forecasting. No UI path leads to any of these.
 | Paddle keys / webhook secret / `PADDLE_PRICE_ID_*` | retained only for later re-enablement; do not initiate Paddle checkout or price previews during beta | api |
 | `VITE_API_BASE_URL` | `https://<api-domain>` (build arg) | web |
 | `EXPO_PUBLIC_API_BASE_URL` | `https://<api-domain>` (EAS build) | mobile |
+| `PLATFORM_STAFF_EMAILS` | comma-separated founder/ops emails allowed to read cross-tenant AI and beta analytics; empty denies everyone | api |
+| `POSTHOG_API_KEY` / `POSTHOG_HOST` | optional server-side mirror; product analytics work without a client SDK or key | api |
+| `VITE_APP_VERSION` | optional release/version string attached to browser events | web, landing |
 
 `settings.validate_production()` fails the API boot fast if dev secrets or
 wildcard CORS survive — if the API won't boot, check its logs first.
@@ -143,6 +146,40 @@ grounded/no_index), `embedding_generated` (cache_hits).
 Configuring or verifying operational alert delivery (#62 and related work) is
 explicitly outside the current beta release gate. Do not add it to deploy
 prerequisites.
+
+### Beta product analytics
+
+Product analytics are separate from operational alerts and require no third-party
+service. Server journey events and batched client events are stored as
+`analytics.*` rows in the tenant-scoped `events` table:
+
+- `POST /analytics/events` accepts up to 50 events per authenticated staff or
+  customer batch. Mobile and browser clients flush up to 20 every 15 seconds,
+  in the background and on lifecycle exits where possible.
+- `POST /public/{kind}/{token}/analytics` accepts the same constrained batch only
+  after validating the secure document token. Anonymous writes to a tenant are
+  otherwise rejected.
+- Payload keys are allow-listed. UUIDs/long path segments become `:id`; query
+  strings are removed. Credentials, tokens, free-text customer content, raw error
+  messages and stack traces are not collected.
+- Successful API timing is sampled at 10%; instrumented API failures are always
+  emitted. Queues are memory-only, so offline or fatal-crash delivery is
+  best-effort rather than guaranteed.
+
+Set `PLATFORM_STAFF_EMAILS` before trying to read the cross-tenant summaries.
+With an authenticated platform-staff session, use:
+
+- `GET /staff/ops/beta-analytics?days=30` for activation funnel conversion,
+  active users/organisations/sessions, daily activity, top screens/actions,
+  grouped errors, client performance and per-organisation activation.
+- `GET /staff/ops/beta-events?days=7&limit=200` for newest-first raw drill-down;
+  optionally filter `tenant_id` and `event_type` (for example
+  `event_type=screen_view` or `event_type=error`).
+- `GET /staff/ops/ai-costs` for the existing AI unit-economics leaderboard.
+
+Verify ingestion against these staff reads on every release, as required by
+`docs/beta-test-plan.md` §3.4. PostHog remains an optional server-side mirror;
+there is no browser/mobile analytics SDK and no analytics secret in client builds.
 
 ## 5. Local bring-up for manual testing (morning)
 

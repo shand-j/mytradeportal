@@ -57,6 +57,17 @@ Feature: AI observability, alerting, data export and email reminders
     # services/api/tests/test_analytics.py (8), test_analytics_shim.py (6).
 
   @automated-integration
+  Scenario: Client telemetry and staff beta funnel reads
+    When authenticated mobile/web/portal clients batch product events
+    Then POST /analytics/events stores sanitised screen/action/error/performance/
+      session rows with staff or customer attribution
+    And public document events require POST /public/{kind}/{token}/analytics
+    And platform staff read activation, activity, errors and performance through
+      /staff/ops/beta-analytics and /staff/ops/beta-events
+    # services/api/tests/test_client_analytics.py (7), test_staff_ops.py,
+    # test_public_docs.py; web/app/src/lib/analytics.test.ts.
+
+  @automated-integration
   Scenario: Email bounce or send failure alerts staff with a phone fallback
     # Founder rule: when a customer email bounces or fails to send, the
     # electrician is told in-app and directed to phone the customer instead.

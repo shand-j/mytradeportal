@@ -6,6 +6,8 @@ import { QueryClientProvider } from "@tanstack/react-query";
 import { AuthProvider } from "../src/contexts/AuthContext";
 import { ThemeProvider } from "../src/theme/ThemeProvider";
 import { queryClient } from "../src/lib/queryClient";
+import { AnalyticsLifecycle } from "../src/components/AnalyticsLifecycle";
+import { AnalyticsErrorBoundary } from "../src/components/AnalyticsErrorBoundary";
 import "../global.css";
 
 export default function RootLayout() {
@@ -14,12 +16,15 @@ export default function RootLayout() {
       <SafeAreaProvider>
         <ThemeProvider>
           <AuthProvider>
-            <View style={{ flex: 1 }}>
-              <Stack screenOptions={{ headerShown: false }}>
-                <Stack.Screen name="index" />
-              </Stack>
-            </View>
-            <StatusBar style="auto" />
+            <AnalyticsErrorBoundary>
+              <AnalyticsLifecycle />
+              <View style={{ flex: 1 }}>
+                <Stack screenOptions={{ headerShown: false }}>
+                  <Stack.Screen name="index" />
+                </Stack>
+              </View>
+              <StatusBar style="auto" />
+            </AnalyticsErrorBoundary>
           </AuthProvider>
         </ThemeProvider>
       </SafeAreaProvider>

@@ -7,6 +7,8 @@
  * allow this origin in CORS (ALLOWED_ORIGINS).
  */
 
+import { trackAction } from './analytics'
+
 export interface PublicDocTenant {
   name: string
   brand_color: string
@@ -160,6 +162,9 @@ export function acceptPublicQuote(
   token: string,
   preferredDates?: PublicQuotePreference[],
 ): Promise<PublicDocPayload> {
+  trackAction('public_quote_accept_submit', {
+    has_preferred_dates: Boolean(preferredDates?.length),
+  })
   return postPublicQuoteAction(
     token,
     'accept',
@@ -169,6 +174,7 @@ export function acceptPublicQuote(
 
 /** Decline a quote from the emailed token page (status becomes `rejected`). */
 export function declinePublicQuote(token: string): Promise<PublicDocPayload> {
+  trackAction('public_quote_decline_submit')
   return postPublicQuoteAction(token, 'decline', {})
 }
 

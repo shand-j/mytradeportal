@@ -64,6 +64,7 @@ One transaction performs, in order:
 | Quotes and quote line items (accepted) | 6 years, as supporting evidence for the retained invoices | HMRC |
 | Quotes (draft/declined/expired) | 24 months, then deletable | Legitimate interest (pipeline analysis) |
 | Audit logs | 6 years | SOC2 / dispute evidence |
+| Product analytics events (`analytics.*` in `events`) | Kept with the tenant event history until hard deletion; there is no separate time-based purge | Legitimate interest: beta product improvement, reliability and security. Client payloads are allow-listed and exclude free-text customer content, credentials, access tokens and raw error messages; pseudonymous actor/entity IDs and normalised routes remain |
 | Anonymised operational rows (jobs, appointments, contacts stub rows) | Until hard deletion with the tenant's financial rows | Referential integrity of retained records |
 | Staff/customer accounts, credentials, tokens | Anonymised/revoked **immediately** at offboarding | GDPR data minimisation |
 | Paddle/Stripe references on retained invoices | Kept (transaction ids are financial records) | HMRC / chargeback evidence |

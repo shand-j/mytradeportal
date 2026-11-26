@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, ApiError } from "../lib/apiClient";
+import { trackAction } from "../lib/analytics";
 import { parseServerDate, toLocalIsoDate } from "../lib/datetime";
 import { ApiContact } from "./quotes";
 import { Job, JobStatus } from "../types";
@@ -66,6 +67,10 @@ export type CreateJobInput = {
 
 /** Create a standalone job (POST /jobs). */
 export async function createJob(input: CreateJobInput): Promise<ApiJob> {
+  trackAction("job_create_submit", {
+    source: input.quoteId ? "quote" : "manual",
+    scheduled: Boolean(input.scheduledStart),
+  });
   return api.post<ApiJob>("/jobs", input);
 }
 
@@ -101,6 +106,7 @@ export async function convertQuoteToJob(
   quoteId: string,
   schedule?: ConvertToJobSchedule
 ): Promise<ApiJob> {
+  trackAction("quote_convert_job_submit", { entity_type: "quote", entity_id: quoteId });
   return api.post<ApiJob>(`/quotes/${quoteId}/convert-to-job`, schedule ?? {});
 }
 
@@ -142,6 +148,7 @@ export function useScheduleSuggestion(quoteId: string | null | undefined) {
 }
 
 export async function startJob(id: string): Promise<ApiJob> {
+  trackAction("job_start_submit", { entity_type: "job", entity_id: id });
   return api.post<ApiJob>(`/jobs/${id}/start`);
 }
 
@@ -168,6 +175,7 @@ export async function updateJobMediaKind(
 }
 
 export async function completeJob(id: string): Promise<ApiJob> {
+  trackAction("job_complete_submit", { entity_type: "job", entity_id: id });
   return api.post<ApiJob>(`/jobs/${id}/complete`);
 }
 

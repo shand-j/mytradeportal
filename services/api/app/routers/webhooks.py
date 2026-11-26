@@ -21,6 +21,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.ai_telemetry import record_quote_outcome
+from app.analytics import track
 from app.config import settings
 from app.database import engine
 from app.dunning import maybe_start_dunning
@@ -122,6 +123,14 @@ async def _record_payment_in_session(
                     "provider_transaction_id": transaction_id,
                 },
             )
+    await track(
+        "invoice_paid",
+        tenant_id=invoice.tenant_id,
+        db=session,
+        entity_type="invoice",
+        entity_id=invoice.id,
+        source="paddle",
+    )
 
 
 async def _record_payment(invoice_id: str, event_data: dict[str, Any]) -> None:

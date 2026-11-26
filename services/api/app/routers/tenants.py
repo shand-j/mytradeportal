@@ -12,6 +12,7 @@ from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app import paddle_client, stripe_client
+from app.analytics import track
 from app.audit import Actions, write_audit_log
 from app.database import get_db
 from app.dependencies import ActiveUserDep, RequireAdminDep, TenantDep
@@ -220,6 +221,14 @@ async def create_tenant(
             "slug": tenant.slug,
             "admin_email": admin_user.email if admin_user is not None else None,
         },
+    )
+    await track(
+        "tenant_signup",
+        tenant_id=tenant.id,
+        user_id=admin_user.id if admin_user is not None else None,
+        db=db,
+        source="onboarding",
+        has_admin_account=admin_user is not None,
     )
     await db.commit()
     await db.refresh(tenant)

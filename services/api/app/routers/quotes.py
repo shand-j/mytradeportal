@@ -38,6 +38,7 @@ from app.ai_telemetry import (
     record_quote_outcome,
     set_last_event_id,
 )
+from app.analytics import track
 from app.audit import Actions, write_audit_log
 from app.calculations import (
     apply_quote_rounding,
@@ -257,6 +258,15 @@ async def create_quote(
         entity_id=quote.id,
         payload={"title": quote.title, "total": str(quote.total)},
     )
+    await track(
+        "quote_created",
+        tenant_id=tenant.id,
+        user_id=current_user.id if current_user is not None else None,
+        db=db,
+        entity_type="quote",
+        entity_id=quote.id,
+        source="manual",
+    )
     await db.commit()
     return QuoteRead.model_validate(await _get_quote(db, tenant.id, quote.id))
 
@@ -465,6 +475,15 @@ async def send_quote(
         quote=quote,
         user_id=current_user.id if current_user is not None else None,
     )
+    await track(
+        "quote_sent",
+        tenant_id=tenant.id,
+        user_id=current_user.id if current_user is not None else None,
+        db=db,
+        entity_type="quote",
+        entity_id=quote.id,
+        ai_generated=bool((quote.ai_metadata or {}).get("trace_id")),
+    )
     # Notify the linked homeowner (when the quote is linked to a customer
     # account via its quote_request) so their bell + push fires as soon as the
     # electrician sends.
@@ -596,6 +615,15 @@ async def approve_quote(
             quote=quote,
             user_id=current_user.id if current_user is not None else None,
             extra_payload={"actor": "staff"},
+        )
+        await track(
+            "quote_accepted",
+            tenant_id=tenant.id,
+            user_id=current_user.id if current_user is not None else None,
+            db=db,
+            entity_type="quote",
+            entity_id=quote.id,
+            source="staff",
         )
     await db.commit()
     return QuoteRead.model_validate(await _get_quote(db, tenant.id, quote.id))
@@ -1768,6 +1796,18 @@ async def _generate_quote_impl(
             "total": str(quote.total),
         },
     )
+    await track(
+        "ai_draft_generated",
+        tenant_id=tenant.id,
+        user_id=current_user.id if current_user is not None else None,
+        db=db,
+        entity_type="quote",
+        entity_id=quote.id,
+        source="staff" if current_user is not None else "automation",
+        from_quote_request=quote_request is not None,
+        line_count=len(quote.line_items),
+        generation_seconds=(quote.extra_data or {}).get("rag", {}).get("generation_seconds"),
+    )
     await db.commit()
     return QuoteRead.model_validate(await _get_quote(db, tenant.id, quote.id))
 
@@ -2160,6 +2200,18 @@ async def convert_quote_to_job(
         entity_id=quote.id,
         payload={"job_id": str(job.id)},
     )
+    await track(
+        "job_created",
+        tenant_id=tenant.id,
+        user_id=current_user.id if current_user is not None else None,
+        db=db,
+        entity_type="job",
+        entity_id=job.id,
+        source="quote_conversion",
+        scheduled=job.scheduled_start is not None,
+        multi_day=len(blocks) > 1,
+        adopted_draft=existing is not None,
+    )
     await db.commit()
     refreshed = await db.scalar(
         select(Job)
@@ -2218,6 +2270,15 @@ async def convert_quote_to_invoice(
             "invoice_number": invoice.invoice_number,
             "total": str(invoice.total),
         },
+    )
+    await track(
+        "invoice_created",
+        tenant_id=tenant.id,
+        user_id=current_user.id if current_user is not None else None,
+        db=db,
+        entity_type="invoice",
+        entity_id=invoice.id,
+        source="quote_conversion",
     )
     await db.commit()
     return InvoiceRead.model_validate(await _get_invoice(db, tenant.id, invoice.id))

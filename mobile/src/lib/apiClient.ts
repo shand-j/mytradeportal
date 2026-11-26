@@ -2,6 +2,12 @@ import { config } from "./config";
 import { camelizeKeys, snakeizeKeys } from "./case";
 import { tokenStorage } from "./tokenStorage";
 import { usePaywallStore } from "../stores/paywallStore";
+import {
+  normaliseRoute,
+  shouldSampleApiSuccess,
+  trackError,
+  trackPerformance,
+} from "./analytics";
 
 export class ApiError extends Error {
   status: number;
@@ -73,6 +79,9 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
 
   const { method = "GET", body, auth = true, headers: extraHeaders, signal } = options;
   const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+  const startedAt = Date.now();
+  const normalisedPath = normaliseRoute(path);
+  const sampleSuccess = auth && shouldSampleApiSuccess();
   const headers: Record<string, string> = { Accept: "application/json" };
 
   if (body !== undefined) {
@@ -118,6 +127,19 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
       signal: timeoutController.signal,
     });
   } catch {
+    if (auth) {
+      const errorType = timedOut ? "timeout" : "network";
+      trackPerformance("api_request", Date.now() - startedAt, {
+        method,
+        path: normalisedPath,
+        outcome: errorType,
+      });
+      trackError("api_request_failed", {
+        method,
+        path: normalisedPath,
+        error_type: errorType,
+      });
+    }
     // fetch only rejects on network failure or abort (not on HTTP error codes).
     if (timedOut) {
       throw new NetworkError(`Request timed out after ${timeoutMs / 1000}s`);
@@ -186,9 +208,33 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
     if (response.status === 402) {
       usePaywallStore.getState().setRequired(true);
     }
+    if (auth) {
+      trackPerformance("api_request", Date.now() - startedAt, {
+        method,
+        path: normalisedPath,
+        outcome: "http_error",
+        http_status: response.status,
+      });
+      trackError("api_request_failed", {
+        method,
+        path: normalisedPath,
+        error_type: "http_error",
+        error_code: code,
+        http_status: response.status,
+      });
+    }
     throw new ApiError(response.status, detail, code);
   }
 
+  if (sampleSuccess) {
+    trackPerformance("api_request", Date.now() - startedAt, {
+      method,
+      path: normalisedPath,
+      outcome: "success",
+      http_status: response.status,
+      sampled: true,
+    });
+  }
   return camelizeKeys(payload) as T;
 }
 

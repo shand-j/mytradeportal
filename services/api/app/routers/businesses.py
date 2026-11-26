@@ -23,6 +23,7 @@ from fastapi.responses import StreamingResponse
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.analytics import track
 from app.database import get_db
 from app.dependencies import _extract_token
 from app.guest_auth import issue_guest_token
@@ -336,6 +337,19 @@ async def submit_public_quote_request(
     )
     db.add(quote_request)
     await db.flush()
+    await track(
+        "quote_request_submitted",
+        tenant_id=tenant.id,
+        user_id=customer.id if customer is not None else None,
+        db=db,
+        actor_type="customer" if customer is not None else "system",
+        entity_type="quote_request",
+        entity_id=quote_request.id,
+        source=data.entry_channel or "portal",
+        has_photos=bool(data.media_urls),
+        has_preferred_dates=bool(data.preferred_dates),
+        sync_check=data.sync_check,
+    )
     # Commit before scheduling the background auto-draft: background tasks run
     # before the get_db dependency cleanup commits, and the worker opens its
     # own session, so the new rows must already be durable.

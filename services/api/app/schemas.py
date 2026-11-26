@@ -1490,6 +1490,28 @@ class AIInsights(BaseModel):
     voice_analytics: VoiceAnalytics | None = None
 
 
+ClientAnalyticsScalar = str | int | float | bool | None
+
+
+class ClientAnalyticsEvent(BaseModel):
+    category: Literal["screen_view", "action", "error", "performance", "session"]
+    name: str = Field(..., pattern=r"^[a-z][a-z0-9_]{0,79}$")
+    occurred_at: datetime
+    session_id: UUID
+    properties: dict[str, ClientAnalyticsScalar] = Field(default_factory=dict, max_length=30)
+
+    @field_validator("occurred_at", mode="after")
+    @classmethod
+    def _normalise_occurred_at(cls, value: datetime) -> datetime:
+        if value.tzinfo is not None:
+            return value.astimezone(UTC).replace(tzinfo=None)
+        return value
+
+
+class ClientAnalyticsBatch(BaseModel):
+    events: list[ClientAnalyticsEvent] = Field(..., min_length=1, max_length=50)
+
+
 # ---------------------------------------------------------------------------
 # File upload
 # ---------------------------------------------------------------------------

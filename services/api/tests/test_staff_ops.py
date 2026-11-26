@@ -7,6 +7,7 @@ from uuid import UUID, uuid4
 
 import pytest
 from app import config as app_config
+from app.analytics import track
 from app.models import AiRollupOrgDay, Tenant, User
 from app.rls import set_tenant_in_session
 from app.security import get_password_hash
@@ -249,3 +250,87 @@ async def test_ai_costs_empty_allowlist_rejects_everyone(
     response = await client.get("/staff/ops/ai-costs")
     assert response.status_code == 403
     assert response.json()["detail"] == "Insufficient permissions"
+
+
+async def test_beta_analytics_aggregates_cross_tenant_product_usage(
+    client: AsyncClient, db: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    staff = await _platform_staff_client(client, db, monkeypatch)
+    tenant = Tenant(slug="beta-sparks", name="Beta Sparks")
+    db.add(tenant)
+    await db.flush()
+    user_id = uuid4()
+    session_id = uuid4()
+
+    await track("tenant_signup", tenant_id=tenant.id, db=db)
+    await track("staff_login", tenant_id=tenant.id, user_id=user_id, db=db)
+    await track(
+        "screen_view",
+        tenant_id=tenant.id,
+        user_id=user_id,
+        db=db,
+        name="dashboard",
+        route="/",
+        session_id=str(session_id),
+    )
+    await track(
+        "action",
+        tenant_id=tenant.id,
+        user_id=user_id,
+        db=db,
+        name="quote_create_submit",
+        session_id=str(session_id),
+    )
+    await track(
+        "performance",
+        tenant_id=tenant.id,
+        user_id=user_id,
+        db=db,
+        name="api_request",
+        method="GET",
+        path="/quotes",
+        duration_ms=125.0,
+        session_id=str(session_id),
+    )
+    await track(
+        "error",
+        tenant_id=tenant.id,
+        user_id=user_id,
+        db=db,
+        name="api_request_failed",
+        error_type="http_error",
+        http_status=500,
+        path="/quotes",
+        session_id=str(session_id),
+    )
+
+    response = await staff.get("/staff/ops/beta-analytics?days=30")
+    assert response.status_code == 200
+    payload = response.json()
+    # The platform-staff fixture's own login is a real analytics event too.
+    assert payload["totals"]["active_organisations"] == 2
+    assert payload["totals"]["active_users"] == 2
+    assert payload["totals"]["sessions"] == 1
+    assert payload["totals"]["screen_views"] == 1
+    assert payload["totals"]["errors"] == 1
+    assert payload["screens"] == [{"screen": "/", "views": 1, "unique_users": 1}]
+    assert payload["actions"][0]["action"] == "quote_create_submit"
+    assert payload["performance"][0]["p95_ms"] == 125.0
+    assert payload["errors"][0]["error_code"] == "500"
+    assert payload["organisations"][0]["slug"] == "beta-sparks"
+    assert payload["organisations"][0]["funnel"]["tenant_signup"] is True
+
+    drilldown = await staff.get("/staff/ops/beta-events?event_type=action")
+    assert drilldown.status_code == 200
+    assert drilldown.json()["count"] == 1
+    assert drilldown.json()["events"][0]["payload"]["name"] == "quote_create_submit"
+
+
+async def test_beta_analytics_requires_platform_staff(
+    client: AsyncClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(app_config, "PLATFORM_STAFF_EMAILS", PLATFORM_STAFF_EMAIL)
+
+    response = await client.get("/staff/ops/beta-analytics")
+
+    assert response.status_code == 401
