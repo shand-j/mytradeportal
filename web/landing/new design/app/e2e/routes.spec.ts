@@ -35,6 +35,8 @@ test('unknown marketing routes show an accessible branded not-found page', async
 
 const validMarketingPaths = [
   '/',
+  '/terms',
+  '/privacy',
   '/reset-password',
   '/accept-invite',
   '/subscribe',
