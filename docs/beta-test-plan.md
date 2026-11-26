@@ -34,6 +34,7 @@ against native Postgres with RLS genuinely enforced (non-superuser role).
 | Email | templates (tenant branding incl. reminder CTA colour), tenant Reply-To, failure alerting per (tenant, contact, day), Resend webhook (bounce/delivery), magic links |
 | SMS (SMS Works) | E.164 normalisation, sender-ID normalisation, single-segment fitting, window firing + dedupe, fair-use degrade-to-email, inbound webhook (optional Basic authentication, delivery receipts, STOP/START opt-out) |
 | AI pipeline | retrieval/generation/validation, vision captioning (fail-open), observations on QuoteRead, intake triage timeout, eval-harness fixtures (offline) |
+| Product observability | authenticated staff/customer event ingestion, token-scoped public-document ingestion, payload rejection/redaction, activation/payment events, cross-tenant staff funnel/DAU/screen/action/error/performance aggregation and drill-down, browser batching |
 | Files/media | upload validation, photo carryover quote→job (both storage shapes), tenant logo (type/size validation, public serve, delete) |
 | Public URL surface | every public link resolves on mytradeportal.co.uk (document tokens, portal magic links, Stripe bounce, triage/welcome emails) |
 
@@ -175,6 +176,33 @@ and active access for incomplete/expired/canceled/past-due subscription rows.
 Valid delayed webhooks cannot lock out a tenant. Plan/seat reads, tenant active
 status, authentication, and Stripe payment tests remain green. With the flag
 explicitly on, existing billing tests must retain their prior behaviour.
+
+### 3.4 Beta product observability
+
+Automated coverage must prove authenticated staff and customer batches persist
+with the correct tenant/actor, unknown payload keys and invalid timestamps are
+rejected, routes/UUIDs/query strings are redacted, public-document writes require
+a valid token, and platform-staff aggregation cannot be read by ordinary tenant
+admins or anonymous callers. Browser tests cover batch shape, tenant headers and
+unauthenticated suppression; mobile typecheck covers the native lifecycle.
+
+On one staging and one production beta tenant, verify the whole chain rather than
+only the endpoint response: open screens and perform quote, job and invoice
+actions on TestFlight and the web portal; trigger a recoverable API failure and a
+render error; then read `GET /staff/ops/beta-analytics` as platform staff. Confirm
+those screens, actions, errors, sessions and performance samples appear against
+the correct organisation, and use `GET /staff/ops/beta-events` for the raw
+sanitised record. Repeat on a secure public quote page and verify its events use
+`/public/quote/{token}/analytics` without persisting the token. A 202 response is
+not evidence of end-to-end ingestion; the staff read is required.
+
+Review funnel counts and per-organisation activation weekly. Metrics are
+beta-scale reads over the tenant-scoped `events` table, not a real-time warehouse.
+Client batches are in-memory and best-effort: offline/crash loss is possible,
+successful API performance is sampled at 10%, and all instrumented API failures
+are reported. Do not treat these events as financial records or exact uptime/DAU
+accounting. No credentials, access tokens, customer free text, raw error messages
+or stack traces may appear in the drill-down payload.
 
 ---
 

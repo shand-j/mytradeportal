@@ -34,7 +34,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app import stripe_client
+from app.analytics import track
 from app.availability import busy_periods, free_hours
+from app.client_analytics import record_client_batch
 from app.config import PUBLIC_DOCS_BASE_URL
 from app.database import get_db
 from app.limiter import limiter
@@ -46,7 +48,11 @@ from app.rls import bypass_rls_for_transaction, set_tenant_in_session
 
 # FastAPI evaluates body-model annotations at route registration, so this
 # import must stay at runtime despite the future-annotations banner.
-from app.schemas import CustomerQuoteAccept, PublicQuotePreferences  # noqa: TC001
+from app.schemas import (  # noqa: TC001
+    ClientAnalyticsBatch,
+    CustomerQuoteAccept,
+    PublicQuotePreferences,
+)
 from app.work_blocks import daily_working_hours, working_hours
 
 if TYPE_CHECKING:
@@ -307,6 +313,15 @@ async def get_public_document(
     if kind == "quote":
         quote, contact = await _load_quote_for_action(db, record)
         payload.update(_quote_payload(quote, contact))
+        await track(
+            "public_document_viewed",
+            tenant_id=tenant.id,
+            db=db,
+            entity_type="quote",
+            entity_id=quote.id,
+            document_kind="quote",
+            quote_status=quote.status,
+        )
         return payload
 
     invoice = await db.scalar(
@@ -350,7 +365,50 @@ async def get_public_document(
             ),
         }
     )
+    await track(
+        "public_document_viewed",
+        tenant_id=tenant.id,
+        db=db,
+        entity_type="invoice",
+        entity_id=invoice.id,
+        document_kind="invoice",
+        invoice_status=invoice.status,
+        payment_available=bool(payload.get("payment_url")),
+    )
     return payload
+
+
+@router.post("/{kind}/{token}/analytics", status_code=status.HTTP_202_ACCEPTED)
+@limiter.limit("120/hour")
+async def ingest_public_document_analytics(
+    request: Request,
+    kind: str,
+    token: str,
+    batch: ClientAnalyticsBatch,
+    db: DbDep,
+) -> dict[str, int]:
+    if kind not in ("quote", "invoice"):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not found")
+    await bypass_rls_for_transaction(db)
+    record, tenant = await _load_token_and_tenant(db, kind, token)
+    await set_tenant_in_session(db, tenant.id)
+    try:
+        accepted = await record_client_batch(
+            batch,
+            tenant_id=tenant.id,
+            actor_id=None,
+            actor_type="customer",
+            db=db,
+            entity_type=kind,
+            entity_id=record.document_id,
+        )
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail=str(exc),
+        ) from exc
+    await db.commit()
+    return {"accepted": accepted}
 
 
 @router.post("/quote/{token}/accept")
@@ -537,5 +595,15 @@ async def submit_public_quote_preferences(
             ),
             link=f"/quotes/{quote.id}",
         )
+    await track(
+        "quote_dates_submitted",
+        tenant_id=tenant.id,
+        db=db,
+        actor_type="customer",
+        entity_type="quote",
+        entity_id=quote.id,
+        preference_count=len(quote.accepted_dates),
+        after_acceptance=quote.status == "approved",
+    )
     await db.commit()
     return {"accepted_dates": quote.accepted_dates}

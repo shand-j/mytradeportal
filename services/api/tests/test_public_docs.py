@@ -13,7 +13,7 @@ from unittest.mock import AsyncMock
 from uuid import UUID, uuid4
 
 import pytest
-from app.models import DocumentAccessToken, Invoice, StripeAccount, Tenant
+from app.models import DocumentAccessToken, Event, Invoice, StripeAccount, Tenant
 from app.rls import set_tenant_in_session
 from app.routers.public_docs import hash_document_token
 from httpx import AsyncClient
@@ -576,3 +576,64 @@ async def test_payment_url_creates_fresh_intent_when_existing_one_abandoned(
     )
     # One mint at send, a second when the stored intent turned out to be dead.
     assert create_intent.await_count == 2
+
+
+async def test_public_document_analytics_is_token_scoped(
+    client: AsyncClient, db: AsyncSession
+) -> None:
+    tenant = await _create_tenant(client, f"pub-{uuid4().hex[:8]}")
+    contact = await _create_contact(client, tenant["id"], "Analytics Homeowner")
+    quote = await _create_quote(client, tenant["id"], contact["id"])
+    raw_token = f"secure-{uuid4().hex}"
+    db.add(
+        DocumentAccessToken(
+            tenant_id=UUID(tenant["id"]),
+            kind="quote",
+            document_id=UUID(quote["id"]),
+            token_hash=hash_document_token(raw_token),
+            expires_at=datetime.utcnow() + timedelta(days=1),
+        )
+    )
+    await db.commit()
+
+    response = await client.post(
+        f"/public/quote/{raw_token}/analytics",
+        json={
+            "events": [
+                {
+                    "category": "action",
+                    "name": "public_quote_accept_submit",
+                    "occurred_at": f"{datetime.utcnow().isoformat()}Z",
+                    "session_id": str(uuid4()),
+                    "properties": {"has_preferred_dates": True},
+                }
+            ]
+        },
+    )
+
+    assert response.status_code == 202
+    event = (
+        await db.execute(select(Event).where(Event.event_type == "analytics.action"))
+    ).scalar_one()
+    assert str(event.tenant_id) == tenant["id"]
+    assert str(event.entity_id) == quote["id"]
+    assert event.actor_type == "customer"
+    assert event.actor_id is None
+    assert event.payload["has_preferred_dates"] is True
+    assert raw_token not in str(event.payload)
+
+    invalid = await client.post(
+        "/public/quote/not-a-real-token/analytics",
+        json={
+            "events": [
+                {
+                    "category": "screen_view",
+                    "name": "quote",
+                    "occurred_at": f"{datetime.utcnow().isoformat()}Z",
+                    "session_id": str(uuid4()),
+                    "properties": {},
+                }
+            ]
+        },
+    )
+    assert invalid.status_code == 404

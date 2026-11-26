@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { AI_TIMEOUT_MS, api } from "../lib/apiClient";
+import { trackAction } from "../lib/analytics";
 import { Quote, QuoteLineItem, QuoteStatus } from "../types";
 
 /** Contact as returned nested on quotes/jobs (camelized ContactRead). */
@@ -91,6 +92,7 @@ export type GenerateStandaloneQuoteInput = {
 export async function generateQuoteStandalone(
   input: GenerateStandaloneQuoteInput
 ): Promise<Quote> {
+  trackAction("ai_quote_generate_submit", { source: "standalone" });
   const q = await api.post<ApiQuote>(
     "/quotes/generate",
     {
@@ -109,6 +111,11 @@ export async function generateQuoteStandalone(
  * pipeline routed through the Kimi API. Returns the mapped quote.
  */
 export async function generateQuoteFromLead(input: GenerateQuoteInput): Promise<Quote> {
+  trackAction("ai_quote_generate_submit", {
+    source: "lead",
+    entity_type: "quote_request",
+    entity_id: input.quoteRequestId,
+  });
   const q = await api.post<ApiQuote>(
     "/quotes/generate",
     {
@@ -148,6 +155,7 @@ export type GenerateQuoteAsyncAck = {
 export async function generateQuoteAsync(
   input: GenerateQuoteAsyncInput
 ): Promise<GenerateQuoteAsyncAck> {
+  trackAction("ai_quote_generate_submit", { source: "async" });
   return api.post<GenerateQuoteAsyncAck>("/quotes/generate-async", {
     quoteRequestId: input.quoteRequestId,
     description: input.description ?? "",
@@ -176,6 +184,7 @@ export async function generateQuoteForContact(input: {
 
 /** Mark a quote as sent to the customer (POST /quotes/{id}/send). */
 export async function sendQuote(id: string): Promise<void> {
+  trackAction("quote_send_submit", { entity_type: "quote", entity_id: id });
   await api.post(`/quotes/${id}/send`);
 }
 
@@ -184,6 +193,7 @@ export async function sendQuote(id: string): Promise<void> {
  * (POST /quotes/{id}/refine). Returns the mapped updated quote.
  */
 export async function refineQuote(id: string, instructions: string): Promise<Quote> {
+  trackAction("quote_refine_submit", { entity_type: "quote", entity_id: id });
   const q = await api.post<ApiQuote>(
     `/quotes/${id}/refine`,
     { instructions },
@@ -219,6 +229,11 @@ export async function updateQuote(
  * Recorded in the audit log and the AI quality telemetry pipeline.
  */
 export async function rateQuoteRefinement(id: string, rating: "up" | "down"): Promise<Quote> {
+  trackAction("quote_refine_rate", {
+    entity_type: "quote",
+    entity_id: id,
+    outcome: rating,
+  });
   const q = await api.post<ApiQuote>(`/quotes/${id}/refine-rating`, { rating });
   return mapQuote(q);
 }

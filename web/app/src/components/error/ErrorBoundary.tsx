@@ -1,6 +1,7 @@
 import { Component, type ErrorInfo, type ReactNode } from 'react';
 import { AlertTriangle, RotateCcw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { flushAnalytics, normaliseRoute, trackError } from '@/lib/analytics';
 
 interface Props {
   children: ReactNode;
@@ -30,6 +31,12 @@ export class ErrorBoundary extends Component<Props, State> {
 
   override componentDidCatch(error: Error, info: ErrorInfo) {
     console.error('ErrorBoundary caught an error:', error, info.componentStack);
+    trackError('react_render_error', {
+      error_type: error.name || 'Error',
+      component: 'route',
+      route: normaliseRoute(window.location.pathname),
+    });
+    void flushAnalytics();
   }
 
   private handleReset = () => {

@@ -1,28 +1,15 @@
 import { camelizeKeys, decamelizeKeys } from 'humps';
 
 import { useAuthStore } from '@/stores/authStore';
+import {
+  normaliseRoute,
+  shouldSampleApiSuccess,
+  trackError,
+  trackPerformance,
+} from '@/lib/analytics';
+import { API_BASE_URL } from './base';
 
-function resolveApiBaseUrl(): string {
-  const envUrl = import.meta.env.VITE_API_BASE_URL;
-  if (envUrl && envUrl !== '') {
-    return envUrl;
-  }
-  if (typeof window !== 'undefined') {
-    const { hostname, protocol } = window.location;
-
-    // Railway deployments should route API traffic through the web service
-    // reverse proxy when no explicit build-time API URL is configured.
-    if (hostname.endsWith('.up.railway.app') && hostname.startsWith('web-')) {
-      return `${protocol}//${hostname}/api`;
-    }
-
-    // Local development keeps API on port 8000 for the same hostname.
-    return `${protocol}//${hostname}:8000`;
-  }
-  return 'http://localhost:8000';
-}
-
-export const API_BASE_URL = resolveApiBaseUrl();
+export { API_BASE_URL } from './base';
 
 /**
  * Header name the backend reads to resolve the active tenant.
@@ -71,11 +58,37 @@ function forceLogoutAndRedirect(): void {
   }
 }
 
+function reportApiFailure(
+  method: string,
+  path: string,
+  startedAt: number,
+  errorType: 'network' | 'http_error',
+  httpStatus?: number,
+): void {
+  if (!useAuthStore.getState().isAuthenticated) return;
+  trackPerformance('api_request', Date.now() - startedAt, {
+    method,
+    path,
+    outcome: errorType,
+    http_status: httpStatus ?? null,
+  });
+  trackError('api_request_failed', {
+    method,
+    path,
+    error_type: errorType,
+    http_status: httpStatus ?? null,
+  });
+}
+
 export async function apiRequest<T>(
   path: string,
   options: RequestInit = {},
 ): Promise<T> {
   const url = `${API_BASE_URL}${path}`;
+  const startedAt = Date.now();
+  const normalisedPath = normaliseRoute(path);
+  const method = options.method ?? 'GET';
+  const sampleSuccess = shouldSampleApiSuccess();
   const headers = new Headers(options.headers || {});
 
   if (!headers.has('Content-Type') && !(options.body instanceof FormData)) {
@@ -102,12 +115,18 @@ export async function apiRequest<T>(
     body = JSON.stringify(decamelizeKeys(body as unknown as Record<string, unknown>));
   }
 
-  const response = await fetch(url, {
-    ...options,
-    headers,
-    body,
-    credentials: 'include',
-  });
+  let response: Response;
+  try {
+    response = await fetch(url, {
+      ...options,
+      headers,
+      body,
+      credentials: 'include',
+    });
+  } catch (error) {
+    reportApiFailure(method, normalisedPath, startedAt, 'network');
+    throw error;
+  }
 
   if (response.status === 401) {
     const isAuthEndpoint = path.startsWith('/auth/');
@@ -116,6 +135,7 @@ export async function apiRequest<T>(
       useAuthStore.getState().logout();
       window.location.href = '/login';
     }
+    reportApiFailure(method, normalisedPath, startedAt, 'http_error', response.status);
     throw new ApiError('Unauthorized', 401);
   }
 
@@ -133,7 +153,18 @@ export async function apiRequest<T>(
     ) {
       forceLogoutAndRedirect();
     }
+    reportApiFailure(method, normalisedPath, startedAt, 'http_error', response.status);
     throw new ApiError(message, response.status);
+  }
+
+  if (sampleSuccess && useAuthStore.getState().isAuthenticated) {
+    trackPerformance('api_request', Date.now() - startedAt, {
+      method,
+      path: normalisedPath,
+      outcome: 'success',
+      http_status: response.status,
+      sampled: true,
+    });
   }
 
   if (response.status === 204) {

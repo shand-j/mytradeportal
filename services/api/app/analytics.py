@@ -1,11 +1,12 @@
 """Product analytics shim.
 
 One entry point — :func:`track` — for funnel/activation events
-(``tenant_signup``, ``first_ai_draft``, ``first_quote_sent``, ...). Every call:
+(``tenant_signup``, ``ai_draft_generated``, ``quote_sent``, ...). Every call:
 
 * writes a row to the existing tenant-scoped ``events`` table with the
   ``event_type`` prefixed ``analytics.`` (``actor_type`` is ``user`` when a
-  ``user_id`` is supplied, otherwise ``system``), and
+  ``user_id`` is supplied and no explicit actor is given, otherwise ``system``;
+  client customer events pass ``customer`` explicitly), and
 * optionally mirrors the event to PostHog when ``POSTHOG_API_KEY`` is set.
 
 Design choices (mirroring ``app.audit.write_audit_log`` discipline):
@@ -66,6 +67,7 @@ async def _write_event(
     tenant_id: UUID,
     user_id: UUID | None,
     props: dict[str, Any],
+    actor_type: str | None,
 ) -> None:
     """Insert the analytics row, setting the RLS tenant GUC first."""
     await set_tenant_in_session(db, tenant_id)
@@ -74,7 +76,7 @@ async def _write_event(
     db.add(
         Event(
             tenant_id=tenant_id,
-            actor_type="user" if user_id is not None else "system",
+            actor_type=actor_type or ("user" if user_id is not None else "system"),
             actor_id=user_id,
             event_type=event_type,
             entity_type=entity_type,
@@ -90,6 +92,7 @@ async def track(
     tenant_id: UUID | None = None,
     user_id: UUID | None = None,
     db: AsyncSession | None = None,
+    actor_type: str | None = None,
     **props: Any,
 ) -> None:
     """Record a product analytics event. Never raises.
@@ -97,9 +100,11 @@ async def track(
     ``event`` is the bare event name (e.g. ``"first_quote_sent"``); the DB row
     is stored as ``analytics.<event>``. Extra keyword arguments become the
     event payload; ``entity_type``/``entity_id`` may be passed to point the
-    row at a specific entity (defaults to the tenant itself).
+    row at a specific entity (defaults to the tenant itself). ``actor_type``
+    distinguishes customer telemetry from staff and system events.
     """
     event_type = f"analytics.{event}"
+    props = dict(props)
 
     if tenant_id is None:
         # The events table is tenant-scoped (NOT NULL tenant_id + RLS), so
@@ -108,10 +113,10 @@ async def track(
     else:
         try:
             if db is not None:
-                await _write_event(db, event_type, tenant_id, user_id, props)
+                await _write_event(db, event_type, tenant_id, user_id, props, actor_type)
             else:
                 async with AsyncSessionLocal() as session:
-                    await _write_event(session, event_type, tenant_id, user_id, props)
+                    await _write_event(session, event_type, tenant_id, user_id, props, actor_type)
                     await session.commit()
         except Exception as exc:
             logger.warning(

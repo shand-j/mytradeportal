@@ -388,7 +388,18 @@ bloating the default stack — `docker compose up` stays lean; start it with
 
 Product analytics go through `app/analytics.py::track` (writes `analytics.*`
 rows to the existing `events` table, fail-open, with an optional PostHog
-passthrough when `POSTHOG_API_KEY` is set).
+passthrough when `POSTHOG_API_KEY` is set). Server-side events cover tenant and
+customer signup/login, AI drafts, quotes, jobs, appointments, invoices, public
+document views and payment outcomes. Authenticated mobile/web/portal clients
+send batched screen/action/error/performance/session events to
+`POST /analytics/events`; secure public document pages use the token-scoped
+`POST /public/{kind}/{token}/analytics`. Client payloads are allow-listed and
+routes/ids are normalised — no credentials, access tokens, free-text customer
+content or raw error messages. Platform staff can read cross-tenant beta
+funnels, DAU/sessions, screens, actions, errors, client performance and
+per-organisation activation via `GET /staff/ops/beta-analytics`, with raw-event
+drill-down at `GET /staff/ops/beta-events` (both gated by
+`PLATFORM_STAFF_EMAILS`).
 
 ### Deployment target
 

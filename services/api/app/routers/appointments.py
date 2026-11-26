@@ -8,9 +8,10 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.analytics import track
 from app.availability import NON_BLOCKING_APPOINTMENT_STATUSES, NON_BLOCKING_JOB_STATUSES
 from app.database import get_db
-from app.dependencies import TenantDep, single_active_user
+from app.dependencies import CurrentUserDep, TenantDep, single_active_user
 from app.dispatch import enforce_assignment_guardrails
 from app.models import Appointment, Contact, Job
 from app.rls import set_tenant_in_session
@@ -71,6 +72,7 @@ async def list_appointments(
 async def create_appointment(
     data: AppointmentCreate,
     tenant: TenantDep,
+    current_user: CurrentUserDep,
     db: DbDep,
 ) -> AppointmentRead:
     """Create an appointment."""
@@ -104,6 +106,16 @@ async def create_appointment(
         tenant_id=tenant.id, **{**data.model_dump(), "assigned_user_id": assigned_user_id}
     )
     db.add(appointment)
+    await db.flush()
+    await track(
+        "appointment_created",
+        tenant_id=tenant.id,
+        user_id=current_user.id if current_user is not None else None,
+        db=db,
+        entity_type="appointment",
+        entity_id=appointment.id,
+        from_job=appointment.job_id is not None,
+    )
     await db.commit()
     await db.refresh(appointment)
     return AppointmentRead.model_validate(appointment)

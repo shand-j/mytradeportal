@@ -13,18 +13,20 @@ keep-rate, latency p50/p95/p99) plus cohort p50/p95/p99 stats across orgs.
 """
 
 from collections import defaultdict
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from decimal import Decimal
-from typing import Any
+from typing import Annotated, Any
 from uuid import UUID
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Query, Request
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.beta_analytics import summarise_beta_events
 from app.dependencies import DbDep, PlatformStaffDep
 from app.limiter import limiter
-from app.models import AiRollupOrgDay, Tenant
+from app.models import AiRollupOrgDay, Event, Tenant
+from app.rls import bypass_rls_for_transaction
 from app.scheduler import _percentile
 
 router = APIRouter(prefix="/staff/ops", tags=["staff-ops"])
@@ -154,4 +156,76 @@ async def ai_cost_leaderboard(
         "month_start": month_start.isoformat(),
         "leaderboard": leaderboard,
         "cohort": _cohort_stats(leaderboard),
+    }
+
+
+@router.get("/beta-analytics")
+@limiter.limit("30/minute")
+async def beta_product_analytics(
+    request: Request,
+    staff: PlatformStaffDep,
+    db: DbDep,
+    days: Annotated[int, Query(ge=1, le=90)] = 30,
+) -> dict[str, Any]:
+    await bypass_rls_for_transaction(db)
+    now = datetime.utcnow()
+    since = now - timedelta(days=days)
+    events = (
+        (
+            await db.execute(
+                select(Event)
+                .where(Event.event_type.like("analytics.%"), Event.created_at >= since)
+                .order_by(Event.created_at)
+            )
+        )
+        .scalars()
+        .all()
+    )
+    tenants = {tenant.id: tenant for tenant in (await db.execute(select(Tenant))).scalars().all()}
+    return summarise_beta_events(events, tenants, days=days, since=since, generated_at=now)
+
+
+@router.get("/beta-events")
+@limiter.limit("30/minute")
+async def beta_event_drilldown(
+    request: Request,
+    staff: PlatformStaffDep,
+    db: DbDep,
+    days: Annotated[int, Query(ge=1, le=90)] = 7,
+    limit: Annotated[int, Query(ge=1, le=1000)] = 200,
+    tenant_id: UUID | None = None,
+    event_type: str | None = None,
+) -> dict[str, Any]:
+    await bypass_rls_for_transaction(db)
+    since = datetime.utcnow() - timedelta(days=days)
+    query = select(Event).where(Event.event_type.like("analytics.%"), Event.created_at >= since)
+    if tenant_id is not None:
+        query = query.where(Event.tenant_id == tenant_id)
+    if event_type is not None:
+        query = query.where(
+            Event.event_type == f"analytics.{event_type.removeprefix('analytics.')}"
+        )
+    events = (
+        (await db.execute(query.order_by(Event.created_at.desc()).limit(limit))).scalars().all()
+    )
+    tenants = {tenant.id: tenant for tenant in (await db.execute(select(Tenant))).scalars().all()}
+    return {
+        "count": len(events),
+        "events": [
+            {
+                "id": str(event.id),
+                "created_at": f"{event.created_at.isoformat()}Z",
+                "tenant_id": str(event.tenant_id),
+                "tenant_slug": tenants[event.tenant_id].slug
+                if event.tenant_id in tenants
+                else None,
+                "actor_type": event.actor_type,
+                "actor_id": str(event.actor_id) if event.actor_id else None,
+                "event_type": event.event_type,
+                "entity_type": event.entity_type,
+                "entity_id": str(event.entity_id),
+                "payload": event.payload,
+            }
+            for event in events
+        ],
     }

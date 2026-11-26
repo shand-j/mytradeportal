@@ -32,6 +32,10 @@ pnpm lint         # tsc --noEmit
 - `src/components/navigation/` — custom bottom tab bar used by trade and customer route groups.
 - `src/components/ui/` — reusable themed components (`Text`, `Button`, `Screen`, `Header`, `CodeInput`).
 - `src/screens/` — one directory per user profile (trade, customer, onboarding).
+- `src/lib/analytics.ts` — privacy-constrained batched product telemetry;
+  `app/_layout.tsx` installs the route/session/error lifecycle. Use `trackAction`
+  for user intent without free-text payloads; never route `/analytics/events`
+  through `apiClient` (it reports API calls itself).
 - `app/` — Expo Router routes. Group routes: `(trade)` and `(customer)`.
 
 ## Notes

@@ -24,6 +24,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.ai_telemetry import record_quote_outcome
 from app.alerting import send_alert
+from app.analytics import track
 from app.database import engine
 from app.models import Invoice, Payment, ProcessedWebhook, Quote, StripeAccount
 from app.payment_notifications import send_payment_received_email
@@ -125,6 +126,14 @@ async def _handle_payment_intent_succeeded(
                     "provider_transaction_id": intent_id,
                 },
             )
+    await track(
+        "invoice_paid",
+        tenant_id=invoice.tenant_id,
+        db=session,
+        entity_type="invoice",
+        entity_id=invoice.id,
+        source="stripe",
+    )
     # Confirm the payment to the customer (thank-you + review prompt).
     # Best-effort while the session's RLS context is live; failures should
     # retrigger the webhook transaction so settlement is not left half-done.

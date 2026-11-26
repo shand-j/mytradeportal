@@ -4,27 +4,88 @@ from collections import defaultdict
 from datetime import datetime, timedelta
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import status as http_status
 from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.client_analytics import record_client_batch
 from app.database import get_db
-from app.dependencies import TenantDep
-from app.models import Invoice, Job, Quote, QuoteLineItem, Review
+from app.dependencies import (
+    TenantDep,
+    _extract_token,
+    get_current_customer,
+    get_current_user,
+)
+from app.limiter import limiter
+from app.models import Customer, Invoice, Job, Quote, QuoteLineItem, Review, User
 from app.rls import set_tenant_in_session
 from app.schemas import (
     Activity,
     AIInsights,
     AiQuotePerformance,
     AiQuotePerformanceMonthlyData,
+    ClientAnalyticsBatch,
     DashboardData,
     DashboardKPIs,
     RevenueChartData,
     ServiceBreakdownItem,
 )
+from app.security import decode_access_token
 
 router = APIRouter(prefix="/analytics", tags=["Analytics"])
 DbDep = Annotated[AsyncSession, Depends(get_db)]
+
+
+async def current_analytics_actor(
+    request: Request,
+    tenant: TenantDep,
+    db: DbDep,
+) -> User | Customer:
+    token = _extract_token(request)
+    claims = decode_access_token(token) if token else None
+    if claims is None:
+        raise HTTPException(
+            status_code=http_status.HTTP_401_UNAUTHORIZED, detail="Not authenticated"
+        )
+    if claims.get("subject_type") == "customer":
+        return await get_current_customer(request, db)
+    user = await get_current_user(request, db)
+    if user is None or user.tenant_id != tenant.id:
+        raise HTTPException(
+            status_code=http_status.HTTP_401_UNAUTHORIZED, detail="Not authenticated"
+        )
+    return user
+
+
+AnalyticsActorDep = Annotated[User | Customer, Depends(current_analytics_actor)]
+
+
+@router.post("/events", status_code=http_status.HTTP_202_ACCEPTED)
+@limiter.limit("120/minute")
+async def ingest_client_events(
+    request: Request,
+    batch: ClientAnalyticsBatch,
+    tenant: TenantDep,
+    actor: AnalyticsActorDep,
+    db: DbDep,
+) -> dict[str, int]:
+    try:
+        accepted = await record_client_batch(
+            batch,
+            tenant_id=tenant.id,
+            actor_id=actor.id,
+            actor_type="customer" if isinstance(actor, Customer) else "user",
+            db=db,
+        )
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=http_status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail=str(exc),
+        ) from exc
+    await db.commit()
+    return {"accepted": accepted}
+
 
 # Time-saved assumption: drafting a comparable quote manually (turning site
 # notes into priced line items) takes an electrician ~25 minutes; the AI draft

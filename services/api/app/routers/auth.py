@@ -11,6 +11,7 @@ import structlog
 from fastapi import APIRouter, HTTPException, Query, Request, Response, status
 from sqlalchemy import func, select, update
 
+from app.analytics import track
 from app.dependencies import (
     ActiveUserDep,
     DbDep,
@@ -183,6 +184,13 @@ async def _authenticate(request: Request, data: UserLogin, db: DbDep) -> tuple[T
             detail="Invalid credentials",
         )
 
+    await track(
+        "staff_login",
+        tenant_id=tenant.id,
+        user_id=user.id,
+        db=db,
+        role=user.role,
+    )
     return tenant, user
 
 

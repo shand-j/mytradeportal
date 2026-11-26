@@ -24,6 +24,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app import stripe_client
+from app.analytics import track
 from app.database import get_db
 from app.dependencies import CurrentCustomerDep, _extract_tenant_slug
 from app.email import send_customer_email
@@ -383,6 +384,15 @@ async def register_customer(
     associations = await _tenant_associations(db, customer.email, tenant.id)
 
     await db.refresh(customer)
+    await track(
+        "customer_signup",
+        tenant_id=tenant.id,
+        user_id=customer.id,
+        db=db,
+        actor_type="customer",
+        source="quote_request" if data.quote_request_id is not None else "portal",
+        claimed_existing_account=existing is not None,
+    )
     await db.commit()
 
     # Welcome email — transactional account mail, so platform-branded from the
@@ -493,6 +503,14 @@ async def login_customer(
     # Claim any leads captured with the same email/phone since the last login.
     if await _link_quote_requests_by_contact(db, customer):
         await db.commit()
+    await track(
+        "customer_login",
+        tenant_id=tenant.id,
+        user_id=customer.id,
+        db=db,
+        actor_type="customer",
+        source="password",
+    )
 
     return CustomerTokenResponse(
         access_token=_issue_token(customer),
@@ -559,6 +577,14 @@ async def exchange_magic_link(
         raise _MAGIC_LINK_401
 
     record.last_used_at = datetime.now(UTC)
+    await track(
+        "customer_login",
+        tenant_id=customer.tenant_id,
+        user_id=customer.id,
+        db=db,
+        actor_type="customer",
+        source="magic_link",
+    )
     await db.commit()
 
     from app.config import settings

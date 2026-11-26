@@ -26,6 +26,7 @@ from typing import TYPE_CHECKING, Any
 from sqlalchemy import select
 
 from app.ai_telemetry import record_quote_outcome
+from app.analytics import track
 from app.dependencies import single_active_user
 from app.email import send_customer_email
 from app.email_templates import quote_accepted as quote_accepted_template
@@ -94,6 +95,17 @@ async def apply_quote_acceptance(
         quote=quote,
         extra_payload=outcome_payload,
     )
+    await track(
+        "quote_accepted",
+        tenant_id=quote.tenant_id,
+        user_id=customer.id if customer is not None else None,
+        db=db,
+        actor_type="customer" if customer is not None else "system",
+        entity_type="quote",
+        entity_id=quote.id,
+        source=str(outcome_payload.get("actor") or "customer"),
+        has_date_preferences=bool(quote.accepted_dates),
+    )
     business_name = tenant.name if tenant is not None else "Your electrician"
     magic_link: str | None = None
     portal_home: str | None = None
@@ -152,6 +164,14 @@ async def apply_quote_decline(db: AsyncSession, *, quote: Quote) -> None:
     """Transition a sent quote to declined and commit."""
     quote.status = "rejected"
     quote.approved_at = None
+    await track(
+        "quote_declined",
+        tenant_id=quote.tenant_id,
+        db=db,
+        actor_type="customer",
+        entity_type="quote",
+        entity_id=quote.id,
+    )
     await db.commit()
 
 

@@ -54,6 +54,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from app.analytics import track
 from app.availability import (
     DEFAULT_JOB_DURATION,
     NON_BLOCKING_APPOINTMENT_STATUSES,
@@ -61,7 +62,7 @@ from app.availability import (
     free_hours,
 )
 from app.database import get_db
-from app.dependencies import TenantDep, single_active_user
+from app.dependencies import CurrentUserDep, TenantDep, single_active_user
 from app.dispatch import enforce_assignment_guardrails, ensure_job_mutable
 from app.email import send_customer_email, tenant_reply_to
 from app.email_templates import booking_confirmed as booking_confirmed_template
@@ -254,7 +255,9 @@ async def list_jobs(
 
 
 @router.post("", status_code=status.HTTP_201_CREATED)
-async def create_job(data: JobCreate, tenant: TenantDep, db: DbDep) -> JobRead:
+async def create_job(
+    data: JobCreate, tenant: TenantDep, current_user: CurrentUserDep, db: DbDep
+) -> JobRead:
     """Create a job."""
     await set_tenant_in_session(db, tenant.id)
 
@@ -325,6 +328,17 @@ async def create_job(data: JobCreate, tenant: TenantDep, db: DbDep) -> JobRead:
     # does — the email dispatches only when the job landed on a real slot.
     if job.scheduled_start is not None:
         await _email_booking_confirmed(db, tenant.id, job)
+    await track(
+        "job_created",
+        tenant_id=tenant.id,
+        user_id=current_user.id if current_user is not None else None,
+        db=db,
+        entity_type="job",
+        entity_id=job.id,
+        source="quote" if job.quote_id is not None else "manual",
+        scheduled=job.scheduled_start is not None,
+        multi_day=len(blocks) > 1,
+    )
     await db.commit()
     return JobRead.model_validate(await _get_job(db, tenant.id, job.id))
 
@@ -546,20 +560,40 @@ async def update_job(
 
 
 @router.post("/{job_id}/start")
-async def start_job(job_id: UUID, tenant: TenantDep, db: DbDep) -> JobRead:
+async def start_job(
+    job_id: UUID, tenant: TenantDep, current_user: CurrentUserDep, db: DbDep
+) -> JobRead:
     """Mark a job as in progress."""
     job = await _get_job(db, tenant.id, job_id)
     job.status = "in_progress"
+    await track(
+        "job_started",
+        tenant_id=tenant.id,
+        user_id=current_user.id if current_user is not None else None,
+        db=db,
+        entity_type="job",
+        entity_id=job.id,
+    )
     await db.commit()
     return JobRead.model_validate(job)
 
 
 @router.post("/{job_id}/complete")
-async def complete_job(job_id: UUID, tenant: TenantDep, db: DbDep) -> JobRead:
+async def complete_job(
+    job_id: UUID, tenant: TenantDep, current_user: CurrentUserDep, db: DbDep
+) -> JobRead:
     """Mark a job as completed."""
     job = await _get_job(db, tenant.id, job_id)
     job.status = "completed"
     job.completed_at = datetime.utcnow()
+    await track(
+        "job_completed",
+        tenant_id=tenant.id,
+        user_id=current_user.id if current_user is not None else None,
+        db=db,
+        entity_type="job",
+        entity_id=job.id,
+    )
     await db.commit()
     return JobRead.model_validate(job)
 
