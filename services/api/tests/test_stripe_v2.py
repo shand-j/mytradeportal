@@ -10,6 +10,7 @@ from unittest.mock import AsyncMock
 
 import httpx
 import pytest
+import stripe
 from app import stripe_client
 
 
@@ -321,13 +322,16 @@ def test_is_stripe_error_classifies_v2_errors() -> None:
 
 @pytest.mark.asyncio
 async def test_create_refund_requests_reverse_transfer(monkeypatch: pytest.MonkeyPatch) -> None:
-    calls: dict[str, Any] = {}
+    calls: list[dict[str, Any]] = []
 
     class _Refund:
         @staticmethod
-        def create(**kwargs: Any) -> dict[str, Any]:
-            calls.update(kwargs)
-            return {"id": "re_test_1", "status": "succeeded"}
+        def create(**kwargs: Any) -> stripe.Refund:
+            calls.append(kwargs)
+            return stripe.Refund.construct_from(
+                {"id": "re_test_1", "object": "refund", "status": "succeeded"},
+                "sk_test_x",
+            )
 
     class _Stripe:
         StripeError = Exception
@@ -339,10 +343,22 @@ async def test_create_refund_requests_reverse_transfer(monkeypatch: pytest.Monke
     monkeypatch.setattr("app.stripe_client._stripe", lambda: _Stripe)
     monkeypatch.setattr("app.stripe_client.asyncio.to_thread", _to_thread)
 
-    result = await stripe_client.create_refund("pi_test_1")
+    first = await stripe_client.create_refund("pi_test_1")
+    retry = await stripe_client.create_refund("pi_test_1")
 
-    assert result == {"id": "re_test_1", "status": "succeeded"}
-    assert calls == {"payment_intent": "pi_test_1", "reverse_transfer": True}
+    assert first == retry == {"id": "re_test_1", "status": "succeeded"}
+    assert calls == [
+        {
+            "payment_intent": "pi_test_1",
+            "reverse_transfer": True,
+            "idempotency_key": "mtp-refund-pi_test_1",
+        },
+        {
+            "payment_intent": "pi_test_1",
+            "reverse_transfer": True,
+            "idempotency_key": "mtp-refund-pi_test_1",
+        },
+    ]
 
 
 @pytest.mark.asyncio

@@ -385,6 +385,7 @@ async def create_refund(payment_intent_id: str) -> dict[str, Any]:
 
     Destination charges debit the platform for refunds, so refunds must request
     ``reverse_transfer=True`` to recover the amount from the connected account.
+    A stable idempotency key makes retries return the same full refund.
     """
     stripe = _stripe()
     try:
@@ -392,6 +393,7 @@ async def create_refund(payment_intent_id: str) -> dict[str, Any]:
             stripe.Refund.create,
             payment_intent=payment_intent_id,
             reverse_transfer=True,
+            idempotency_key=f"mtp-refund-{payment_intent_id}",
         )
     except Exception as exc:
         code = str(getattr(exc, "code", "") or "")
@@ -401,7 +403,7 @@ async def create_refund(payment_intent_id: str) -> dict[str, Any]:
         }:
             raise RefundTransferRecoveryError() from exc
         raise
-    return {"id": refund["id"], "status": refund.get("status")}
+    return {"id": refund["id"], "status": refund["status"]}
 
 
 def construct_event(body: bytes, signature_header: str) -> dict[str, Any]:
